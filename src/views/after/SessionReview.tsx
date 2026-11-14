@@ -1,6 +1,6 @@
 import React, { useEffect, useId, useState } from 'react';
 import { History } from 'lucide-react';
-import { Badge, DASH, EmptyState, Panel, sourceTag } from '../../ui';
+import { Badge, DASH, EmptyState, Panel, SectionHeading, sourceTag } from '../../ui';
 import { sessionExpectedOf } from '../../charts/pro/chart/layoutInputs';
 import { fmtDm, fmtHm } from '../../charts/pro/core/time';
 import { storeFor } from '../../charts/pro/store/proStore';
@@ -52,17 +52,16 @@ export const SessionReview: React.FC = () => {
 
   return (
     <section id="rozliczenie" aria-labelledby="po-rozliczenie" className="flex flex-col gap-2">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-        <h2 id="po-rozliczenie" className="text-sm font-semibold text-ink-1">
-          {tr('Rozliczenie sesji', 'Session review')} <span className="font-normal text-ink-3">· BTC</span>
-        </h2>
-        <p className="text-[11px] leading-snug text-ink-3">
-          {tr(
-            'Dzień tradera to sesja: Londyn od 08:00 czasu londyńskiego, NY od 09:30 czasu nowojorskiego, IB to pierwsza godzina. Opis, nie sygnał.',
-            'The trading day is a session: London from 08:00 London time, NY from 09:30 New York time, the IB is the first hour. A description, not a signal.'
-          )}
-        </p>
-      </div>
+      <SectionHeading
+        id="po-rozliczenie"
+        nr="01"
+        eyebrow={tr('Rozliczenie · BTC', 'Review · BTC')}
+        title={tr('Rozliczenie sesji', 'Session review')}
+        note={tr(
+          'Dzień tradera to sesja: Londyn od 08:00 czasu londyńskiego, NY od 09:30 czasu nowojorskiego, IB to pierwsza godzina. Opis, nie sygnał.',
+          'The trading day is a session: London from 08:00 London time, NY from 09:30 New York time, the IB is the first hour. A description, not a signal.'
+        )}
+      />
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
         {all.map(({ card, rows }) => (
           <SessionCard key={`${card.s.id}-${card.s.start}`} card={card} rows={rows.filter((r) => r.scope === 'session')} now={now} />

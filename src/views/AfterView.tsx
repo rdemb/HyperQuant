@@ -1,6 +1,6 @@
 import React from 'react';
 import { tr } from '../i18n';
-import { LocalBoundary } from '../ui';
+import { LocalBoundary, SectionHeading } from '../ui';
 import { useDeskLedger } from '../state/useDeskLedger';
 import type { PhaseId } from '../charts/pro/chart/stations';
 import ChartsView from './ChartsView';
@@ -22,9 +22,7 @@ const AfterView: React.FC<{ onPhase?: (phase: PhaseId) => void }> = ({ onPhase }
     </LocalBoundary>
     <LedgerSection />
     <section aria-labelledby="po-dziennik-transakcji" className="flex flex-col gap-2">
-      <h2 id="po-dziennik-transakcji" className="text-sm font-semibold text-ink-1">
-        {tr('Dziennik transakcji', 'Trade journal')}
-      </h2>
+      <SectionHeading id="po-dziennik-transakcji" nr="03" eyebrow={tr('Twoje transakcje', 'Your trades')} title={tr('Dziennik transakcji', 'Trade journal')} />
       <JournalTab />
     </section>
   </div>
@@ -36,9 +34,7 @@ const LedgerSection: React.FC = () => {
   if (status === 'unconfigured') return null;
   return (
     <section aria-labelledby="po-dziennik-prognoz" className="flex flex-col gap-2">
-      <h2 id="po-dziennik-prognoz" className="text-sm font-semibold text-ink-1">
-        {tr('Dziennik prognoz', 'Forecast ledger')}
-      </h2>
+      <SectionHeading id="po-dziennik-prognoz" nr="02" eyebrow={tr('Prognozy przed faktem', 'Forecasts before the fact')} title={tr('Dziennik prognoz', 'Forecast ledger')} />
       <DeskLedgerPanel />
     </section>
   );
