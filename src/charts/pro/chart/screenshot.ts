@@ -62,7 +62,7 @@ export function brandedScreenshot(chartCanvas: HTMLCanvasElement, cssWidth: numb
   const pad = Math.round(14 * ratio);
   const mid = band / 2;
   ctx.textBaseline = 'middle';
-  ctx.font = `700 ${Math.round(16 * ratio)}px Outfit, sans-serif`;
+  ctx.font = `700 ${Math.round(16 * ratio)}px "Bricolage Grotesque", sans-serif`;
   ctx.fillStyle = PRO.ink1;
   ctx.fillText('HyperQuant', pad, mid);
   const brandW = ctx.measureText('HyperQuant').width;

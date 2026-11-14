@@ -162,7 +162,7 @@ const Fan: React.FC<{ r: RiskResult; trades: number; locale: string; label: stri
   return (
     <div ref={box} className="w-full">
       {W > 0 && (
-        <svg width={W} height={H} role="img" aria-label={label} className="block font-mono">
+        <svg width={W} height={H} role="img" aria-label={label} data-theme="dark" className="block font-mono">
           <rect x={0} y={0} width={W} height={H} rx={6} fill="var(--color-of-bg)" />
           {ticks.map((v) => (
             <g key={v}>

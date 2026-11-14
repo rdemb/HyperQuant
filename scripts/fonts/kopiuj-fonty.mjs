@@ -16,14 +16,16 @@ export const OUT = join(ROOT, 'public', 'fonts');
 const SUBSETS = ['latin-ext', 'latin'];
 const CR = String.fromCharCode(13);
 
-/** Rodziny i odmiany: suma tego, czego używa aplikacja (src/index.css) i blog (scripts/blog/render.mjs). */
+/**
+ * Rodziny i odmiany: suma tego, czego używa aplikacja (src/index.css) i blog (scripts/blog/render.mjs).
+ * Bricolage Grotesque to font zmienny (@fontsource-variable, plik „wdth”: grubość 200–800 i szerokość 75–100%, bez osi
+ * rozmiaru optycznego z pliku „standard” — o 40% lżejszy),
+ * nazwa rodziny bez dopisku „Variable”, żeby CSS aplikacji i bloga nie zależał od paczki.
+ */
 export const FONTS = [
-  { pkg: 'outfit', family: 'Outfit', faces: ['500', '600', '700'] },
+  { pkg: 'bricolage-grotesque', scope: '@fontsource-variable', family: 'Bricolage Grotesque', faces: ['wdth'], weights: '200 800' },
   { pkg: 'plus-jakarta-sans', family: 'Plus Jakarta Sans', faces: ['400', '500', '600', '700', '400-italic'] },
-  { pkg: 'ibm-plex-mono', family: 'IBM Plex Mono', faces: ['400', '500', '600', '400-italic'] },
-  // Nowy wygląd: nagłówki Bricolage Grotesque (font zmienny z osią opsz, wagi 200–800) i liczby JetBrains Mono
-  { pkg: 'bricolage-grotesque', scope: '@fontsource-variable', family: 'Bricolage Grotesque Variable', faces: ['opsz'], variable: true },
-  { pkg: 'jetbrains-mono', family: 'JetBrains Mono', faces: ['400', '500', '600', '700'] },
+  { pkg: 'jetbrains-mono', family: 'JetBrains Mono', faces: ['400', '500', '600', '700', '400-italic'] },
 ];
 
 /** Bloki @font-face z pliku odmiany @fontsource (np. 500.css), tylko wybrane podzbiory, z adresem woff2 obok fonts.css. */
@@ -56,7 +58,7 @@ export function build() {
     const dir = join(ROOT, 'node_modules', f.scope ?? '@fontsource', f.pkg);
     for (const face of f.faces) {
       for (const b of faceBlocks(readFileSync(join(dir, `${face}.css`), 'utf8'), f.pkg)) {
-        css.push(b.css);
+        css.push(b.css.replace(/font-family: '[^']+';/, `font-family: '${f.family}';`));
         files[b.woff2] = readFileSync(join(dir, 'files', b.woff2));
       }
     }

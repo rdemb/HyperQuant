@@ -4,7 +4,7 @@ import { computeAggrLiquidationHeatmap, computeShaakuniIndicator } from '../util
 import { computeOrderFlowImbalanceHeatmap, computeQuantMathAndNeuralForecast } from '../utils/quantMathEngine';
 import { soundEngine } from '../utils/soundEngine';
 import { DeskFeed, useDeskFeed } from './useDeskFeed';
-import { followHash } from './route';
+import { LAST_VIEW_KEY, followHash, landingView } from './route';
 import { ViewId } from './types';
 import { needsVolModel } from './viewNeeds';
 import { startOnboarding } from '../utils/firstVisit';
@@ -13,7 +13,9 @@ const CEX_KEY = 'hq.cexEnabled';
 
 /** Widok z adresu strony; stary adres (#desk, #plan…) zastępuje nowym (`#move=` obsłużył już originMove.ts). */
 function readHashView(): ViewId {
-  return followHash(window);
+  const view = followHash(window);
+  // Pusty adres: pierwsza wizyta → Start, powrót → ostatni widok (route.landingView)
+  return window.location.hash.replace(/^#/, '') === '' ? landingView(storageOrNull()) : view;
 }
 
 function readBool(key: string): boolean {
@@ -78,6 +80,15 @@ function useDeskState() {
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
+  // Ostatni widok: powrót na stronę bez adresu otwiera go (route.landingView)
+  useEffect(() => {
+    try {
+      storageOrNull()?.setItem(LAST_VIEW_KEY, view);
+    } catch {
+      // Pełny albo zablokowany storage: wejście znów od Startu
+    }
+  }, [view]);
+
   const setView = useCallback((v: ViewId) => {
     if (window.location.hash.split('?')[0] !== `#${v}`) window.location.hash = v;
     setViewState(v);

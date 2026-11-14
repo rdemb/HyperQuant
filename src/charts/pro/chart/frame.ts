@@ -136,7 +136,7 @@ export function composeFrame(o: FrameInput): HTMLCanvasElement | null {
 
   // Marka, tytuł z liczbą, godzina i źródło
   let y = m.pad;
-  ctx.font = `700 ${m.brand}px Outfit, sans-serif`;
+  ctx.font = `700 ${m.brand}px "Bricolage Grotesque", sans-serif`;
   ctx.fillStyle = PRO.ink1;
   ctx.fillText('HyperQuant', m.pad, y);
   y += Math.round(m.brand * 1.3) + m.gap;

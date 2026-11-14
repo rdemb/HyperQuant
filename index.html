@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" class="dark" translate="no">
+<html lang="en" class="dark" data-theme="dark" translate="no">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
@@ -10,7 +10,16 @@
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="apple-touch-icon" sizes="180x180" href="./icons/apple-touch-icon.png" />
-    <meta name="theme-color" content="#070A11" />
+    <meta name="theme-color" content="#0C0D0F" />
+    <script>
+      // Theme before the first paint (no flash): the saved choice or the system setting (src/theme.ts)
+      try {
+        var t = localStorage.getItem('hq.theme');
+        if (t !== 'light' && t !== 'dark') t = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+        document.documentElement.dataset.theme = t;
+        if (t === 'light') document.querySelector('meta[name="theme-color"]').setAttribute('content', '#F1EFE9');
+      } catch (e) {}
+    </script>
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -73,13 +82,13 @@
   </head>
   <body class="bg-page text-ink-1 antialiased overflow-x-hidden notranslate" translate="no">
     <noscript>
-      <div style="padding: 2rem 1rem; font-family: system-ui, sans-serif; color: #A9B4C4; background: #070A11; min-height: 100vh;">
-        <h1 style="color: #EEF2F7; font-size: 1.5rem; margin: 0 0 0.5rem;">HyperQuant — BTC Day Trading Desk</h1>
+      <div style="padding: 2rem 1rem; font-family: system-ui, sans-serif; color: #A9AEB6; background: #0C0D0F; min-height: 100vh;">
+        <h1 style="color: #EDEEF0; font-size: 1.5rem; margin: 0 0 0.5rem;">HyperQuant — BTC Day Trading Desk</h1>
         <p style="font-size: 1rem; line-height: 1.6; max-width: 640px;">
           Free BTC day-trading desk for Hyperliquid: live order-flow charts (footprint, delta, CVD, order book heatmap), lessons on real data, BTC analyses written before the fact and a verifiable forecast ledger: preparation, session and review of the day. No buy or sell signals.
         </p>
         <p style="line-height: 1.6; max-width: 640px;">
-          <a href="./en/charts/" style="color: #3FC6DD;">Charts</a> · <a href="./en/lessons/" style="color: #3FC6DD;">Lessons</a> · <a href="./blog/" lang="pl" style="color: #3FC6DD;">Blog (in Polish)</a> · <a href="./wykresy/" lang="pl" style="color: #3FC6DD;">Wykresy (PL)</a> · <a href="./lekcje/" lang="pl" style="color: #3FC6DD;">Lekcje (PL)</a>
+          <a href="./en/charts/" style="color: #CFEA5B;">Charts</a> · <a href="./en/lessons/" style="color: #CFEA5B;">Lessons</a> · <a href="./blog/" lang="pl" style="color: #CFEA5B;">Blog (in Polish)</a> · <a href="./wykresy/" lang="pl" style="color: #CFEA5B;">Wykresy (PL)</a> · <a href="./lekcje/" lang="pl" style="color: #CFEA5B;">Lekcje (PL)</a>
         </p>
         <p style="margin-top: 1.5rem; color: #FAB219;">
           Enable JavaScript to run the app.

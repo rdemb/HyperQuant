@@ -42,7 +42,7 @@ export const Figure: React.FC<FigureProps> = ({ slice, view, layers, c, ...rest 
 
 /** Miejsce na rycinę w trakcie wczytywania albo po błędzie. */
 export const FigureStatus: React.FC<{ failed: boolean; c: LessonsContent; height?: number }> = ({ failed, c, height = 360 }) => (
-  <div className="w-full flex items-center justify-center rounded-lg bg-of-bg text-sm text-ink-3" style={{ height }} role="status">
+  <div data-theme="dark" className="w-full flex items-center justify-center rounded-lg bg-of-bg text-sm text-ink-3" style={{ height }} role="status">
     {failed ? c.ui.loadError : c.ui.loading}
   </div>
 );
