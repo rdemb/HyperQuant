@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { ChevronRight, Download, ExternalLink } from 'lucide-react';
 import { AGENT_TEMPLATES, type AgentTemplate } from '../../../integrations/agents/index';
 import { OPENBOT_PATHS } from '../../../integrations/agents/openbot';
-import { Badge, DASH, Panel } from '../../ui';
+import { Badge, DASH, Panel, SectionHeading } from '../../ui';
 import { lang, tr } from '../../i18n';
 import { BTN_PRIMARY, BTN_SECONDARY, CopyButton } from './CopyButton';
 import { MCP_README_FILE, SKILL_FILE, SKILL_RECIPES, TOOL_META, githubUrl } from './catalog';
@@ -91,7 +91,12 @@ const ToolChips: React.FC<{ names: string[] }> = ({ names }) => (
 const Intro: React.FC = () => (
   <section className="grid grid-cols-1 lg:grid-cols-12 gap-x-8 gap-y-4 items-start pt-2">
     <div className="lg:col-span-7 flex flex-col gap-3 max-w-prose">
-      <h1 className="font-display text-2xl sm:text-3xl font-semibold tracking-tight text-ink-1">{tr('Agenci AI', 'AI agents')}</h1>
+      <SectionHeading
+        id="agenci-tytul"
+        level={1}
+        eyebrow={tr('Serwer MCP · hyperquant-mcp', 'MCP server · hyperquant-mcp')}
+        title={tr('Agenci AI', 'AI agents')}
+      />
       <p className="text-[15px] text-ink-1 leading-relaxed">
         {tr(
           'Podłącz HyperQuant do swojego asystenta AI: OpenBota, Claude, Cursora, VS Code albo innego klienta MCP. Serwer hyperquant-mcp daje mu 10 narzędzi z kontekstem rynku BTC na Hyperliquid, liczonym tymi samymi funkcjami co ta strona. Cena to ostatnie zamknięcie świecy 1m, więc liczby mogą się nieco różnić od strony w tej samej chwili.',
