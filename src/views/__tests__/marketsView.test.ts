@@ -23,29 +23,32 @@ describe('widok „Rynki”: bez kierunku ceny i ocen', () => {
   });
 
   it('nagłówki kolumn przez tr (PL i EN)', () => {
-    const table = read('../markets/MarketsTable.tsx');
-    for (const pair of ["tr('Rynek', 'Market')", "tr('Cena', 'Price')", "tr('Obrót 24 h', '24h volume')", "tr('Otwarte pozycje', 'Open interest')", "tr('Funding 1 h', 'Funding 1h')", "tr('Wykres', 'Chart')", "tr('Skaner', 'Scanner')"])
+    const table = read('../markets/MarketList.tsx');
+    for (const pair of ["tr('Rynek', 'Market')", "tr('Cena', 'Price')", "tr('Obrót 24 h', '24h volume')", "tr('Otwarte poz.', 'Open int.')", "tr('Funding 1 h', 'Funding 1h')", "tr('Wykres', 'Chart')"])
       expect(table).toContain(pair);
   });
 });
 
 describe('widok „Rynki”: dane osobno, wygląd osobno', () => {
   it('komponenty widoku: bez hooków danych i bez funkcji z utils (tylko typy), dane z jednego hooka useMarketsPage', () => {
-    expect(parts.sort()).toEqual(expect.arrayContaining(['LiveCell.tsx', 'MarketRow.tsx', 'MarketsTable.tsx', 'WallStreetLabel.tsx']));
+    expect(parts.sort()).toEqual(expect.arrayContaining(['MarketList.tsx', 'WallStreetLabel.tsx']));
     for (const [f, src] of views.filter(([f]) => f.startsWith('../markets/'))) {
-      expect(src, f).not.toMatch(/\buse[A-Z]\w*\(/);
+      // Hooki interfejsu (okno listy, React) wolno; hooków danych (stan desku, rynki, pliki publiczne) nie
+      expect(src, f).not.toMatch(/\buse(Markets|Desk|Published|LiqMap|Ticker)\w*\(/);
       for (const m of src.matchAll(/^import (.+) from '(\.\.\/)+(utils|state|charts)\/[^']+';$/gm)) expect(m[1], `${f}: ${m[0]}`).toMatch(/^type /);
     }
     const view = views[0][1];
-    expect(view.match(/\buse[A-Z]\w*\(/g)).toEqual(['useMarketsPage(']);
+    // Jedyny hook danych widoku; useSyncExternalStore to szerokość ekranu (karty albo tabela), nie dane
+    expect(view.match(/\buse(?!SyncExternalStore)[A-Z]\w*\(/g)).toEqual(['useMarketsPage(']);
     for (const m of view.matchAll(/^import (.+) from '\.\.\/utils\/[^']+';$/gm)) expect(m[1], m[0]).toMatch(/^type /);
   });
 
   it('kolumna Wall Street (przed Wykresem) i zdanie pod tabelą: etykieta opisuje giełdę bazową, rynek na Hyperliquid działa całą dobę', () => {
-    const table = read('../markets/MarketsTable.tsx');
-    expect(table.indexOf("label: 'Wall Street'")).toBeGreaterThan(table.indexOf("tr('Funding 1 h', 'Funding 1h')"));
-    expect(table.indexOf("label: 'Wall Street'")).toBeLessThan(table.indexOf("tr('Wykres', 'Chart')"));
-    expect(read('../markets/MarketRow.tsx')).toContain('<WallStreetLabel cell={row.wallStreet} />');
+    const table = read('../markets/MarketList.tsx');
+    const head = table.slice(table.indexOf('role="columnheader"'));
+    expect(head.indexOf('{WALL_STREET}')).toBeGreaterThan(head.indexOf("tr('Funding 1 h', 'Funding 1h')"));
+    expect(head.indexOf('{WALL_STREET}')).toBeLessThan(head.lastIndexOf("tr('Wykres', 'Chart')"));
+    expect(table).toContain('<WallStreetLabel cell={row.wallStreet} />');
     const view = views[0][1];
     expect(view).toContain('Etykieta Wall Street opisuje giełdę bazową');
     expect(view).toContain('a nie rynek na Hyperliquid, który działa całą dobę');

@@ -223,6 +223,9 @@ export function createFixtures(root) {
     switch (body?.type) {
       case 'candleSnapshot':
         return candles(body.req ?? {});
+      case 'perpDexs':
+        // Giełda główna i giełdy HIP-3 danych stałych (tabela „Rynki” pyta o nie przed pierwszą rundą)
+        return [null, ...Object.keys(HIP3).map((name) => ({ name, fullName: name, deployer: '0x0', oracleUpdater: null }))];
       case 'metaAndAssetCtxs': {
         const list = body.dex ? (HIP3[body.dex] ?? []) : COINS;
         return [{ universe: list.map((name) => ({ name, szDecimals: SZ[name], maxLeverage: LEVERAGE[name] ?? 40 })) }, list.map(ctx)];
