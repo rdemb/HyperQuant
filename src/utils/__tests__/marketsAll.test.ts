@@ -19,7 +19,7 @@ describe('wszystkie rynki: lista giełd i rynki giełdy', () => {
       { coin: 'xyz:NVDA', dex: 'xyz', szDecimals: 3, maxLeverage: 10, scanner: 'none' },
       { coin: 'xyz:TSLA', dex: 'xyz', szDecimals: 2, maxLeverage: 10, scanner: 'none' },
     ]);
-    expect(parseDexUniverse([{ universe: [{ name: 'ETH', szDecimals: 4, maxLeverage: 25 }] }], '')[0].coin).toBe('ETH');
+    expect(parseDexUniverse([{ universe: [{ name: 'ETH', szDecimals: 4, maxLeverage: 25 }] }], '')?.[0]?.coin).toBe('ETH');
     expect(parseDexUniverse(null, '')).toBeNull();
   });
 
