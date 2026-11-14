@@ -10,7 +10,7 @@ import {
   fundingYearPct,
   isFresh,
   marketRows,
-  marketTableModel,
+  marketListModel,
   openInterestUsd,
   parseDexCtxs,
   registryDexes,
@@ -136,21 +136,18 @@ describe('wiersze tabeli', () => {
 
 describe('model tabeli (gotowe teksty dla widoku)', () => {
   const main = parseDexCtxs([{ universe: [{ name: 'BTC' }, { name: 'ETH' }] }, [ctx('80000', '31000', '2500000000'), ctx('3900', '500000', '900000000', '-0.0001')]], '')!;
+  const ALL = { q: '', dex: null, cls: null } as const;
   const deps = {
-    groupsOf: (list: readonly ChartMarket[]) =>
-      (['crypto', 'hip3'] as const).map((id) => ({ id, title: id, markets: list.filter((m) => (m.dex === '') === (id === 'crypto')) })).filter((g) => g.markets.length > 0),
     fmtTime: (ms: number) => `t${ms}`,
     scannerWhy: (coin: string) => `bez skanera ${coin}`,
     wallStreet: (m: ChartMarket) => ({ label: `ws ${m.coin}`, note: null, why: null }),
   };
 
   it('wiersz z liczbami: cena, obrót, OI, funding godzinowy i roczny, godzina odczytu, link, skaner', () => {
-    const groups = marketTableModel([eth, btc, nvda], { '': { at: NOW - 1000, ctxs: main, failedAt: null } }, NOW, 'oi', deps);
-    expect(groups.map((g) => [g.id, g.rows.map((r) => r.coin)])).toEqual([
-      ['crypto', ['BTC', 'ETH']],
-      ['hip3', ['xyz:NVDA']],
-    ]);
-    expect(groups[0].rows[0]).toEqual({
+    const rows = marketListModel([eth, btc, nvda], { '': { at: NOW - 1000, ctxs: main, failedAt: null } }, NOW, 'oi', ALL, deps);
+    // Malejąco po otwartych pozycjach; rynek bez odczytu swojej giełdy na końcu
+    expect(rows.map((r) => r.coin)).toEqual(['BTC', 'ETH', 'xyz:NVDA']);
+    expect(rows[0]).toEqual({
       coin: 'BTC',
       name: 'BTC',
       exchange: 'Hyperliquid',
@@ -162,16 +159,18 @@ describe('model tabeli (gotowe teksty dla widoku)', () => {
       fundingYear: '+11,0%',
       readAt: `t${NOW - 1000}`,
       why: null,
+      cls: null,
       chartHref: '#charts?m=BTC',
+      chartWhy: null,
       scanner: { text: 'mapa likwidacji', why: null },
       wallStreet: { label: 'ws BTC', note: null, why: null },
     });
-    expect(groups[0].rows[1]).toMatchObject({ fundingHour: '−0,0100%', fundingYear: '−87,6%', scanner: { text: '—', why: 'bez skanera ETH' } });
+    expect(rows[1]).toMatchObject({ fundingHour: '−0,0100%', fundingYear: '−87,6%', scanner: { text: '—', why: 'bez skanera ETH' } });
   });
 
   it('wiersz bez danych: same „—”, bez godziny, z powodem', () => {
-    const [, hip3] = marketTableModel([btc, nvda], { '': { at: NOW - 1000, ctxs: main, failedAt: null } }, NOW, 'oi', deps);
-    expect(hip3.rows[0]).toMatchObject({
+    const [, nv] = marketListModel([btc, nvda], { '': { at: NOW - 1000, ctxs: main, failedAt: null } }, NOW, 'oi', ALL, deps);
+    expect(nv).toMatchObject({
       name: 'NVDA',
       exchange: 'xyz',
       price: '—',
