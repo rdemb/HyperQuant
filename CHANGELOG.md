@@ -10,6 +10,12 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 #### Zmienione
 - **Nagłówek strony** (`ui/SectionHeading`, nowy wariant `level={1}`: <h1>, większy tytuł krojem Bricolage, wstęp): Lekcje (zamiast nagłówka w ramce), Badania i Źródła (wcześniej bez nagłówka, od razu panele), Agenci AI.
 
+### Start: wybór instrumentu BTC albo złoto (2026-11-14)
+<!-- co-nowego: grupa=blog | pl=Na Starcie wybór instrumentu: Bitcoin albo złoto, z ceną na żywo; klik otwiera W sesji | en=Instrument choice on Start: Bitcoin or gold with a live price; a click opens In session -->
+
+#### Dodane
+- **Karty instrumentów na Starcie** (`views/start/InstrumentCards`): Bitcoin (BTC-PERP) i złoto (`xyz:GOLD`) z ceną LIVE i godziną odczytu, fundingiem i otwartymi pozycjami (te same dane co strona Rynki); klik otwiera W sesji z wykresem tego rynku. Opis Startu: desk BTC ze złotem jako kontekstem makro.
+
 ### Rynki: BTC i złoto (2026-11-14)
 <!-- co-nowego: grupa=rynki | pl=Desk skupiony na BTC: na stronie Rynki i w wyborze rynku są BTC i złoto (xyz:GOLD) | en=A desk focused on BTC: the Markets page and the market picker show BTC and gold (xyz:GOLD) -->
 
