@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
+import React, { Suspense, useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { Command, History, ListChecks, MoreHorizontal, Newspaper, Pause, Play, RefreshCw, Volume2, VolumeX } from 'lucide-react';
 import { useDesk } from '../state/DeskContext';
@@ -30,6 +30,7 @@ import {
 } from '../shell/AppShell';
 import { InstallButton } from '../shell/InstallButton';
 import { PaletaPolecen } from './PaletaPolecen';
+import { NOWE_WIDOKI } from './widoki';
 import type { Akcja } from './polecenia';
 
 /**
@@ -216,6 +217,8 @@ export default function NowaPowloka() {
   const transition = reduce ? { initial: { opacity: 0 }, animate: { opacity: 1 }, exit: { opacity: 0 } } : VIEW_TRANSITION;
   // Powtórka w W sesji pokazuje przeszłość: bez ceny na żywo w nagłówku (subskrypcja zmiany adresu, jak stara powłoka)
   const replay = useSyncExternalStore(subscribeHash, inReplay) && view === 'charts';
+  // Widok w nowym wyglądzie (etapy 2–5), inaczej obecny widok przez wspólne ViewOutlet
+  const NowyWidok = NOWE_WIDOKI[view];
 
   const go = useCallback(
     (v: ViewId) => {
@@ -316,7 +319,13 @@ export default function NowaPowloka() {
         <main className="flex-1 w-full max-w-[1920px] mx-auto px-3 sm:px-5 pt-4 pb-6">
           <AnimatePresence mode="wait" initial={false}>
             <motion.div key={view} data-view-root {...transition}>
-              <ViewOutlet startedAt={startedAt} />
+              {NowyWidok ? (
+                <Suspense fallback={null}>
+                  <NowyWidok />
+                </Suspense>
+              ) : (
+                <ViewOutlet startedAt={startedAt} />
+              )}
             </motion.div>
           </AnimatePresence>
         </main>
