@@ -51,12 +51,16 @@ let serveRegistry = false;
  * których w repozytorium nie ma), API Hyperliquid z danych stałych, rejestr rynków z adresu danych buildu pomiaru
  * (`scripts/ui/build.mjs`), cała reszta sieci — błąd jak bez połączenia.
  */
+/** Plik strony blokowany w przebiegu „przeładowanie po wdrożeniu” (stary plik leniwego modułu po podmianie strony). */
+let blokuj = null;
+
 function fixtureIntercept(fx) {
   const origin = new URL(BASE).origin;
   const data = new URL(DATA_BASE_URL);
   return (req) => {
     if (/^(data|blob):/.test(req.url)) return 'continue';
     const u = new URL(req.url);
+    if (u.origin === origin && blokuj && u.pathname.endsWith(blokuj)) return 'fail';
     if (u.origin === origin) return u.pathname.includes('/data/feeds/') ? { status: 404, body: '', type: 'text/plain' } : 'continue';
     // Dane skanera: tylko rejestr rynków i tylko w przebiegu rynków (wcześniej strona ma 4 rynki domyślne, jak bez pliku)
     if (u.origin === data.origin) return serveRegistry && u.pathname === `${data.pathname}/markets.json` ? { body: JSON.stringify(registry()) } : 'fail';
@@ -243,6 +247,49 @@ const headerCut = `(() => {
   const right = t.getBoundingClientRect().right + 0.5;
   const shown = [...t.querySelectorAll('button, [data-ticker-item]')].filter((e) => { const s = getComputedStyle(e); return s.display !== 'none' && s.visibility !== 'hidden' && e.getBoundingClientRect().width > 0; });
   return { shown: shown.map((e) => (e.textContent || '').trim().slice(0, 16)), cut: shown.filter((e) => e.getBoundingClientRect().right > right).map((e) => (e.textContent || '').trim().slice(0, 16)) };
+})()`;
+
+// ───────────────────────── nowy wygląd (?ui=nowy) ─────────────────────────
+/**
+ * Nowa powłoka (przełącznik hq.ui.v1): 1440 × 900, 1024 × 768 i 390 × 844. Atrybut data-ui, dokładnie jedna nawigacja
+ * (szyna na komputerze, dolny pasek na telefonie), bez przewijania strony i nagłówka w bok, cena w całości na ekranie,
+ * nagłówki fontem nowego wyglądu (nie Outfit), paleta ⌘K otwiera się i zamyka Escape, bez błędów i NaN. Osobno od progów
+ * starej powłoki (punkt odniesienia bez zmian); udział panelu ceny zapisany do porównań kolejnych etapów.
+ */
+const NOWY_VIEWPORTS = [
+  ['1440', 1440, 900, false],
+  ['1024', 1024, 768, false],
+  ['390', 390, 844, true],
+];
+const NOWY_PROBE = `(() => {
+  const vis = (e) => { if (!e) return false; const s = getComputedStyle(e); const r = e.getBoundingClientRect(); return s.display !== 'none' && s.visibility !== 'hidden' && r.width > 0 && r.height > 0; };
+  const head = document.querySelector('[data-app-header]');
+  const row = head?.firstElementChild;
+  const cena = head?.querySelector('button[aria-expanded]');
+  const cr = cena?.getBoundingClientRect();
+  const tytul = [...document.querySelectorAll('h1, h2, h3, .font-display')].find(vis);
+  return {
+    ui: document.documentElement.dataset.ui ?? null,
+    nawigacje: [...document.querySelectorAll('[data-szyna], [data-app-nav]')].filter(vis).length,
+    szyna: vis(document.querySelector('[data-szyna]')),
+    overflowX: document.documentElement.scrollWidth - innerWidth,
+    naglowekX: row ? row.scrollWidth - row.clientWidth : null,
+    cena: cr ? cr.left >= 0 && cr.right <= innerWidth + 0.5 && cr.width > 0 : false,
+    // Cena niczym niezasłonięta (środek i prawa krawędź przycisku należą do niego)
+    cenaOdkryta: cr ? [[cr.left + cr.width / 2, cr.top + cr.height / 2], [cr.right - 2, cr.top + cr.height / 2]].every(([x, y]) => { const el = document.elementFromPoint(x, y); return !!el && cena.contains(el); }) : false,
+    // Widoczne kontrolki nagłówka, które na siebie nachodzą (pary)
+    nakladanie: (() => {
+      const els = [...(row?.querySelectorAll('a, button, label, select, [role="group"], [data-testid]') ?? [])].filter((e) => vis(e) && !e.closest('[role="group"] button, label select') && !e.parentElement?.closest('a, button, label, [role="group"]'));
+      const out = [];
+      for (let i = 0; i < els.length; i++) for (let j = i + 1; j < els.length; j++) {
+        const a = els[i].getBoundingClientRect(), b = els[j].getBoundingClientRect();
+        if (a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1) out.push((els[i].textContent || els[i].getAttribute('aria-label') || '').trim().slice(0, 12) + ' × ' + (els[j].textContent || els[j].getAttribute('aria-label') || '').trim().slice(0, 12));
+      }
+      return out;
+    })(),
+    font: tytul ? getComputedStyle(tytul).fontFamily.split(',')[0].replace(/["']/g, '').trim() : null,
+    panel: window.__hq?.paneShare?.()?.share ?? null,
+  };
 })()`;
 
 // ───────────────────────── funkcje paska (dzisiejsze ikony i przełączniki) ─────────────────────────
@@ -838,6 +885,57 @@ async function main() {
       await page.viewport(1440, 900, false);
     }
 
+    // Nowy wygląd za przełącznikiem (hq.ui.v1 = nowy): jedna nawigacja, nagłówek bez przewijania w bok, fonty, paleta ⌘K
+    report.nowy = {};
+    for (const [key, w, h, mobile] of NOWY_VIEWPORTS) {
+      await page.viewport(w, h, mobile);
+      const [e0, c0] = [page.errors.length, page.consoleErrors.length];
+      await page.go(`${BASE}robots.txt`, 300);
+      await page.ev(`(() => { localStorage.clear(); const s = ${JSON.stringify({ ...RETURNING, 'hq.ui.v1': 'nowy' })}; for (const k in s) localStorage.setItem(k, s[k]); return true; })()`);
+      await page.go(`${BASE}#charts`, 500);
+      await page.waitFor(`!!document.querySelector('[data-nowa-powloka]') && !!document.querySelector('.tv-lightweight-charts canvas')`, 30000);
+      await sleep(4000);
+      await page.ev(PROBE);
+      await page.mouseAway();
+      const x = await page.ev(NOWY_PROBE);
+      await page.ev(`document.querySelector('[data-app-header] button[aria-label="Otwórz paletę poleceń"], [data-app-header] button[aria-label="Open command palette"]')?.click()`);
+      await sleep(500);
+      const paletaOtwarta = await page.ev(`!!document.querySelector('[role="dialog"][aria-modal="true"] [role="combobox"]')`);
+      await shot(page, `${w}-nowy-paleta`);
+      await page.key('Escape');
+      await sleep(500);
+      const paletaZamknieta = await page.ev(`!document.querySelector('[role="dialog"][aria-modal="true"]')`);
+      report.nowy[key] = { ...x, paleta: paletaOtwarta && paletaZamknieta, nan: await probe(page, nanText), errors: page.errors.slice(e0), consoleErrors: page.consoleErrors.slice(c0) };
+      await shot(page, `${w}-nowy`);
+    }
+    await page.viewport(1440, 900, false);
+
+    // Przeładowanie po wdrożeniu: plik leniwego widoku (Lekcje) niedostępny jak po podmianie strony. Oczekiwane dokładnie
+    // jedno przeładowanie (vite:preloadError), potem ekran błędu bez pętli.
+    {
+      const man = JSON.parse(fs.readFileSync(path.resolve('dist/.vite/manifest.json'), 'utf8'));
+      const plik = man['src/views/LessonsView.tsx']?.file ?? null;
+      await open(page, '#charts');
+      const { identifier } = await page.send('Page.addScriptToEvaluateOnNewDocument', {
+        source: `sessionStorage.setItem('ui-check-loads', String(Number(sessionStorage.getItem('ui-check-loads') || 0) + 1));`,
+      });
+      await page.ev(`(() => { sessionStorage.removeItem('hq.preloadReload.v1'); sessionStorage.setItem('ui-check-loads', '0'); return true; })()`);
+      blokuj = plik ? `/${plik}` : null;
+      await page.ev(`(() => { location.hash = '#lessons'; return true; })()`);
+      await sleep(6000);
+      const stan = `({ loads: Number(sessionStorage.getItem('ui-check-loads')), marker: !!sessionStorage.getItem('hq.preloadReload.v1'), alert: !!document.querySelector('[role="alert"]') })`;
+      const po = await page.ev(stan);
+      await sleep(3000);
+      const pozniej = await page.ev(stan);
+      blokuj = null;
+      await page.send('Page.removeScriptToEvaluateOnNewDocument', { identifier });
+      report.przeladowanie = { plik, ...po, loadsLater: pozniej.loads };
+      await shot(page, '1440-przeladowanie');
+      // Błędy celowo wywołane w tym przebiegu nie liczą się do kolejnych pomiarów
+      page.errors.splice(0);
+      page.consoleErrors.splice(0);
+    }
+
     // 4. Ustawienia użytkownika
     await page.viewport(1440, 900, false);
     report.storage = await persistence(page);
@@ -920,6 +1018,30 @@ async function main() {
     );
   };
   if (!LIVE) r.summary.rynki = RYNKI_VIEWPORTS.every(([key]) => rynkiOk(key));
+  // Nowy wygląd: jedna nawigacja właściwa dla ekranu, bez przewijania w bok, cena w całości, font nagłówków nie Outfit
+  const nowyOk = (key) => {
+    const x = r.nowy?.[key];
+    return (
+      !!x &&
+      x.ui === 'nowy' &&
+      x.nawigacje === 1 &&
+      x.szyna === (key !== '390') &&
+      x.overflowX <= 0 &&
+      (x.naglowekX ?? 1) <= 0 &&
+      x.cena === true &&
+      x.cenaOdkryta === true &&
+      x.nakladanie?.length === 0 &&
+      !!x.font &&
+      x.font !== 'Outfit' &&
+      x.paleta === true &&
+      x.nan?.length === 0 &&
+      x.errors.length === 0 &&
+      x.consoleErrors.length === 0
+    );
+  };
+  r.summary.nowy = NOWY_VIEWPORTS.every(([key]) => nowyOk(key));
+  const prz = r.przeladowanie;
+  r.summary.przeladowanie = !!prz?.plik && prz.loads === 1 && prz.marker === true && prz.alert === true && prz.loadsLater === 1;
   const lines = [
     `Pomiar „${LABEL}” (${BASE})`,
     `1. Panel ceny 1440×900: ${pct(r.desktop)} (próg 62%, zapas ${margin(r.desktop?.share ?? 0, LIMITS.desktop)}), z kolumną DOM: ${pct(r.desktopDom)} (próg 60%, zapas ${margin(r.desktopDom?.share ?? 0, LIMITS.desktopDom)}) — ${ok(t1)}`,
@@ -967,6 +1089,19 @@ async function main() {
       return `${key}: wiersze ${x.rows}/${x.want} w ${x.ms} ms, przewijanie strony w bok ${x.overflowX} px, ${head}, Wall Street xyz:NVDA „${x.wallStreet ?? '—'}”, błędy ${errs.length}${errs.length ? ` (${errs.join(' | ')})` : ''}, NaN ${x.nan?.length ?? '—'} — ${ok(rynkiOk(key))}`;
     };
     lines.push(`Rynki (#markets, dane stałe, limit ${RYNKI_MAX_MS} ms): ${RYNKI_VIEWPORTS.map(([key]) => one(key)).join('; ')}`);
+  }
+  if (r.nowy) {
+    const one = (key) => {
+      const x = r.nowy[key];
+      if (!x) return '—';
+      const errs = [...x.errors, ...x.consoleErrors].map((e) => e.split('\n')[0]);
+      return `${key}: data-ui ${x.ui}, nawigacje ${x.nawigacje} (${x.szyna ? 'szyna' : 'dolny pasek'}), w bok strona ${x.overflowX} px / nagłówek ${x.naglowekX} px, cena ${x.cena ? 'w całości' : 'UCIĘTA'}${x.cenaOdkryta ? '' : ' i ZASŁONIĘTA'}, nakładanie ${x.nakladanie?.length ? x.nakladanie.join(' | ') : 'brak'}, font nagłówków ${x.font}, paleta ⌘K ${x.paleta ? 'tak' : 'NIE'}, panel ceny ${x.panel != null ? `${(x.panel * 100).toFixed(1)}%` : '—'}, błędy ${errs.length}${errs.length ? ` (${errs.join(' | ')})` : ''}, NaN ${x.nan?.length ?? '—'} — ${ok(nowyOk(key))}`;
+    };
+    lines.push(`Nowy wygląd (?ui=nowy): ${NOWY_VIEWPORTS.map(([key]) => one(key)).join('; ')}`);
+  }
+  if (r.przeladowanie) {
+    const x = r.przeladowanie;
+    lines.push(`Przeładowanie po wdrożeniu (zablokowany ${x.plik ?? '—'}): wczytania po błędzie ${x.loads} (po 3 s ${x.loadsLater}), znacznik ${x.marker ? 'tak' : 'nie'}, ekran błędu ${x.alert ? 'tak' : 'nie'} — ${ok(r.summary.przeladowanie)}`);
   }
   const metrics = metricsOf(r);
   let baseDiff = [];
