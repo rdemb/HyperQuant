@@ -6,7 +6,7 @@ import { Resvg } from '@resvg/resvg-js';
 import { fmtPrice, ladderLayout } from './render.mjs';
 
 const FONT_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fonts');
-const FONT_FILES = ['Outfit-SemiBold.ttf', 'PlusJakartaSans-Medium.ttf'].map((f) => path.join(FONT_DIR, f));
+const FONT_FILES = ['BricolageGrotesque-SemiBold.ttf', 'PlusJakartaSans-Medium.ttf'].map((f) => path.join(FONT_DIR, f));
 
 // Tokeny (src/index.css @theme)
 const C = { page: '#070a11', surface: '#0b1019', lineStrong: '#283447', ink1: '#eef2f7', ink2: '#a9b4c4', ink3: '#7a889c', accent: '#3fc6dd', level: '#e0a045' };
@@ -18,7 +18,7 @@ const LADDER_MAX = 6;
 const x = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[c]);
 
 /**
- * Łamanie tytułu na wiersze przy szacowanej szerokości znaku (Outfit SemiBold ≈ 0,56 em).
+ * Łamanie tytułu na wiersze przy szacowanej szerokości znaku (Bricolage Grotesque SemiBold ≈ 0,51 em; 0,56 z zapasem).
  * Dobiera największy rozmiar, przy którym tytuł mieści się w 3 wierszach; ostatni wiersz w razie potrzeby z wielokropkiem.
  */
 export function wrapTitle(text, maxWidth, sizes = [60, 54, 48, 42], maxLines = 3) {
@@ -116,8 +116,8 @@ export function ogSvg(card) {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
 <rect width="${W}" height="${H}" fill="${C.page}"/>
 <rect x="0" y="0" width="${W}" height="6" fill="${C.accent}"/>
-<text x="${X0}" y="104" font-family="Outfit" font-weight="600" font-size="26" letter-spacing="3" fill="${C.accent}">HYPERQUANT<tspan dx="14" fill="${C.lineStrong}" letter-spacing="0">/</tspan><tspan dx="14" fill="${C.ink2}" font-family="Plus Jakarta Sans" font-weight="500" letter-spacing="0">${x(card.section)}</tspan></text>
-<text font-family="Outfit" font-weight="600" font-size="${size}" fill="${C.ink1}">${title}</text>
+<text x="${X0}" y="104" font-family="Bricolage Grotesque" font-weight="600" font-size="26" letter-spacing="3" fill="${C.accent}">HYPERQUANT<tspan dx="14" fill="${C.lineStrong}" letter-spacing="0">/</tspan><tspan dx="14" fill="${C.ink2}" font-family="Plus Jakarta Sans" font-weight="500" letter-spacing="0">${x(card.section)}</tspan></text>
+<text font-family="Bricolage Grotesque" font-weight="600" font-size="${size}" fill="${C.ink1}">${title}</text>
 ${subtitle ? `<text font-family="Plus Jakarta Sans" font-weight="500" font-size="26" fill="${C.ink2}">${subtitle}</text>` : ''}
 ${body ? `<text font-family="Plus Jakarta Sans" font-weight="500" font-size="22" fill="${C.ink3}">${body}</text>` : ''}
 ${price}
