@@ -89,7 +89,7 @@ export const NEWS_LABEL = tr('Co nowego', 'What’s new');
 // „Wyniki”: statyczna strona rozliczenia dziennika prognoz (wyniki/, en/results/)
 export const RESULTS_LABEL = tr('Wyniki', 'Results');
 
-const TIMEFRAMES = [
+export const TIMEFRAMES = [
   { value: 60, label: '1m' },
   { value: 300, label: '5m' },
   { value: 900, label: '15m' },
@@ -272,7 +272,7 @@ const Item: React.FC<{ label: string; value: string; title?: string; className?:
 const ViewFallback = () => <EmptyState title={tr('Ładowanie widoku…', 'Loading view…')} />;
 
 // Bez globalnego przełącznika interwału: widoki z własnymi interwałami (wykresy faz dnia, Lekcje) i bez wykresów (Agenci AI)
-const OWN_INTERVALS: ViewId[] = ['before', 'charts', 'after', 'lessons', 'agents', 'markets'];
+export const OWN_INTERVALS: ViewId[] = ['before', 'charts', 'after', 'lessons', 'agents', 'markets'];
 
 /** Zmienna CSS z wysokością przypiętego nagłówka aplikacji (px); widoki używają jej w klasie `top-[var(--hq-header-h,0px)]`. */
 export const HEADER_H_VAR = '--hq-header-h';

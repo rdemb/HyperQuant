@@ -35,8 +35,15 @@ describe('granice nowego wyglądu (src/nowy)', () => {
     expect(zle.map((p) => relative('.', p))).toEqual([]);
   });
 
-  it('teksty nowego wyglądu bez słowa „sygnał” / „signal” (zasada publikacji)', () => {
-    const zle = nowe.filter((p) => /sygna[łl]|signal/i.test(readFileSync(p, 'utf8')));
+  it('teksty nowego wyglądu bez słowa „sygnał” / „signal” (zasada publikacji; tylko teksty, nie identyfikatory)', () => {
+    const teksty = (src: string) => [
+      ...[...src.matchAll(/(['"`])((?:\\.|(?!\1)[^\\])*)\1/g)].map((m) => m[2]),
+      ...[...src.matchAll(/>([^<>{}]+)</g)].map((m) => m[1]),
+    ];
+    const zle = nowe.filter((p) => teksty(readFileSync(p, 'utf8')).some((t) => /sygna[łl]|signal/i.test(t)));
     expect(zle.map((p) => relative('.', p))).toEqual([]);
+    // Kontrola samego sprawdzenia: identyfikator AbortSignal nie jest tekstem, napis „signal” jest
+    expect(teksty('const c = new AbortController(); fetch(u, { signal: c.signal });').some((t) => /signal/i.test(t))).toBe(false);
+    expect(teksty("tr('Bez sygnału', 'No signal')").some((t) => /sygna[łl]|signal/i.test(t))).toBe(true);
   });
 });

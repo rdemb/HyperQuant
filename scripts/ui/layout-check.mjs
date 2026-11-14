@@ -267,7 +267,8 @@ const NOWY_PROBE = `(() => {
   const row = head?.firstElementChild;
   const cena = head?.querySelector('button[aria-expanded]');
   const cr = cena?.getBoundingClientRect();
-  const tytul = [...document.querySelectorAll('h1, h2, h3, .font-display')].find(vis);
+  const marka = document.querySelector('[data-marka]');
+  const wykres = [...document.querySelectorAll('[data-view-root] .font-mono')].find(vis);
   return {
     ui: document.documentElement.dataset.ui ?? null,
     nawigacje: [...document.querySelectorAll('[data-szyna], [data-app-nav]')].filter(vis).length,
@@ -287,7 +288,9 @@ const NOWY_PROBE = `(() => {
       }
       return out;
     })(),
-    font: tytul ? getComputedStyle(tytul).fontFamily.split(',')[0].replace(/["']/g, '').trim() : null,
+    font: marka ? getComputedStyle(marka).fontFamily.split(',')[0].replace(/["']/g, '').trim() : null,
+    // Wykresy i widoki bez zmian: font mono w widoku taki sam jak w obecnej powłoce
+    fontWidoku: wykres ? getComputedStyle(wykres).fontFamily.split(',')[0].replace(/["']/g, '').trim() : null,
     panel: window.__hq?.paneShare?.()?.share ?? null,
   };
 })()`;
@@ -1031,8 +1034,8 @@ async function main() {
       x.cena === true &&
       x.cenaOdkryta === true &&
       x.nakladanie?.length === 0 &&
-      !!x.font &&
-      x.font !== 'Outfit' &&
+      x.font === 'Bricolage Grotesque Variable' &&
+      x.fontWidoku === 'IBM Plex Mono' &&
       x.paleta === true &&
       x.nan?.length === 0 &&
       x.errors.length === 0 &&
@@ -1095,7 +1098,7 @@ async function main() {
       const x = r.nowy[key];
       if (!x) return '—';
       const errs = [...x.errors, ...x.consoleErrors].map((e) => e.split('\n')[0]);
-      return `${key}: data-ui ${x.ui}, nawigacje ${x.nawigacje} (${x.szyna ? 'szyna' : 'dolny pasek'}), w bok strona ${x.overflowX} px / nagłówek ${x.naglowekX} px, cena ${x.cena ? 'w całości' : 'UCIĘTA'}${x.cenaOdkryta ? '' : ' i ZASŁONIĘTA'}, nakładanie ${x.nakladanie?.length ? x.nakladanie.join(' | ') : 'brak'}, font nagłówków ${x.font}, paleta ⌘K ${x.paleta ? 'tak' : 'NIE'}, panel ceny ${x.panel != null ? `${(x.panel * 100).toFixed(1)}%` : '—'}, błędy ${errs.length}${errs.length ? ` (${errs.join(' | ')})` : ''}, NaN ${x.nan?.length ?? '—'} — ${ok(nowyOk(key))}`;
+      return `${key}: data-ui ${x.ui}, nawigacje ${x.nawigacje} (${x.szyna ? 'szyna' : 'dolny pasek'}), w bok strona ${x.overflowX} px / nagłówek ${x.naglowekX} px, cena ${x.cena ? 'w całości' : 'UCIĘTA'}${x.cenaOdkryta ? '' : ' i ZASŁONIĘTA'}, nakładanie ${x.nakladanie?.length ? x.nakladanie.join(' | ') : 'brak'}, font marki ${x.font}, font mono widoku ${x.fontWidoku}, paleta ⌘K ${x.paleta ? 'tak' : 'NIE'}, panel ceny ${x.panel != null ? `${(x.panel * 100).toFixed(1)}%` : '—'}, błędy ${errs.length}${errs.length ? ` (${errs.join(' | ')})` : ''}, NaN ${x.nan?.length ?? '—'} — ${ok(nowyOk(key))}`;
     };
     lines.push(`Nowy wygląd (?ui=nowy): ${NOWY_VIEWPORTS.map(([key]) => one(key)).join('; ')}`);
   }

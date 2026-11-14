@@ -7,7 +7,7 @@ import { subscribeHash } from '../state/route';
 import type { ViewId } from '../state/types';
 import { bareName } from '../utils/marketsTable';
 import { Lang, lang, setLang, tr } from '../i18n';
-import { Badge, VIEW_TRANSITION } from '../ui';
+import { Badge, Segmented, VIEW_TRANSITION } from '../ui';
 import {
   AGENTS,
   BLOG_LABEL,
@@ -16,11 +16,13 @@ import {
   MARKETS,
   MORE,
   NEWS_LABEL,
+  OWN_INTERVALS,
   PHASES,
   PriceButton,
   RESULTS_LABEL,
   STATUS_TITLE,
   STATUS_TONE,
+  TIMEFRAMES,
   ViewLink,
   ViewOutlet,
   inReplay,
@@ -71,10 +73,10 @@ const Pigulka: React.FC<{ id: string }> = ({ id }) => (
 
 /** Szyna boczna (komputer): marka, dzień tradera, rynki i wiedza, strony statyczne, stan danych. */
 const Szyna: React.FC<{ go: (v: ViewId) => void }> = ({ go }) => {
-  const { view, feed } = useDesk();
+  const { view } = useDesk();
   const grupa = (tytul: string, items: NavItem[]) => (
     <div>
-      <p className="px-3 mb-1.5 font-mono text-[10px] font-semibold tracking-wider uppercase text-hq-ink-3">{tytul}</p>
+      <p className="px-3 mb-1.5 font-hq-mono text-[10px] font-semibold tracking-wider uppercase text-hq-ink-3">{tytul}</p>
       <ul className="space-y-0.5">
         {items.map((n) => (
           <li key={n.id}>
@@ -95,8 +97,8 @@ const Szyna: React.FC<{ go: (v: ViewId) => void }> = ({ go }) => {
       <ViewLink id="charts" go={go} className="flex items-center gap-2.5 px-2">
         <Znak />
         <span>
-          <span className="block font-display font-bold text-sm leading-none tracking-tight text-hq-ink-1">HyperQuant</span>
-          <span className="block font-mono text-[10px] tracking-wider text-hq-ink-3 mt-1">BTC · HYPERLIQUID</span>
+          <span data-marka className="block font-hq-display font-bold text-sm leading-none tracking-tight text-hq-ink-1">HyperQuant</span>
+          <span className="block font-hq-mono text-[10px] tracking-wider text-hq-ink-3 mt-1">BTC · HYPERLIQUID</span>
         </span>
       </ViewLink>
       <nav aria-label={tr('Główna', 'Main')} className="flex flex-col gap-6">
@@ -114,12 +116,7 @@ const Szyna: React.FC<{ go: (v: ViewId) => void }> = ({ go }) => {
         </ul>
       </nav>
       <div className="mt-auto rounded-lg border border-hq-line bg-hq-obsidian/60 p-3 space-y-1.5 text-[11px]">
-        <div className="flex items-center justify-between gap-2">
-          <span className="font-mono font-semibold text-hq-ink-1">Hyperliquid</span>
-          <Badge tone={STATUS_TONE[feed.dataStatus]} title={STATUS_TITLE[feed.dataStatus]}>
-            {feed.dataStatus}
-          </Badge>
-        </div>
+        <span className="block font-hq-mono font-semibold text-hq-ink-1">Hyperliquid</span>
         <p className="leading-snug text-hq-ink-3">{tr('Opis rynku z danych giełdy, bez ocen kierunku ceny.', 'Market description from exchange data, no price direction calls.')}</p>
       </div>
     </aside>
@@ -142,7 +139,7 @@ const WyborRynku: React.FC<{ className?: string }> = ({ className = 'inline-flex
           if (e.target.value) window.location.hash = `#charts?m=${encodeURIComponent(e.target.value)}`;
         }}
         aria-label={tr('Otwórz wykres rynku', 'Open market chart')}
-        className="bg-transparent font-mono text-hq-ink-1 outline-none cursor-pointer max-w-[7.5rem]"
+        className="bg-transparent font-hq-mono text-hq-ink-1 outline-none cursor-pointer max-w-[7.5rem]"
       >
         <option value="">{tr('rynek…', 'market…')}</option>
         {markets.map((m) => (
@@ -168,7 +165,7 @@ const Liczby: React.FC = () => {
       ].map(([l, v]) => (
         <span key={l} className="flex items-baseline gap-1.5">
           <span className="text-hq-ink-3">{l}</span>
-          <span className="font-mono tabular-nums text-hq-ink-1">{v}</span>
+          <span className="font-hq-mono tabular-nums text-hq-ink-1">{v}</span>
         </span>
       ))}
     </div>
@@ -189,7 +186,7 @@ const Przycisk: React.FC<{ label: string; onClick: () => void; children: React.R
 
 /** Przyciski języka (PL/EN; zmiana przeładowuje stronę, jak w starej powłoce). */
 const Jezyk: React.FC<{ className?: string }> = ({ className = 'inline-flex' }) => (
-  <div role="group" aria-label={tr('Język', 'Language')} className={`rounded-lg border border-hq-line bg-hq-surface p-0.5 text-[11px] font-mono ${className}`}>
+  <div role="group" aria-label={tr('Język', 'Language')} className={`rounded-lg border border-hq-line bg-hq-surface p-0.5 text-[11px] font-hq-mono ${className}`}>
     {LANGS.map((l) => (
       <button
         key={l.value}
@@ -262,9 +259,12 @@ export default function NowaPowloka() {
       if (a.typ === 'widok') go(a.id);
       else if (a.typ === 'rynek') window.location.hash = `#charts?m=${encodeURIComponent(a.coin)}`;
       else if (a.typ === 'link') window.location.href = a.href;
-      else setLang(a.lang);
+      else if (a.typ === 'jezyk') setLang(a.lang);
+      else if (a.co === 'strumien') feed.setIsStreaming(!feed.isStreaming);
+      else if (a.co === 'synchronizuj') feed.syncNow();
+      else setAudioEnabled(!audioEnabled);
     },
-    [go]
+    [go, feed, audioEnabled, setAudioEnabled]
   );
 
   const MENU = 'w-full min-h-11 flex items-center gap-2.5 px-3 rounded-lg text-sm text-hq-ink-1 hover:bg-hq-elevated';
@@ -278,7 +278,7 @@ export default function NowaPowloka() {
             {/* Telefon i tablet: znak marki (szyna od 1024 px ma pełną markę) */}
             <ViewLink id="charts" go={go} className="lg:hidden shrink-0">
               <Znak />
-              <span className="sr-only">HyperQuant</span>
+              <span data-marka className="sr-only font-hq-display">HyperQuant</span>
             </ViewLink>
             {!replay && (
               <div className="min-w-0 flex items-center gap-4">
@@ -296,7 +296,7 @@ export default function NowaPowloka() {
               >
                 <Command className="w-3.5 h-3.5 text-hq-cyan" aria-hidden="true" />
                 <span className="hidden md:inline">{tr('Szukaj', 'Jump')}</span>
-                <kbd className="hidden md:inline font-mono text-[10px] px-1 rounded bg-hq-elevated text-hq-ink-2">⌘K</kbd>
+                <kbd className="hidden md:inline font-hq-mono text-[10px] px-1 rounded bg-hq-elevated text-hq-ink-2">⌘K</kbd>
               </button>
               <Badge tone={STATUS_TONE[feed.dataStatus]} title={STATUS_TITLE[feed.dataStatus]} testId="data-status">
                 {feed.dataStatus}
@@ -307,6 +307,21 @@ export default function NowaPowloka() {
                 className="hidden sm:inline-flex"
               >
                 {feed.isStreaming ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+              </Przycisk>
+              {!OWN_INTERVALS.includes(view) && (
+                <div className="hidden lg:block">
+                  <Segmented<number> ariaLabel={tr('Interwał', 'Timeframe')} size="xs" value={feed.timeframeSec} onChange={feed.setTimeframeSec} options={TIMEFRAMES} />
+                </div>
+              )}
+              <Przycisk label={tr('Synchronizuj teraz', 'Sync now')} onClick={feed.syncNow} className="hidden lg:inline-flex">
+                <RefreshCw className="w-4 h-4" />
+              </Przycisk>
+              <Przycisk
+                label={audioEnabled ? tr('Wycisz dźwięk taśmy', 'Mute tape sound') : tr('Włącz dźwięk taśmy', 'Unmute tape sound')}
+                onClick={() => setAudioEnabled(!audioEnabled)}
+                className="hidden lg:inline-flex"
+              >
+                {audioEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
               </Przycisk>
               <Jezyk className="hidden lg:inline-flex" />
               <div className="hidden lg:contents">
@@ -429,7 +444,18 @@ export default function NowaPowloka() {
         </div>
       </nav>
 
-      <PaletaPolecen open={paleta} onClose={() => setPaleta(false)} onAkcja={wykonaj} widoki={[...DZIEN, ...WIEDZA]} zewnetrzne={ZEWNETRZNE} />
+      <PaletaPolecen
+        open={paleta}
+        onClose={() => setPaleta(false)}
+        onAkcja={wykonaj}
+        widoki={[...DZIEN, ...WIEDZA]}
+        zewnetrzne={ZEWNETRZNE}
+        przelaczniki={[
+          { co: 'strumien', etykieta: feed.isStreaming ? tr('Wstrzymaj strumień', 'Pause stream') : tr('Wznów strumień', 'Resume stream') },
+          { co: 'synchronizuj', etykieta: tr('Synchronizuj teraz', 'Sync now') },
+          { co: 'dzwiek', etykieta: audioEnabled ? tr('Wycisz dźwięk taśmy', 'Mute tape sound') : tr('Włącz dźwięk taśmy', 'Unmute tape sound') },
+        ]}
+      />
     </div>
   );
 }

@@ -49,7 +49,7 @@ jobs:
 
       # Stara powłoka bez kodu nowego wyglądu, rejestracja service workera w pliku wejściowym (manifest Vite)
       - name: Granice pakietu
-        run: node scripts/build/granice-pakietu.mjs
+        run: node scripts/ui/granice-pakietu.mjs
 
   # Testy akceptacyjne interfejsu (npm run ui:check): Chrome bez okna na zbudowanej stronie, bez sieci — API Hyperliquid
   # z danych stałych (scripts/ui/fixtures.mjs), zegar strony stoi w nagranej dobie 24.10.2026, więc wynik nie zależy od
