@@ -4,6 +4,13 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Nowy wygląd: kontrola pustego stanu wszystkich widoków (2026-11-14)
+<!-- co-nowego: ukryj -->
+
+#### Dodane
+- **`ui:check`, przebieg „Pusty stan”**: każdy widok z rejestru nowego wyglądu (`src/nowy/widoki.ts`) otwierany bez API giełdy, danych skanera, strumienia (gniazdo bez danych) i danych z tej samej strony (przechodzą tylko pliki aplikacji). W tekście widoku i atrybutach z liczbami (`aria-valuenow`, `aria-valuetext`, `aria-label`, `title`, `value`) nie może być żadnej cyfry poza elementami oznaczonymi `data-etykieta` (etykieta z liczbą, np. „Obrót 24 h”, zegar, numer kroku) ani NaN; żaden element poza etykietą nie może mieć wymiaru w procentach > 0 (wartość narysowana paskiem); długie etykiety z cyframi trafiają do raportu (`scripts/ui/pustyStan.mjs` z testami). Rejestr czytany z kontrolą: liczba `import()` równa liczbie kluczy.
+- **Granice pakietu**: plik wejściowy nie może zawierać kodu nowej powłoki (znacznik `data-nowa-powloka`), także gdy moduł trafiłby do wejścia bez osobnego wpisu w manifeście.
+
 ### Nowy wygląd za przełącznikiem: powłoka (2026-11-14)
 <!-- co-nowego: ukryj -->
 

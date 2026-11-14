@@ -17,6 +17,7 @@ import path from 'node:path';
 import { launch, sleep } from './cdp.mjs';
 import { INIT, PROBE, fixtureInit } from './probe.mjs';
 import { DATA_BASE_URL, FIXED_NOW, createFixtures, registry } from './fixtures.mjs';
+import { MARTWE_GNIAZDO, PLIKI_APLIKACJI, POMIAR_PUSTEGO, cyfryPozaEtykietami, noweWidoki } from './pustyStan.mjs';
 import { compareBaseline, margin, metricsOf } from './baseline.mjs';
 
 const args = process.argv.slice(2);
@@ -53,6 +54,8 @@ let serveRegistry = false;
  */
 /** Plik strony blokowany w przebiegu „przeładowanie po wdrożeniu” (stary plik leniwego modułu po podmianie strony). */
 let blokuj = null;
+/** Przebieg „pusty stan”: API giełdy i dane skanera niedostępne (widok bez danych). */
+let bezDanych = false;
 
 function fixtureIntercept(fx) {
   const origin = new URL(BASE).origin;
@@ -61,6 +64,7 @@ function fixtureIntercept(fx) {
     if (/^(data|blob):/.test(req.url)) return 'continue';
     const u = new URL(req.url);
     if (u.origin === origin && blokuj && u.pathname.endsWith(blokuj)) return 'fail';
+    if (bezDanych && (u.origin !== origin || !PLIKI_APLIKACJI.test(u.pathname))) return 'fail';
     if (u.origin === origin) return u.pathname.includes('/data/feeds/') ? { status: 404, body: '', type: 'text/plain' } : 'continue';
     // Dane skanera: tylko rejestr rynków i tylko w przebiegu rynków (wcześniej strona ma 4 rynki domyślne, jak bez pliku)
     if (u.origin === data.origin) return serveRegistry && u.pathname === `${data.pathname}/markets.json` ? { body: JSON.stringify(registry()) } : 'fail';
@@ -915,6 +919,29 @@ async function main() {
     }
     await page.viewport(1440, 900, false);
 
+    // Pusty stan: każdy widok nowego wyglądu (src/nowy/widoki.ts) bez API giełdy, danych skanera, strumienia i danych
+    // z tej samej strony (lekcje, powtórki) pokazuje „—” z powodem: żadnej cyfry poza elementami [data-etykieta]
+    report.pustyStan = {};
+    {
+      const widoki = noweWidoki(fs.readFileSync(path.resolve('src/nowy/widoki.ts'), 'utf8'));
+      bezDanych = true;
+      // Po atrapie strumienia z danych stałych (fixtureInit): gniazdo bez danych
+      const { identifier: gniazdo } = await page.send('Page.addScriptToEvaluateOnNewDocument', { source: MARTWE_GNIAZDO });
+      for (const id of widoki) {
+        await page.go(`${BASE}robots.txt`, 300);
+        await page.ev(`(() => { localStorage.clear(); const s = ${JSON.stringify({ ...RETURNING, 'hq.ui.v1': 'nowy' })}; for (const k in s) localStorage.setItem(k, s[k]); return true; })()`);
+        await page.go(`${BASE}#${id}`, 500);
+        await sleep(6000);
+        const pom = (await page.ev(POMIAR_PUSTEGO)) ?? { tekst: '', paski: [], dlugieEtykiety: [] };
+        report.pustyStan[id] = { dlugosc: pom.tekst.trim().length, liczby: cyfryPozaEtykietami(pom.tekst), paski: pom.paski, dlugieEtykiety: pom.dlugieEtykiety };
+        await shot(page, `1440-pusty-${id}`);
+      }
+      bezDanych = false;
+      await page.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: gniazdo });
+      page.errors.splice(0);
+      page.consoleErrors.splice(0);
+    }
+
     // Przeładowanie po wdrożeniu: plik leniwego widoku (Lekcje) niedostępny jak po podmianie strony. Oczekiwane dokładnie
     // jedno przeładowanie (vite:preloadError), potem ekran błędu bez pętli.
     {
@@ -1045,6 +1072,7 @@ async function main() {
     );
   };
   r.summary.nowy = NOWY_VIEWPORTS.every(([key]) => nowyOk(key));
+  r.summary.pustyStan = Object.values(r.pustyStan ?? {}).every((x) => x.dlugosc > 0 && x.liczby.length === 0 && x.paski.length === 0);
   const prz = r.przeladowanie;
   r.summary.przeladowanie = !!prz?.plik && prz.loads === 1 && prz.marker === true && prz.alert === true && prz.loadsLater === 1;
   const lines = [
@@ -1103,6 +1131,14 @@ async function main() {
       return `${key}: data-ui ${x.ui}, nawigacje ${x.nawigacje} (${x.szyna ? 'szyna' : 'dolny pasek'}), w bok strona ${x.overflowX} px / nagłówek ${x.naglowekX} px, cena ${x.cena ? 'w całości' : 'UCIĘTA'}${x.cenaOdkryta ? '' : ' i ZASŁONIĘTA'}, nakładanie ${x.nakladanie?.length ? x.nakladanie.join(' | ') : 'brak'}, font marki ${x.font}, font mono widoku ${x.fontWidoku}, paleta ⌘K ${x.paleta ? 'tak' : 'NIE'}, panel ceny ${x.panel != null ? `${(x.panel * 100).toFixed(1)}%` : '—'}, błędy ${errs.length}${errs.length ? ` (${errs.join(' | ')})` : ''}, NaN ${x.nan?.length ?? '—'} — ${ok(nowyOk(key))}`;
     };
     lines.push(`Nowy wygląd (?ui=nowy): ${NOWY_VIEWPORTS.map(([key]) => one(key)).join('; ')}`);
+  }
+  if (r.pustyStan) {
+    const ids = Object.keys(r.pustyStan);
+    lines.push(`Pusty stan (nowy wygląd, bez API i danych skanera): ${ids.length === 0 ? 'brak widoków w src/nowy/widoki.ts' : ids.map((id) => {
+      const x = r.pustyStan[id];
+      const stan = x.liczby.length ? `cyfry poza etykietami: ${x.liczby.join(' | ')}` : x.paski.length ? `paski z wartością: ${x.paski.join(' | ')}` : x.dlugosc > 0 ? 'bez cyfr i pasków poza [data-etykieta]' : 'PUSTY';
+      return `#${id} ${stan}${x.dlugieEtykiety.length ? `; długie etykiety z cyframi (do przeglądu): ${x.dlugieEtykiety.join(' | ')}` : ''}`;
+    }).join('; ')} — ${ok(r.summary.pustyStan)}`);
   }
   if (r.przeladowanie) {
     const x = r.przeladowanie;
