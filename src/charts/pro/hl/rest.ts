@@ -41,6 +41,11 @@ export function fetchMetaAndCtxs(dex: string): Promise<unknown> {
   return postInfo(dex === '' ? { type: 'metaAndAssetCtxs' } : { type: 'metaAndAssetCtxs', dex });
 }
 
+/** Surowa odpowiedź `perpDexs` (giełda główna i giełdy HIP-3); błąd → null. */
+export function fetchPerpDexs(): Promise<unknown> {
+  return postInfo({ type: 'perpDexs' });
+}
+
 export async function fetchBook(coin: string, nSigFigs?: number): Promise<BookSnapshot | null> {
   const body: Record<string, unknown> = { type: 'l2Book', coin };
   if (nSigFigs !== undefined) body.nSigFigs = nSigFigs;

@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
-import { marketGroups } from '../charts/pro/chart/marketMenu';
-import { fetchMetaAndCtxs } from '../charts/pro/hl/rest';
+import { fetchMetaAndCtxs, fetchPerpDexs } from '../charts/pro/hl/rest';
 import { fmtHms } from '../charts/pro/core/time';
 import { noScannerWhy } from '../utils/marketCaps';
 import {
@@ -8,14 +7,19 @@ import {
   HL_WEIGHT_LIMIT_PER_MIN,
   MARKETS_REFRESH_MS,
   META_CTXS_WEIGHT,
-  type MarketGroupModel,
+  type MarketFilter,
+  type MarketRowModel,
   type SortKey,
   WeightMeter,
-  marketTableModel,
+  allMarkets,
+  marketListModel,
   parseDexCtxs,
+  parseDexUniverse,
+  parsePerpDexs,
   registryDexes,
 } from '../utils/marketsTable';
 import { NYSE_CALENDAR, wallStreetAt, wallStreetCell } from '../utils/wallStreet';
+import { MARKET_CLASSES, type MarketClass } from '../utils/marketRegistry';
 import { useMarkets } from './markets';
 
 /**
@@ -28,6 +32,8 @@ import { useMarkets } from './markets';
 export interface PollerDeps {
   /** Transport: surowa odpowiedź `metaAndAssetCtxs` giełdy albo null (błąd) */
   fetchDex: (dex: string) => Promise<unknown>;
+  /** Transport: surowa odpowiedź `perpDexs` (lista giełd HIP-3); bez niej poller pyta tylko giełdy z listy `run` */
+  fetchDexList?: () => Promise<unknown>;
   now: () => number;
   visible: () => boolean;
   /** Subskrypcja zmiany widoczności karty; zwraca odpięcie */
@@ -43,6 +49,10 @@ export interface PollerSnapshot {
 export class MarketsPoller {
   readonly meter = new WeightMeter();
   private dexes: string[] = [];
+  /** Giełdy z listy `run` (rejestr) i giełdy z `perpDexs` (null = jeszcze nie odczytane) */
+  private wanted: string[] = [];
+  private found: string[] | null = null;
+  private triedDiscover = false;
   private state: Record<string, DexState> = {};
   private requests = 0;
   /** Początek ostatniej rundy (ms) */
@@ -58,8 +68,10 @@ export class MarketsPoller {
 
   /** Uruchamia odświeżanie z listą giełd albo (już działające) zmienia listę. */
   run(dexes: readonly string[]): void {
-    const added = dexes.filter((d) => !this.dexes.includes(d));
-    this.dexes = [...dexes];
+    this.wanted = [...dexes];
+    const next = this.union();
+    const added = next.filter((d) => !this.dexes.includes(d));
+    this.dexes = next;
     for (const d of Object.keys(this.state)) if (!this.dexes.includes(d)) delete this.state[d];
     if (!this.running) {
       this.running = true;
@@ -69,6 +81,28 @@ export class MarketsPoller {
     }
     // Nowa giełda w rejestrze: jedno zapytanie od razu (po pierwszej rundzie; przed nią wejdzie do rundy)
     if (added.length > 0 && this.lastRound > Number.NEGATIVE_INFINITY && !this.inFlight && this.deps.visible()) void this.fetch(added);
+  }
+
+  /** Giełdy rundy: z listy `run`, potem z `perpDexs`, bez powtórzeń. */
+  private union(): string[] {
+    return [...new Set([...this.wanted, ...(this.found ?? [])])];
+  }
+
+  /** Jedno zapytanie `perpDexs` przed pierwszą rundą (waga jak inne zapytania info: 20). */
+  private async discover(): Promise<void> {
+    this.triedDiscover = true;
+    if (!this.deps.fetchDexList) return;
+    this.meter.add(this.deps.now(), META_CTXS_WEIGHT);
+    this.requests++;
+    try {
+      const list = parsePerpDexs(await this.deps.fetchDexList());
+      if (list) {
+        this.found = list;
+        this.dexes = this.union();
+      }
+    } catch {
+      // Bez listy giełd: tabela z giełd rejestru
+    }
   }
 
   stop(): void {
@@ -106,6 +140,11 @@ export class MarketsPoller {
       return;
     }
     this.lastRound = this.deps.now();
+    if (!this.triedDiscover) {
+      this.inFlight = true;
+      await this.discover();
+      this.inFlight = false;
+    }
     await this.fetch(this.dexes);
     this.schedule();
   }
@@ -117,18 +156,19 @@ export class MarketsPoller {
         this.meter.add(this.deps.now(), META_CTXS_WEIGHT);
         this.requests++;
         try {
-          return { dex, ctxs: parseDexCtxs(await this.deps.fetchDex(dex), dex) };
+          const raw = await this.deps.fetchDex(dex);
+          return { dex, ctxs: parseDexCtxs(raw, dex), universe: parseDexUniverse(raw, dex) };
         } catch {
-          return { dex, ctxs: null };
+          return { dex, ctxs: null, universe: null };
         }
       })
     );
     this.inFlight = false;
     const t = this.deps.now();
-    for (const { dex, ctxs } of results) {
+    for (const { dex, ctxs, universe } of results) {
       if (!this.dexes.includes(dex)) continue;
       const prev = this.state[dex] ?? { at: null, ctxs: null, failedAt: null };
-      this.state[dex] = ctxs ? { at: t, ctxs, failedAt: prev.failedAt } : { ...prev, failedAt: t };
+      this.state[dex] = ctxs ? { at: t, ctxs, failedAt: prev.failedAt, universe } : { ...prev, failedAt: t };
     }
     this.snap = { dexes: { ...this.state }, requests: this.requests };
     this.listeners.forEach((fn) => fn());
@@ -137,6 +177,7 @@ export class MarketsPoller {
 
 const browserDeps = (): PollerDeps => ({
   fetchDex: fetchMetaAndCtxs,
+  fetchDexList: fetchPerpDexs,
   now: () => Date.now(),
   visible: () => typeof document === 'undefined' || document.visibilityState !== 'hidden',
   onVisibility: (fn) => {
@@ -149,8 +190,16 @@ const browserDeps = (): PollerDeps => ({
 const CLOCK_MS = 15_000;
 
 export interface MarketsPage {
-  /** Tabela gotowa do pokazania: grupy i wiersze z tekstami */
-  groups: MarketGroupModel[];
+  /** Wiersze po filtrze i sortowaniu, gotowe teksty */
+  rows: MarketRowModel[];
+  /** Wszystkie rynki (rejestr i odczyty giełd) przed filtrem */
+  total: number;
+  /** Giełdy z odczytem albo z rejestru: identyfikator (`""` = główna) i nazwa */
+  dexes: { id: string; label: string }[];
+  filter: MarketFilter;
+  setFilter: (f: MarketFilter) => void;
+  /** Klasy rynku (kolejność filtrów) */
+  classes: readonly MarketClass[];
   sort: SortKey;
   setSort: (s: SortKey) => void;
   /** Waga zapytań tej strony z ostatniej minuty i limit Hyperliquid na adres IP */
@@ -159,6 +208,8 @@ export interface MarketsPage {
   refreshSec: number;
   /** Liczba rynków w rejestrze (do opisu strony) */
   marketCount: number;
+  /** Pierwsza runda odczytów jeszcze trwa */
+  loading: boolean;
   /** Chwila, według której liczona jest świeżość (ms) */
   now: number;
   /** Kalendarz NYSE etykiety Wall Street: źródło, dzień odczytu i lata w pliku (null = brak pliku) */
@@ -187,17 +238,27 @@ export function useMarketsPage(): MarketsPage {
   // Zegar widoku także po każdej odpowiedzi (świeżość liczona od chwili odczytu)
   useEffect(() => setNow(Date.now()), [snap]);
   const [sort, setSort] = useState<SortKey>('oi');
-  const groups = useMemo(() => {
+  const [filter, setFilter] = useState<MarketFilter>({ q: '', dex: null, cls: null });
+  const all = useMemo(() => allMarkets(markets, snap.dexes), [markets, snap]);
+  const rows = useMemo(() => {
     const ws = wallStreetAt(now);
-    return marketTableModel(markets, snap.dexes, now, sort, {
-      groupsOf: (list) => marketGroups(list, ''),
+    const registry = new Set(markets.map((m) => m.coin));
+    return marketListModel(all, snap.dexes, now, sort, filter, {
       fmtTime: fmtHms,
       scannerWhy: (coin) => noScannerWhy(coin, markets),
       wallStreet: (m) => wallStreetCell(m, ws),
+      inRegistry: (coin) => registry.has(coin),
     });
-  }, [markets, snap, now, sort]);
+  }, [all, markets, snap, now, sort, filter]);
+  const dexes = useMemo(() => [...new Set(all.map((m) => m.dex))].map((id) => ({ id, label: id === '' ? 'Hyperliquid' : id })), [all]);
   return {
-    groups,
+    rows,
+    total: all.length,
+    dexes,
+    filter,
+    setFilter,
+    classes: MARKET_CLASSES,
+    loading: Object.keys(snap.dexes).length === 0,
     sort,
     setSort,
     weight: poller.meter.lastMinute(now),
