@@ -90,7 +90,7 @@ self.addEventListener('fetch', (event) => {
   const { request } = event;
   if (request.method !== 'GET') return;
   const url = new URL(request.url);
-  // Cudze originy (HL API, CEX, Google Fonts…) — bez respondWith, przeglądarka obsługuje normalnie
+  // Cudze originy (HL API, CEX…) — bez respondWith, przeglądarka obsługuje normalnie
   if (url.origin !== self.location.origin) return;
 
   const rel = url.pathname.startsWith(SCOPE_PATH) ? url.pathname.slice(SCOPE_PATH.length) : url.pathname;
@@ -100,7 +100,9 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(networkFirstShell(request));
     return;
   }
-  if (rel.startsWith('assets/')) {
+  // Pliki z hashem w nazwie i fonty u nas (public/fonts, stałe nazwy; cache jest per wersja SW, nowe wdrożenie go czyści):
+  // z cache, także offline
+  if (rel.startsWith('assets/') || rel.startsWith('fonts/')) {
     event.respondWith(cacheFirst(request));
     return;
   }

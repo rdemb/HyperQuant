@@ -104,3 +104,31 @@ describe('nawigacja do powłoki aplikacji', () => {
     expect(await navigate({ type: 'opaqueredirect', ok: false, headers: { get: () => null } })).toEqual({ res: shell, puts: [] });
   });
 });
+
+describe('fonty u nas (fonts/): z cache, także offline', () => {
+  /** Odpowiedź workera na plik fontu przy podanej zawartości cache i odpowiedzi sieci. */
+  async function font(path: string, cached: unknown, net: () => Promise<unknown>) {
+    const puts: string[] = [];
+    const cache = { match: async () => cached, put: (k: unknown) => void puts.push(String((k as { url?: string })?.url ?? k)) };
+    const w = loadWorker([], { caches: { open: async () => cache }, fetch: net });
+    let res: unknown = 'bez przechwycenia';
+    const request = { method: 'GET', url: `https://x.test/HyperQuant/${path}`, mode: 'cors' };
+    w.on.fetch({ request, respondWith: (p: unknown) => (res = p) });
+    return { res: await res, puts };
+  }
+
+  it('plik w cache: bez sieci (offline nie zostaje font zastępczy)', async () => {
+    const hit = { cached: true };
+    const offline = async () => {
+      throw new TypeError('offline');
+    };
+    for (const f of ['fonts/fonts.css', 'fonts/outfit-latin-500-normal.woff2']) expect(await font(f, hit, offline), f).toEqual({ res: hit, puts: [] });
+  });
+
+  it('pierwsze pobranie: z sieci i zapis do cache', async () => {
+    const net = { type: 'basic', ok: true, clone: () => net };
+    const { res, puts } = await font('fonts/fonts.css', undefined, async () => net);
+    expect(res).toBe(net);
+    expect(puts).toHaveLength(1);
+  });
+});

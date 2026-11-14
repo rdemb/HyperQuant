@@ -481,7 +481,7 @@ describe('strony serwisu: Wykresy, Lekcje, atlas, 404', () => {
   });
 
   it('linki względne prowadzą do istniejących stron, plików albo widoków aplikacji', () => {
-    const files = new Set(['', 'blog/', 'blog/feed.xml', 'blog/blog.css', 'favicon.svg', 'icons/apple-touch-icon.png', ...byPath.keys(), ...pages.filter((p) => p.card).map((p) => `${p.path}og.png`)]);
+    const files = new Set(['', 'blog/', 'blog/feed.xml', 'blog/blog.css', 'fonts/fonts.css', 'favicon.svg', 'icons/apple-touch-icon.png', ...byPath.keys(), ...pages.filter((p) => p.card).map((p) => `${p.path}og.png`)]);
     for (const k of ['charts', 'lessons']) for (const l of ['pl', 'en']) files.add(`site/${k}-${l}.jpg`);
     for (const [path_, p] of byPath) {
       if (path_ === '404.html') continue;
@@ -717,7 +717,7 @@ describe('blog: treść z zewnątrz (linki, obrazy, front matter, CSP)', () => {
 
   it('CSP w nagłówku każdej strony z szablonu; strona wpisu bez skryptu w treści dokumentu', () => {
     expect(CSP).toBe(
-      "default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; style-src-attr 'unsafe-inline'; font-src https://fonts.gstatic.com; img-src 'self' data:; base-uri 'none'; form-action 'none'"
+      "default-src 'self'; script-src 'self'; style-src 'self'; style-src-attr 'unsafe-inline'; font-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'"
     );
     const html = postPage(SITE, validatePost(ID, BASE, BODY_ARTICLE).post, {});
     expect(html).toContain(`<meta charset="utf-8">\n<meta http-equiv="Content-Security-Policy" content="${CSP}">`);
