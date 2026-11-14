@@ -3,7 +3,6 @@ import { tr } from '../../i18n';
 import { Badge } from '../../ui';
 import type { MarketRowModel } from '../../utils/marketsTable';
 import type { MarketClass } from '../../utils/marketRegistry';
-import { WallStreetLabel } from './WallStreetLabel';
 
 /**
  * Lista rynków (setki wierszy) rysowana oknem: w dokumencie są tylko wiersze w pobliżu ekranu (przewijanie strony),
@@ -20,7 +19,6 @@ export const CLASS_LABEL: Record<MarketClass, string> = {
 };
 
 const ROW_H = { table: 56, card: 76 } as const;
-const WALL_STREET = 'Wall Street';
 const OVERSCAN = 8;
 
 /** Zakres widocznych wierszy listy o stałej wysokości wiersza przy przewijaniu strony (okno). */
@@ -84,14 +82,13 @@ const Chart: React.FC<{ row: MarketRowModel }> = ({ row }) =>
     </span>
   );
 
-const GRID = 'grid grid-cols-[minmax(150px,1.6fr)_minmax(96px,1fr)_minmax(84px,0.9fr)_minmax(84px,0.9fr)_minmax(92px,1fr)_72px] xl:grid-cols-[minmax(170px,1.6fr)_minmax(100px,1fr)_minmax(88px,0.9fr)_minmax(88px,0.9fr)_minmax(110px,1fr)_minmax(110px,0.9fr)_72px] items-center gap-x-3 px-4';
+const GRID = 'grid grid-cols-[minmax(150px,1.6fr)_minmax(96px,1fr)_minmax(84px,0.9fr)_minmax(84px,0.9fr)_minmax(92px,1fr)_72px] items-center gap-x-3 px-4';
 const NUM = 'text-right font-mono tabular-nums text-ink-1';
 
 const TableRow: React.FC<{ row: MarketRowModel; index: number }> = ({ row, index }) => (
   <div role="row" aria-rowindex={index + 2} data-market-row={row.coin} className={`${GRID} absolute inset-x-0 border-t border-line hover:bg-surface-2/50`} style={{ top: index * ROW_H.table, height: ROW_H.table }}>
     <div role="rowheader" className="min-w-0">
       <Name row={row} />
-      <span className="xl:hidden block text-[10.5px] text-ink-3">{row.wallStreet.why === null && row.cls !== 'crypto' ? <WallStreetLabel cell={row.wallStreet} /> : null}</span>
     </div>
     <div role="cell" className={NUM}>
       <span className={row.why === null ? undefined : 'text-ink-3'}>{row.price}</span>
@@ -102,9 +99,6 @@ const TableRow: React.FC<{ row: MarketRowModel; index: number }> = ({ row, index
     <div role="cell" className={NUM}>
       {row.fundingHour}
       {row.fundingYear !== null && <span className="block font-sans text-[10.5px] text-ink-3">{tr(`${row.fundingYear} rocznie`, `${row.fundingYear} per year`)}</span>}
-    </div>
-    <div role="cell" className="hidden xl:block text-xs text-ink-2">
-      <WallStreetLabel cell={row.wallStreet} />
     </div>
     <div role="cell" className="text-right">
       <Chart row={row} />
@@ -132,12 +126,6 @@ const CardRow: React.FC<{ row: MarketRowModel; index: number }> = ({ row, index 
           <span className="font-sans text-ink-3">F </span>
           {row.fundingHour}
         </span>
-        {(row.cls === 'equity' || row.cls === 'index') && (
-          <span role="cell" className="truncate">
-            <span className="text-ink-3">WS </span>
-            <WallStreetLabel cell={row.wallStreet} />
-          </span>
-        )}
       </div>
       <Live row={row} />
     </div>
@@ -150,7 +138,7 @@ export const MarketList: React.FC<{ rows: MarketRowModel[]; cards: boolean }> = 
   const [start, end] = useWindowRange(rows.length, rowH, ref);
   const Row = cards ? CardRow : TableRow;
   return (
-    <div role="table" aria-rowcount={rows.length + 1} aria-label={tr('Rynki Hyperliquid', 'Hyperliquid markets')}>
+    <div role="table" aria-rowcount={rows.length + 1} aria-label={tr('Rynki: BTC i złoto', 'Markets: BTC and gold')}>
       {!cards && (
         <div role="row" aria-rowindex={1} className={`${GRID} py-2 text-[11px] font-medium uppercase tracking-[0.06em] text-ink-3`}>
           <span role="columnheader">{tr('Rynek', 'Market')}</span>
@@ -165,9 +153,6 @@ export const MarketList: React.FC<{ rows: MarketRowModel[]; cards: boolean }> = 
           </span>
           <span role="columnheader" className="text-right">
             {tr('Funding 1 h', 'Funding 1h')}
-          </span>
-          <span role="columnheader" className="hidden xl:block">
-            {WALL_STREET}
           </span>
           <span role="columnheader" className="text-right">
             {tr('Wykres', 'Chart')}

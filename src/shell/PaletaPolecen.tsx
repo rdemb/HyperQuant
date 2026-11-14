@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { CornerDownLeft, Search } from 'lucide-react';
 import { useMarkets } from '../state/markets';
 import { bareName } from '../utils/marketsTable';
+import { appMarkets } from '../utils/marketRegistry';
 import { lang, tr } from '../i18n';
 import type { NavItem } from './AppShell';
 import { filtruj, type Akcja, type Polecenie } from './polecenia';
@@ -19,7 +20,7 @@ export const PaletaPolecen: React.FC<{
   zewnetrzne: { href: string; label: string }[];
   przelaczniki: { co: 'strumien' | 'synchronizuj' | 'dzwiek'; etykieta: string }[];
 }> = ({ open, onClose, onAkcja, widoki, zewnetrzne, przelaczniki }) => {
-  const { markets } = useMarkets();
+  const markets = appMarkets(useMarkets().markets);
   const [q, setQ] = useState('');
   const [aktywny, setAktywny] = useState(0);
   const listaId = useId();

@@ -4,6 +4,14 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Rynki: BTC i złoto (2026-11-14)
+<!-- co-nowego: grupa=rynki | pl=Desk skupiony na BTC: na stronie Rynki i w wyborze rynku są BTC i złoto (xyz:GOLD) | en=A desk focused on BTC: the Markets page and the market picker show BTC and gold (xyz:GOLD) -->
+
+#### Zmienione
+- **Rynki do wyboru: BTC i złoto** (`APP_MARKETS`, `appMarkets` w `utils/marketRegistry`): strona Rynki, wybór rynku wykresu (komputer i telefon), przełączanie klawiszem M i paleta ⌘K. Złoto to `xyz:GOLD` (giełda HIP-3, najpłynniejsze złoto na Hyperliquid); gdy nie ma go w rejestrze, dopisane z parametrami domyślnymi (`withAppMarkets`), żeby jego wykres działał. Rejestr zostaje ogólny (progi, skaner, zdolności rynków).
+- **Strona Rynki** bez listy wszystkich giełd (`perpDexs`), wyszukiwarki, filtrów i kolumny Wall Street (przy BTC i złocie zawsze „—”); odczyt tylko giełd tych rynków. Usunięte: `parsePerpDexs`, `parseDexUniverse`, `allMarkets`, `filterMarkets`, `fetchPerpDexs`, `WallStreetLabel`.
+- `ui:check`: dane stałe z `xyz:GOLD`; Rynki — 2 wiersze LIVE i wiersz złota; skrót M przechodzi na złoto i z powrotem.
+
 ### Nowa ikona aplikacji, cała tarcza na Starcie (2026-11-14)
 <!-- co-nowego: grupa=blog | pl=Nowa ikona HyperQuant: pierścień doby z sesjami i „H” ze świec; tarcza na Starcie mieści się w całości | en=A new HyperQuant icon: a day ring with the sessions and an "H" made of candles; the Start dial now fits in full -->
 

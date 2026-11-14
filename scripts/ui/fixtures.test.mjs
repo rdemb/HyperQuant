@@ -102,7 +102,7 @@ describe('dane stałe pomiaru układu (bez sieci, stały zegar)', () => {
 
   it('rynek HIP-3 z odpowiedzi swojej giełdy (dex: "xyz"), arkusz i strumień; główna giełda bez rynków HIP-3', () => {
     const raw = fx.respond({ type: 'metaAndAssetCtxs', dex: 'xyz' });
-    expect(raw[0].universe).toEqual([{ name: 'xyz:NVDA', szDecimals: 3, maxLeverage: 10 }]);
+    expect(raw[0].universe).toEqual([{ name: 'xyz:NVDA', szDecimals: 3, maxLeverage: 10 }, { name: 'xyz:GOLD', szDecimals: 4, maxLeverage: 25 }]);
     expect(pickAssetCtx(raw, 'xyz:NVDA')?.markPx).toBe(180);
     expect(fx.respond({ type: 'metaAndAssetCtxs', dex: 'abc' })).toEqual([{ universe: [] }, []]);
     const main = fx.respond({ type: 'metaAndAssetCtxs' })[0].universe;
@@ -119,7 +119,7 @@ describe('dane stałe pomiaru układu (bez sieci, stały zegar)', () => {
     const reg = registry();
     expect(isMarketRegistry(reg)).toBe(true);
     const list = marketsOrDefault(reg);
-    expect(list.map((m) => m.coin)).toEqual(['BTC', 'ETH', 'HYPE', 'SOL', 'xyz:NVDA']);
+    expect(list.map((m) => m.coin)).toEqual(['BTC', 'ETH', 'HYPE', 'SOL', 'xyz:NVDA', 'xyz:GOLD']);
     expect(list.find((m) => m.coin === 'xyz:NVDA')).toMatchObject({ dex: 'xyz', szDecimals: 3, scanner: 'none', class: 'equity' });
     expect(list.find((m) => m.coin === 'HYPE')?.szDecimals).toBe(2);
   });
