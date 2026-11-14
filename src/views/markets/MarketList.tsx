@@ -22,6 +22,8 @@ export const CLASS_LABEL: Record<MarketClass, string> = {
 
 /** Pełna nazwa instrumentu (karty); inne rynki — nazwa z rejestru. */
 const FULL: Record<string, string> = { BTC: 'Bitcoin', 'xyz:GOLD': tr('Złoto', 'Gold') };
+/** Symbol kontraktu w karcie (BTC jak w nagłówku aplikacji: BTC-PERP); inne rynki — nazwa z giełdy. */
+const TICKER: Record<string, string> = { BTC: 'BTC-PERP' };
 
 const Stat: React.FC<{ label: string; value: string; sub?: string | null }> = ({ label, value, sub }) => (
   <div className="min-w-0">
@@ -39,7 +41,7 @@ const MarketCard: React.FC<{ row: MarketRowModel }> = ({ row }) => (
           {FULL[row.coin] ?? row.name}
         </h3>
         <p className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-ink-3">
-          <span className="font-mono">{row.coin === 'BTC' ? 'BTC-PERP' : row.coin}</span>
+          <span className="font-mono">{TICKER[row.coin] ?? row.coin}</span>
           <span className="rounded border border-line px-1 leading-4" title={row.exchangeTitle}>
             {row.exchange}
           </span>
