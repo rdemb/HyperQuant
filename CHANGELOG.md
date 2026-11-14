@@ -4,6 +4,19 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Jedna nawigacja i pasek dnia (2026-11-14)
+<!-- co-nowego: grupa=blog | pl=Nowa nawigacja: szyna z boku na komputerze, pięć pozycji na dole telefonu i pasek dnia z sesjami Azji, Londynu i Nowego Jorku | en=New navigation: a side rail on desktop, a five-item tab bar on phones and a day strip with the Asia, London and New York sessions -->
+
+#### Zmienione
+- **Powłoka aplikacji** (`src/shell/AppShell.tsx`): jedna nawigacja zamiast górnego paska z menu. Od 1024 px szyna po lewej (1024–1439 px same ikony z nazwą w podpowiedzi, od 1440 px z nazwami): dzień tradera ze znakiem „teraz” przy fazie bieżącej sesji, rynki i wiedza, publikacje. Telefon i tablet: dolny pasek z pięcioma pozycjami (Przed sesją, W sesji, Po sesji, Rynki, Więcej). Nawigacja zapisana jako dane (`NAV_*`), wspólne dla szyny, dolnego paska i palety ⌘K.
+- **Nagłówek** 360–1920 px: cena i zmiana, liczby rynku (funding, OI, basis, PDH, PDL) w tylu, ile się mieści w całości, wyszukiwanie ⌘K, stan danych, ustawienia (język, motyw, strumień, synchronizacja, dźwięk taśmy). Przy 1280 px liczby rynku nie chowają się już pod przyciskami.
+- **Układ dwóch i czterech wykresów** (Przed sesją, Po sesji): dwie kolumny od 1280 px, węższy ekran jeden pod drugim (paski narzędzi nie wychodzą poza ekran przy 1024 px).
+- **Paleta poleceń ⌘K** dla wszystkich (wcześniej tylko `?ui=nowy`), ładowana przy pierwszym otwarciu. Przełącznik `?ui=` i druga powłoka usunięte.
+
+#### Dodane
+- **Pasek dnia** (`src/shell/PasekDnia.tsx`) pod nagłówkiem w każdym widoku: doba 00–24 czasu lokalnego z sesjami Azji, Londynu i Nowego Jorku (te same granice co wykres), „teraz” znakiem lume, bieżąca sesja z czasem trwania i odliczanie do następnej. Funkcje doby we wspólnym `src/shell/dzien.ts` (Start, tarcza, szyna i pasek).
+- **`ui:check`, przebieg „Powłoka”**: 1920, 1440, 1280, 1024, 768, 390 i 360 px, jedna nawigacja, pasek dnia, bez przewijania w bok, cena odkryta, kontrolki i liczby rynku nagłówka bez nakładania. `granice-pakietu`: pierwszy pakiet bez widoków i palety ⌘K.
+
 ### Obrazki podglądu bloga w nowych fontach (2026-11-14)
 <!-- co-nowego: ukryj -->
 
