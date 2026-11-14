@@ -4,6 +4,18 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Nowy wygląd za przełącznikiem: powłoka (2026-11-14)
+<!-- co-nowego: ukryj -->
+
+#### Dodane
+- **Przełącznik wyglądu** (`src/shell/interfejs.ts`): `?ui=nowy` włącza nowy wygląd i zapamiętuje wybór (`hq.ui.v1`), `?ui=stary` wraca; parametr znika z paska adresu (skopiowany link nie przełącza wyglądu innym). Domyślnie obecny wygląd. Atrybut `data-ui` na `<html>` przed pierwszym renderem.
+- **Nowa powłoka** (`src/nowy/`, osobny pakiet ładowany tylko przy `?ui=nowy`, 5,8 kB gzip): jedna nawigacja (szyna boczna od 1024 px, dolny pasek na telefonie z menu „Więcej”), nagłówek z ceną BTC-PERP i liczbami rynku (te same dane co obecna powłoka), wybór wykresu rynku z rejestru (`#charts?m=…`), paleta poleceń ⌘K / Ctrl+K (widoki, wykres rynku, strony, język; wyszukiwanie bez polskich znaków), stopka z zastrzeżeniem i źródłami. Tylko ciemny motyw. Widoki i wykresy bez zmian (wspólne `ViewOutlet`).
+- **Fonty nowego wyglądu u nas**: Bricolage Grotesque (font zmienny, oś opsz) i JetBrains Mono (OFL) w `public/fonts`, używane tylko przy `data-ui="nowy"`.
+- **Kontrole**: test źródeł (poza `App.tsx` nic nie importuje `src/nowy`, w `src/nowy` brak własnych zapytań do sieci i słowa „sygnał”), kontrola zbudowanego pakietu w CI (`scripts/build/granice-pakietu.mjs`, manifest Vite: wejście bez `src/nowy`, nowa powłoka osobno, rejestracja service workera w pliku wejściowym), `ui:check`: nowa powłoka w 1440, 1024 i 390 oraz jedno przeładowanie po zablokowanym pliku leniwego widoku (bez pętli).
+
+#### Zmienione
+- `AppShell`: pasek cen, przycisk ceny, linki widoków i lista widoków (`ViewOutlet`) udostępnione nowej powłoce bez zmiany wyglądu obecnej.
+
 ### Fonty z naszego serwera, bez Google Fonts (2026-11-14)
 <!-- co-nowego: grupa=blog | pl=Fonty aplikacji, bloga i stron wyników z naszego serwera: strona nie pobiera już fontów z Google | en=Fonts of the app, blog and results pages served by us: the site no longer loads fonts from Google -->
 

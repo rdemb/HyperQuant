@@ -21,6 +21,9 @@ export const FONTS = [
   { pkg: 'outfit', family: 'Outfit', faces: ['500', '600', '700'] },
   { pkg: 'plus-jakarta-sans', family: 'Plus Jakarta Sans', faces: ['400', '500', '600', '700', '400-italic'] },
   { pkg: 'ibm-plex-mono', family: 'IBM Plex Mono', faces: ['400', '500', '600', '400-italic'] },
+  // Nowy wygląd: nagłówki Bricolage Grotesque (font zmienny z osią opsz, wagi 200–800) i liczby JetBrains Mono
+  { pkg: 'bricolage-grotesque', scope: '@fontsource-variable', family: 'Bricolage Grotesque Variable', faces: ['opsz'], variable: true },
+  { pkg: 'jetbrains-mono', family: 'JetBrains Mono', faces: ['400', '500', '600', '700'] },
 ];
 
 /** Bloki @font-face z pliku odmiany @fontsource (np. 500.css), tylko wybrane podzbiory, z adresem woff2 obok fonts.css. */
@@ -30,14 +33,14 @@ export function faceBlocks(css, pkg) {
   for (const [, name, body] of css.matchAll(re)) {
     const subset = SUBSETS.find((s) => name.startsWith(`${pkg}-${s}-`));
     if (!subset || (subset === 'latin' && name.startsWith(`${pkg}-latin-ext-`))) continue;
-    const woff2 = body.match(/url\(\.\/files\/([\w-]+\.woff2)\)/)?.[1];
+    const [, woff2, format] = body.match(/url\(\.\/files\/([\w-]+\.woff2)\) format\('(woff2(?:-variations)?)'\)/) ?? [];
     if (!woff2) throw new Error(`Brak woff2 w ${name}`);
     const keep = body
       .split(';')
       .map((l) => l.trim())
       .filter((l) => l && !l.startsWith('src:'))
       .map((l) => `  ${l};`);
-    out.push({ name, woff2, css: `/* ${name} */\n@font-face {\n${keep.join('\n')}\n  src: url(./${woff2}) format('woff2');\n}` });
+    out.push({ name, woff2, css: `/* ${name} */\n@font-face {\n${keep.join('\n')}\n  src: url(./${woff2}) format('${format}');\n}` });
   }
   return out;
 }
@@ -50,7 +53,7 @@ export function build() {
     '/* Plik generowany: node scripts/fonts/kopiuj-fonty.mjs (nie edytować ręcznie). */',
   ];
   for (const f of FONTS) {
-    const dir = join(ROOT, 'node_modules', '@fontsource', f.pkg);
+    const dir = join(ROOT, 'node_modules', f.scope ?? '@fontsource', f.pkg);
     for (const face of f.faces) {
       for (const b of faceBlocks(readFileSync(join(dir, `${face}.css`), 'utf8'), f.pkg)) {
         css.push(b.css);
