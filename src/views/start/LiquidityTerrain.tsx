@@ -182,8 +182,10 @@ const LiquidityTerrain: React.FC<{ map: LiqMap; price: number }> = ({ map, price
     const d = field.rows[ROWS - 1][i] ?? 0;
     return { x: geo.x(px, 1), y: geo.base(1) - geo.amp(1) * Math.pow(d / field.gmax, 0.55) };
   };
+  // Podziałka ceny: najmniejszy krok, przy którym etykiety (ok. 6 znaków) mają między sobą co najmniej 72 px
   const ticks: number[] = [];
-  const tickStep = 2000;
+  const usdPx = Math.abs(geo.x(field.lo + 1000, 1) - geo.x(field.lo, 1)) / 1000;
+  const tickStep = [500, 1000, 2000, 5000, 10000, 20000].find((st) => st * usdPx >= 72) ?? 50000;
   for (let p = Math.ceil(field.lo / tickStep) * tickStep; p <= field.hi; p += tickStep) ticks.push(p);
 
   return (
@@ -193,10 +195,12 @@ const LiquidityTerrain: React.FC<{ map: LiqMap; price: number }> = ({ map, price
         <span className="font-mono tabular-nums absolute top-1 rounded-sm bg-page/85 px-2 py-1 text-[15px]" style={{ left: geo.x(price, 0) + 10 }}>
           {fmtPrice(price, 0)} <span className="font-sans text-[11px] text-ink-3">{tr('cena', 'price')}</span>
         </span>
-        {field.labels.map((b) => {
+        {field.labels.map((b, i) => {
           const p = frontPos(b.px);
           const below = b.px < price;
           if (p.x < 40 || p.x > w - 40) return null;
+          // Etykieta skupiska ma ok. 96 px: na wąskim ekranie bliższa wcześniejsza wygrywa, nachodząca znika
+          if (field.labels.slice(0, i).some((o) => Math.abs(frontPos(o.px).x - p.x) < 100 && Math.abs(frontPos(o.px).y - p.y) < 44)) return null;
           return (
             <span key={b.px} className="absolute flex -translate-x-1/2 flex-col items-center rounded-sm bg-page/85 px-2 py-1 text-center" style={{ left: p.x, top: p.y - 48 }}>
               <span className="font-mono tabular-nums text-[13px]">{fmtPrice(b.px, 0)}</span>

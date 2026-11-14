@@ -260,3 +260,35 @@ export function createFixtures(root) {
     },
   };
 }
+
+/**
+ * Mapa likwidacji BTC dla przebiegu „Start” (teren płynności): kubełki co 100 USD wokół ceny z danych stałych, skupiska
+ * longów poniżej i shortów powyżej ceny (kształt syntetyczny, bez danych rynku). Format `LiqMap` z src/utils/liqMap.ts.
+ */
+export function liqMapFixture(now, markPx = 80434) {
+  const step = 100;
+  const bump = (px, c, w, h) => h * Math.exp(-(((px - c) / w) ** 2));
+  const buckets = (from, to, peaks) => {
+    const out = [];
+    for (let px = Math.floor(from / step) * step; px <= to; px += step) {
+      const ntl = peaks.reduce((s, [c, w, h]) => s + bump(px, c, w, h), 0) * (0.85 + 0.3 * hash01(px / step));
+      if (ntl > 2e5) out.push({ px, ntlUsd: Math.round(ntl), n: 3 + Math.round(ntl / 2e6) });
+    }
+    return out;
+  };
+  const longs = buckets(markPx - 4800, markPx - 100, [[markPx - 900, 300, 1.4e7], [markPx - 2600, 500, 2.2e7], [markPx - 4000, 400, 9e6]]);
+  const shorts = buckets(markPx + 100, markPx + 4800, [[markPx + 700, 250, 1.1e7], [markPx + 2100, 450, 1.9e7], [markPx + 3900, 500, 8e6]]);
+  return {
+    v: 1,
+    coin: 'BTC',
+    asOf: now - 60_000,
+    ctxAt: now - 60_000,
+    markPx,
+    stepUsd: step,
+    longs,
+    shorts,
+    coverage: { positions: 4200, addresses: 3100, scannedBtc: 21000, longBtc: 10800, shortBtc: 10200, wrongSide: 0, oiBtc: 30000, share: 0.35 },
+    ageMin: { p50: 9, p90: 26, ntlP50: 7 },
+    method: 'fixture',
+  };
+}
