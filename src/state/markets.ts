@@ -1,6 +1,6 @@
 import { useEffect, useSyncExternalStore } from 'react';
 import { type MarketCaps, marketCaps, noScannerWhy, usdScale } from '../utils/marketCaps';
-import { type ChartMarket, DEFAULT_MARKETS, isMarketRegistry, marketsOrDefault } from '../utils/marketRegistry';
+import { type ChartMarket, DEFAULT_MARKETS, isMarketRegistry, marketsOrDefault, withAppMarkets } from '../utils/marketRegistry';
 import { usePublished } from './usePublished';
 
 /**
@@ -25,7 +25,7 @@ const sameList = (a: readonly ChartMarket[], b: readonly ChartMarket[]) =>
 
 /** Odpowiedź rejestru (null = brak pliku albo nieudane pobranie): lista z pliku albo 4 rynki domyślne. */
 export function publishMarkets(raw: unknown): void {
-  const markets = marketsOrDefault(raw);
+  const markets = withAppMarkets(marketsOrDefault(raw));
   if (state.ready && sameList(state.markets, markets)) return;
   state = { markets: sameList(state.markets, markets) ? state.markets : markets, ready: true };
   listeners.forEach((fn) => fn());

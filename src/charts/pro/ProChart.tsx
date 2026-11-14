@@ -69,6 +69,7 @@ import { capsOf, chartMarkets, marketOf, noScannerWhyOf, useMarkets } from '../.
 import { BLOG_ONLY_WHY, marketCaps } from '../../utils/marketCaps';
 import { MarketPicker, PhoneMarketSelect } from './chart/MarketPicker';
 import { expiredNotice, isListed, nextMarket } from './chart/marketMenu';
+import { appMarkets } from '../../utils/marketRegistry';
 import { discardRecording, startRecording } from './store/recording';
 import { useStoreVersion } from './store/useStoreVersion';
 import { ReplayBar } from './replay/ReplayBar';
@@ -882,7 +883,7 @@ export const ProChart: React.FC<{
     else if (act.kind === 'now') ctrlRef.current?.scrollToNow();
     else if (act.kind === 'view') update({ view: settings.view === 'footprint' ? 'candles' : 'footprint' });
     else if (act.kind === 'tape') update({ showTape: !settings.showTape });
-    else if (act.kind === 'market') setCoin(nextMarket(chartMarkets(), settings.coin));
+    else if (act.kind === 'market') setCoin(nextMarket(appMarkets(chartMarkets()), settings.coin));
     else if (act.kind === 'reset') ctrlRef.current?.resetScales();
     else if (act.kind === 'autoscale') ctrlRef.current?.setAutoScale(!scale.auto);
     else (layoutFs?.toggle ?? toggleFullscreen)();
@@ -924,7 +925,7 @@ export const ProChart: React.FC<{
       {!narrow && (
         <div data-chart-bar className="@container flex flex-wrap min-[900px]:flex-nowrap items-center gap-1.5 px-2 py-1 border-b border-line min-h-11">
           {barLead}
-          <MarketPicker value={settings.coin} markets={markets.markets} onChange={setCoin} />
+          <MarketPicker value={settings.coin} markets={appMarkets(markets.markets)} onChange={setCoin} />
           {/* Ulubione interwały jako przyciski tylko w bardzo szerokim pasku (szerokość karty wykresu, nie okna: dwa wykresy
               obok siebie mają węższe paski) */}
           <div className="hidden @min-[1040px]:inline-flex">
@@ -1012,7 +1013,7 @@ export const ProChart: React.FC<{
             {phoneTabs && (
               <PhoneSelect<string> ariaLabel={tr('Karta układu', 'Layout tab')} value={phoneTabs.value} options={phoneTabs.options} onChange={phoneTabs.onChange} className="max-w-[7.5rem] truncate" />
             )}
-            <PhoneMarketSelect value={settings.coin} markets={markets.markets} onChange={setCoin} />
+            <PhoneMarketSelect value={settings.coin} markets={appMarkets(markets.markets)} onChange={setCoin} />
             <PhoneSelect<string> ariaLabel={tr('Interwał wykresu', 'Chart timeframe')} value={settings.interval} options={INTERVAL_OPTIONS} onChange={(v) => update({ interval: v })} />
             <PhoneSelect<string>
               ariaLabel={tr('Rodzaj wykresu', 'Chart type')}

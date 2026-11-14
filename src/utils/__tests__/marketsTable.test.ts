@@ -136,7 +136,6 @@ describe('wiersze tabeli', () => {
 
 describe('model tabeli (gotowe teksty dla widoku)', () => {
   const main = parseDexCtxs([{ universe: [{ name: 'BTC' }, { name: 'ETH' }] }, [ctx('80000', '31000', '2500000000'), ctx('3900', '500000', '900000000', '-0.0001')]], '')!;
-  const ALL = { q: '', dex: null, cls: null } as const;
   const deps = {
     fmtTime: (ms: number) => `t${ms}`,
     scannerWhy: (coin: string) => `bez skanera ${coin}`,
@@ -144,7 +143,7 @@ describe('model tabeli (gotowe teksty dla widoku)', () => {
   };
 
   it('wiersz z liczbami: cena, obrót, OI, funding godzinowy i roczny, godzina odczytu, link, skaner', () => {
-    const rows = marketListModel([eth, btc, nvda], { '': { at: NOW - 1000, ctxs: main, failedAt: null } }, NOW, 'oi', ALL, deps);
+    const rows = marketListModel([eth, btc, nvda], { '': { at: NOW - 1000, ctxs: main, failedAt: null } }, NOW, 'oi', deps);
     // Malejąco po otwartych pozycjach; rynek bez odczytu swojej giełdy na końcu
     expect(rows.map((r) => r.coin)).toEqual(['BTC', 'ETH', 'xyz:NVDA']);
     expect(rows[0]).toEqual({
@@ -169,7 +168,7 @@ describe('model tabeli (gotowe teksty dla widoku)', () => {
   });
 
   it('wiersz bez danych: same „—”, bez godziny, z powodem', () => {
-    const [, nv] = marketListModel([btc, nvda], { '': { at: NOW - 1000, ctxs: main, failedAt: null } }, NOW, 'oi', ALL, deps);
+    const [, nv] = marketListModel([btc, nvda], { '': { at: NOW - 1000, ctxs: main, failedAt: null } }, NOW, 'oi', deps);
     expect(nv).toMatchObject({
       name: 'NVDA',
       exchange: 'xyz',
