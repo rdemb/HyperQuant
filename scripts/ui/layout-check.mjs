@@ -17,7 +17,7 @@ import path from 'node:path';
 import { launch, sleep } from './cdp.mjs';
 import { INIT, PROBE, fixtureInit } from './probe.mjs';
 import { DATA_BASE_URL, FIXED_NOW, createFixtures, registry } from './fixtures.mjs';
-import { MARTWE_GNIAZDO, PLIKI_APLIKACJI, TEKST_BEZ_ETYKIET, cyfryPozaEtykietami, noweWidoki } from './pustyStan.mjs';
+import { MARTWE_GNIAZDO, PLIKI_APLIKACJI, POMIAR_PUSTEGO, cyfryPozaEtykietami, noweWidoki } from './pustyStan.mjs';
 import { compareBaseline, margin, metricsOf } from './baseline.mjs';
 
 const args = process.argv.slice(2);
@@ -932,8 +932,8 @@ async function main() {
         await page.ev(`(() => { localStorage.clear(); const s = ${JSON.stringify({ ...RETURNING, 'hq.ui.v1': 'nowy' })}; for (const k in s) localStorage.setItem(k, s[k]); return true; })()`);
         await page.go(`${BASE}#${id}`, 500);
         await sleep(6000);
-        const tekst = (await page.ev(TEKST_BEZ_ETYKIET)) ?? '';
-        report.pustyStan[id] = { dlugosc: tekst.trim().length, liczby: cyfryPozaEtykietami(tekst) };
+        const pom = (await page.ev(POMIAR_PUSTEGO)) ?? { tekst: '', paski: [], dlugieEtykiety: [] };
+        report.pustyStan[id] = { dlugosc: pom.tekst.trim().length, liczby: cyfryPozaEtykietami(pom.tekst), paski: pom.paski, dlugieEtykiety: pom.dlugieEtykiety };
         await shot(page, `1440-pusty-${id}`);
       }
       bezDanych = false;
@@ -1072,7 +1072,7 @@ async function main() {
     );
   };
   r.summary.nowy = NOWY_VIEWPORTS.every(([key]) => nowyOk(key));
-  r.summary.pustyStan = Object.values(r.pustyStan ?? {}).every((x) => x.dlugosc > 0 && x.liczby.length === 0);
+  r.summary.pustyStan = Object.values(r.pustyStan ?? {}).every((x) => x.dlugosc > 0 && x.liczby.length === 0 && x.paski.length === 0);
   const prz = r.przeladowanie;
   r.summary.przeladowanie = !!prz?.plik && prz.loads === 1 && prz.marker === true && prz.alert === true && prz.loadsLater === 1;
   const lines = [
@@ -1134,7 +1134,11 @@ async function main() {
   }
   if (r.pustyStan) {
     const ids = Object.keys(r.pustyStan);
-    lines.push(`Pusty stan (nowy wygląd, bez API i danych skanera): ${ids.length === 0 ? 'brak widoków w src/nowy/widoki.ts' : ids.map((id) => `#${id} ${r.pustyStan[id].liczby.length ? `cyfry poza etykietami: ${r.pustyStan[id].liczby.join(' | ')}` : r.pustyStan[id].dlugosc > 0 ? 'bez cyfr poza [data-etykieta]' : 'PUSTY'}`).join('; ')} — ${ok(r.summary.pustyStan)}`);
+    lines.push(`Pusty stan (nowy wygląd, bez API i danych skanera): ${ids.length === 0 ? 'brak widoków w src/nowy/widoki.ts' : ids.map((id) => {
+      const x = r.pustyStan[id];
+      const stan = x.liczby.length ? `cyfry poza etykietami: ${x.liczby.join(' | ')}` : x.paski.length ? `paski z wartością: ${x.paski.join(' | ')}` : x.dlugosc > 0 ? 'bez cyfr i pasków poza [data-etykieta]' : 'PUSTY';
+      return `#${id} ${stan}${x.dlugieEtykiety.length ? `; długie etykiety z cyframi (do przeglądu): ${x.dlugieEtykiety.join(' | ')}` : ''}`;
+    }).join('; ')} — ${ok(r.summary.pustyStan)}`);
   }
   if (r.przeladowanie) {
     const x = r.przeladowanie;
