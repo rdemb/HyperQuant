@@ -1,3 +1,4 @@
+import { SectionHeading } from '../ui';
 import React from 'react';
 import { CexSettings } from './sources/CexSettings';
 import { LineageTable } from './sources/LineageTable';
@@ -12,6 +13,16 @@ import { tr } from '../i18n';
  */
 const SourcesView: React.FC = () => (
   <div className="flex flex-col gap-4">
+    <SectionHeading
+      id="zrodla-tytul"
+      level={1}
+      eyebrow={tr('Rodowód liczb · ustawienia · licencje', 'Number lineage · settings · licences')}
+      title={tr('Źródła', 'Sources')}
+      lead={tr(
+        'Skąd pochodzi każda liczba na stronie i jak jest liczona, ustawienia źródeł giełd i dźwięku oraz atrybucje i licencje danych.',
+        'Where every number on the site comes from and how it is computed, exchange-source and sound settings, plus data attributions and licences.'
+      )}
+    />
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
       <div className="lg:col-span-4 lg:order-2 flex flex-col gap-4 min-w-0">
         <CexSettings />
