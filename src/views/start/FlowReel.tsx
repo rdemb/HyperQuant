@@ -60,7 +60,7 @@ export const FlowReel: React.FC = () => {
   return (
     <figure className="m-0 flex flex-col gap-3">
       <div data-theme="dark" className="overflow-hidden rounded-xl border border-line-strong bg-of-bg text-[#edeef0]">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#13233a] px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#24282e] px-4 py-3">
           <span className="text-[13px] font-semibold text-[#a9aeb6]">
             <span className="display mr-2 text-[15px] font-bold text-[#edeef0]">{t('Kokpit', 'Cockpit')}</span>footprint · {t('heatmapa', 'heatmap')} · {t('bąble', 'bubbles')}
           </span>

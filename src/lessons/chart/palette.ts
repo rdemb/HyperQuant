@@ -5,14 +5,14 @@
 
 export const FIG = {
   // Bid: sprzedaż agresorów (żar), ask: kupno agresorów (lazur)
-  fpBidRamp: ['#1E2A3A', '#4A333B', '#733939', '#9E3B34', '#CA3829'],
-  fpAskRamp: ['#1E2A3A', '#253E5F', '#2A5387', '#2F69B1', '#3280DD'],
-  fpDeltaPosRamp: ['#1E2A3A', '#253E5F', '#2A5387', '#2F69B1', '#3280DD'],
-  fpDeltaNegRamp: ['#1E2A3A', '#4A333B', '#733939', '#9E3B34', '#CA3829'],
-  fpText: '#0b1019',
+  fpBidRamp: ['#22262C', '#4A333B', '#733939', '#9E3B34', '#CA3829'],
+  fpAskRamp: ['#22262C', '#253E5F', '#2A5387', '#2F69B1', '#3280DD'],
+  fpDeltaPosRamp: ['#22262C', '#253E5F', '#2A5387', '#2F69B1', '#3280DD'],
+  fpDeltaNegRamp: ['#22262C', '#4A333B', '#733939', '#9E3B34', '#CA3829'],
+  fpText: '#0f1114',
   fpTextLight: '#eef2f7',
-  profileVa: '#34425a',
-  profileOut: '#1f2b3d',
+  profileVa: '#3a3f48',
+  profileOut: '#24272d',
 };
 
 /** Jasność względna koloru #rrggbb (WCAG). */
