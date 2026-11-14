@@ -9,11 +9,11 @@ describe('kolumna DOM i taśmy: czyste pomocniki', () => {
     expect([scannerScope('SOL'), scannerScope('HYPE'), scannerScope('xyz:NVDA'), scannerScope('btc'), scannerScope('')]).toEqual(['none', 'none', 'none', 'none', 'none']);
   });
 
-  it('kolumna przypięta od 1280 px, szuflada od 640 do 1279 px, na telefonie bez kolumny', () => {
-    expect(DOCK_MIN_W).toBe(1280);
+  it('kolumna przypięta od 1440 px, szuflada od 640 do 1439 px, na telefonie bez kolumny', () => {
+    expect(DOCK_MIN_W).toBe(1440);
     expect(DRAWER_MIN_W).toBe(640);
-    expect([dockMode(1280), dockMode(1920)]).toEqual(['docked', 'docked']);
-    expect([dockMode(1279), dockMode(1024), dockMode(640)]).toEqual(['drawer', 'drawer', 'drawer']);
+    expect([dockMode(1440), dockMode(1920)]).toEqual(['docked', 'docked']);
+    expect([dockMode(1439), dockMode(1280), dockMode(1024), dockMode(640)]).toEqual(['drawer', 'drawer', 'drawer', 'drawer']);
     expect([dockMode(639), dockMode(390), dockMode(0)]).toEqual(['none', 'none', 'none']);
   });
 
@@ -46,7 +46,7 @@ describe('kolumna po zmianie adresu (otwarty już W sesji)', () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  it('#flow przy kolumnie schowanej klawiszem D (≥ 1280 px): po hashchange kolumna widoczna i szuflada, raz', () => {
+  it('#flow przy kolumnie schowanej klawiszem D (≥ 1440 px): po hashchange kolumna widoczna i szuflada, raz', () => {
     store.set(DOCK_KEY, '0');
     followHash(win('#flow'));
     expect(columnAfterHash('session')).toEqual({ dock: true, drawer: true });

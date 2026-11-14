@@ -98,6 +98,25 @@ export const LayoutHeader: React.FC<{
     ro.observe(line);
     return () => ro.disconnect();
   }, [variant, nums]);
+  // W pasku wykresu: liczby mieszczące się w całości; dalsze niewidoczne (miejsce zostaje, więc pomiar się nie zapętla),
+  // ich liczba na przycisku „+N” otwierającym rozwinięcie ze wszystkimi liczbami
+  const fitRef = useRef<HTMLDivElement>(null);
+  const [inlineFit, setInlineFit] = useState(Number.MAX_SAFE_INTEGER);
+  useLayoutEffect(() => {
+    if (variant !== 'inline') return;
+    const box = fitRef.current;
+    if (!box) return;
+    const measure = () => {
+      const right = box.getBoundingClientRect().right + 0.5;
+      const items = [...box.querySelectorAll<HTMLElement>('[data-liczba]')];
+      const n = items.findIndex((b) => b.getBoundingClientRect().right > right);
+      setInlineFit(n < 0 ? items.length : n);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(box);
+    return () => ro.disconnect();
+  }, [variant, nums]);
   // Hawkes liczony w tle (Web Worker) raz na minutę okna; do nowego wyniku zostaje poprzedni tego rynku
   const hk = useRef<{ coin: string; key: string; r: Got<Branching> } | null>(null);
   const busy = useRef(false);
@@ -217,14 +236,15 @@ export const LayoutHeader: React.FC<{
     );
   const numberButtons = (
     <div role="group" aria-label={tr('Liczby układu', 'Layout numbers')} className={`flex items-center shrink-0 ${narrow ? 'gap-x-2' : 'gap-x-3'}`}>
-      {nums.map((n) => (
+      {nums.map((n, i) => (
         <button
           key={n.label}
           type="button"
+          data-liczba=""
           aria-expanded={open}
           onClick={() => setOpen((o) => !o)}
           title={n.hint}
-          className={`shrink-0 rounded-md px-1 -mx-1 hover:bg-surface-2 transition-colors duration-150 ${narrow ? 'h-11 flex flex-col items-start justify-center gap-1' : variant === 'inline' ? 'h-9 flex items-center gap-1.5' : 'flex items-center gap-1.5'}`}
+          className={`shrink-0 rounded-md px-1 -mx-1 hover:bg-surface-2 transition-colors duration-150 ${variant === 'inline' && i >= inlineFit ? 'invisible' : ''} ${narrow ? 'h-11 flex flex-col items-start justify-center gap-1' : variant === 'inline' ? 'h-9 flex items-center gap-1.5' : 'flex items-center gap-1.5'}`}
         >
           {variant === 'inline' ? (
             // W pasku wykresu: pełna nazwa na szerokim pasku, pierwsze słowo na węższym (np. obok kolumny DOM)
@@ -247,10 +267,22 @@ export const LayoutHeader: React.FC<{
 
   if (variant === 'inline')
     return (
-      <div ref={ref} className="relative min-w-0 flex items-center">
-        <div ref={scrollFadeRef} className="hq-fade-x min-w-0 overflow-x-auto [scrollbar-width:none] px-1">
+      <div ref={ref} className="relative min-w-0 flex items-center gap-1">
+        <div ref={fitRef} className="min-w-0 overflow-hidden px-1">
           {numberButtons}
         </div>
+        {inlineFit < nums.length && (
+          <button
+            type="button"
+            aria-expanded={open}
+            onClick={() => setOpen((o) => !o)}
+            aria-label={tr(`Pozostałe liczby układu: ${nums.length - inlineFit}`, `Other layout numbers: ${nums.length - inlineFit}`)}
+            title={nums.slice(inlineFit).map((n) => `${n.label}: ${n.value}`).join(' · ')}
+            className="shrink-0 h-9 px-2 rounded-md border border-line font-mono text-[11px] tabular-nums text-ink-2 hover:text-ink-1 hover:bg-surface-2 transition-colors duration-150"
+          >
+            +{nums.length - inlineFit}
+          </button>
+        )}
         {details('right-0 w-[min(36rem,calc(100vw-32px))]')}
       </div>
     );

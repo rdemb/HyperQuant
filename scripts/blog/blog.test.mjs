@@ -535,7 +535,7 @@ describe('strony serwisu: Wykresy, Lekcje, atlas, 404', () => {
     expect(svg).toContain('<clipPath id="shot">');
     expect(svg).toContain('href="data:image/jpeg;base64,AA"');
     expect(svg).toContain('>bez sygnałów</text>');
-    expect(ogSvg({ section: 'Blog', title: 'T' })).toContain('>prawdopodobieństwa, nie sygnały</text>');
+    expect(ogSvg({ section: 'Blog', title: 'T' })).toContain('>opis rynku, nie porada inwestycyjna</text>');
   });
 
   it('układ bloga bez zmian: polski, Blog podświetlony, RSS w menu', () => {

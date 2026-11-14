@@ -33,8 +33,11 @@ export function noScannerTitle(): string {
 
 /** Szerokość kolumny obok wykresu (px). */
 export const DOCK_W = 400;
-/** Od tej szerokości okna (px) kolumna mieści się obok wykresu. */
-export const DOCK_MIN_W = 1280;
+/**
+ * Od tej szerokości okna (px) kolumna mieści się obok wykresu. Niżej (1024–1439 px obok szyny nawigacji) wykres
+ * zajmuje całą szerokość, a kolumna jest szufladą (klawisz D).
+ */
+export const DOCK_MIN_W = 1440;
 /** Od tej szerokości okna (px) do `DOCK_MIN_W` kolumna jest szufladą nad wykresem; węższy ekran to telefon (pasek Pulse). */
 export const DRAWER_MIN_W = 640;
 
