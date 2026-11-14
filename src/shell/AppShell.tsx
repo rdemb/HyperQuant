@@ -41,17 +41,17 @@ const SourcesView = lazy(() => import('../views/SourcesView'));
 const AgentsView = lazy(() => import('../views/agents/AgentsView'));
 const MarketsView = lazy(() => import('../views/MarketsView'));
 
-type NavItem = { id: ViewId; label: string; icon: React.ReactNode };
+export type NavItem = { id: ViewId; label: string; icon: React.ReactNode };
 
 /** Pasek główny: trzy fazy dnia tradera (obok Blog jako osobne strony, Agenci AI i menu „Więcej”). */
-const PHASES: NavItem[] = [
+export const PHASES: NavItem[] = [
   { id: 'before', label: tr('Przed sesją', 'Pre-session'), icon: <Sunrise className="w-4 h-4" /> },
   { id: 'charts', label: tr('W sesji', 'In session'), icon: <ChartCandlestick className="w-4 h-4" /> },
   { id: 'after', label: tr('Po sesji', 'Post-session'), icon: <Sunset className="w-4 h-4" /> },
 ];
 
 /** Menu „Więcej”: widoki poza tokiem dnia (Lekcje i Źródła także w stopce). */
-const MORE: NavItem[] = [
+export const MORE: NavItem[] = [
   { id: 'lessons', label: tr('Lekcje', 'Lessons'), icon: <GraduationCap className="w-4 h-4" /> },
   { id: 'research', label: tr('Badania', 'Research'), icon: <FlaskConical className="w-4 h-4" /> },
   { id: 'sources', label: tr('Źródła', 'Sources'), icon: <Database className="w-4 h-4" /> },
@@ -61,35 +61,35 @@ const MORE: NavItem[] = [
  * Agenci AI: na desktopie od 1440 px w pasku (po Blogu), węższy ekran i telefon — menu „Więcej” (dolny pasek zostaje:
  * trzy fazy i „Więcej”).
  */
-const AGENTS: NavItem = { id: 'agents', label: tr('Agenci AI', 'AI agents'), icon: <Bot className="w-4 h-4" /> };
+export const AGENTS: NavItem = { id: 'agents', label: tr('Agenci AI', 'AI agents'), icon: <Bot className="w-4 h-4" /> };
 
 /** Rynki (tabela rynków z rejestru): na desktopie w pasku zaraz po fazach dnia, na telefonie w menu „Więcej”. */
-const MARKETS: NavItem = { id: 'markets', label: tr('Rynki', 'Markets'), icon: <Table2 className="w-4 h-4" /> };
+export const MARKETS: NavItem = { id: 'markets', label: tr('Rynki', 'Markets'), icon: <Table2 className="w-4 h-4" /> };
 
 /** Stopka: Lekcje i Źródła (Blog i Agenci AI za nimi). */
 const FOOTER = MORE.filter((n) => n.id !== 'research');
 
-const STATUS_TONE: Record<string, BadgeTone> = { LIVE: 'live', STALE: 'stale', SYNTH: 'stale', PAUSED: 'neutral' };
-const STATUS_TITLE: Record<string, string> = {
+export const STATUS_TONE: Record<string, BadgeTone> = { LIVE: 'live', STALE: 'stale', SYNTH: 'stale', PAUSED: 'neutral' };
+export const STATUS_TITLE: Record<string, string> = {
   LIVE: tr('Realne dane Hyperliquid (REST + WebSocket)', 'Real Hyperliquid data (REST + WebSocket)'),
   STALE: tr('Dane nieświeże: brak synchronizacji > 30 s lub rozłączony WebSocket', 'Stale data: no sync for > 30 s or WebSocket disconnected'),
   SYNTH: tr('Świece zastępcze — czekam na pierwszą synchronizację z API', 'Placeholder candles, waiting for the first API sync'),
   PAUSED: tr('Strumień wstrzymany', 'Stream paused'),
 };
 
-const LANGS: { value: Lang; label: string; title: string }[] = [
+export const LANGS: { value: Lang; label: string; title: string }[] = [
   { value: 'pl', label: 'PL', title: 'Polski' },
   { value: 'en', label: 'EN', title: 'English' },
 ];
 
 // Blog jest tylko po polsku — w wersji angielskiej mówimy o tym w etykiecie
-const BLOG_LABEL = tr('Blog', 'Blog (PL)');
+export const BLOG_LABEL = tr('Blog', 'Blog (PL)');
 // „Co nowego”: statyczna strona historii zmian w obu językach (co-nowego/, en/whats-new/)
-const NEWS_LABEL = tr('Co nowego', 'What’s new');
+export const NEWS_LABEL = tr('Co nowego', 'What’s new');
 // „Wyniki”: statyczna strona rozliczenia dziennika prognoz (wyniki/, en/results/)
-const RESULTS_LABEL = tr('Wyniki', 'Results');
+export const RESULTS_LABEL = tr('Wyniki', 'Results');
 
-const TIMEFRAMES = [
+export const TIMEFRAMES = [
   { value: 60, label: '1m' },
   { value: 300, label: '5m' },
   { value: 900, label: '15m' },
@@ -98,7 +98,7 @@ const TIMEFRAMES = [
 ];
 
 /** Liczby rynku z nagłówka: wartości i ich etykiety (pełne w podpowiedzi ceny, część w samym nagłówku). */
-function useTicker() {
+export function useTicker() {
   const { feed, shaakuni } = useDesk();
   const t = feed.backendTelemetry;
   const first = feed.bars[0]?.open;
@@ -136,7 +136,7 @@ const Change: React.FC<{ pct: number | null; span: string }> = ({ pct, span }) =
  * Cena z rozwinięciem: kliknięcie (dotknięcie) pokazuje wszystkie liczby rynku — także te, które na węższym ekranie nie
  * mieszczą się w nagłówku (basis, PDH, PDL z ich stanem, sesja).
  */
-const PriceButton: React.FC<{ small?: boolean }> = ({ small = false }) => {
+export const PriceButton: React.FC<{ small?: boolean }> = ({ small = false }) => {
   const k = useTicker();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -256,7 +256,7 @@ const TickerStrip: React.FC = () => {
 };
 
 /** Powtórka w W sesji (#charts?replay=history|lessons…) pokazuje przeszłość — wtedy bez paska ceny na żywo (jak parseReplayLink). */
-const inReplay = () => {
+export const inReplay = () => {
   const h = window.location.hash;
   const src = h.startsWith('#charts') ? new URLSearchParams(h.split('?')[1] ?? '').get('replay') : null;
   return src === 'history' || src === 'lessons';
@@ -272,16 +272,16 @@ const Item: React.FC<{ label: string; value: string; title?: string; className?:
 const ViewFallback = () => <EmptyState title={tr('Ładowanie widoku…', 'Loading view…')} />;
 
 // Bez globalnego przełącznika interwału: widoki z własnymi interwałami (wykresy faz dnia, Lekcje) i bez wykresów (Agenci AI)
-const OWN_INTERVALS: ViewId[] = ['before', 'charts', 'after', 'lessons', 'agents', 'markets'];
+export const OWN_INTERVALS: ViewId[] = ['before', 'charts', 'after', 'lessons', 'agents', 'markets'];
 
 /** Zmienna CSS z wysokością przypiętego nagłówka aplikacji (px); widoki używają jej w klasie `top-[var(--hq-header-h,0px)]`. */
-const HEADER_H_VAR = '--hq-header-h';
+export const HEADER_H_VAR = '--hq-header-h';
 
 /**
  * Zamykanie menu „Więcej”: Escape (fokus wraca na przycisk) i kliknięcie poza `ref`; po otwarciu fokus na pierwszej
  * pozycji.
  */
-function useMenuDismiss(
+export function useMenuDismiss(
   open: boolean,
   setOpen: (v: boolean) => void,
   ref: React.RefObject<HTMLElement | null>,
@@ -308,7 +308,7 @@ function useMenuDismiss(
 }
 
 /** Link do widoku aplikacji (#id): zwykłe kliknięcie przełącza widok bez przeładowania, z klawiszem albo środkowe otwiera nową kartę. */
-const ViewLink: React.FC<{ id: ViewId; go: (v: ViewId) => void; current?: boolean; more?: boolean; className: string; children: React.ReactNode }> = ({
+export const ViewLink: React.FC<{ id: ViewId; go: (v: ViewId) => void; current?: boolean; more?: boolean; className: string; children: React.ReactNode }> = ({
   id,
   go,
   current,
@@ -349,6 +349,36 @@ const ActivePill = () => (
   <motion.span layoutId="nav-active" className="absolute inset-0 rounded-lg bg-surface-2 border border-line" transition={{ type: 'spring', stiffness: 260, damping: 26 }} />
 );
 
+/**
+ * Bieżący widok aplikacji (leniwie ładowany) albo stan „łączenie” do pierwszych świec. Wspólny dla obu powłok (stara
+ * i nowy wygląd za przełącznikiem `?ui=`), żeby lista widoków i warunki danych były w jednym miejscu.
+ */
+export const ViewOutlet: React.FC<{ startedAt: number }> = ({ startedAt }) => {
+  const { view, setView, feed } = useDesk();
+  // Karta układu innej fazy w Wykresach (Alt+1…6, nowa karta) przenosi do ekranu tej fazy
+  const onPhase = useCallback((p: PhaseId) => setView(PHASE_VIEW[p]), [setView]);
+  // Badania do pierwszych świec pokazują stan „łączenie” (viewNeeds.ts); pas kontekstu Przed sesją czeka w BeforeView
+  const awaitingData = awaitingBars(view, feed.bars.length);
+  return (
+    <Suspense fallback={<ViewFallback />}>
+      {awaitingData ? (
+        <ConnectingState onRetry={feed.syncNow} startedAt={startedAt} now={feed.nowTick} />
+      ) : (
+        <>
+          {view === 'before' && <BeforeView onPhase={onPhase} />}
+          {view === 'charts' && <SessionView onPhase={onPhase} />}
+          {view === 'after' && <AfterView onPhase={onPhase} />}
+          {view === 'research' && <ResearchView />}
+          {view === 'lessons' && <LessonsView />}
+          {view === 'sources' && <SourcesView />}
+          {view === 'agents' && <AgentsView />}
+          {view === 'markets' && <MarketsView />}
+        </>
+      )}
+    </Suspense>
+  );
+};
+
 /** Powłoka aplikacji: nawigacja (górna na desktopie, dolna na telefonie), status danych, przejścia widoków, stopka. */
 export const AppShell: React.FC = () => {
   const { view, setView, feed, audioEnabled, setAudioEnabled } = useDesk();
@@ -363,12 +393,8 @@ export const AppShell: React.FC = () => {
   const topMoreId = useId();
   const phoneMoreId = useId();
   const transition = reduce ? { initial: { opacity: 0 }, animate: { opacity: 1 }, exit: { opacity: 0 } } : VIEW_TRANSITION;
-  // Badania do pierwszych świec pokazują stan „łączenie” (viewNeeds.ts); pas kontekstu Przed sesją czeka w BeforeView
-  const awaitingData = awaitingBars(view, feed.bars.length);
   const replay = useSyncExternalStore(subscribeHash, inReplay);
   const moreView = MORE.find((n) => n.id === view);
-  // Karta układu innej fazy w Wykresach (Alt+1…6, nowa karta) przenosi do ekranu tej fazy
-  const onPhase = useCallback((p: PhaseId) => setView(PHASE_VIEW[p]), [setView]);
   /** Przejście do widoku z paska albo menu (menu się zamyka). */
   const go = useCallback(
     (v: ViewId) => {
@@ -556,22 +582,7 @@ export const AppShell: React.FC = () => {
       <main className="flex-1 w-full max-w-[1920px] mx-auto px-4 lg:px-6 pt-4 pb-6">
         <AnimatePresence mode="wait" initial={false}>
           <motion.div key={view} data-view-root {...transition}>
-            <Suspense fallback={<ViewFallback />}>
-              {awaitingData ? (
-                <ConnectingState onRetry={feed.syncNow} startedAt={startedAt} now={feed.nowTick} />
-              ) : (
-                <>
-                  {view === 'before' && <BeforeView onPhase={onPhase} />}
-                  {view === 'charts' && <SessionView onPhase={onPhase} />}
-                  {view === 'after' && <AfterView onPhase={onPhase} />}
-                  {view === 'research' && <ResearchView />}
-                  {view === 'lessons' && <LessonsView />}
-                  {view === 'sources' && <SourcesView />}
-                  {view === 'agents' && <AgentsView />}
-                  {view === 'markets' && <MarketsView />}
-                </>
-              )}
-            </Suspense>
+            <ViewOutlet startedAt={startedAt} />
           </motion.div>
         </AnimatePresence>
       </main>
