@@ -53,16 +53,23 @@ function storageOrNull(): Storage | null {
   }
 }
 
+/**
+ * Wejście do aplikacji, w tej kolejności:
+ * 1. pusty adres: widok z pamięci (landingView) przed zapisem pierwszej wizyty — inaczej zapis hq.onboarding.v1 robi
+ *    z pierwszej wizyty stałego użytkownika i zamiast Startu otwiera się W sesji;
+ * 2. zapis pierwszej wizyty, zanim adres #flow (followHash) albo wykresy zapiszą klucze hq.charts.*: dymki W sesji
+ *    pokażą się także po wejściu z innej fazy; stały użytkownik (hq.charts.* sprzed tej wersji) ich nie zobaczy;
+ * 3. widok z adresu.
+ */
+export function enterApp(now = Date.now()): ViewId {
+  const s = storageOrNull();
+  const landing = window.location.hash.replace(/^#/, '') === '' ? landingView(s) : null;
+  if (s) startOnboarding(s, now);
+  return landing ?? readHashView();
+}
+
 function useDeskState() {
-  // Pierwsza wizyta zapisana raz, pierwszym hookiem: zanim adres #flow albo wykresy (Przed sesją, Po sesji) zapiszą klucze
-  // hq.charts.* — dymki W sesji pokażą się także po wejściu z innej fazy; stały użytkownik (hq.charts.* sprzed tej wersji)
-  // ich nie zobaczy
-  useState(() => {
-    const s = storageOrNull();
-    if (s) startOnboarding(s, Date.now());
-    return null;
-  });
-  const [view, setViewState] = useState<ViewId>(readHashView);
+  const [view, setViewState] = useState<ViewId>(() => enterApp());
   const [cexEnabled, setCexEnabledState] = useState<boolean>(() => readBool(CEX_KEY));
   const [audioEnabled, setAudioEnabledState] = useState<boolean>(false);
   const [shaakuniConfig, setShaakuniConfig] = useState<ShaakuniConfig>(DEFAULT_SHAAKUNI);

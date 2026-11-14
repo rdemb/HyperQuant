@@ -4,6 +4,12 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Naprawa: pierwsza wizyta otwiera Start (2026-11-14)
+<!-- co-nowego: ukryj -->
+
+#### Naprawione
+- **Pierwsza wizyta otwierała W sesji zamiast Startu:** zapis pierwszej wizyty (`hq.onboarding.v1`) był przed wyborem widoku, więc `landingView` widział klucz `hq.*` i brał gościa za stałego użytkownika. Wejście w jednej funkcji `enterApp` (`src/state/DeskContext.tsx`): widok pustego adresu z pamięci, potem zapis pierwszej wizyty (nadal przed `#flow`, który zapisuje `hq.charts.dock.v1`), potem widok z adresu. Testy zachowania obu kolejności (`src/state/__tests__/enterApp.test.ts`) zamiast testu tekstu źródła.
+
 ### Nowy wygląd: Start, jasny motyw, znaki pochodzenia liczb, nowe fonty (2026-11-14)
 <!-- co-nowego: grupa=blog | pl=Nowy wygląd strony: ekran Start z zegarem sesji, jasny motyw i znaki pochodzenia każdej liczby | en=New look: a Start screen with the session clock, a light theme and provenance marks on every number -->
 
