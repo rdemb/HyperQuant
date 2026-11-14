@@ -100,7 +100,7 @@ export const LiquidityMicrostructureLab: React.FC<{
 
     // Nagłówki kolumn (ink-3, eyebrow)
     ctx.fillStyle = C.ink3;
-    ctx.font = '600 10px "IBM Plex Mono", monospace';
+    ctx.font = '600 10px "JetBrains Mono", monospace';
     ctx.textBaseline = 'middle';
     ctx.textAlign = 'left';
     ctx.fillText(tr('CENA', 'PRICE'), 6, 12);
@@ -138,7 +138,7 @@ export const LiquidityMicrostructureLab: React.FC<{
 
       // Etykieta ceny (POC wyróżniony wagą, nie kolorem)
       ctx.textAlign = 'left';
-      ctx.font = b.isPOC ? '700 10px "IBM Plex Mono", monospace' : '500 10px "IBM Plex Mono", monospace';
+      ctx.font = b.isPOC ? '700 10px "JetBrains Mono", monospace' : '500 10px "JetBrains Mono", monospace';
       ctx.fillStyle = b.isPOC ? C.ink1 : C.ink2;
       ctx.fillText(fmtPrice(b.price, 0), 6, y);
 
@@ -156,7 +156,7 @@ export const LiquidityMicrostructureLab: React.FC<{
       const isGap = b.isLVN && i > firstTraded && i < lastTraded;
       const tag = b.isPOC ? 'POC' : b.price === quant.vahPrice ? 'VAH' : b.price === quant.valPrice ? 'VAL' : isGap ? 'LVN' : '';
       if (tag) {
-        ctx.font = '600 9px "IBM Plex Mono", monospace';
+        ctx.font = '600 9px "JetBrains Mono", monospace';
         ctx.fillStyle = tag === 'LVN' ? C.ink3 : tag === 'POC' ? C.ink1 : C.ink2;
         ctx.fillText(tag, x0 + totW + 5, y);
       }
@@ -183,7 +183,7 @@ export const LiquidityMicrostructureLab: React.FC<{
         ctx.lineWidth = 2;
         ctx.stroke();
         ctx.fillStyle = C.ink1;
-        ctx.font = '600 10px "IBM Plex Mono", monospace';
+        ctx.font = '600 10px "JetBrains Mono", monospace';
         ctx.textAlign = m.x > width - 70 ? 'right' : 'left';
         ctx.fillText(tr('magnes', 'magnet'), m.x + (m.x > width - 70 ? -8 : 8), m.y);
       }
@@ -205,7 +205,7 @@ export const LiquidityMicrostructureLab: React.FC<{
       ctx.lineTo(width, y);
       ctx.stroke();
       ctx.globalAlpha = 1;
-      ctx.font = '600 9px "IBM Plex Mono", monospace';
+      ctx.font = '600 9px "JetBrains Mono", monospace';
       const tw = ctx.measureText(label).width;
       ctx.fillStyle = C.surface;
       ctx.fillRect(width - tw - 10, y - 7, tw + 8, 14);

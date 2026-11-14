@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DOCK_KEY } from '../../views/flow/flowColumnModel';
-import { LEGACY_VIEW, PHASE_VIEW, VIEWS, followHash, resolveHash, takeFlowAsk } from '../route';
+import { LAST_VIEW_KEY, LEGACY_VIEW, PHASE_VIEW, VIEWS, followHash, landingView, resolveHash, takeFlowAsk } from '../route';
 
 describe('adres strony → widok', () => {
   it('pusty adres: W sesji, bez przepisania', () => {
@@ -33,7 +33,7 @@ describe('adres strony → widok', () => {
   it('#agents: zakładka Agenci AI (piąta pozycja menu głównego, po Blogu), w kolejności paska po fazach dnia', () => {
     expect(resolveHash('#agents')).toEqual({ view: 'agents', rewrite: null });
     expect(resolveHash('#agents?x=1').view).toBe('agents');
-    expect(VIEWS).toEqual(['before', 'charts', 'after', 'markets', 'agents', 'research', 'lessons', 'sources']);
+    expect(VIEWS).toEqual(['before', 'charts', 'after', 'markets', 'agents', 'research', 'lessons', 'sources', 'start']);
   });
 
   it('nieznany adres: W sesji, także nazwy pól obiektu', () => {
@@ -115,5 +115,28 @@ describe('przekierowanie w oknie (start i hashchange)', () => {
     const w = fakeWin('#flow?m=SOL', { throws: true });
     expect(followHash(w.win)).toBe('charts');
     expect(w.calls).toEqual(['{"k":1} /HQ/?utm=x#charts?m=SOL']);
+  });
+});
+
+describe('pusty adres: Start albo ostatni widok', () => {
+  const store = (entries: Record<string, string>) => {
+    const keys = Object.keys(entries);
+    return { getItem: (k: string) => entries[k] ?? null, key: (i: number) => keys[i] ?? null, length: keys.length };
+  };
+
+  it('pierwsza wizyta (bez kluczy hq.* albo tylko z wybranym motywem) otwiera Start', () => {
+    expect(landingView(store({}))).toBe('start');
+    expect(landingView(store({ 'hq.theme': 'light', 'inna.strona': '1' }))).toBe('start');
+    expect(landingView(null)).toBe('start');
+  });
+
+  it('powrót otwiera ostatnio używany widok; nieznana nazwa nie wybiera widoku, ale zdradza wcześniejszą wizytę', () => {
+    expect(landingView(store({ [LAST_VIEW_KEY]: 'markets' }))).toBe('markets');
+    expect(landingView(store({ [LAST_VIEW_KEY]: 'nieznany' }))).toBe('charts');
+  });
+
+  it('stały użytkownik sprzed Startu (dowolny klucz hq.* poza motywem) zostaje przy W sesji', () => {
+    expect(landingView(store({ 'hq.charts.dock.v1': '1' }))).toBe('charts');
+    expect(landingView(store({ 'hq.onboarding.v1': '{}', 'hq.theme': 'dark' }))).toBe('charts');
   });
 });

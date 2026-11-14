@@ -480,7 +480,7 @@ export const LessonChart: React.FC<Props> = ({ slice, layers, cursor, marks = []
   };
 
   return (
-    <div ref={box} className="w-full select-none">
+    <div ref={box} data-theme="dark" className="w-full select-none">
       <div className="h-5 mb-1 font-mono tabular-nums text-[11px] text-ink-3 truncate" aria-live="off">
         {hc ? (
           <>

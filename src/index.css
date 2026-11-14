@@ -2,16 +2,19 @@
 
 /* Tokeny projektu (v2) — opis i zasady w docs/STYLEGUIDE.md */
 @theme {
-  --color-page: #070a11;
-  --color-surface-1: #0b1019;
-  --color-surface-2: #101826;
-  --color-surface-3: #16202f;
-  --color-line: #1b2533;
-  --color-line-strong: #283447;
-  --color-ink-1: #eef2f7;
-  --color-ink-2: #a9b4c4;
-  --color-ink-3: #7a889c;
-  --color-accent: #3fc6dd;
+  /* Motyw ciemny „Chronograf” (grafit) jako domyślny; jasny („papier”) i zasięg ciemny niżej, w [data-theme] */
+  --color-page: #0c0d0f;
+  --color-surface-1: #131518;
+  --color-surface-2: #1a1d21;
+  --color-surface-3: #22262b;
+  --color-line: #24282e;
+  --color-line-strong: #343a42;
+  --color-ink-1: #edeef0;
+  --color-ink-2: #a9aeb6;
+  --color-ink-3: #8c929a;
+  /* Akcent: „lume” (teraz, fokus, wybór); nigdy kupno ani sprzedaż */
+  --color-accent: #cfea5b;
+  --color-lume: #cfea5b;
   --color-buy: #3280dd;
   --color-sell: #ca3829;
   --color-buy-ink: #82bcfc;
@@ -20,7 +23,9 @@
   --color-zone: #9085e9;
   --color-good: #0ca30c;
   --color-warn: #fab219;
-  --color-critical: #d03b3b;
+  --color-critical: #ef6158;
+  /* Symulacja (znak SIM) */
+  --color-sim: #e9b04f;
   --color-series-1: #3987e5;
   --color-series-2: #d95926;
   --color-series-3: #199e70;
@@ -61,33 +66,94 @@
   /* Initial balance sesji (zieleń spoza kolorów stron, VWAP, POC i poziomów) */
   --color-of-ib: #56db8f;
 
-  --font-display: 'Outfit', sans-serif;
+  --font-display: 'Bricolage Grotesque', system-ui, sans-serif;
   --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
-  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
 
-  /* Nowy wygląd (za przełącznikiem ?ui=nowy, src/nowy/): tylko ciemny motyw; wykresy zostają na tokenach „Głębi” */
-  --color-hq-obsidian: #05070c;
-  --color-hq-surface: #0a0f1a;
-  --color-hq-elevated: #101726;
-  --color-hq-line: #1b2436;
-  --color-hq-line-strong: #2a3650;
-  --color-hq-ink-1: #eef2f8;
-  --color-hq-ink-2: #a5b1c2;
-  --color-hq-ink-3: #7d8aa0;
-  --color-hq-cyan: #22d3ee;
-  --color-hq-indigo: #818cf8;
-  --color-hq-amber: #fbbf24;
-  --font-hq-display: 'Bricolage Grotesque Variable', 'Outfit', sans-serif;
-  --font-hq-mono: 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, monospace;
+  /* Powłoka ?ui=nowy (src/nowy/): tylko ciemny motyw, wartości ciemnej palety „Chronograf” (grafit + limonka) */
+  --color-hq-obsidian: #0c0d0f;
+  --color-hq-surface: #131518;
+  --color-hq-elevated: #1a1d21;
+  --color-hq-line: #24282e;
+  --color-hq-line-strong: #343a42;
+  --color-hq-ink-1: #edeef0;
+  --color-hq-ink-2: #a9aeb6;
+  --color-hq-ink-3: #8c929a;
+  /* Nazwy z pierwszej wersji powłoki: „cyan” to akcent (limonka), „indigo” — fiolet stref, „amber” — kolor SIM */
+  --color-hq-cyan: #cfea5b;
+  --color-hq-indigo: #9085e9;
+  --color-hq-amber: #e9b04f;
+  --font-hq-display: 'Bricolage Grotesque', system-ui, sans-serif;
+  --font-hq-mono: 'JetBrains Mono', ui-monospace, monospace;
 
   --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-in-quint: cubic-bezier(0.64, 0, 0.78, 0);
   --ease-in-out-quint: cubic-bezier(0.83, 0, 0.17, 1);
 }
 
+/*
+ * Motywy. Tokeny semantyczne (tło, powierzchnie, linie, tusz, akcent, stany) zmieniają się z [data-theme] na <html>.
+ * Paleta wykresu (of-*), serie, kohorty i kot są wspólne: obszar wykresu ma zawsze ciemne tło, a jego kontener
+ * nosi data-theme="dark", więc legenda i panele przepływu nad wykresem zostają ciemne także w motywie jasnym.
+ * Każda para tekst/tło spełnia WCAG AA (≥ 4,5:1).
+ */
+/* Powłoka ?ui=nowy jest tylko ciemna: atrybut data-ui (main.tsx) wygrywa z zapisanym jasnym motywem */
+[data-theme='dark'],
+html[data-ui='nowy'] {
+  color-scheme: dark;
+  --color-page: #0c0d0f;
+  --color-surface-1: #131518;
+  --color-surface-2: #1a1d21;
+  --color-surface-3: #22262b;
+  --color-line: #24282e;
+  --color-line-strong: #343a42;
+  --color-ink-1: #edeef0;
+  --color-ink-2: #a9aeb6;
+  --color-ink-3: #8c929a;
+  --color-accent: #cfea5b;
+  --color-lume: #cfea5b;
+  --color-buy-ink: #82bcfc;
+  --color-sell-ink: #f68771;
+  --color-level: #e0a045;
+  --color-zone: #9085e9;
+  --color-good: #0ca30c;
+  --color-warn: #fab219;
+  --color-critical: #ef6158;
+  --color-sim: #e9b04f;
+}
+
+[data-theme='light'] {
+  color-scheme: light;
+  --color-page: #f1efe9;
+  --color-surface-1: #faf9f5;
+  --color-surface-2: #ffffff;
+  --color-surface-3: #ece9e2;
+  --color-line: #dad6cc;
+  --color-line-strong: #beb9ad;
+  --color-ink-1: #111315;
+  --color-ink-2: #474c54;
+  --color-ink-3: #60666f;
+  /* Na papierze akcent jest ciemną oliwką (tekst, obrys, fokus); limonka zostaje dla znaku „teraz” */
+  --color-accent: #3a4500;
+  --color-lume: #c8e64a;
+  --color-buy-ink: #1d5fb0;
+  --color-sell-ink: #a93225;
+  --color-level: #8a5a00;
+  --color-zone: #5b4fc9;
+  --color-good: #1d6b1d;
+  --color-warn: #8a5a00;
+  --color-critical: #b42318;
+  --color-sim: #7a4f00;
+}
+
 @layer base {
   :root {
     color-scheme: dark;
+  }
+
+  /* Zasięg motywu (np. karta wykresu w motywie jasnym) dziedziczy też kolor tekstu swojego motywu */
+  [data-theme] {
+    color: var(--color-ink-1);
   }
 
   body {
@@ -99,6 +165,7 @@
 
   h1, h2, h3, .font-display {
     font-family: var(--font-display);
+    letter-spacing: -0.01em;
   }
 
   .font-mono, .tabular-nums {
@@ -288,3 +355,29 @@ html[data-hq-focus] [data-app-header],
 html[data-hq-focus='landscape'] [data-app-nav] {
   visibility: hidden;
 }
+
+/* Start („Chronograf”): krój wystawowy, litery puste dla faz dnia, które nie trwają, papier z siatką 12 kolumn */
+.display {
+  font-family: var(--font-display);
+  font-stretch: 80%;
+  letter-spacing: -0.022em;
+}
+/* Kontur liter: obrys pod wypełnieniem w kolorze tła (paint-order) chowa wewnętrzne kontury nakładających się
+   ścieżek fontu zmiennego; obrys 2,5 px daje widoczne 1,25 px. */
+.hollow {
+  color: var(--color-page);
+  -webkit-text-stroke: 2.5px var(--color-ink-1);
+  paint-order: stroke fill;
+  letter-spacing: 0;
+}
+.grid-paper {
+  background-image: repeating-linear-gradient(90deg, color-mix(in oklab, var(--color-ink-1) 5%, transparent) 0 1px, transparent 1px calc(100% / 12));
+}
+
+/* Animacja poglądowa przepływu na Starcie (SIM, bez danych): footprint, bąble, ściana zjedzona; pętla 9 s */
+@keyframes hq-cell { 0% { opacity: 0; transform: scaleX(0.35); } 6%, 88% { opacity: 1; transform: none; } 100% { opacity: 0; } }
+@keyframes hq-bubble { 0% { opacity: 0; transform: scale(0); } 7% { opacity: 1; transform: scale(1); } 70% { opacity: 0.85; } 100% { opacity: 0; } }
+@keyframes hq-eat { 0%, 52% { transform: scaleX(1); opacity: 0.9; filter: none; } 56% { transform: scaleX(0.9); filter: brightness(1.7); } 62%, 92% { transform: scaleX(0.62); opacity: 0.9; filter: none; } 100% { transform: scaleX(1); opacity: 0; } }
+@keyframes hq-note-a { 0%, 28% { opacity: 0; transform: translateY(6px); } 34%, 90% { opacity: 1; transform: none; } 100% { opacity: 0; } }
+@keyframes hq-note-b { 0%, 12% { opacity: 0; transform: translateY(6px); } 18%, 90% { opacity: 1; transform: none; } 100% { opacity: 0; } }
+@keyframes hq-note-c { 0%, 60% { opacity: 0; transform: translateY(6px); } 66%, 92% { opacity: 1; transform: none; } 100% { opacity: 0; } }

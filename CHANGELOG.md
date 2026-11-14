@@ -4,6 +4,23 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Nowy wygląd: Start, jasny motyw, znaki pochodzenia liczb, nowe fonty (2026-11-14)
+<!-- co-nowego: grupa=blog | pl=Nowy wygląd strony: ekran Start z zegarem sesji, jasny motyw i znaki pochodzenia każdej liczby | en=New look: a Start screen with the session clock, a light theme and provenance marks on every number -->
+
+#### Dodane
+- **Widok „Start”** (`#start`, `src/views/StartView.tsx`, ładowany leniwie): faza dnia tradera (Przed sesją / W sesji / Po sesji, ten sam podział sesji co `charts/pro/core/sessions`) z tarczą 24 h (`start/SessionDial.tsx`), czwórka BTC z tej samej funkcji co Przed sesją (`FourCard`, ładowana dopiero przy ekranie), teren likwidacji z mapy skanera (`start/LiquidityTerrain.tsx`, `useLiqMap`; bez mapy — „—” z powodem), pokaz przepływu zleceń z etykietą SIM (`start/FlowReel.tsx`), wyniki prognoz z księgi (`useDeskLedger`: pokrycie 90%, CRPSS, Brier wobec bazy, PIT) i pasek znaków pochodzenia. Logo prowadzi na Start.
+- **Pusty adres strony:** pierwsza wizyta otwiera Start; powrót otwiera ostatnio używany widok (`hq.view.last`); dotychczasowy użytkownik (dowolny klucz `hq.*` poza motywem) dalej trafia na W sesji (`landingView` w `src/state/route.ts`).
+- **Jasny motyw** (`src/theme.ts`, przełącznik „Motyw” w ustawieniach): te same klasy, wartości tokenów pod `[data-theme]`; wybór w `hq.theme`, bez zapisu — ustawienie systemu; motyw ustawiany przed pierwszym malowaniem (bez błysku). Obszary wykresów (wykres Pro, pole W sesji, ryciny lekcji) zostają ciemne.
+- **Znaki pochodzenia w `Badge`:** ● LIVE, ◐ MODEL, ○ SIM (przerywana ramka w kolorze `sim`), ◌ STALE — drugi kanał obok słowa; atrybut `data-tone`.
+
+#### Zmienione
+- **Paleta strony** (`src/index.css`): neutralny grafit zamiast granatu, akcent limonkowy (`accent`, `lume`), nowy token `sim`. Kontrast ≥ 4,5:1 dla każdego tokenu tekstu na każdej powierzchni obu motywów (ciemny `critical` rozjaśniony do `#EF6158`). Płótno wykresu bez zmian (paleta „Głębia”).
+- **Fonty w całej aplikacji:** Bricolage Grotesque (zmienny: grubość i szerokość, plik „wdth” zamiast „opsz”) zamiast Outfit, JetBrains Mono zamiast IBM Plex Mono, Plus Jakarta Sans bez zmian; nadal z `public/fonts` (OFL, `@fontsource`, przypięte wersje). Płótna wykresu, Klatka i blog używają tych samych rodzin. Paczki `@fontsource/outfit` i `@fontsource/ibm-plex-mono` usunięte.
+- **Powłoka `?ui=nowy`** zostaje jako opcja: jej tokeny `hq-*` mają wartości ciemnej palety „Chronograf”, fonty te same co reszta aplikacji (`ui:check` sprawdza Bricolage Grotesque i JetBrains Mono).
+- **Skróty liczb po polsku:** `22,6 mln`, `4,2 mld`, `12,9 tys.` (spacja niełamiąca przed słowem); po angielsku bez zmian (`22.6M`).
+- **Stopka każdego widoku aplikacji:** zdanie „Opis rynku, nie porada inwestycyjna.” / „Market description, not investment advice.”
+- Kolor motywu przeglądarki i manifestu: `#0C0D0F`.
+
 ### Nowy wygląd: kontrola pustego stanu wszystkich widoków (2026-11-14)
 <!-- co-nowego: ukryj -->
 

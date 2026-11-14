@@ -8,10 +8,28 @@ import type { ViewId } from './types';
 const DOCK_KEY = 'hq.charts.dock.v1';
 
 /** Widoki aplikacji w kolejności paska: trzy fazy dnia, Rynki, Agenci AI (po Blogu, który jest osobnymi stronami), potem menu „Więcej”. */
-export const VIEWS: readonly ViewId[] = ['before', 'charts', 'after', 'markets', 'agents', 'research', 'lessons', 'sources'];
+export const VIEWS: readonly ViewId[] = ['before', 'charts', 'after', 'markets', 'agents', 'research', 'lessons', 'sources', 'start'];
 
-/** Widok pustego i nieznanego adresu: W sesji. */
+/** Widok nieznanego adresu: W sesji. Pusty adres rozstrzyga `landingView` (pierwsza wizyta → Start). */
 export const DEFAULT_VIEW: ViewId = 'charts';
+
+/** Klucz ostatnio używanego widoku (powrót na stronę bez adresu otwiera go zamiast Startu). */
+export const LAST_VIEW_KEY = 'hq.view.last';
+
+/**
+ * Widok pustego adresu: ostatnio używany, a gdy go nie ma — Start dla pierwszej wizyty albo W sesji dla stałego
+ * użytkownika sprzed Startu (ma jakikolwiek klucz hq.* poza samym motywem), żeby nie zmieniać mu strony wejścia.
+ */
+export function landingView(store: Pick<Storage, 'getItem' | 'length' | 'key'> | null): ViewId {
+  if (!store) return 'start';
+  const last = store.getItem(LAST_VIEW_KEY);
+  if (last && (VIEWS as readonly string[]).includes(last)) return last as ViewId;
+  for (let i = 0; i < store.length; i++) {
+    const key = store.key(i);
+    if (key?.startsWith('hq.') && key !== 'hq.theme') return DEFAULT_VIEW;
+  }
+  return 'start';
+}
 
 /** Stare zakładki (sprzed faz dnia) → nowe miejsca ich zawartości. */
 export const LEGACY_VIEW: Record<string, ViewId> = { desk: 'before', market: 'before', plan: 'after', lab: 'charts', micro: 'research', flow: 'charts' };

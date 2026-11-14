@@ -33,7 +33,7 @@ describe('Czwórka: karta czterech liczb przed sesją', () => {
     expect(html).toContain('5 min');
     expect(html).toContain('tylko BTC');
     // Luka w świecach 1m: uwaga obok plakietki MODEL, nie zamiast niej
-    expect(html).toMatch(/MODEL<\/span><span[^>]*>luka</);
+    expect(html).toMatch(/MODEL<\/span><span[^>]*>(<span[^>]*><\/span>)?luka</);
   });
 
   it('„—” bez plakietki źródła: kafel bez liczby nie ma LIVE ani MODEL, „tylko BTC” zostaje jako powód', () => {
