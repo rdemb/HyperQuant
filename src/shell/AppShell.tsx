@@ -359,12 +359,25 @@ const MENU_MOTION = {
 };
 
 /** Znak HyperQuant: tarcza ze wskazówką i kropką „lume” (czas sesji jako oś produktu). */
+/**
+ * Znak HyperQuant „Chronograf H” (ten sam rysunek co ikona aplikacji, scripts/icons/ikona.mjs): pierścień doby z sesjami
+ * Azji, Londynu i Nowego Jorku, „H” z dwóch świec i znak „teraz” w kolorze lume. Kolory z tokenów (oba motywy).
+ */
 const LogoMark: React.FC<{ size?: number }> = ({ size = 24 }) => (
-  <svg width={size} height={size} viewBox="0 0 30 30" aria-hidden="true" className="shrink-0 text-ink-1">
-    <circle cx="15" cy="15" r="13" fill="none" stroke="currentColor" strokeWidth="2" />
-    <path d="M15 2.5v3M27.5 15h-3M15 27.5v-3M2.5 15h3" stroke="currentColor" strokeWidth="2" />
-    <path d="M15 15l4.5 9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-    <circle cx="19.5" cy="24" r="2.6" fill="var(--color-lume)" stroke="currentColor" strokeWidth="1.5" />
+  <svg width={size} height={size} viewBox="40 40 432 432" aria-hidden="true" className="shrink-0 text-ink-1">
+    <g fill="none" strokeLinecap="round" strokeWidth="30">
+      <path d="M270.9 78.6A178 178 0 0 1 417.1 331.8" stroke="var(--color-line-strong)" />
+      <path d="M402.2 357.6A178 178 0 0 1 201.9 425.6" stroke="var(--color-ink-3)" />
+      <path d="M174.4 414.2A178 178 0 0 1 241.1 78.6" stroke="currentColor" />
+    </g>
+    <g fill="currentColor">
+      <rect x="183" y="150" width="14" height="212" rx="7" />
+      <rect x="160" y="184" width="60" height="132" rx="14" />
+      <rect x="315" y="138" width="14" height="196" rx="7" />
+      <rect x="292" y="166" width="60" height="122" rx="14" />
+      <rect x="214" y="238" width="84" height="26" rx="13" />
+    </g>
+    <circle cx="187.9" cy="420.5" r="34" fill="var(--color-lume)" stroke="var(--color-page)" strokeWidth="12" />
   </svg>
 );
 

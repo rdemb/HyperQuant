@@ -52,10 +52,10 @@ const HeroClock: React.FC = () => {
   const c = sessionClock(now);
   return (
     <>
-      {/* Duża tarcza zależy od szerokości sekcji (kontener), nie okna: szyna boczna powłoki ?ui=nowy zabiera ~240 px.
-          Progi liczone od treści sekcji (bez paddingu 2 × 56 px): węższa — tarcza zmniejszona transformacją (ostra, SVG
-          i tekst), poniżej 1060 px treści — mała tarcza nad tytułem. */}
-      <div className="pointer-events-none absolute top-0 -right-[100px] hidden origin-top-right @min-[1060px]:block @max-[1250px]:scale-[0.74]" aria-hidden={false}>
+      {/* Duża tarcza zależy od szerokości sekcji (kontener), nie okna (szyna nawigacji zabiera 88–240 px). Cała tarcza
+          w sekcji, bez wysunięcia za prawą krawędź: skala (transformacja, ostra: SVG i tekst) rośnie z szerokością treści,
+          tak żeby obok tytułu (640 px) zostało miejsce; poniżej 1060 px treści — mała tarcza nad tytułem. */}
+      <div className="pointer-events-none absolute top-6 right-6 lg:right-10 hidden origin-top-right @min-[1060px]:block @min-[1060px]:scale-[0.6] @min-[1250px]:scale-[0.72] @min-[1500px]:scale-[0.86] @min-[1700px]:scale-100" aria-hidden={false}>
         <SessionDial now={now} />
         <div className="absolute top-[410px] left-[410px] flex -translate-x-1/2 -translate-y-[54%] flex-col items-center gap-2.5 text-center">
           <span className="text-[11px] font-bold tracking-[0.14em] text-ink-2 uppercase">
@@ -147,7 +147,7 @@ const StartView: React.FC = () => {
       {/* Hero: trzy czasy dnia i tarcza 24 h */}
       <section aria-labelledby="start-title" className="@container grid-paper relative overflow-hidden px-4 pt-10 pb-14 lg:px-14 lg:pt-16">
         <HeroClock />
-        <motion.div className="relative max-w-[640px] @min-[1060px]:min-h-[560px] @min-[1250px]:min-h-[740px]" initial={reduce ? false : { opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: DUR.ui, ease: EASE_OUT }}>
+        <motion.div className="relative max-w-[640px] @min-[1060px]:min-h-[520px] @min-[1250px]:min-h-[600px] @min-[1500px]:min-h-[720px]" initial={reduce ? false : { opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: DUR.ui, ease: EASE_OUT }}>
           <p className="mb-8 flex items-center gap-3.5 text-xs font-bold tracking-[0.14em] text-ink-2 uppercase lg:mb-10">
             <span className="font-mono tracking-normal">Nº 01</span>
             <span aria-hidden="true" className="h-px w-12 bg-ink-1" />
