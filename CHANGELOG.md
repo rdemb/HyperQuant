@@ -4,6 +4,14 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Przed sesją i Po sesji: czytelniejszy układ (2026-11-14)
+<!-- co-nowego: grupa=blog | pl=Przed sesją i Po sesji: wyraźne nagłówki sekcji, panele w dwóch kolumnach bez pustych miejsc, liczby bez ucinania | en=Pre- and post-session: clear section headings, panels in two columns without gaps, numbers never cut off -->
+
+#### Zmienione
+- **Panele Przed sesją w dwóch stałych kolumnach** zamiast siatki z równymi rzędami: struktura rynku po lewej (zegar ruchu, kontekst aukcji, mapa likwidacji, płynność wg godzin), makro i finansowanie po prawej (kalendarz, kafle makro, funding, wiadomości); bez pustych pól pod krótszymi panelami i bez przeskakiwania przy wczytywaniu.
+- **Nagłówki sekcji** (`ui/SectionHeading`, rytm rozdziałów Startu): „Kontekst przed sesją” oraz w Po sesji „Rozliczenie sesji”, „Dziennik prognoz”, „Dziennik transakcji” krojem wyświetlanym z nadtytułem.
+- **Kafel liczby** (`ui/Stat`): wartość zawija się zamiast ucinać (np. głębokość L2 „$379,4 tys. / $5,0 mln”).
+
 ### Start na telefonie (2026-11-14)
 <!-- co-nowego: grupa=blog | pl=Start na telefonie: pokaz przepływu mieści się w ekranie, czytelna oś terenu płynności | en=Start on phones: the order-flow showcase fits the screen, a readable liquidity-terrain axis -->
 

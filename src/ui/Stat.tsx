@@ -34,7 +34,8 @@ export const Stat: React.FC<StatProps> = ({ label, value, delta, hint, source, m
     </div>
     <div className="flex items-end justify-between gap-2">
       <div className="min-w-0 flex-1">
-        <div className="text-xl font-semibold text-ink-1 leading-tight truncate">{value}</div>
+        {/* Wartość zawija się zamiast ucinać (długie wartości, np. „$3,4 mln / $1,1 mln”, nie tracą końcówki) */}
+        <div className="text-xl font-semibold text-ink-1 leading-tight text-pretty [overflow-wrap:anywhere]">{value}</div>
         {delta && delta.value !== null && Number.isFinite(delta.value) && (
           <div className={`text-xs font-medium ${delta.value >= 0 ? 'text-buy-ink' : 'text-sell-ink'}`}>
             <span aria-hidden="true">{delta.value >= 0 ? '▲' : '▼'}</span> {delta.text}

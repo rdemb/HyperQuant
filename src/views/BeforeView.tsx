@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import type { PhaseId } from '../charts/pro/chart/stations';
 import { COIN, type Market } from '../charts/pro/store/proStore';
 import { ConnectingState } from '../shell/ConnectingState';
-import { LocalBoundary } from '../ui';
+import { LocalBoundary, SectionHeading } from '../ui';
 import { tr } from '../i18n';
 import { useDesk } from '../state/DeskContext';
 import ChartsView from './ChartsView';
@@ -34,17 +34,29 @@ const BeforeView: React.FC<{ onPhase?: (phase: PhaseId) => void }> = ({ onPhase 
       </LocalBoundary>
       <ChartsView phase="before" onPhase={onPhase} onMarket={setCoin} />
       <ContextRail />
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 [&>*]:min-w-0">
-        <LocalBoundary what={tr('Zegar ruchu', 'Move clock')}>
-          <MoveClockPanel />
-        </LocalBoundary>
-        <MacroCalendar />
-        <FundingVenues />
-        <AuctionContextPanel />
-        <LiquidationMapPanel />
-        <LiquidityByHourPanel />
-        <MacroTiles />
-        <NewsFeed />
+      {/* Dwie stałe kolumny zamiast siatki z równymi rzędami (panele różnej wysokości nie zostawiają dziur, a przy
+          wczytywaniu nie przeskakują między kolumnami): struktura rynku po lewej, makro i finansowanie po prawej.
+          Telefon i tablet: jedna kolumna, najpierw struktura. */}
+      <SectionHeading
+        id="przed-kontekst"
+        eyebrow={tr('Struktura rynku · makro · finansowanie', 'Market structure · macro · funding')}
+        title={tr('Kontekst przed sesją', 'Pre-session context')}
+      />
+      <div role="group" aria-labelledby="przed-kontekst" className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start [&>*]:min-w-0">
+        <div className="flex flex-col gap-4 [&>*]:min-w-0">
+          <LocalBoundary what={tr('Zegar ruchu', 'Move clock')}>
+            <MoveClockPanel />
+          </LocalBoundary>
+          <AuctionContextPanel />
+          <LiquidationMapPanel />
+          <LiquidityByHourPanel />
+        </div>
+        <div className="flex flex-col gap-4 [&>*]:min-w-0">
+          <MacroCalendar />
+          <MacroTiles />
+          <FundingVenues />
+          <NewsFeed />
+        </div>
       </div>
     </div>
   );
