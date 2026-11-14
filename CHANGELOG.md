@@ -4,6 +4,12 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Lekcje, Badania, Źródła i Agenci AI z nagłówkiem strony (2026-11-14)
+<!-- co-nowego: grupa=blog | pl=Lekcje, Badania, Źródła i Agenci AI z tym samym nagłówkiem strony co reszta aplikacji | en=Lessons, Research, Sources and the MCP page get the same page heading as the rest of the app -->
+
+#### Zmienione
+- **Nagłówek strony** (`ui/SectionHeading`, nowy wariant `level={1}`: <h1>, większy tytuł krojem Bricolage, wstęp): Lekcje (zamiast nagłówka w ramce), Badania i Źródła (wcześniej bez nagłówka, od razu panele), Agenci AI.
+
 ### Start: wybór instrumentu BTC albo złoto (2026-11-14)
 <!-- co-nowego: grupa=blog | pl=Na Starcie wybór instrumentu: Bitcoin albo złoto, z ceną na żywo; klik otwiera W sesji | en=Instrument choice on Start: Bitcoin or gold with a live price; a click opens In session -->
 
