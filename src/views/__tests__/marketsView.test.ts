@@ -31,7 +31,7 @@ describe('widok „Rynki”: bez kierunku ceny i ocen', () => {
 
 describe('widok „Rynki”: dane osobno, wygląd osobno', () => {
   it('komponenty widoku: bez hooków danych i bez funkcji z utils (tylko typy), dane z jednego hooka useMarketsPage', () => {
-    expect(parts.sort()).toEqual(expect.arrayContaining(['MarketList.tsx', 'WallStreetLabel.tsx']));
+    expect(parts.sort()).toEqual(expect.arrayContaining(['MarketList.tsx']));
     for (const [f, src] of views.filter(([f]) => f.startsWith('../markets/'))) {
       // Hooki interfejsu (okno listy, React) wolno; hooków danych (stan desku, rynki, pliki publiczne) nie
       expect(src, f).not.toMatch(/\buse(Markets|Desk|Published|LiqMap|Ticker)\w*\(/);
@@ -43,15 +43,10 @@ describe('widok „Rynki”: dane osobno, wygląd osobno', () => {
     for (const m of view.matchAll(/^import (.+) from '\.\.\/utils\/[^']+';$/gm)) expect(m[1], m[0]).toMatch(/^type /);
   });
 
-  it('kolumna Wall Street (przed Wykresem) i zdanie pod tabelą: etykieta opisuje giełdę bazową, rynek na Hyperliquid działa całą dobę', () => {
-    const table = read('../markets/MarketList.tsx');
-    const head = table.slice(table.indexOf('role="columnheader"'));
-    expect(head.indexOf('{WALL_STREET}')).toBeGreaterThan(head.indexOf("tr('Funding 1 h', 'Funding 1h')"));
-    expect(head.indexOf('{WALL_STREET}')).toBeLessThan(head.lastIndexOf("tr('Wykres', 'Chart')"));
-    expect(table).toContain('<WallStreetLabel cell={row.wallStreet} />');
+  it('rynki aplikacji: BTC i złoto, opis strony mówi, skąd liczby i co robi przeglądarka', () => {
     const view = views[0][1];
-    expect(view).toContain('Etykieta Wall Street opisuje giełdę bazową');
-    expect(view).toContain('a nie rynek na Hyperliquid, który działa całą dobę');
-    expect(view).toContain('not the market on Hyperliquid, which trades around the clock');
+    expect(view).toContain('BTC (giełda główna Hyperliquid) i złoto (xyz:GOLD, giełda HIP-3)');
+    expect(view).toContain('serwer HyperQuant nic nie pobiera');
+    expect(read('../../state/useMarketsTable.ts')).toContain('appMarkets(all)');
   });
 });
