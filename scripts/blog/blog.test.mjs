@@ -491,7 +491,7 @@ describe('strony serwisu: Wykresy, Lekcje, atlas, 404', () => {
         if (!u.href.startsWith(SITE.url)) continue;
         const rel = u.pathname.slice(new URL(SITE.url).pathname.length);
         expect(files.has(rel), `${path_} → ${href}`).toBe(true);
-        if (rel === '' && u.hash) expect(u.hash, `${path_} → ${href}`).toMatch(/^#(before|charts|after|markets|lessons)(\?|$)/);
+        if (rel === '' && u.hash) expect(u.hash, `${path_} → ${href}`).toMatch(/^#(before|charts|after|markets|lessons|research|sources|agents)(\?|$)/);
       }
     }
   });
