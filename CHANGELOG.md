@@ -14,11 +14,24 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 - **Likwidacje uczciwie**: Hyperliquid nie publikuje strumienia likwidacji, dane są tylko ze strumieni Binance, Bybit i OKX (włączanych w ustawieniach); bez nich Iskra śpi z powodem i przyciskiem włączenia, a strażnik nie udaje zera.
 - **Funding** poza gotowymi warunkami domyślnymi wyspy (stoi przy ok. 11% rocznie, próg 15% ok. raz na 2 tygodnie) — Skarbnik pokazuje to wprost.
 
+### Paczka MCP 0.1.5: gotowe polecenia (2026-11-15)
+<!-- co-nowego: grupa=blog | pl=Serwer MCP HyperQuant 0.1.5: pięć gotowych poleceń (przed sesją, teraz, rozliczenie sesji, poziom ceny, krótki wpis) | en=HyperQuant MCP server 0.1.5: five ready-made prompts (pre-session, now, session review, price level, short note) -->
+
+#### Zmienione
+- **`hyperquant-mcp` 0.1.5**: prompty MCP `prepare_session`, `session_now`, `review_session`, `check_level`, `market_note` (opis w sekcji „Serwer MCP: gotowe polecenia” niżej). Polecenia instalacji w README i szablonach z wersją `npx -y hyperquant-mcp@0.1.5`.
+
+### Dolne menu także na blogu i stronach serwisu (2026-11-15)
+<!-- co-nowego: grupa=blog | pl=Na telefonie Blog, Wyniki, Co nowego, Lekcje i Wykresy mają to samo dolne menu co aplikacja | en=On a phone the Blog, Results, What's new, Lessons and Charts pages have the same menu bar at the foot of the screen as the app -->
+
+#### Naprawione
+- **Dolny pasek na stronach statycznych** (`scripts/blog/render.mjs`, wszystkie strony z szablonu: blog i wpisy, archiwum, Wyniki, Co nowego, Lekcje i atlas, Wykresy, 404, wersje angielskie): poniżej 1024 px ten sam pasek co w aplikacji (Przed sesją, W sesji, Po sesji, Rynki, Więcej) z tymi samymi ikonami (`scripts/blog/ikony.mjs`, dane ikon lucide z aplikacji). „Więcej” (Lekcje, Badania, Źródła, Agenci AI, Blog, Wyniki, Co nowego) na `<details>`, bez skryptu. Nawigacja nagłówka na telefonie i tablecie przeszła do paska; w nagłówku zostaje marka i język. Stopka z miejscem na pasek.
+- Przegląd przy 390 px: 9 widoków aplikacji i 11 stron statycznych — pasek przy dole ekranu, „Więcej” otwiera się w ekranie, stopka niezasłonięta, bez przewijania w bok.
+
 ### Serwer MCP: gotowe polecenia (2026-11-15)
 <!-- co-nowego: ukryj -->
 
 #### Dodane
-- **Prompty MCP** (`mcp/src/prompts.ts`, rejestrowane w `createServer`): `prepare_session`, `session_now`, `review_session`, `check_level`, `market_note` — pięć przepisów skilla HyperQuant w tej samej kolejności, każdy z listą narzędzi, kolejnością wywołań, tym, co podać, i wspólnymi zasadami (liczby tylko z narzędzi, plakietka i czas, „—” z powodem, bez kierunku i porady, stopka). Argumenty walidowane (`session`: `london`/`ny`; `level`: liczba). README paczki: sekcja „Prompts”. W paczce npm dopiero po następnym wydaniu (`npm-publish.yml`, ręcznie).
+- **Prompty MCP** (`mcp/src/prompts.ts`, rejestrowane w `createServer`): `prepare_session`, `session_now`, `review_session`, `check_level`, `market_note` — pięć przepisów skilla HyperQuant w tej samej kolejności, każdy z listą narzędzi, kolejnością wywołań, tym, co podać, i wspólnymi zasadami (liczby tylko z narzędzi, plakietka i czas, „—” z powodem, bez kierunku i porady, stopka). Argumenty walidowane (`session`: `london`/`ny`; `level`: liczba). README paczki: sekcja „Prompts”. Wydane w 0.1.5.
 - Testy: jedno polecenie na przepis `SKILL.md`, tylko istniejące narzędzia, `prompts/list` i `prompts/get` przez protokół, odrzucenie złych argumentów.
 
 ### Strona nie skacze przy wczytywaniu (2026-11-15)
