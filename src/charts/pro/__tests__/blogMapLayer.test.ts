@@ -11,6 +11,9 @@ import { TAG_H, edgeTagsIn, placeTags } from '../chart/overlay';
 import { PRO } from '../chart/theme';
 import { fmtDayTime, fmtDm, fmtHm } from '../core/time';
 
+/** Bez źródeł świec i paneli przepływu (footprint, Delta, CVD): testy patrzą na same warstwy. */
+const NO_FLOW = { view: 'candles' as const, showDelta: false, showCvd: false };
+
 const MIN = 60_000;
 const H = 60 * MIN;
 const DAY = 24 * H;
@@ -237,7 +240,7 @@ describe('plakietka mapy z bloga w legendzie', () => {
   });
 
   it('legendChips: „Mapa z bloga” na interwałach poniżej 1D', () => {
-    const s = { ...DEFAULT_SETTINGS, ...LAYERS_OFF, showBlogMap: true };
+    const s = { ...DEFAULT_SETTINGS, ...LAYERS_OFF, ...NO_FLOW, showBlogMap: true };
     const chips = legendChips(s, { coin: 'BTC', now: NOW, intervalMs: 30 * MIN, scan: { showBlogMap: { asOf: PUB } } });
     expect(chips.map((c) => [c.key, c.label, c.text])).toEqual([['showBlogMap', 'Mapa z bloga', 'LIVE']]);
     expect(legendChips(s, { coin: 'BTC', now: NOW, intervalMs: DAY, scan: {} })).toEqual([]);

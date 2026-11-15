@@ -288,7 +288,7 @@ export interface LayerChip extends LayerBadge {
  * wskaźniki z warstw menu front i second (każdy typ raz). `scan` — migawki skanera (albo powody braku) warstw skanera.
  */
 export function legendChips(
-  s: Pick<ChartSettings, keyof typeof LAYERS_OFF | 'indicators' | 'stackedMin'>,
+  s: Pick<ChartSettings, keyof typeof LAYERS_OFF | 'indicators' | 'stackedMin'> & Partial<Pick<ChartSettings, 'view' | 'showDelta' | 'showCvd'>>,
   x: { coin: string; now: number; intervalMs: number; scan: Partial<Record<string, ScanState>> }
 ): LayerChip[] {
   const out: LayerChip[] = [];
@@ -296,6 +296,10 @@ export function legendChips(
     if (s[key] !== true || !drawn(s, key, x.intervalMs)) continue;
     out.push({ key, label: LAYER_LABEL[key], ...layerBadge(key, { coin: x.coin, now: x.now, scan: x.scan[key] }) });
   }
+  // Źródło świec i paneli przepływu (plan 59, E5): footprint, Delta i CVD liczone z taśmy Hyperliquid na żywo
+  if (s.view === 'footprint') out.push({ key: 'footprint', label: 'Footprint', ...layerBadge('footprint', { coin: x.coin, now: x.now }) });
+  if (s.showDelta) out.push({ key: 'showDelta', label: tr('Delta', 'Delta'), ...layerBadge('showDelta', { coin: x.coin, now: x.now }) });
+  if (s.showCvd) out.push({ key: 'showCvd', label: 'CVD', ...layerBadge('showCvd', { coin: x.coin, now: x.now }) });
   const seen = new Set<string>();
   for (const ind of s.indicators) {
     const def = indicatorDef(ind.id);
