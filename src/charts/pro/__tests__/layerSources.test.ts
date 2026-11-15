@@ -9,6 +9,9 @@ import { publishMarkets, resetMarketsForTest } from '../../../state/markets';
 import { readInputs } from '../chart/layoutInputs';
 import { layoutNumbers } from '../chart/layoutNumbers';
 
+/** Bez źródeł świec i paneli przepływu (footprint, Delta, CVD): testy patrzą na same warstwy. */
+const NO_FLOW = { view: 'candles' as const, showDelta: false, showCvd: false };
+
 const NOW = Date.UTC(2026, 10, 3, 16, 20);
 const M5 = 5 * 60_000;
 const H4 = 4 * 3_600_000;
@@ -156,6 +159,7 @@ describe('plakietka warstwy w legendzie', () => {
     const s = {
       ...DEFAULT_SETTINGS,
       ...LAYERS_OFF,
+      ...NO_FLOW,
       showHeatmap: true,
       showLiq: true,
       showWhales: true,
@@ -176,7 +180,7 @@ describe('plakietka warstwy w legendzie', () => {
   });
 
   it('chipsFor: zwinięta legenda pokazuje tylko nie-LIVE (stożek i TPO OI jako MODEL), zestaw samych LIVE — nic', () => {
-    const s = { ...DEFAULT_SETTINGS, ...LAYERS_OFF, showTpo: true, showTpoOi: true, showVwap: true, showHeatmap: true, indicators: inds(['cone'], ['twap']) };
+    const s = { ...DEFAULT_SETTINGS, ...LAYERS_OFF, ...NO_FLOW, showTpo: true, showTpoOi: true, showVwap: true, showHeatmap: true, indicators: inds(['cone'], ['twap']) };
     const chips = legendChips(s, { coin: 'BTC', now: NOW, intervalMs: M5, scan: {} });
     expect(chips.map((c) => c.key)).toEqual(['showVwap', 'showTpo', 'showTpoOi', 'showHeatmap', 'cone', 'twap']);
     expect(chipsFor(chips, 'folded').map((c) => [c.key, c.text])).toEqual([
@@ -212,7 +216,7 @@ function fakeStore() {
 
 describe('legenda na rynku HIP-3: warstwy bez danych zwinięte (projekt 60, W1)', () => {
   it('S&P 500: klastry likwidacji, mapa z bloga i giełdy → jedna plakietka z jednym zdaniem; reszta bez zmian', () => {
-    const s = { ...DEFAULT_SETTINGS, ...LAYERS_OFF, showHeatmap: true, showLiq: true, showBlogMap: true, showVenueCvd: true, indicators: [] };
+    const s = { ...DEFAULT_SETTINGS, ...LAYERS_OFF, ...NO_FLOW, showHeatmap: true, showLiq: true, showBlogMap: true, showVenueCvd: true, indicators: [] };
     const chips = legendChips(s, { coin: 'xyz:SP500', now: NOW, intervalMs: M5, scan: {} });
     const missing = chips.filter((c) => c.key === 'missing');
     expect(missing).toHaveLength(1);
@@ -220,5 +224,17 @@ describe('legenda na rynku HIP-3: warstwy bez danych zwinięte (projekt 60, W1)'
     expect(missing[0].hint).toContain('Hyperliquid nie udostępnia pozycji rynków HIP-3');
     expect(chips.some((c) => c.text === '—, bez skanera')).toBe(false);
     expect(chips.find((c) => c.key === 'showHeatmap')?.text).toBe('LIVE');
+  });
+});
+
+describe('źródła świec i paneli przepływu w legendzie (plan 59, E5)', () => {
+  it('footprint, Delta i CVD mają plakietkę LIVE; świece bez footprintu i wyłączone panele — bez plakietek', () => {
+    const on = legendChips({ ...DEFAULT_SETTINGS, ...LAYERS_OFF, view: 'footprint', showDelta: true, showCvd: true, indicators: [] }, { coin: 'BTC', now: NOW, intervalMs: M5, scan: {} });
+    expect(on.map((c) => [c.key, c.text])).toEqual([
+      ['footprint', 'LIVE'],
+      ['showDelta', 'LIVE'],
+      ['showCvd', 'LIVE'],
+    ]);
+    expect(legendChips({ ...DEFAULT_SETTINGS, ...LAYERS_OFF, ...NO_FLOW, indicators: [] }, { coin: 'BTC', now: NOW, intervalMs: M5, scan: {} })).toEqual([]);
   });
 });

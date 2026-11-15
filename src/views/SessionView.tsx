@@ -1,18 +1,24 @@
-import React, { useState, useSyncExternalStore } from 'react';
-import { subscribeNarrow } from '../charts/pro/ProChart';
-import { isNarrow } from '../charts/pro/chart/settings';
+import React, { Suspense, lazy, useState, useSyncExternalStore } from 'react';
 import type { PhaseId } from '../charts/pro/chart/stations';
-import { COIN, type Market } from '../charts/pro/store/proStore';
-import { parseReplayLink } from '../charts/pro/replay/link';
 import { subscribeHash } from '../state/route';
 import { useLiqMap } from '../state/useLiqMap';
-import ChartsView from './ChartsView';
-import { CohortFlowPanel } from './desk/CohortFlowPanel';
-import { LiquidationTape } from './desk/LiquidationTape';
+import { HOME_MARKET } from '../utils/marketCaps';
 import { FirstContact } from './session/FirstContact';
 
-/** Link powtórki w adresie (#charts?replay=…): wykres pokazuje przeszłość. */
-const inReplay = () => parseReplayLink(window.location.hash) !== null;
+type Market = string;
+
+// Wykres i panele pod nim to osobne pakiety: karta pierwszego kontaktu (element LCP) maluje się przed modułami wykresu
+const ChartsView = lazy(() => import('./ChartsView'));
+const CohortFlowPanel = lazy(() => import('./desk/CohortFlowPanel').then((m) => ({ default: m.CohortFlowPanel })));
+const LiquidationTape = lazy(() => import('./desk/LiquidationTape').then((m) => ({ default: m.LiquidationTape })));
+
+/** Link powtórki w adresie (#charts?replay=…): wykres pokazuje przeszłość (ten sam warunek co `parseReplayLink`). */
+const inReplay = () => {
+  const h = window.location.hash;
+  if (!h.startsWith('#charts')) return false;
+  const src = new URLSearchParams(h.split('?')[1] ?? '').get('replay');
+  return src === 'history' || src === 'lessons';
+};
 
 /**
  * Ekran „W sesji”: wykres z układami sesji (Kokpit domyślnie, od 1440 px z prawą kolumną DOM i taśmy, od 640 px
@@ -24,19 +30,20 @@ const inReplay = () => parseReplayLink(window.location.hash) !== null;
  * `onPhase` — karta układu innej fazy (Alt+1…6, nowa karta) przenosi do ekranu tej fazy.
  */
 const SessionView: React.FC<{ onPhase?: (phase: PhaseId) => void }> = ({ onPhase }) => {
-  const narrow = useSyncExternalStore(subscribeNarrow, isNarrow);
   const replay = useSyncExternalStore(subscribeHash, inReplay);
   // Rynek pierwszego wykresu aktywnej karty (Pulse liczy drabinę i taśmę tego rynku)
-  const [coin, setCoin] = useState<Market>(COIN);
+  const [coin, setCoin] = useState<Market>(HOME_MARKET);
   return (
     <div className="flex flex-col gap-4">
       {!replay && <FirstContact coin={coin} />}
-      <ChartsView phase="session" onPhase={onPhase} onMarket={setCoin} />
+      <Suspense fallback={<div data-wykres-czeka className="min-h-[70dvh] rounded-xl border border-line bg-surface-1" />}>
+        <ChartsView phase="session" onPhase={onPhase} onMarket={setCoin} />
+      </Suspense>
       {!replay && (
-        <>
+        <Suspense fallback={null}>
           <CohortFlowPanel coin={coin} />
           <SessionLiquidations coin={coin} />
-        </>
+        </Suspense>
       )}
     </div>
   );
