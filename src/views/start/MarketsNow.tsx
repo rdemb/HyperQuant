@@ -40,8 +40,16 @@ export function underlyingText(m: DeskMarket, u: Underlying, now: number): strin
     return m.underlying.rth
       ? tr(`poza sesją NYSE, futures do ${u.next ? when(u.next, now) : DASH}`, `outside NYSE hours, futures until ${u.next ? when(u.next, now) : DASH}`)
       : tr(`${venue} otwarta do ${u.next ? when(u.next, now) : DASH}`, `${venue} open until ${u.next ? when(u.next, now) : DASH}`);
-  if (u.state === 'break') return tr(`${venue}: przerwa do ${u.next ? when(u.next, now) : DASH}`, `${venue}: break until ${u.next ? when(u.next, now) : DASH}`);
-  return tr(`${venue} zamknięta do ${u.next ? when(u.next, now) : DASH}`, `${venue} closed until ${u.next ? when(u.next, now) : DASH}`);
+  const next = u.next ? when(u.next, now) : DASH;
+  // Rynek z sesją regularną NYSE poza nią: NYSE wraca o 9:30 ET (rthNext), futures wcześniej (next) — dwie różne godziny
+  if (m.underlying.rth) {
+    const nyse = u.rthNext ? when(u.rthNext, now) : DASH;
+    return u.state === 'break'
+      ? tr(`NYSE zamknięta do ${nyse}; futures: przerwa do ${next}`, `NYSE closed until ${nyse}; futures on break until ${next}`)
+      : tr(`NYSE zamknięta do ${nyse}; futures od ${next}`, `NYSE closed until ${nyse}; futures from ${next}`);
+  }
+  if (u.state === 'break') return tr(`${venue}: przerwa do ${next}`, `${venue}: break until ${next}`);
+  return tr(`${venue} zamknięta do ${next}`, `${venue} closed until ${next}`);
 }
 
 export const MarketsNow: React.FC<{ selected: string; onSelect: (coin: string) => void }> = ({ selected, onSelect }) => {
@@ -82,7 +90,7 @@ export const MarketsNow: React.FC<{ selected: string; onSelect: (coin: string) =
                   <span className="block text-[11px] text-ink-3">{CLASS[m.class]}</span>
                 </span>
                 <span className="order-3 col-span-2 min-w-0 text-[12px] text-ink-2 min-[520px]:order-none min-[520px]:col-span-1">
-                  <span className="block truncate">{underlyingText(m, u, page.now)}</span>
+                  <span className="block">{underlyingText(m, u, page.now)}</span>
                   <span className="mt-1 inline-block">
                     <QualityChip q={q} />
                   </span>
