@@ -1,14 +1,12 @@
-import { wilson } from '../../../utils/auction';
-import { tzOffsetMs, utcDayStart, utcWeekStart, zonedToUtc } from './sessions';
+import { utcDayStart, utcWeekStart } from './sessions';
 
 /**
  * Zakresy P/b w stylu Patricka Nilla, zmechanizowane przez HyperQuant (Nill nie publikuje dokładnych reguł rysowania):
  * na zamkniętych świecach 5m impuls do 16 świec o ruchu netto ≥ 4 ATR, po nim zakres ≥ 48 świec (4 h) z ≥ 3
  * naprzemiennymi dotknięciami krawędzi (20% szerokości) i kształtem P (po impulsie w górę) albo b (w dół), ważny 192
- * świece (16 h). Do tego pierwsze zamknięcie poza strefą i miejsca, w których metoda Nilla by weszła: A gra w zakresie,
- * B wybicie z potwierdzeniem, C fałszywe wybicie i powrót. Miejsca są bez celu i bez pozycji: to punkty do obserwacji,
- * nie sygnały. Poziomy profilu wolumenu poprzedniego tygodnia i doby, okno day tradingu, typowa godzina i wyścig do
- * bariery, którym legenda mierzy miejsca na historii świec.
+ * świece (16 h), do pierwszego zamknięcia poza strefą. Do tego poziomy profilu wolumenu poprzedniego tygodnia i doby
+ * oraz typowa godzina. Opis struktury, bez miejsc wejścia: dawne miejsca metody (A, B, C) w sprawdzianie na 2026 r.
+ * nie miały przewagi (plan 59, C1), więc ich nie liczymy.
  */
 
 export interface Bar5 {
@@ -29,19 +27,6 @@ const MIN_BARS = 48;
 export const LIFE = 192;
 const EDGE = 0.2;
 
-export type Rule = 'A' | 'B' | 'C';
-
-export interface Spot {
-  rule: Rule;
-  /** Indeks świecy, na której zamknięciu miejsce powstaje. */
-  k: number;
-  side: 1 | -1;
-  /** Cena miejsca: krawędź gry w zakresie (A), zamknięcie potwierdzenia (B), krawędź powrotu (C). */
-  px: number;
-  /** R:R z celem i stopem metody (cel nie jest rysowany). */
-  rr: number;
-}
-
 export interface Range {
   /** Ostatnia świeca impulsu; zakres zaczyna się na e + 1. */
   e: number;
@@ -59,7 +44,6 @@ export interface Range {
   x: number | null;
   /** Ostatnia świeca życia zakresu (kv + 192 albo wybicie). */
   end: number;
-  spots: Spot[];
 }
 
 /** Ciągłość: świeca k leży dokładnie 5 min po k − 1 (luka w danych przerywa zakres). */
@@ -117,87 +101,25 @@ function touchRuns(b: readonly Bar5[], e: number, k: number, hi: number, lo: num
   return out;
 }
 
-/** Cel metody: z impulsem krawędź + impuls, przeciw impulsowi początek impulsu. */
-function target(side: 1 | -1, r: Pick<Range, 's' | 'origin' | 'imp' | 'hi' | 'lo'>): number {
-  if (side === r.s) return side > 0 ? r.hi + r.imp : r.lo - r.imp;
-  return r.origin;
-}
-
-/** Wejścia po zakresie: A przy krawędziach do wybicia, potem C (powrót w 2 świece) albo B (test krawędzi i zamknięcie za świecą wybicia). */
-function spotsOf(b: readonly Bar5[], a: Float64Array, r: Range): void {
+/** Pierwsze zamknięcie poza strefą po świecy ważności (do końca życia zakresu albo luki w danych) i koniec zakresu. */
+function breakout(b: readonly Bar5[], r: Range): void {
   const kv = r.kv!;
-  const { hi, lo } = r;
-  const w = hi - lo;
-  const n = b.length;
-  const last = Math.min(kv + LIFE, n - 1);
+  const last = Math.min(kv + LIFE, b.length - 1);
   let x: number | null = null;
   for (let j = kv + 1; j <= last; j++) {
     if (!next(b, j)) break;
-    if (b[j].c > hi || b[j].c < lo) {
+    if (b[j].c > r.hi || b[j].c < r.lo) {
       x = j;
       break;
     }
   }
   r.x = x;
   r.end = x ?? last;
-  // A: każde nowe wejście ceny w 10% szerokości od krawędzi, naprzemiennie dół i góra
-  let prev = 0;
-  for (let j = kv + 1; j <= (x === null ? last : x - 1); j++) {
-    const atLo = b[j].l <= lo + 0.1 * w;
-    const atHi = b[j].h >= hi - 0.1 * w;
-    if (atLo === atHi) continue;
-    const side: 1 | -1 = atLo ? 1 : -1;
-    if (side === prev) continue;
-    prev = side;
-    r.spots.push({
-      rule: 'A',
-      k: j,
-      side,
-      px: side > 0 ? lo + 0.1 * w : hi - 0.1 * w,
-      rr: 0.8 / 0.25,
-    });
-  }
-  if (x === null || x + 2 >= n) return;
-  const dirx: 1 | -1 = b[x].c > hi ? 1 : -1;
-  const back = [x + 1, x + 2].filter((j) => lo <= b[j].c && b[j].c <= hi);
-  if (back.length > 0) {
-    const rb = back[0];
-    const side: 1 | -1 = dirx > 0 ? -1 : 1;
-    const edge = side > 0 ? lo : hi;
-    let ext = side > 0 ? Infinity : -Infinity;
-    for (let j = x; j <= rb; j++) ext = side > 0 ? Math.min(ext, b[j].l) : Math.max(ext, b[j].h);
-    const stop = ext - side * 0.1 * a[rb];
-    const risk = (edge - stop) * side;
-    const rr = risk > 0 ? ((target(side, r) - edge) * side) / risk : -1;
-    if (rr >= 3) r.spots.push({ rule: 'C', k: rb, side, px: edge, rr });
-    return;
-  }
-  const side = dirx;
-  let retest: number | null = null;
-  for (let j = x + 1; j < Math.min(x + 17, n); j++) {
-    const c = b[j].c;
-    if (retest === null) {
-      const test = side > 0 ? b[j].l <= hi + 0.1 * w && c >= hi : b[j].h >= lo - 0.1 * w && c <= lo;
-      if (test) retest = j;
-      else if ((side > 0 && c < hi) || (side < 0 && c > lo)) break;
-    } else {
-      if ((side > 0 && c > b[x].h) || (side < 0 && c < b[x].l)) {
-        let ext = side > 0 ? Infinity : -Infinity;
-        for (let i = x; i <= j; i++) ext = side > 0 ? Math.min(ext, b[i].l) : Math.max(ext, b[i].h);
-        const stop = ext - side * 0.1 * a[j];
-        const risk = (c - stop) * side;
-        const rr = risk > 0 ? ((target(side, r) - c) * side) / risk : -1;
-        if (rr >= 3) r.spots.push({ rule: 'B', k: j, side, px: c, rr });
-        break;
-      }
-      if ((side > 0 && c < hi) || (side < 0 && c > lo)) break;
-    }
-  }
 }
 
 /**
  * Zakresy P/b ze świec zamkniętych (rosnąco, co 5 min): ważne zakresy (kolejny impuls dopiero po świecy ważności
- * poprzedniego) z wybiciem i miejscami wejść; na końcu najwyżej jeden zakres w budowie (bez kv), jeśli najnowszy
+ * poprzedniego) z wybiciem; na końcu najwyżej jeden zakres w budowie (bez kv), jeśli najnowszy
  * impuls nie złamał jeszcze kształtu.
  */
 export function ranges(b: readonly Bar5[]): Range[] {
@@ -262,7 +184,6 @@ export function ranges(b: readonly Bar5[]): Range[] {
           touches,
           x: null,
           end: n - 1,
-          spots: [],
         };
       }
       continue;
@@ -279,9 +200,8 @@ export function ranges(b: readonly Bar5[]): Range[] {
       touches: touchRuns(b, e, kv, hi, lo),
       x: null,
       end: kv,
-      spots: [],
     };
-    spotsOf(b, a, r);
+    breakout(b, r);
     out.push(r);
     nxt = kv + 1;
     forming = null;
@@ -398,20 +318,6 @@ export function dayLevels(b: readonly Bar5[], t: number): Levels | null {
 
 // ───────────────────────── zegar ─────────────────────────
 
-function wallDate(tz: string, t: number): [number, number, number] {
-  const d = new Date(t + tzOffsetMs(tz, t));
-  return [d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate()];
-}
-
-/** Okno day tradingu: dni robocze (UTC), zamknięcie świecy `tClose` od 08:00 Londynu do 14:00 Nowego Jorku. */
-export function inDtWindow(tClose: number): boolean {
-  const dow = new Date(tClose).getUTCDay();
-  if (dow === 0 || dow === 6) return false;
-  const [ly, lm, ld] = wallDate('Europe/London', tClose);
-  const [ny, nm, nd] = wallDate('America/New_York', tClose);
-  return zonedToUtc('Europe/London', ly, lm, ld, 8, 0) <= tClose && tClose < zonedToUtc('America/New_York', ny, nm, nd, 14, 0);
-}
-
 /** Typowa godzina w bp: mediana zakresu (max − min) / otwarcie z 24 pełnych godzin UTC przed chwilą `t`, ze świec 5m. */
 export function typicalHourBp(b: readonly Bar5[], t: number): number | null {
   const end = Math.floor(t / HOUR) * HOUR;
@@ -435,50 +341,4 @@ export function typicalHourBp(b: readonly Bar5[], t: number): number | null {
   r.sort((a, c) => a - c);
   const m = r.length >> 1;
   return r.length % 2 ? r[m] : (r[m - 1] + r[m]) / 2;
-}
-
-// ───────────────────────── pomiar miejsc ─────────────────────────
-
-export type Outcome = 'hit' | 'miss' | 'none';
-
-export const HORIZON_MS = 4 * HOUR;
-
-/**
- * Wyścig do bariery po miejscu: czy cena przeszła `h` bp (typowa godzina) w stronę miejsca, zanim przeszła je przeciw,
- * do 4 h od zamknięcia świecy miejsca `t`; obie bariery w jednej świecy liczą się przeciw. null = jeszcze
- * nierozstrzygnięty albo luka w świecach. Bez przewagi trafień jest ok. 50%. To pomiar kierunku, nie wynik transakcji.
- */
-export function resolve(e: { t: number; side: 1 | -1; px: number; h: number }, b: readonly Bar5[], now: number): Outcome | null {
-  const up = e.px * (1 + (e.side * e.h) / 1e4);
-  const dn = e.px * (1 - (e.side * e.h) / 1e4);
-  const end = e.t + HORIZON_MS;
-  let seen = e.t;
-  for (const x of b) {
-    if (x.t < e.t || x.t >= end) continue;
-    if (x.t !== seen) return null;
-    seen = x.t + TF_MS;
-    const fav = e.side > 0 ? x.h >= up : x.l <= up;
-    const adv = e.side > 0 ? x.l <= dn : x.h >= dn;
-    if (adv) return 'miss';
-    if (fav) return 'hit';
-  }
-  return seen >= end && now >= end ? 'none' : null;
-}
-
-export interface Score {
-  /** Rozstrzygnięte trafienia i pudła (bez „none” i otwartych). */
-  n: number;
-  hits: number;
-  /** 95% przedział Wilsona udziału trafień (null przy n = 0). */
-  ci: { p: number; lo: number; hi: number } | null;
-}
-
-export function score(list: readonly (Outcome | null)[]): Score {
-  let hits = 0;
-  let n = 0;
-  for (const r of list) {
-    if (r === 'hit') hits++;
-    if (r === 'hit' || r === 'miss') n++;
-  }
-  return { n, hits, ci: wilson(hits, n) };
 }

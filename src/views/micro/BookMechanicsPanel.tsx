@@ -28,7 +28,7 @@ export const BookMechanicsPanel: React.FC = () => {
               STALE
             </Badge>
           )}
-          <Badge tone="model" card="book" title={tr('Estymatory z publicznego arkusza i taśmy Hyperliquid — opis mechaniki, nie sygnał', 'Estimators from the public Hyperliquid book and tape; a description of mechanics, not a signal')}>
+          <Badge tone="model" card="book" title={tr('Estymatory z publicznego arkusza i taśmy Hyperliquid — opis mechaniki, nie rekomendacja', 'Estimators from the public Hyperliquid book and tape; a description of mechanics, not a recommendation')}>
             MODEL
           </Badge>
         </span>

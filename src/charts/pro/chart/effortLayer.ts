@@ -12,8 +12,8 @@ import { MONO, PRO, rgba } from './theme';
  * (`effortZones`) liczy wszystkie strefy i pudełka na zamkniętych świecach; rysowany jest wybór `selectEffort` na
  * ostatniej zamkniętej świecy: pasma stref aktywnych i uzbrojonych najbliższe cenie (od świecy powstania, ze
  * znacznikiem A, D, F w rogu i kreską na krańcu swingu), obrys przebitej przez 6 świec i ostatnia seria pudełek każdej
- * strony (wypełnienie na świecach serii, w prawo dwie linie krawędzi). Tryb „Historia” — wszystko obrysami. Kolory
- * stron stałe (popyt w kolorze kupna, podaż w kolorze sprzedaży).
+ * strony (wypełnienie na świecach serii, w prawo dwie linie krawędzi). Tryb „Historia” — wszystko obrysami. Strefy w
+ * kolorach poziomów (pod ceną ciemniejszy bursztyn, nad ceną jaśniejszy), pudełka w kolorach strony agresora.
  */
 
 /** Styl widocznego wskaźnika: krycie wypełnień, grubość obrysów (kolory stron są stałe) i tryb „Historia”. */
@@ -36,7 +36,19 @@ const MAX_TF = 3_600_000;
 const ZONE_FILL = 0.13;
 const BOX_FILL = 0.3;
 
-/** Kolory stron z kryciem `a`, zbudowane raz na rysowanie: popyt w kolorze kupna, podaż w kolorze sprzedaży. */
+/**
+ * Kolory stref z rodziny poziomów (plan 59, C2): strefa pod ceną bursztyn poziomów, nad ceną jego jaśniejszy odcień.
+ * Strefa to miejsce, gdzie rynek przyjął agresję, a nie strona transakcji, więc bez kolorów kupna i sprzedaży.
+ */
+export const ZONE_BELOW = PRO.level;
+export const ZONE_ABOVE = PRO.levelSoft;
+export function zoneInk(a: number): (s: Side) => string {
+  const below = rgba(ZONE_BELOW, a);
+  const above = rgba(ZONE_ABOVE, a);
+  return (s) => (s === 1 ? below : above);
+}
+
+/** Kolory pudełek Effort z kryciem `a`: strona agresora świecy (kupno albo sprzedaż transakcji, nie zalecenie). */
 function sideInk(a: number): (s: Side) => string {
   const buy = rgba(PRO.buy, a);
   const sell = rgba(PRO.sell, a);
@@ -112,7 +124,7 @@ export function effortLegend(sel: EffortSelection | null, ms: number, asOf: numb
   const supply = sel.bands.length - demand;
   const far = sel.far.demand + sel.far.supply;
   const zones = {
-    text: tr(`strefy: ${demand} popytu · ${supply} podaży${far > 0 ? ` (dalej ${far})` : ''}`, `zones: ${demand} demand · ${supply} supply${far > 0 ? ` (${far} farther)` : ''}`),
+    text: tr(`strefy: ${demand} pod ceną · ${supply} nad ceną${far > 0 ? ` (dalej ${far})` : ''}`, `zones: ${demand} below price · ${supply} above price${far > 0 ? ` (${far} farther)` : ''}`),
     color: demand + supply > 0 ? PRO.ink1 : PRO.ink2,
   };
   if (sel.tapeRecent === 0) return [zones, { text: tr('· pudełka: —, brak taśmy', '· boxes: —, no tape'), color: PRO.ink3 }];
@@ -160,7 +172,7 @@ export class EffortLayer implements ISeriesPrimitive<Time> {
         target.useMediaCoordinateSpace(({ context: ctx }) => {
           const st = this.style;
           if (!st) return;
-          const zone = sideInk(ZONE_FILL * st.alpha);
+          const zone = zoneInk(ZONE_FILL * st.alpha);
           const box = sideInk(BOX_FILL * st.alpha);
           for (const z of this.bands) {
             if (!z.fill) continue;
@@ -179,8 +191,9 @@ export class EffortLayer implements ISeriesPrimitive<Time> {
           const st = this.style;
           if (!st) return;
           const a = Math.max(0.35, 0.85 * st.alpha);
-          const live = sideInk(a);
-          const dim = sideInk(0.4 * a);
+          const live = zoneInk(a);
+          const dim = zoneInk(0.4 * a);
+          const boxInk = sideInk(a);
           // Linia nieparzystej grubości na środku piksela (ostra krawędź)
           const crisp = (v: number, w: number) => Math.round(v) + (w % 2 ? 0.5 : 0);
           const rect = (r: Rect, w: number) => {
@@ -209,7 +222,7 @@ export class EffortLayer implements ISeriesPrimitive<Time> {
             ctx.fillText(z.mark, lx, z.y0 + 2);
           }
           for (const b of this.boxes) {
-            ctx.strokeStyle = live(b.side);
+            ctx.strokeStyle = boxInk(b.side);
             rect(b, Math.max(1, st.width - 1));
             // W prawo od serii dwie cienkie linie krawędzi zamiast wypełnionego prostokąta
             if (b.edgeTo > b.x1) {

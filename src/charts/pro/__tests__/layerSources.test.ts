@@ -26,8 +26,8 @@ describe('źródła warstw (LIVE, MODEL, SIM)', () => {
   });
 
   it('modele i symulacja oznaczone jako MODEL i SIM, dane z taśmy i arkusza jako LIVE', () => {
-    for (const id of ['rvol', 'regime', 'hawkes', 'cone', 'outcomes', 'absorption', 'effort', 'showTpoOi']) expect(LAYER_SOURCE[id], id).toBe('MODEL');
-    expect(LAYER_SOURCE.pbrange).toBe('SIM');
+    // P/b bez miejsc wejścia i wyniku na historii (plan 59, C1): reguły na świecach, więc MODEL, nie SIM
+    for (const id of ['rvol', 'regime', 'hawkes', 'cone', 'outcomes', 'absorption', 'effort', 'showTpoOi', 'pbrange']) expect(LAYER_SOURCE[id], id).toBe('MODEL');
     for (const id of ['showHeatmap', 'showBubbles', 'showVwap', 'showLiq', 'showWhales', 'twap', 'slippage', 'oiflow']) expect(LAYER_SOURCE[id], id).toBe('LIVE');
   });
 
@@ -39,8 +39,8 @@ describe('źródła warstw (LIVE, MODEL, SIM)', () => {
     expect(layerBadge('cone', { coin: 'BTC', now: NOW }).hint).toMatch(/^MODEL · HAR: /);
     expect(layerBadge('regime', { coin: 'BTC', now: NOW }).hint).toMatch(/^MODEL · BOCPD: /);
     expect(layerBadge('hawkes', { coin: 'BTC', now: NOW }).hint).toMatch(/^MODEL · Hawkes: /);
-    expect(layerBadge('pbrange', { coin: 'BTC', now: NOW }).hint).toMatch(/^SIM · metoda Nilla: /);
-    expect(layerBadge('effort', { coin: 'ETH', now: NOW })).toMatchObject({ tone: 'model', text: 'MODEL', hint: expect.stringMatching(/^MODEL · reguły modelu intraday Valentiniego: .*to nie sygnały$/) });
+    expect(layerBadge('pbrange', { coin: 'BTC', now: NOW }).hint).toMatch(/^MODEL · reguły metody Nilla na świecach 5m: /);
+    expect(layerBadge('effort', { coin: 'ETH', now: NOW })).toMatchObject({ tone: 'model', text: 'MODEL', hint: expect.stringMatching(/^MODEL · reguły modelu intraday Valentiniego: .*to nie wskazania wejścia$/) });
   });
 });
 
@@ -86,7 +86,7 @@ describe('plakietka warstwy w legendzie', () => {
   it('zwykła warstwa: LIVE, MODEL albo SIM z rejestru', () => {
     expect(layerBadge('showHeatmap', { coin: 'ETH', now: NOW })).toMatchObject({ tone: 'live', text: 'LIVE' });
     expect(layerBadge('regime', { coin: 'BTC', now: NOW })).toMatchObject({ tone: 'model', text: 'MODEL' });
-    expect(layerBadge('pbrange', { coin: 'BTC', now: NOW })).toMatchObject({ tone: 'sim', text: 'SIM' });
+    expect(layerBadge('pbrange', { coin: 'BTC', now: NOW })).toMatchObject({ tone: 'model', text: 'MODEL' });
   });
 
   it('warstwa skanera: LIVE do 2 min, potem wiek migawki zamiast LIVE, bez migawki „—” z powodem', () => {

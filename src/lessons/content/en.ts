@@ -20,7 +20,7 @@ export const en: LessonsContent = {
     eyebrow: 'HyperQuant Academy',
     title: 'Lessons on our charts',
     lead:
-      'Real situations from the BTC market on Hyperliquid, stopped at an important moment. You say what you see and where you would be wrong, then we reveal what happened next. We score the reasoning, not the profit: no buy/sell signals and no promised results.',
+      'Real situations from the BTC market on Hyperliquid, stopped at an important moment. You say what you see and where you would be wrong, then we reveal what happened next. We score the reasoning, not the profit: no buy/sell cues and no promised results.',
     tabs: { exercises: 'Exercises', atlas: 'Indicators', combine: 'Combining', myths: 'Myths and data', risk: 'Risk' },
     progress: (done, total) => `Completed: ${done} of ${total}`,
     level: (n) => ['Basics', 'Intermediate', 'Advanced'][n - 1],
@@ -163,7 +163,7 @@ export const en: LessonsContent = {
                 {
                   label: 'Trend day: rising VWAP, price constantly above it, PDH broken and held. I do not fight the move; I would rather look for an entry on a pullback to structure.',
                   feedback:
-                    'Yes. A σ band is a ruler, not a signal. In a trend price can ride the +1σ…+2σ band for hours. A sensible process is to wait for a pullback to structure (for example the +1σ band or a broken level) with a clear invalidation, or not to trade at all.',
+                    'Yes. A σ band is a ruler, not an entry cue. In a trend price can ride the +1σ…+2σ band for hours. A sensible process is to wait for a pullback to structure (for example the +1σ band or a broken level) with a clear invalidation, or not to trade at all.',
                 },
                 {
                   label: 'I buy now, because the trend is strong.',
@@ -363,7 +363,7 @@ export const en: LessonsContent = {
                   feedback: 'Yes. The footprint shows who was aggressive and at which prices. The drop in OI adds context: part of this aggression is exiting positions, not new conviction.',
                 },
                 { label: 'This is absorption: sellers are soaking up the buying.', feedback: 'Absorption would look different: heavy buying while price stands still. Here price moved 300 USD up, so the buying was not absorbed.' },
-                { label: 'Delta +534 is a buy signal.', feedback: 'Delta describes a past candle. On its own it says nothing about what the next one will do.' },
+                { label: 'Delta +534 is a reason to buy.', feedback: 'Delta describes a past candle. On its own it says nothing about what the next one will do.' },
               ],
             },
             {
@@ -389,7 +389,7 @@ export const en: LessonsContent = {
           'An imbalance zone describes the past; it is not guaranteed support. It is useful as a map: where there was aggression, it is easy to check whether it is still there.',
         ],
         honest:
-          'Honestly about the footprint: in the historical tests we ran while building the desk, imbalances on their own, their runs, absorption and CVD divergences gave no edge after costs. That is why we teach them as context and as confirmation of what location says, not as signals.',
+          'Honestly about the footprint: in the historical tests we ran while building the desk, imbalances on their own, their runs, absorption and CVD divergences gave no edge after costs. That is why we teach them as context and as confirmation of what location says, not as entry cues.',
       },
       zoneLabels: ['invalidation area', 'imbalances (18:45 buying)'],
     },
@@ -411,7 +411,7 @@ export const en: LessonsContent = {
           "Price above VWAP: the day's buyers are on average in profit; below VWAP: at a loss.",
           'In balance the band edges are often the extremes of the range; in a trend price can ride the +1σ…+2σ band.',
         ],
-        traps: ['The ±2σ band is not a reversal signal: on a trend day “expensive” keeps getting more expensive.', 'In the morning, with few candles, the bands are narrow and easy to break.'],
+        traps: ['The ±2σ band does not announce a reversal: on a trend day “expensive” keeps getting more expensive.', 'In the morning, with few candles, the bands are narrow and easy to break.'],
         combine: ["With the profile: VWAP near the POC means agreement on the day's value.", 'With flow: VWAP holding against aggressive selling says more than a mere touch.'],
         where: 'Indicators → Daily VWAP, VWAP bands ±1σ and ±2σ, Session VWAP',
         station: 'day-map', // VWAP dnia (pasma σ: Wskaźniki)
@@ -594,7 +594,7 @@ export const en: LessonsContent = {
         what: 'The same market on three exchanges: CVD, OI change and funding from Hyperliquid, Binance and Bybit.',
         how: "Binance and Bybit data is fetched by the reader's browser (off by default, switched on in Sources); the desk does not store it. The Numbers table collects candle statistics in one place.",
         read: ['A move on Hyperliquid without confirmation on Binance is often local and short-lived.', 'Diverging funding between exchanges shows where leverage is crowding.'],
-        traps: ['Different exchanges, different contracts and different participants: agreement is context, not a signal.'],
+        traps: ['Different exchanges, different contracts and different participants: agreement is context, not an entry cue.'],
         combine: ['With CVD and OI on Hyperliquid: is the flow shared by the whole market.'],
         where: 'Indicators → Exchange CVD, Exchange ΔOI; Numbers table under the chart',
         station: 'big-hands', // pytanie o cały rynek; panele giełd na życzenie
@@ -691,7 +691,7 @@ export const en: LessonsContent = {
       'Judge a decision by its process, not by the result of a single trade. A good decision can lose, a bad one can win.',
     ],
     recipesTitle: 'Ready-made question sets',
-    recipesIntro: 'These are not signals. They are sets of questions for typical situations, with the place where you can see you are wrong.',
+    recipesIntro: 'These are not entry cues. They are sets of questions for typical situations, with the place where you can see you are wrong.',
     recipeLabels: { context: 'Context', flow: 'Flow', risk: 'Invalidation', against: 'What argues against' },
     recipes: [
       {

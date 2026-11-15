@@ -238,8 +238,8 @@ export const GROUPS: { title: string; rows: Row[] }[] = [
         kinds: ['LIVE'],
         refresh: tr('co 5 s', 'every 5 s'),
         caveat: tr(
-          'Opis bieżącego stanu, nie sygnał ani prognoza. Fakt bez danych (np. przed nagraniem taśmy) jest pominięty, a nie zgadywany.',
-          'A description of the current state, not a signal or forecast. A fact without data (e.g. before the tape is recorded) is left out, not guessed.'
+          'Opis bieżącego stanu, nie rekomendacja ani prognoza. Fakt bez danych (np. przed nagraniem taśmy) jest pominięty, a nie zgadywany.',
+          'A description of the current state, not a recommendation or forecast. A fact without data (e.g. before the tape is recorded) is left out, not guessed.'
         ),
       },
       {
@@ -269,8 +269,8 @@ export const GROUPS: { title: string; rows: Row[] }[] = [
         kinds: ['LIVE'],
         refresh: tr('na żywo', 'live'),
         caveat: tr(
-          'Kontekst, nie sygnał: strefy i aukcje nie mają potwierdzonej skuteczności prognostycznej.',
-          'Context, not a signal: zones and auctions have no confirmed predictive power.'
+          'Kontekst, nie rekomendacja: strefy i aukcje nie mają potwierdzonej skuteczności prognostycznej.',
+          'Context, not a recommendation: zones and auctions have no confirmed predictive power.'
         ),
       },
       {
@@ -303,8 +303,8 @@ export const GROUPS: { title: string; rows: Row[] }[] = [
         kinds: ['LIVE'],
         refresh: tr('na żywo', 'live'),
         caveat: tr(
-          'Kontekst aukcji, nie sygnał. Profil zależy od wysokości wiersza, więc POC i value area mogą się nieznacznie przesuwać przy zmianie zbliżenia. Doby starsze niż okno nagrania (7 dób) nie mają taśmy: wolumen bez stron i rozłożony równo w świecach, więc dokładny kształt i kolor tylko tam, gdzie była taśma. Kolor pozycji jest umowny: w każdej transakcji są dwie strony, a agresor mówi tylko, kto pchał cenę; OI jest minutowe, więc w obrębie minuty cena dostaje część zmiany według wolumenu, nie według pojedynczych transakcji (zmiana OI minuty zgadza się w czasie z jej taśmą: korelacja |zmiana OI| z wolumenem 0,74 w tej samej minucie, 0,25 minutę obok). Hyperliquid liczy OI obu stron, więc zmiana w minucie sięga dwukrotności wolumenu. Na wierszach z dużym obrotem netto to zwykle mała różnica dużych przepływów w obie strony.',
-          'Auction context, not a signal. The profile depends on row height, so the POC and value area can shift slightly when zooming. Days older than the recording window (7 days) have no tape: volume without sides, spread evenly within candles, so the exact shape and colour only where the tape was. The positions colour is a convention: every trade has two sides and the aggressor only says who pushed the price; OI is per minute, so within a minute a price gets its share of the change by volume, not by individual trades (the minute OI change lines up in time with its tape: correlation of |OI change| with volume 0.74 in the same minute, 0.25 one minute off). Hyperliquid counts OI on both sides, so a minute change reaches twice the volume. On rows with heavy turnover the net is usually a small difference of large flows both ways.'
+          'Kontekst aukcji, nie rekomendacja. Profil zależy od wysokości wiersza, więc POC i value area mogą się nieznacznie przesuwać przy zmianie zbliżenia. Doby starsze niż okno nagrania (7 dób) nie mają taśmy: wolumen bez stron i rozłożony równo w świecach, więc dokładny kształt i kolor tylko tam, gdzie była taśma. Kolor pozycji jest umowny: w każdej transakcji są dwie strony, a agresor mówi tylko, kto pchał cenę; OI jest minutowe, więc w obrębie minuty cena dostaje część zmiany według wolumenu, nie według pojedynczych transakcji (zmiana OI minuty zgadza się w czasie z jej taśmą: korelacja |zmiana OI| z wolumenem 0,74 w tej samej minucie, 0,25 minutę obok). Hyperliquid liczy OI obu stron, więc zmiana w minucie sięga dwukrotności wolumenu. Na wierszach z dużym obrotem netto to zwykle mała różnica dużych przepływów w obie strony.',
+          'Auction context, not a recommendation. The profile depends on row height, so the POC and value area can shift slightly when zooming. Days older than the recording window (7 days) have no tape: volume without sides, spread evenly within candles, so the exact shape and colour only where the tape was. The positions colour is a convention: every trade has two sides and the aggressor only says who pushed the price; OI is per minute, so within a minute a price gets its share of the change by volume, not by individual trades (the minute OI change lines up in time with its tape: correlation of |OI change| with volume 0.74 in the same minute, 0.25 one minute off). Hyperliquid counts OI on both sides, so a minute change reaches twice the volume. On rows with heavy turnover the net is usually a small difference of large flows both ways.'
         ),
       },
       {
@@ -413,8 +413,8 @@ export const GROUPS: { title: string; rows: Row[] }[] = [
         kinds: ['LIVE', 'MODEL'],
         refresh: tr('co 5 s', 'every 5 s'),
         caveat: tr(
-          'Na ekranie pseudonimy jak na taśmie, nigdy adresy. W zapisie serwera konto ma numer na dobę UTC w nowszych plikach (numeracja dobowa), a w starszych plikach — na godzinę UTC, więc okno przez przełom doby (w starszych plikach — godziny) może liczyć jedno konto jako dwa (udział zaniżony). Opis, kto daje płynność, nie sygnał kierunku.',
-          'The screen shows pseudonyms as on the tape, never addresses. In the server recording an account has a number per UTC day in newer files (daily numbering) and per UTC hour in older files, so a window across the turn of the day (in older files, of the hour) can count one account as two (share understated). A description of who provides liquidity, not a direction signal.'
+          'Na ekranie pseudonimy jak na taśmie, nigdy adresy. W zapisie serwera konto ma numer na dobę UTC w nowszych plikach (numeracja dobowa), a w starszych plikach — na godzinę UTC, więc okno przez przełom doby (w starszych plikach — godziny) może liczyć jedno konto jako dwa (udział zaniżony). Opis, kto daje płynność, bez kierunku ceny.',
+          'The screen shows pseudonyms as on the tape, never addresses. In the server recording an account has a number per UTC day in newer files (daily numbering) and per UTC hour in older files, so a window across the turn of the day (in older files, of the hour) can count one account as two (share understated). A description of who provides liquidity, with no price direction.'
         ),
       },
       {
@@ -680,8 +680,8 @@ export const GROUPS: { title: string; rows: Row[] }[] = [
         kinds: ['LIVE'],
         refresh: tr('archiwum co 10 min, ocena co godzinę', 'archive every 10 min, scoring every hour'),
         caveat: tr(
-          'Historia to eksploracja (definicje znane po fakcie); rozstrzyga ocena do przodu, która rośnie powoli (reguły tygodniowe — lata). Świeca dotykająca obu barier odrzucana; pomiar statystyczny, nie sygnał — efekt ≠ zysk po kosztach.',
-          'History is exploration (definitions known after the fact); the forward score decides, and it grows slowly (weekly rules — years). A candle touching both barriers is discarded; a statistical measurement, not a signal — effect ≠ profit after costs.'
+          'Historia to eksploracja (definicje znane po fakcie); rozstrzyga ocena do przodu, która rośnie powoli (reguły tygodniowe — lata). Świeca dotykająca obu barier odrzucana; pomiar statystyczny, nie rekomendacja — efekt ≠ zysk po kosztach.',
+          'History is exploration (definitions known after the fact); the forward score decides, and it grows slowly (weekly rules — years). A candle touching both barriers is discarded; a statistical measurement, not a recommendation — effect ≠ profit after costs.'
         ),
       },
       {
@@ -732,8 +732,8 @@ export const GROUPS: { title: string; rows: Row[] }[] = [
         kinds: ['LIVE', 'MODEL'],
         refresh: tr('lista rynków co 10 min; arkusze i model co minutę', 'market list every 10 min; books and model every minute'),
         caveat: tr(
-          'Cena rynku to nie czyste prawdopodobieństwo (premia za ryzyko, płynność); źródła cen rozliczenia różnią się od świec modelu; powyżej 14 dni brak wartości modelu. Porównanie kalibracji, nie sygnał.',
-          'A market price is not a pure probability (risk premium, liquidity); settlement price sources differ from the model’s candles; beyond 14 days there is no model value. A calibration comparison, not a signal.'
+          'Cena rynku to nie czyste prawdopodobieństwo (premia za ryzyko, płynność); źródła cen rozliczenia różnią się od świec modelu; powyżej 14 dni brak wartości modelu. Porównanie kalibracji, nie rekomendacja.',
+          'A market price is not a pure probability (risk premium, liquidity); settlement price sources differ from the model’s candles; beyond 14 days there is no model value. A calibration comparison, not a recommendation.'
         ),
       },
       {
@@ -749,8 +749,8 @@ export const GROUPS: { title: string; rows: Row[] }[] = [
         kinds: ['LIVE'],
         refresh: tr('świece 1m co minutę, 1h co 30 min', '1m candles every minute, 1h every 30 min'),
         caveat: tr(
-          'Cena typowa przybliża ceny transakcji; w statystyce z 1h profil i słabość ekstremów są przybliżone; poniżej 30 sesji „—”. Opis przeszłości, nie prognoza ani sygnał.',
-          'The typical price approximates trade prices; in the 1h statistics the profile and weakness of extremes are approximate; below 30 sessions “—”. A description of the past, not a forecast or signal.'
+          'Cena typowa przybliża ceny transakcji; w statystyce z 1h profil i słabość ekstremów są przybliżone; poniżej 30 sesji „—”. Opis przeszłości, nie prognoza ani rekomendacja.',
+          'The typical price approximates trade prices; in the 1h statistics the profile and weakness of extremes are approximate; below 30 sessions “—”. A description of the past, not a forecast or recommendation.'
         ),
       },
       {
@@ -799,8 +799,8 @@ export const GROUPS: { title: string; rows: Row[] }[] = [
         kinds: ['LIVE', 'MODEL'],
         refresh: tr('co 2 min z mapą; kubełki 15 min; klasyfikacja co 10 min', 'every 2 min with the map; 15-min buckets; classification every 10 min'),
         caveat: tr(
-          'Wyłącznie agregaty z zamkniętych kubełków; komórki z < 5 uczestnikami lub z jednym > 50% obrotu ukryte wraz z kolejnymi (ukrywanie wtórne), kwoty do 10 tys. USD; „poinformowani” to wynik statystyczny z przeszłości, nie sygnał.',
-          'Aggregates from closed buckets only; cells with < 5 participants or with one > 50% of turnover are hidden along with others (secondary suppression), amounts rounded to USD 10k; “informed” is a statistical result from the past, not a signal.'
+          'Wyłącznie agregaty z zamkniętych kubełków; komórki z < 5 uczestnikami lub z jednym > 50% obrotu ukryte wraz z kolejnymi (ukrywanie wtórne), kwoty do 10 tys. USD; „poinformowani” to wynik statystyczny z przeszłości, nie rekomendacja.',
+          'Aggregates from closed buckets only; cells with < 5 participants or with one > 50% of turnover are hidden along with others (secondary suppression), amounts rounded to USD 10k; “informed” is a statistical result from the past, not a recommendation.'
         ),
       },
       {
