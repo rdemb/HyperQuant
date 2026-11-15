@@ -1639,7 +1639,8 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
     pane: 'own',
     params: [{ key: 'usd', label: tr('Kwota (USD)', 'Amount (USD)'), min: 1000, max: 10_000_000, step: 1000, def: 50_000 }],
     // Strony arkusza zamiast „kupno/sprzedaż” i neutralne kolory: koszt, nie kierunek
-    plots: [{ title: 'ask' }, { color: SECOND, title: 'bid' }],
+    // Koszt: ask w kolorze instancji (rodzina jasny szary), bid ciemniejszy szary (plan 59, G2)
+    plots: [{ title: 'ask' }, { color: '#7A889C', title: 'bid' }],
     format: 'fixed2',
     fromZero: true,
     series: (p) => {
@@ -2162,6 +2163,24 @@ export const MAX_INDICATORS = 12;
 export const INDICATOR_COLORS = ['#e9548d', '#c3e143', '#f190dd', '#5ce4d5', '#6fb120', '#aa6c73'] as const;
 
 /**
+ * Kolor rodziny (plan 59, G2): wskaźniki z grup dostają kolor znaczenia, a nie kolejny wolny z palety — zmienność
+ * i zakres fiolet strefy, skład przepływu turkus, koszt jasny szary, poziomy bursztyn. Presja (absorpcja, OFI, zmiana OI)
+ * zostaje w kolorach znaku, szerokość agresji i makerzy w kolorach stron i kohort; klasyczne przy palecie.
+ */
+const FAMILY_COLOR: Partial<Record<IndicatorId, string>> = {
+  rvol: '#9085E9',
+  regime: '#9085E9',
+  hawkes: '#9085E9',
+  cone: '#9085E9',
+  repeat: '#5CE4D5',
+  ordersize: '#5CE4D5',
+  slippage: '#B4C6DB',
+  pbrange: '#E0A045',
+  effort: '#E0A045',
+};
+export const familyColor = (id: IndicatorId): string | null => FAMILY_COLOR[id] ?? null;
+
+/**
  * Kolory instancji z dawnych palet (Neon i Desk) — zostają w zapisach użytkowników (`hq.charts.*`, szablony) i w dawnych
  * presetach. Nie przepisujemy ich; stałe linie wskaźników są tak dobrane, żeby z żadnym z nich się nie pokryć.
  */
@@ -2252,7 +2271,7 @@ export function addIndicator(list: readonly IndicatorInstance[], id: IndicatorId
   if (list.length >= MAX_INDICATORS) return [...list];
   const def = indicatorDef(id);
   const iid = freeIid(new Set(list.map((x) => x.iid)), id);
-  return [...list, { iid, id, params: parseParams(def, null), color: freeColor(list), alpha: 1, width: defaultWidth(def), labels: true, visible: true }];
+  return [...list, { iid, id, params: parseParams(def, null), color: familyColor(id) ?? freeColor(list), alpha: 1, width: defaultWidth(def), labels: true, visible: true }];
 }
 
 /** Lista z kopią wskaźnika (te same parametry i styl, wolny kolor) — np. EMA 21, 55 i 200 w trzy kliknięcia. */
