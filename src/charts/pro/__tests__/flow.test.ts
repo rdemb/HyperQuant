@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { FootprintBuilder } from '../core/footprintBar';
-import { cvdCandles, deltaCandle, deltaFromExtremes, flipsEmpty } from '../core/flow';
+import { cvdCandles, cvdRestarts, deltaCandle, deltaFromExtremes, flipsEmpty } from '../core/flow';
 import { deltaPoint, flowLegend, hlDelta } from '../chart/flowPoints';
 import { PRO } from '../chart/theme';
 
@@ -92,5 +92,21 @@ describe('flipsEmpty — kiedy pełne setData zamiast update', () => {
   it('zmiana wartości bez zmiany pustości i ostatnia świeca — zwykły update', () => {
     const now = [null, 3, null, null];
     expect(flipsEmpty([1, 3], before.length, (i) => before[i] === null, (i) => now[i] === null)).toBe(false);
+  });
+});
+
+describe('CVD po luce w taśmie: znacznik restartu (plan 59, E7)', () => {
+  it('znacznik na pierwszej pełnej świecy po luce w tym samym okresie; nie na początku danych ani po zmianie okresu', () => {
+    const D = 86_400_000;
+    const bars = [
+      { t: 0, fp: null },
+      { t: 60_000, fp: fp(60_000, [1]) },
+      { t: 120_000, fp: fp(120_000, [1]), complete: false },
+      { t: 180_000, fp: fp(180_000, [2]) },
+      { t: 240_000, fp: fp(240_000, [1]) },
+      { t: D - 60_000, fp: null },
+      { t: D, fp: fp(D, [1]) },
+    ];
+    expect(cvdRestarts(bars, 'day')).toEqual([180_000]);
   });
 });
