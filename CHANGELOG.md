@@ -10,6 +10,12 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 #### Naprawione
 - **`instaluj-ntfy.sh` i Caddyfile**: Caddy przypięty (`default_bind`) do publicznego adresu z rekordu A domeny, sprawdzonego wobec adresów serwera; port 443 na innych adresach (Tailscale na 100.x) zostaje dla innych programów. Wcześniej Caddy nie startował przy zajętym 443 na adresie Tailscale (`bind: address already in use`).
 
+### Boczne menu także na blogu i stronach serwisu (2026-11-15)
+<!-- co-nowego: grupa=blog | pl=Blog, Wyniki, Co nowego, Lekcje, Wykresy i Prywatność mają na komputerze to samo boczne menu co aplikacja | en=Blog, Results, What's new, Lessons, Charts and Privacy now have the same side menu as the app on desktop -->
+
+#### Zmienione
+- **Szyna boczna na stronach statycznych** (`scripts/blog/render.mjs`, `blog.css`): od 1024 px ta sama szyna co w aplikacji — marka, „Dzień tradera”, „Rynki i wiedza”, na dole „Publikacje” i przełącznik języka; 88 px z nazwami pod ikonami, od 1600 px 240 px z nazwami w rzędzie i tytułami grup; górny pasek strony tylko poniżej 1024 px (z dolnym paskiem na telefonie). Strona Wyniki podświetla „Wyniki”. Zrzuty wykresu na Lekcjach i Wykresach liczą szerokość bez szyny (bez przewijania w bok przy 1024 px).
+
 ### Tematy 24/7: mniej zapytań do API (2026-11-15)
 <!-- co-nowego: ukryj -->
 
