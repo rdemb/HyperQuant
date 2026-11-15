@@ -649,7 +649,7 @@ ${refuted}
       },
       main,
       lang,
-      current: 'after',
+      current: 'results',
       alternates,
       disclaimer: lang === 'pl' ? 'Rozliczenie zapisanych prognoz, nie porada inwestycyjna ani wezwanie do transakcji. Handel kontraktami z dźwignią wiąże się z wysokim ryzykiem utraty środków.' : 'A scorecard of recorded forecasts, not investment advice nor a call to trade. Trading leveraged contracts carries a high risk of losing money.',
     }),
