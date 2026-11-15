@@ -4,11 +4,13 @@ import { daySessions, fmtSpan, localHour, sessionClock } from '../../shell/dzien
 
 export { daySessions, fmtSpan, localHour, sessionClock };
 import { tr } from '../../i18n';
+import { baseOpens } from '../../utils/underlying';
 
 /**
  * Tarcza 24 h na Starcie: doba w czasie lokalnym, sesje BTC jak na wykresie (core/sessions: Azja od 00:00 UTC,
  * Londyn od 08:00 czasu Londynu, Nowy Jork od 09:30 czasu Nowego Jorku). Sesje przeszłe wyciszone, bieżąca
- * wypełniona do „teraz”, nadchodząca obrysem; wskazówka z kropką „lume”. Opis czasu, nie rynku.
+ * wypełniona do „teraz”, nadchodząca obrysem; wskazówka z kropką „lume”. Na zewnątrz pierścienia sesji znaczniki otwarć
+ * rynków bazowych (NYSE 9:30 ET, sesja CME 18:00 ET; projekt 60, S3). Opis czasu, nie rynku.
  */
 const C = 410;
 
@@ -39,8 +41,8 @@ export const SessionDial: React.FC<{ now: number; size?: number; detailed?: bool
   }
   const sw = detailed ? 18 : 34;
   const label = tr(
-    `Tarcza 24 godzin, czas lokalny. ${SESSION_LABEL[clock.current.id]} trwa ${fmtSpan(clock.elapsed)}, ${SESSION_LABEL[clock.next.id]} za ${fmtSpan(clock.untilNext)}.`,
-    `24-hour dial, local time. ${SESSION_LABEL[clock.current.id]} running for ${fmtSpan(clock.elapsed)}, ${SESSION_LABEL[clock.next.id]} in ${fmtSpan(clock.untilNext)}.`
+    `Tarcza 24 godzin, czas lokalny. ${SESSION_LABEL[clock.current.id]} trwa ${fmtSpan(clock.elapsed)}, ${SESSION_LABEL[clock.next.id]} za ${fmtSpan(clock.untilNext)}. Znaczniki: otwarcie NYSE i sesji CME.`,
+    `24-hour dial, local time. ${SESSION_LABEL[clock.current.id]} running for ${fmtSpan(clock.elapsed)}, ${SESSION_LABEL[clock.next.id]} in ${fmtSpan(clock.untilNext)}. Marks: NYSE and CME session opens.`
   );
   return (
     <svg viewBox="0 0 820 820" width={size} height={size} role="img" aria-label={label} className="block max-w-full text-ink-1">
@@ -94,6 +96,29 @@ export const SessionDial: React.FC<{ now: number; size?: number; detailed?: bool
             </g>
           );
         })}
+      {(() => {
+        const o = baseOpens(now);
+        return (
+          [
+            ["NYSE", localHour(o.nyse)],
+            ["CME", localHour(o.cme)],
+          ] as const
+        ).map(([k, h]) => {
+          const [x0, y0] = P(304, h);
+          const [x1, y1] = P(326, h);
+          const [lx, ly] = P(270, h);
+          return (
+            <g key={k} data-tarcza-znacznik={k}>
+              <path d={`M${x0.toFixed(1)} ${y0.toFixed(1)}L${x1.toFixed(1)} ${y1.toFixed(1)}`} stroke="var(--color-lume)" strokeWidth={detailed ? 3 : 7} strokeLinecap="round" />
+              {detailed && (
+                <text x={lx} y={ly + 4} textAnchor="middle" fontFamily="var(--font-mono)" fontSize={10} fontWeight={700} letterSpacing={1} fill="var(--color-ink-2)">
+                  {k}
+                </text>
+              )}
+            </g>
+          );
+        });
+      })()}
       <g style={{ transform: `rotate(${(nowH / 24) * 360}deg)`, transformOrigin: '410px 410px', transition: 'transform 400ms cubic-bezier(.2,.7,.3,1)' }}>
         <path d={`M${C} ${C - 150}V${C - 404}`} stroke="currentColor" strokeWidth={detailed ? 2 : 6} />
         <circle cx={C} cy={C - 404} r={detailed ? 8 : 20} fill="var(--color-lume)" stroke="currentColor" strokeWidth={detailed ? 2 : 6} />
