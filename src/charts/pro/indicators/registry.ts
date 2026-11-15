@@ -1,4 +1,5 @@
 import type { Candle, Side } from '../hl/parse';
+import { regimePrior } from '../../../utils/bocpd';
 import type { BookFrame } from '../core/book';
 import type { MakerSplit } from '../core/makers';
 import { DEFAULT_EFFORT_PARAMS } from '../core/effortZones';
@@ -303,12 +304,8 @@ export const REGIME_PRIOR = 100;
 /** Najdłuższy śledzony reżim (świece); dłuższe w ostatniej komórce rozkładu. */
 const REGIME_RUNS = 600;
 
-/** Średnia a priori wariancji zwrotów: odporna (mediana kwadratów / 0,4549), nie mniej niż ¼ średniej kwadratów. */
-export function regimePrior(xs: readonly number[]): number {
-  const sq = xs.map((x) => x * x).sort((a, b) => a - b);
-  const mean = sq.reduce((s, x) => s + x, 0) / sq.length;
-  return Math.max(1e-12, sq[sq.length >> 1] / 0.4549, 0.25 * mean);
-}
+/** Prior wariancji reżimu: wspólny z Badaniami (`utils/bocpd`). */
+export { regimePrior };
 
 /** Przedziały kwot zleceń: 20 na dekadę (krok ok. 12%) od 1 do 100 mln USD; skrajne zbierają resztę. */
 export const SIZE_BINS_PER_DECADE = 20;

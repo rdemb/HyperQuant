@@ -142,3 +142,10 @@ export class Bocpd {
     };
   }
 }
+
+/** Średnia a priori wariancji zwrotów: odporna (mediana kwadratów / 0,4549), nie mniej niż ¼ średniej kwadratów. */
+export function regimePrior(xs: readonly number[]): number {
+  const sq = xs.map((x) => x * x).sort((a, b) => a - b);
+  const mean = sq.reduce((s, x) => s + x, 0) / sq.length;
+  return Math.max(1e-12, sq[sq.length >> 1] / 0.4549, 0.25 * mean);
+}
