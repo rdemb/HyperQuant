@@ -166,7 +166,7 @@ describe('strona co-nowego/ i en/whats-new/', () => {
 
   it('PL: oś od najnowszego, najnowszy okres rozwinięty, reszta zwinięta; grupy po polsku; linki do repo i CHANGELOG', () => {
     const { html } = whatsNewPage(SITE, 'pl', news);
-    const details = [...html.matchAll(/<details[^>]*>/g)].map((m) => m[0]);
+    const details = [...html.matchAll(/<details[^>]*>/g)].map((m) => m[0]).filter((d) => !d.includes('bottom-nav'));
     expect(details).toHaveLength(4);
     expect(details[0]).toContain(' open');
     expect(details.slice(1).every((d) => !d.includes(' open'))).toBe(true);
