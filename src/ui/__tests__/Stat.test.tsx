@@ -38,6 +38,6 @@ describe('kafel liczby: „—” bez plakietki źródła', () => {
     expect(rail).toMatch(/missing=\{!mc\}/);
     expect(rail).toMatch(/missing=\{vwapZ === null\}/);
     expect(readFileSync('src/views/market/FundingStrip.tsx', 'utf8')).toMatch(/missing=\{!hl\}/);
-    expect(readFileSync('src/components/QuantSignalDesk.tsx', 'utf8')).toMatch(/missing=\{quant\.kyleLambdaPer1M === null\}/);
+    expect(readFileSync('src/components/QuantSignalDesk.tsx', 'utf8')).toMatch(/missing=\{quant\.kyle === null\}/);
   });
 });

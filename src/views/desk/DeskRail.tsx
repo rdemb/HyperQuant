@@ -1,5 +1,5 @@
 import React from 'react';
-import { ouHalfLifeText } from '../../components/noiseText';
+import { kyleParts, ouHalfLifeText, vpinParts } from '../../components/noiseText';
 import { useDesk } from '../../state/DeskContext';
 import { Stat, fmtPct, DASH, fmtFixed, fmtNum } from '../../ui';
 import { FundingStrip } from '../market/FundingStrip';
@@ -18,6 +18,8 @@ const CAL_TITLE = tr('Skalibrowane na rozstrzygniętej historii (dziennik desku)
 /** Pas kontekstu pod wykresem: zasięg MC, głębokość arkusza, mikrostruktura, funding, najbliższe makro. */
 export const DeskRail: React.FC = () => {
   const { feed, quant } = useDesk();
+  const vpinRail = vpinParts(quant.vpin);
+  const kyleRail = kyleParts(quant.kyle);
   const mc = feed.backendTelemetry?.monteCarlo ?? null;
   // Poziom już przekroczony (cena nad PDH / pod PDL) — „100%” byłoby pozorną prognozą
   const lv = feed.realHtfLevels;
@@ -123,9 +125,9 @@ export const DeskRail: React.FC = () => {
       <div className="bg-surface-1 border border-line rounded-xl p-3.5">
         <Stat
           label={<>VPIN · <span className="normal-case">λ</span></>}
-          source={{ tone: 'model', card: 'vpin', label: 'MODEL', title: tr('VPIN na kubełkach wolumenowych; λ z OLS na realnym przepływie WS', 'VPIN on volume buckets; λ from OLS on real WS flow') }}
-          value={quant.vpinToxicity === null ? DASH : <span className="text-base">{fmtPct(quant.vpinToxicity * 100, 1, false)}</span>}
-          hint={`${quant.vpinToxicity === null ? `${tr('VPIN: brak wolumenu w świecach', 'VPIN: no candle volume')} · ` : ''}λ = ${quant.kyleLambdaPer1M !== null ? `$${fmtFixed(quant.kyleLambdaPer1M, 2)} / $1M` : tr('b/d', 'n/a')}`}
+          source={{ tone: 'model', card: 'vpin', label: 'MODEL', title: tr('VPIN na kubełkach wolumenowych z przedziałem 95%; λ z OLS na realnym przepływie WS z przedziałem t', 'VPIN on volume buckets with a 95% interval; λ from OLS on real WS flow with a t interval') }}
+          value={vpinRail.value === null ? DASH : <span className="text-base">{vpinRail.value}</span>}
+          hint={`VPIN ${vpinRail.detail} · λ ${kyleRail.value ?? tr('b/d', 'n/a')}: ${kyleRail.detail}`}
         />
       </div>
 
