@@ -43,6 +43,9 @@ import type { Akcja } from './polecenia';
 import { sessionNameAt } from '../utils/sessionNames';
 import { useRules, usePaused } from './wyspa/magazyn';
 import { useStraznicy } from './wyspa/useStraznicy';
+import { Dok, useZaloga } from './wyspa/Dok';
+import { Postac } from './wyspa/Postac';
+import type { PersonaId } from './wyspa/persony';
 
 // Widoki ładowane leniwie (mniejszy pierwszy bundle; wykresy faz w osobnym pakiecie)
 const StartView = lazy(() => import('../views/StartView'));
@@ -576,6 +579,9 @@ export const AppShell: React.FC = () => {
   const [wyspa, setWyspa] = useState(false);
   const [wyspaGotowa, setWyspaGotowa] = useState(false);
   const wyspaBtn = useRef<HTMLButtonElement>(null);
+  // Kotwica panelu: przycisk nagłówka albo dok (panel staje przy tym, z czego go otwarto)
+  const wyspaKotwica = useRef<HTMLElement | null>(null);
+  const [wyspaPostac, setWyspaPostac] = useState<PersonaId | undefined>(undefined);
   const straz = useStraznicy();
   const dismissFlash = straz.dismiss;
   const reguly = useRules();
@@ -604,10 +610,24 @@ export const AppShell: React.FC = () => {
   useMenuDismiss(wiecej, setWiecej, wiecejRef, wiecejBtn);
 
   const otworzWyspe = useCallback(() => {
+    wyspaKotwica.current = wyspaBtn.current;
+    setWyspaPostac(undefined);
     setWyspaGotowa(true);
     setWyspa((o) => !o);
     dismissFlash();
   }, [dismissFlash]);
+  // Z doku: panel przy doku, na karcie klikniętej postaci
+  const otworzZDoku = useCallback(
+    (p?: PersonaId) => {
+      wyspaKotwica.current = document.querySelector<HTMLElement>('[data-dok]');
+      setWyspaPostac(p);
+      setWyspaGotowa(true);
+      setWyspa(true);
+      dismissFlash();
+    },
+    [dismissFlash]
+  );
+  const zaloga = useZaloga(straz.flash);
   const zamknijWyspe = useCallback(() => setWyspa(false), []);
 
   const otworzPalete = useCallback(() => {
@@ -690,12 +710,12 @@ export const AppShell: React.FC = () => {
                 onClick={otworzWyspe}
                 aria-expanded={wyspa}
                 aria-haspopup="dialog"
-                aria-label={tr(`Wyspa: strażnicy i agenci AI (aktywni: ${aktywni})`, `Island: guards and AI agents (active: ${aktywni})`)}
-                title={tr('Strażnicy i agenci AI', 'Guards and AI agents')}
+                aria-label={tr(`Załoga: strażnicy i Sufler (aktywne reguły: ${aktywni})`, `Crew: guards and the Prompter (active rules: ${aktywni})`)}
+                title={tr('Załoga: strażnicy i Sufler', 'Crew: guards and the Prompter')}
                 className={`relative hidden min-[380px]:inline-flex items-center justify-center gap-2 h-10 min-w-10 px-2 sm:px-2.5 rounded-lg border text-xs transition-colors duration-150 ${wyspa ? 'border-line-strong bg-surface-2 text-ink-1' : 'border-line bg-surface-1 text-ink-2 hover:text-ink-1 hover:border-line-strong'}`}
               >
-                <Radar className="w-4 h-4" aria-hidden="true" />
-                <span className="hidden 2xl:inline">{tr('Strażnicy', 'Guards')}</span>
+                <Postac id={zaloga.lead.p.id} state={zaloga.lead.state} size={26} className="-my-1" />
+                <span className="hidden 2xl:inline">{tr('Załoga', 'Crew')}</span>
                 {aktywni > 0 && (
                   <span aria-hidden="true" className="absolute top-1.5 right-1.5 sm:static font-mono tabular-nums text-[11px] leading-none text-ink-1 inline-flex items-center gap-1">
                     <span className="w-1.5 h-1.5 rounded-full bg-accent" />
@@ -809,6 +829,8 @@ export const AppShell: React.FC = () => {
                   data-more-wyspa
                   onClick={() => {
                     setWiecej(false);
+                    wyspaKotwica.current = wyspaBtn.current;
+                    setWyspaPostac(undefined);
                     setWyspaGotowa(true);
                     setWyspa(true);
                     dismissFlash();
@@ -816,7 +838,7 @@ export const AppShell: React.FC = () => {
                   className={MENU_ITEM}
                 >
                   <Radar className="w-4 h-4" aria-hidden="true" />
-                  {tr('Strażnicy i agenci AI', 'Guards and AI agents')}
+                  {tr('Załoga: strażnicy i Sufler', 'Crew: guards and the Prompter')}
                   {aktywni > 0 && <span className="ml-auto font-mono tabular-nums text-xs text-ink-3">{aktywni}</span>}
                 </button>
                 <div role="separator" className="my-1 border-t border-line" />
@@ -827,35 +849,15 @@ export const AppShell: React.FC = () => {
         </div>
       </nav>
 
-      {/* Krótka wyspa: zdarzenie strażnika na 8 s w rogu (nad dolnym paskiem na telefonie); dotknięcie otwiera wyspę */}
-      <AnimatePresence>
-        {straz.flash && !wyspa && (
-          <motion.button
-            key={`${straz.flash.ruleId}-${straz.flash.at}`}
-            type="button"
-            data-wyspa-flash
-            onClick={otworzWyspe}
-            initial={reduce ? { opacity: 0 } : { opacity: 0, y: 12, scale: 0.96 }}
-            animate={reduce ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 }}
-            exit={reduce ? { opacity: 0 } : { opacity: 0, y: 8, scale: 0.98 }}
-            transition={{ type: 'spring', stiffness: 420, damping: 34 }}
-            className="fixed z-50 right-3 bottom-[calc(3.5rem+env(safe-area-inset-bottom)+0.75rem)] lg:right-6 lg:bottom-6 max-w-[min(420px,calc(100vw-1.5rem))] flex items-center gap-3 rounded-full border border-line-strong bg-surface-2/95 backdrop-blur-xl pl-3 pr-4 py-2.5 text-left shadow-2xl"
-          >
-            <span className="relative flex w-2.5 h-2.5 shrink-0" aria-hidden="true">
-              {!reduce && <span className="absolute inset-0 rounded-full bg-accent opacity-60 animate-ping" />}
-              <span className="relative w-2.5 h-2.5 rounded-full bg-accent" />
-            </span>
-            <span className="min-w-0 text-[13px] leading-snug text-ink-1">{straz.flash.text}</span>
-          </motion.button>
-        )}
-      </AnimatePresence>
+      {/* Dok załogi: pływająca wyspa z postaciami; zdarzenie strażnika jako dymek nad dokiem */}
+      <Dok flash={straz.flash} onDismissFlash={dismissFlash} onOpen={otworzZDoku} open={wyspa} />
       <div role="status" aria-live="polite" className="sr-only">
         {straz.flash ? tr(`Strażnik: ${straz.flash.text}`, `Guard: ${straz.flash.text}`) : ''}
       </div>
 
       {wyspaGotowa && (
         <Suspense fallback={null}>
-          <Wyspa open={wyspa} onClose={zamknijWyspe} go={go} anchor={wyspaBtn} />
+          <Wyspa open={wyspa} onClose={zamknijWyspe} go={go} anchor={wyspaKotwica} persona={wyspaPostac} flash={straz.flash} />
         </Suspense>
       )}
 
