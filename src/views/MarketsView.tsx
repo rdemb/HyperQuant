@@ -3,9 +3,10 @@ import { tr } from '../i18n';
 import { useMarketsPage } from '../state/useMarketsTable';
 import { Badge, SectionHeading } from '../ui';
 import { MarketList } from './markets/MarketList';
+import { deskLabels, deskPhrase } from '../config/deskMarkets';
 
 /**
- * Widok „Rynki” (`#markets`): rynki aplikacji (BTC i złoto `xyz:GOLD`). Liczby LIVE z odpowiedzi Hyperliquid pobranej
+ * Widok „Rynki” (`#markets`): rynki aplikacji z konfiguracji (`src/config/deskMarkets.ts`). Liczby LIVE z odpowiedzi Hyperliquid pobranej
  * w przeglądarce, z godziną odczytu; odczyt starszy niż 3 min albo rynek bez odpowiedzi giełdy — „—” z powodem. Opis rynku,
  * bez oceny ruchu. Dane i przeliczenia: `useMarketsPage` (czyste funkcje w `utils/marketsTable`); tu i w `views/markets/`
  * sama prezentacja.
@@ -17,11 +18,11 @@ const MarketsView: React.FC = () => {
     <div className="flex flex-col gap-4" data-markets-view>
       <SectionHeading
         id="rynki-tytul"
-        eyebrow={tr('Hyperliquid · BTC i złoto', 'Hyperliquid · BTC and gold')}
+        eyebrow={`Hyperliquid · ${deskLabels()}`}
         title={tr('Rynki', 'Markets')}
         note={tr(
-          `BTC (giełda główna Hyperliquid) i złoto (xyz:GOLD, giełda HIP-3) jako kontekst makro. Liczby pobiera Twoja przeglądarka prosto z giełdy co ${page.refreshSec} s, gdy karta jest widoczna.`,
-          `BTC (Hyperliquid main exchange) and gold (xyz:GOLD, a HIP-3 exchange) as macro context. Your browser fetches the numbers straight from the exchange every ${page.refreshSec} s while the tab is visible.`
+          `${deskPhrase('pl')}: BTC z giełdy głównej Hyperliquid, reszta z giełdy HIP-3 (poza sesją rynku bazowego cenę wyznacza sama platforma). Liczby pobiera Twoja przeglądarka prosto z giełdy co ${page.refreshSec} s, gdy karta jest widoczna.`,
+          `${deskPhrase('en')}: BTC from the Hyperliquid main exchange, the rest from a HIP-3 exchange (outside the underlying market hours the platform sets the price). Your browser fetches the numbers straight from the exchange every ${page.refreshSec} s while the tab is visible.`
         )}
         aside={
           <Badge tone="live" title={tr('Realne dane Hyperliquid z godziną odczytu w każdym wierszu', 'Real Hyperliquid data with the reading time in every row')}>

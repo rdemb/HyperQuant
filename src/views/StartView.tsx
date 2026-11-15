@@ -13,6 +13,7 @@ import { SessionDial } from './start/SessionDial';
 import { type DayPhase, dayPhase, fmtSpan, sessionClock, useNow } from '../shell/dzien';
 import { FlowReel } from './start/FlowReel';
 import { InstrumentCards } from './start/InstrumentCards';
+import { deskPhrase } from '../config/deskMarkets';
 
 // Czwórka i teren rysowany canvasem: osobne pakiety, ładowane dopiero pod hero (pierwszy ekran bez modułów wykresu)
 const FourCard = lazy(() => import('./before/FourCard').then((m) => ({ default: m.FourCard })));
@@ -152,7 +153,7 @@ const StartView: React.FC = () => {
           <p className="mb-8 flex items-center gap-3.5 text-xs font-bold tracking-[0.14em] text-ink-2 uppercase lg:mb-10">
             <span className="font-mono tracking-normal">Nº 01</span>
             <span aria-hidden="true" className="h-px w-12 bg-ink-1" />
-            {tr('desk BTC i złota · Hyperliquid', 'a BTC and gold desk · Hyperliquid')}
+            {tr(`desk ${deskPhrase('pl', 'gen')} · Hyperliquid`, `a ${deskPhrase('en')} desk · Hyperliquid`)}
           </p>
           <h1 id="start-title" className="display flex flex-col text-[clamp(52px,7.2vw,104px)] leading-[0.92] font-extrabold">
             {lines.map((x) =>
@@ -172,8 +173,8 @@ const StartView: React.FC = () => {
           </h1>
           <p className="mt-9 max-w-[500px] text-lg text-pretty text-ink-2">
             {tr(
-              'Darmowy, otwarty desk do day tradingu BTC na Hyperliquid, ze złotem jako kontekstem makro. Opisuje strukturę rynku w trzech czasach dnia. Nigdy nie zgaduje kierunku.',
-              'A free, open desk for day trading BTC on Hyperliquid, with gold as macro context. It describes market structure in the three tenses of the day. It never guesses direction.'
+              `Darmowy, otwarty desk do day tradingu na Hyperliquid: ${deskPhrase('pl')}. Opisuje strukturę rynku w trzech czasach dnia. Nigdy nie zgaduje kierunku.`,
+              `A free, open desk for day trading on Hyperliquid: ${deskPhrase('en')}. It describes market structure in the three tenses of the day. It never guesses direction.`
             )}
           </p>
           <div className="mt-9 flex flex-wrap items-center gap-x-7 gap-y-4">
@@ -185,7 +186,7 @@ const StartView: React.FC = () => {
               {tr('Skąd jest każda liczba', 'Where every number comes from')}
             </a>
           </div>
-          {/* Wybór instrumentu: BTC i złoto (rynki aplikacji) */}
+          {/* Wybór instrumentu: rynki aplikacji z konfiguracji */}
           <InstrumentCards />
         </motion.div>
       </section>

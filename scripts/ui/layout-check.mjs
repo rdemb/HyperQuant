@@ -591,11 +591,14 @@ async function shortcuts(page) {
   await check('m→market', async () => {
     await page.key('m');
     await sleep(500);
-    // Rynki aplikacji: BTC i złoto — „m” przechodzi na złoto, kolejne „m” wraca do BTC
-    const ok = /m=xyz(:|%3A)GOLD/.test(await hash());
+    // Rynki aplikacji z konfiguracji: BTC, złoto, S&P 500 — „m” przechodzi po kolei i wraca do BTC
+    const gold = /m=xyz(:|%3A)GOLD/.test(await hash());
     await page.key('m');
     await sleep(500);
-    return ok && /m=BTC/.test(await hash());
+    const sp = /m=xyz(:|%3A)SP500/.test(await hash());
+    await page.key('m');
+    await sleep(500);
+    return gold && sp && /m=BTC/.test(await hash());
   });
   await check('t→tape', async () => {
     const a = (await cockpit()).showTape;
@@ -979,8 +982,8 @@ async function main() {
         await page.mouseAway();
         report.rynkiView[key] = {
           rows: rows ?? 0,
-          // Strona Rynki: rynki aplikacji (BTC i złoto), nie cały rejestr
-          want: 2,
+          // Strona Rynki: rynki aplikacji (konfiguracja desku: BTC, złoto, S&P 500), nie cały rejestr
+          want: 3,
           ms,
           overflowX: await page.ev('document.documentElement.scrollWidth - innerWidth'),
           header: mobile ? null : await page.ev(headerCut),
