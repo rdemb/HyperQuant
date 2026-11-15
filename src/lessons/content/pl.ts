@@ -248,7 +248,7 @@ export const pl: LessonsContent = {
               ],
             },
           ],
-          reveal: 'O 16:15 cena zjeżdża z 81 890 do 81 106 (2) w dziesięć minut, pod dolną krawędź obszaru wartości (VAL około 81 500). Initial balance Nowego Jorku jest już kompletny: 81 106–82 088.',
+          reveal: 'Między 16:10 a 16:25 cena zjeżdża z 81 890 do 81 106 (2), pod dolną krawędź obszaru wartości (VAL około 81 500). Initial balance Nowego Jorku jest już kompletny: 81 106–82 088.',
         },
         {
           context: 'Jest 16:30. W dwadzieścia minut cena przeszła od szczytu dnia do dołka dnia. Teraz odbija i stoi przy 81 470, pod VAL.',
