@@ -4,7 +4,7 @@
  * wysyła zdarzenie; kartę ładuje leniwie powłoka, więc pierwszy pakiet nie rośnie o treść kart.
  */
 
-export const MODEL_CARD_IDS = ['vol', 'mc2h', 'ledger', 'schrodi', 'vpin', 'kyle', 'hurst', 'ou', 'cascade', 'cohort', 'macro', 'modelVsMarket', 'book'] as const;
+export const MODEL_CARD_IDS = ['vol', 'mc2h', 'ledger', 'schrodi', 'vpin', 'kyle', 'hurst', 'ou', 'cascade', 'cohort', 'macro', 'modelVsMarket', 'book', 'uwiezieni'] as const;
 export type ModelCardId = (typeof MODEL_CARD_IDS)[number];
 
 export const MODEL_CARD_EVENT = 'hq:karta-modelu';

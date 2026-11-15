@@ -822,6 +822,24 @@ export const GROUPS: { title: string; rows: Row[] }[] = [
         ),
       },
       {
+        card: 'uwiezieni',
+        metric: tr('Uwięzieni: ceny wejścia pozycji (Przed sesją)', 'Trapped positions: position entry prices (Pre-session)'),
+        source: tr(
+          'Skaner HyperQuant: te same odczyty pozycji co mapa likwidacji (clearinghouseState, entryPx i liquidationPx); plik entry-map/BTC.json w repo danych',
+          'HyperQuant scanner: the same position reads as the liquidation map (clearinghouseState, entryPx and liquidationPx); the entry-map/BTC.json file in the data repository'
+        ),
+        method: tr(
+          'Kubełki cen wejścia ~0,25% ceny, longi i shorty osobno, ważone wartością wejścia |szi|·entryPx; „pod wodą”: long z wejściem nad ceną mark, short pod nią (udział wartości strony); odległość do likwidacji: kwartyle ważone wartością; kubełek z mniej niż 3 pozycjami zaokrąglony do 2 cyfr znaczących; bez adresów',
+          'Entry-price buckets of ~0.25% of price, longs and shorts separately, weighted by entry value |szi|·entryPx; “under water”: a long entered above the mark price, a short below it (share of the side’s value); distance to liquidation: value-weighted quartiles; a bucket with fewer than 3 positions rounded to 2 significant digits; no addresses'
+        ),
+        kinds: ['LIVE', 'MODEL'],
+        refresh: tr('co 2 min z mapą likwidacji', 'every 2 min with the liquidation map'),
+        caveat: tr(
+          'Tylko zmierzona część open interest (pokrycie na plakietce). Opis pozycji, bez twierdzenia, jak cena zachowa się przy tych poziomach: takiego związku nie sprawdzono w rejestrze prognoz.',
+          'Only the measured part of open interest (coverage on the badge). A description of positions with no claim about how price behaves at these levels: no such link has been tested in the forecast ledger.'
+        ),
+      },
+      {
         metric: 'Order blocks',
         source: tr('Świece HL', 'HL candles'),
         method: tr('Świeca impulsu > k·ATR(14), strefa świeża / zmitygowana (Shaakuni)', 'Impulse candle > k·ATR(14), fresh / mitigated zone (Shaakuni)'),
