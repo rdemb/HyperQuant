@@ -4,6 +4,15 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Strona nie skacze przy wczytywaniu (2026-11-15)
+<!-- co-nowego: grupa=blog | pl=Na wolnym łączu strona nie skacze przy wczytywaniu: fonty zastępcze o tych samych wymiarach i miejsce zarezerwowane dla widoku | en=On a slow connection the page no longer jumps while loading: fallback fonts with matching metrics and space reserved for the view -->
+
+#### Naprawione
+- **Fonty zastępcze z dopasowanymi metrykami** (`scripts/fonts/kopiuj-fonty.mjs` → `public/fonts/fonts.css`): Bricolage, Plus Jakarta Sans i JetBrains Mono mają przed wczytaniem odpowiednik z Ariala albo Courier New z `size-adjust`, `ascent-override` i `descent-override` (szerokość zmierzona w Chrome na tekstach aplikacji, metryki pionowe z tabel fontów), więc podmiana fontu nie zmienia łamania tytułów. W aplikacji i na stronach statycznych.
+- **Zastępnik leniwego widoku** zajmuje wysokość ekranu pod nagłówkiem: stopka nie stoi na ekranie przed widokiem i nie skacze w dół po jego wczytaniu.
+- **Karty Rynków**: prawa strona nagłówka karty ma stałą szerokość przed odczytem i po nim (linia giełdy nie zmienia łamania).
+- Pomiar (Chrome, telefon 412 px, sieć 150 ms / 1,6 Mb/s, CPU 4×, suma przesunięć do 15 s, przed → po): Start 0,993 → 0,018, W sesji 0,137 → 0,001, Rynki 0,205 → 0,006, Przed sesją 0,230 → 0,035.
+
 ### Wyspa: strażnicy BTC i przepisy MCP (2026-11-15)
 <!-- co-nowego: grupa=wykres | pl=Strażnicy BTC w nagłówku: powiadomienie przy PDH, PDL, otwarciu sesji, skrajnym fundingu, dużym ruchu i likwidacjach; reguły tylko na Twoim urządzeniu | en=BTC guards in the header: a notification at PDH, PDL, a session open, extreme funding, a large move or liquidations; rules stay on your device -->
 
