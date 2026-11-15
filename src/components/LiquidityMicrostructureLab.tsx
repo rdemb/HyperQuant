@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ouHalfLifeText } from './noiseText';
+import { kyleParts, ouHalfLifeText, vpinParts } from './noiseText';
 import { L2OrderbookLevel, LiquidityProfileBucket, QuantMathMetrics, ShaakuniState } from '../types/trading';
 import { bookDepth } from '../utils/bookDepth';
-import { Badge, Panel, Stat, DASH, fmtCompact, fmtPct, fmtPrice, fmtSigned, fmtFixed, fmtNum } from '../ui';
+import { Badge, Panel, Stat, DASH, fmtCompact, fmtPrice, fmtSigned, fmtFixed } from '../ui';
 import { tr } from '../i18n';
 
 
@@ -15,11 +15,9 @@ const C = {
   ink1: '#eef2f7',
   ink2: '#a9b4c4',
   ink3: '#7a889c',
-  accent: '#3fc6dd',
   buy: '#3280dd',
   sell: '#ca3829',
   level: '#e0a045',
-  zone: '#9085e9',
 };
 
 const TOP_PAD = 26;
@@ -29,7 +27,6 @@ interface ProfileLayout {
   width: number;
   height: number;
   axisW: number;
-  splitX: number;
   rowH: number;
 }
 
@@ -39,14 +36,14 @@ function layoutFor(width: number, height: number, rows: number): ProfileLayout {
     width,
     height,
     axisW,
-    splitX: axisW + (width - axisW) * 0.52,
     rowH: (height - TOP_PAD - BOTTOM_PAD) / Math.max(1, rows),
   };
 }
 
 /**
- * Bohater laboratorium mikrostruktury w Badaniach: profil wolumenu (LIVE) i krzywa U(p) (MODEL). Paliwa likwidacyjnego
- * tu nie ma: bez pozycji kont byłoby liczbą ze stałych, więc pole pokazuje „—” z powodem (mapa z pozycji jest w „Przed sesją”).
+ * Bohater laboratorium mikrostruktury w Badaniach: profil wolumenu (LIVE) z POC, obszarem wartości i LVN. Bez heurystyk z
+ * ręcznymi wagami (dawne pole przyciągania; plan 59, B6). Paliwa likwidacyjnego tu nie ma: bez pozycji kont byłoby liczbą
+ * ze stałych, więc pole pokazuje „—” z powodem (mapa z pozycji jest w „Przed sesją”).
  */
 export const LiquidityMicrostructureLab: React.FC<{
   quant: QuantMathMetrics;
@@ -89,9 +86,8 @@ export const LiquidityMicrostructureLab: React.FC<{
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     const L = layoutFor(size.w, size.h, profile.length);
-    const { width, height, axisW, splitX, rowH } = L;
-    const volColW = splitX - axisW - 44;
-    const fieldColW = width - splitX - 16;
+    const { width, height, axisW, rowH } = L;
+    const volColW = width - axisW - 56;
     const maxVol = Math.max(1, ...profile.map((p) => p.totalVolumeUsd));
     const barH = Math.max(3, Math.min(16, rowH - 4));
     const midY = (i: number) => TOP_PAD + i * rowH + rowH / 2;
@@ -106,7 +102,6 @@ export const LiquidityMicrostructureLab: React.FC<{
     ctx.textAlign = 'left';
     ctx.fillText(tr('CENA', 'PRICE'), 6, 12);
     ctx.fillText(tr('WOLUMEN K/S', 'VOLUME B/S'), axisW + 6, 12);
-    ctx.fillText(tr('PRZYCIĄGANIE U(p)', 'ATTRACTION U(p)'), splitX + 8, 12);
 
     // Hairline: separator nagłówka i kolumn (ciągłe)
     ctx.strokeStyle = C.line;
@@ -116,8 +111,6 @@ export const LiquidityMicrostructureLab: React.FC<{
     ctx.lineTo(width, TOP_PAD - 4.5);
     ctx.moveTo(axisW + 0.5, TOP_PAD - 4);
     ctx.lineTo(axisW + 0.5, height);
-    ctx.moveTo(splitX + 0.5, TOP_PAD - 4);
-    ctx.lineTo(splitX + 0.5, height);
     ctx.stroke();
 
     // LVN oznaczamy tylko jako lukę wewnątrz zakresu handlu (między poziomami z wolumenem), nie na pustych brzegach
@@ -125,7 +118,6 @@ export const LiquidityMicrostructureLab: React.FC<{
     const firstTraded = traded.length ? traded[0] : 0;
     const lastTraded = traded.length ? traded[traded.length - 1] : -1;
 
-    const gravityPts: { x: number; y: number }[] = [];
     profile.forEach((b, i) => {
       const y0 = TOP_PAD + i * rowH;
       const y = midY(i);
@@ -134,7 +126,7 @@ export const LiquidityMicrostructureLab: React.FC<{
         ctx.fillRect(0, y0, width, rowH);
       } else if (b.isValueArea) {
         ctx.fillStyle = C.surface2;
-        ctx.fillRect(axisW + 1, y0, splitX - axisW - 1, rowH);
+        ctx.fillRect(axisW + 1, y0, width - axisW - 1, rowH);
       }
 
       // Etykieta ceny (POC wyróżniony wagą, nie kolorem)
@@ -162,33 +154,7 @@ export const LiquidityMicrostructureLab: React.FC<{
         ctx.fillText(tag, x0 + totW + 5, y);
       }
 
-      gravityPts.push({ x: splitX + 8 + b.gravityPotential * fieldColW * 0.9, y });
     });
-
-    // Krzywa przyciągania U(p): linia 2 px w kolorze akcentu
-    if (gravityPts.length > 1) {
-      ctx.strokeStyle = C.accent;
-      ctx.lineWidth = 2;
-      ctx.lineJoin = 'round';
-      ctx.beginPath();
-      gravityPts.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
-      ctx.stroke();
-      const mIdx = profile.findIndex((b) => b.price === quant.primaryMagnetPrice);
-      if (mIdx >= 0) {
-        const m = gravityPts[mIdx];
-        ctx.fillStyle = C.accent;
-        ctx.beginPath();
-        ctx.arc(m.x, m.y, 4, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = C.surface;
-        ctx.lineWidth = 2;
-        ctx.stroke();
-        ctx.fillStyle = C.ink1;
-        ctx.font = '600 10px "JetBrains Mono", monospace';
-        ctx.textAlign = m.x > width - 70 ? 'right' : 'left';
-        ctx.fillText(tr('magnes', 'magnet'), m.x + (m.x > width - 70 ? -8 : 8), m.y);
-      }
-    }
 
     // Poziomy PDH/PDL (level) i bieżąca cena — mapowanie liniowe po środkach kubełków
     const maxP = profile[0].price;
@@ -217,7 +183,7 @@ export const LiquidityMicrostructureLab: React.FC<{
     hline(shaakuni.pdh, C.level, 'PDH', 0.6);
     hline(shaakuni.pdl, C.level, 'PDL', 0.6);
     hline(currentPrice > 0 ? currentPrice : null, C.ink1, `${tr('cena', 'price')} ${fmtPrice(currentPrice, 0)}`, 0.7);
-  }, [profile, size, hoverIdx, quant.vahPrice, quant.valPrice, quant.primaryMagnetPrice, shaakuni.pdh, shaakuni.pdl, currentPrice]);
+  }, [profile, size, hoverIdx, quant.vahPrice, quant.valPrice, shaakuni.pdh, shaakuni.pdl, currentPrice]);
 
   const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -229,7 +195,6 @@ export const LiquidityMicrostructureLab: React.FC<{
 
   const hovered: LiquidityProfileBucket | null = hoverIdx !== null ? profile[hoverIdx] ?? null : null;
   const L = layoutFor(size.w, size.h, profile.length);
-  const magnetDistPct = currentPrice > 0 ? ((quant.primaryMagnetPrice - currentPrice) / currentPrice) * 100 : null;
   // Głębokość z migawki arkusza: bez niej brak liczby (nie $0); pusta strona przy migawce to prawdziwe 0
   const depth = bookDepth(book.bids, book.asks);
   const bidShare = depth?.bidShare ?? null;
@@ -238,36 +203,18 @@ export const LiquidityMicrostructureLab: React.FC<{
     <Panel
       hero
       title={tr('Profil płynności', 'Liquidity profile')}
-      eyebrow={tr('80 świec · 24 poziomy · pole U(p)', '80 candles · 24 levels · U(p) field')}
+      eyebrow={tr('80 świec · 24 poziomy', '80 candles · 24 levels')}
       className="h-full"
       actions={
         <>
           <Badge tone="live" title={tr('Wolumen świec Hyperliquid; podział kupno/sprzedaż z WebSocket tam, gdzie dostępny', 'Hyperliquid candle volume; buy/sell split from the WebSocket where available')}>
             LIVE
           </Badge>
-          <Badge tone="model" title={tr('U(p) i magnes to heurystyka z wolumenu i stref OB', 'U(p) and the magnet are a heuristic from volume and OB zones')}>
-            MODEL
-          </Badge>
         </>
       }
       bodyClassName="p-4 flex flex-col gap-4"
     >
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-4 gap-y-4">
-        <Stat
-          label={tr('Magnes', 'Magnet')}
-          source={{ tone: 'model', label: 'MODEL', title: tr('Heurystyka: masa OB + wolumen, ważone odległością od ceny', 'Heuristic: OB mass + volume, weighted by distance from price') }}
-          value={fmtPrice(quant.primaryMagnetPrice, 0)}
-          hint={
-            magnetDistPct !== null ? (
-              <>
-                {tr('najsilniejsze U(p)', 'strongest U(p)')} · <span aria-hidden="true">{magnetDistPct >= 0 ? '▲' : '▼'}</span>{' '}
-                {fmtPct(Math.abs(magnetDistPct), 2, false)} {magnetDistPct >= 0 ? tr('nad ceną', 'above price') : tr('pod ceną', 'below price')}
-              </>
-            ) : (
-              DASH
-            )
-          }
-        />
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-4">
         <Stat
           label={tr('Wolumen', 'Volume')}
           source={{ tone: 'live', label: 'LIVE', title: tr('Wolumen ostatnich 80 świec Hyperliquid rozłożony na 24 poziomy', 'Volume of the last 80 Hyperliquid candles spread over 24 levels') }}
@@ -321,8 +268,8 @@ export const LiquidityMicrostructureLab: React.FC<{
             ref={canvasRef}
             role="img"
             aria-label={tr(
-              `Profil wolumenu na 24 poziomach; POC ${fmtPrice(quant.pocPrice, 0)}, najsilniejsze przyciąganie ${fmtPrice(quant.primaryMagnetPrice, 0)}`,
-              `Volume profile on 24 levels; POC ${fmtPrice(quant.pocPrice, 0)}, strongest attraction ${fmtPrice(quant.primaryMagnetPrice, 0)}`
+              `Profil wolumenu na 24 poziomach; POC ${fmtPrice(quant.pocPrice, 0)}, obszar wartości ${fmtPrice(quant.valPrice, 0)}–${fmtPrice(quant.vahPrice, 0)}`,
+              `Volume profile on 24 levels; POC ${fmtPrice(quant.pocPrice, 0)}, value area ${fmtPrice(quant.valPrice, 0)}–${fmtPrice(quant.vahPrice, 0)}`
             )}
             onPointerMove={onPointerMove}
             onPointerLeave={() => setHoverIdx(null)}
@@ -358,8 +305,6 @@ export const LiquidityMicrostructureLab: React.FC<{
               </dd>
               <dt className="text-ink-3 font-sans">Delta</dt>
               <dd className="text-right text-ink-1">{fmtCompact(hovered.deltaUsd, '$')}</dd>
-              <dt className="text-ink-3 font-sans">U(p)</dt>
-              <dd className="text-right text-ink-1">{fmtFixed(hovered.gravityPotential * 100, 0)}%</dd>
             </dl>
           </div>
         )}
@@ -369,17 +314,14 @@ export const LiquidityMicrostructureLab: React.FC<{
         <LegendSwatch className="bg-buy" label={tr('Wolumen kupna', 'Buy volume')} />
         <LegendSwatch className="bg-sell" label={tr('Wolumen sprzedaży', 'Sell volume')} />
         <span className="inline-flex items-center gap-1.5">
-          <span className="w-4 h-0.5 rounded-full bg-accent" aria-hidden="true" /> {tr('Krzywa U(p)', 'U(p) curve')}
-        </span>
-        <span className="inline-flex items-center gap-1.5">
           <span className="w-4 h-px bg-level" aria-hidden="true" /> PDH / PDL
         </span>
         <LegendSwatch className="bg-surface-2 border border-line-strong" label="Value Area 70%" />
       </div>
       <p className="text-[11px] text-ink-3 leading-relaxed max-w-prose">
         {tr(
-          'U(p) porządkuje poziomy wg heurystycznej „siły przyciągania” z wolumenu i świeżych stref OB; nie mówi, czy i kiedy cena tam dotrze. Paliwa likwidacyjnego tu nie liczymy: bez pozycji kont byłaby to liczba ze stałych. Mapa likwidacji z pozycji kont Hyperliquid jest w „Przed sesją”.',
-          'U(p) ranks levels by a heuristic "attraction strength" from volume and fresh OB zones; it does not say whether or when price will get there. Liquidation fuel is not computed here: without account positions it would be a number made of constants. The liquidation map from Hyperliquid account positions is in “Pre-session”.'
+          'Profil opisuje, gdzie handlowano w ostatnich 80 świecach; nie mówi, czy i kiedy cena wróci do tych poziomów. Paliwa likwidacyjnego tu nie liczymy: bez pozycji kont byłaby to liczba ze stałych. Mapa likwidacji z pozycji kont Hyperliquid jest w „Przed sesją”.',
+          'The profile describes where trading happened over the last 80 candles; it does not say whether or when price will return to these levels. Liquidation fuel is not computed here: without account positions it would be a number made of constants. The liquidation map from Hyperliquid account positions is in “Pre-session”.'
         )}
       </p>
     </Panel>
@@ -412,71 +354,43 @@ export const MicrostructureMethods: React.FC<{
   /** Arkusz L2 (migawka Hyperliquid); bez poziomów głębokość to „—” z powodem, nie $0. */
   book: { bids: readonly L2OrderbookLevel[]; asks: readonly L2OrderbookLevel[] };
 }> = ({ quant, shaakuni, currentPrice, book }) => {
-  const [selectedId, setSelectedId] = useState('gravity');
+  const [selectedId, setSelectedId] = useState('vpin');
   const depth = bookDepth(book.bids, book.asks);
-  const magnetPct = currentPrice > 0 ? ((quant.primaryMagnetPrice - currentPrice) / currentPrice) * 100 : null;
+  const vpin = vpinParts(quant.vpin);
+  const kyle = kyleParts(quant.kyle);
 
   const methods: Method[] = [
-    {
-      id: 'gravity',
-      title: tr('Pole przyciągania U(p)', 'Attraction field U(p)'),
-      subtitle: tr('Strefy OB i wolumen ważone odległością od ceny', 'OB zones and volume weighted by distance from price'),
-      formula: tr('U(p) = (Masa_OB + 0,18·Wol) / |p − p₀|^0,55', 'U(p) = (OB_mass + 0.18·Vol) / |p − p₀|^0.55'),
-      idea: tr(
-        'Hipoteza: cena szybciej przechodzi przez obszary niskiego wolumenu (LVN) w stronę skupisk wolumenu i świeżych stref OB. Model jedynie porządkuje takie obszary według heurystycznej wagi — nie przewiduje, czy i kiedy cena do nich dotrze. Skuteczność nie została zmierzona.',
-        'Hypothesis: price moves faster through low-volume areas (LVN) towards clusters of volume and fresh OB zones. The model only ranks such areas by a heuristic weight; it does not predict whether or when price will reach them. Its effectiveness has not been measured.'
-      ),
-      check: tr(
-        'Zapisuj poziom najsilniejszego U(p) i sprawdzaj, jak często cena dotyka go w ciągu N świec — w porównaniu z losowym poziomem w tej samej odległości.',
-        'Record the level of the strongest U(p) and check how often price touches it within N candles, compared with a random level at the same distance.'
-      ),
-      metricLabel: tr('Najsilniejsze U(p)', 'Strongest U(p)'),
-      metricValue: `${fmtPrice(quant.primaryMagnetPrice, 0)}${magnetPct !== null ? ` (${fmtPct(magnetPct, 2)})` : ''}`,
-    },
     {
       id: 'vpin',
       title: tr('VPIN — jednostronność przepływu', 'VPIN: one-sidedness of flow'),
       subtitle: tr('Nierównowaga kupna i sprzedaży w kubełkach wolumenowych (BVC)', 'Buy/sell imbalance in volume buckets (BVC)'),
-      formula: tr('VPIN = Σ |V_kupno − V_sprzedaż| / (n · V_kubełka)', 'VPIN = Σ |V_buy − V_sell| / (n · V_bucket)'),
+      formula: tr('VPIN = Σ |V_kupno − V_sprzedaż| / (n · V_kubełka)   ·   95%: VPIN ∓ t₉·sd(średnie 10 partii)/√10', 'VPIN = Σ |V_buy − V_sell| / (n · V_bucket)   ·   95%: VPIN ∓ t₉·sd(means of 10 batches)/√10'),
       idea: tr(
-        'VPIN (Easley, López de Prado, O’Hara 2012) opisuje, jak jednostronny jest przepływ. Jego zdolność przewidywania jest sporna (Andersen & Bondarenko 2014), dlatego traktuj go jako opis bieżącego przepływu, a nie rekomendację. Dywergencja spot/perp jest liczona tylko przy włączonych źródłach CEX.',
-        "VPIN (Easley, López de Prado, O'Hara 2012) describes how one-sided the flow is. Its predictive power is disputed (Andersen & Bondarenko 2014), so treat it as a description of the current flow, not a recommendation. The spot/perp divergence is computed only with CEX sources enabled."
+        'VPIN (Easley, López de Prado, O’Hara 2012) opisuje, jak jednostronny jest przepływ. Jego zdolność przewidywania jest sporna (Andersen & Bondarenko 2014), dlatego traktuj go jako opis bieżącego przepływu, a nie rekomendację. Przedział pokazuje, jak bardzo liczba zależy od tego, które kubełki weszły do okna.',
+        "VPIN (Easley, López de Prado, O'Hara 2012) describes how one-sided the flow is. Its predictive power is disputed (Andersen & Bondarenko 2014), so treat it as a description of the current flow, not a recommendation. The interval shows how much the number depends on which buckets made it into the window."
       ),
       check: tr(
         'Porównuj bieżący VPIN z jego rozkładem z ostatnich sesji — wysoki percentyl oznacza przepływ nietypowo jednostronny.',
         'Compare the current VPIN with its distribution over recent sessions; a high percentile means unusually one-sided flow.'
       ),
-      metricLabel: tr('VPIN · dywergencja spot/perp', 'VPIN · spot/perp divergence'),
-      metricValue: `${quant.vpinToxicity === null ? `${DASH} (${tr('brak wolumenu', 'no volume')})` : `${fmtFixed(quant.vpinToxicity * 100, 1)}%`} · ${quant.cvdDivergenceScore !== 0 ? fmtSigned(quant.cvdDivergenceScore * 100, 1, '%') : tr('b/d (bez CEX)', 'n/a (no CEX)')}`,
+      metricLabel: 'VPIN',
+      metricValue: vpin.value === null ? `${DASH} (${vpin.detail})` : `${vpin.value} · ${vpin.detail}`,
     },
     {
       id: 'kyle',
       title: tr('λ Kyle’a i asymetria arkusza', "Kyle's λ and book asymmetry"),
       subtitle: tr('Wpływ przepływu na cenę (OLS) + głębokość 12 poziomów L2', 'Price impact of flow (OLS) + depth of 12 L2 levels'),
-      formula: 'ΔPₜ = λ · Qₜ + ε   ·   A = (D_bid − D_ask) / (D_bid + D_ask)',
+      formula: 'ΔPₜ = a + λ · Qₜ + ε   ·   95%: λ ∓ t(n−2)·se   ·   A = (D_bid − D_ask) / (D_bid + D_ask)',
       idea: tr(
-        'λ mierzy, o ile przesuwa się cena na jednostkę netto przepływu agresora — im wyżej, tym rynek mniej płynny. Asymetria pokazuje, po której stronie 12 najbliższych poziomów stoi mniej zleceń. Arkusz to migawka: zlecenia mogą zniknąć w ułamku sekundy.',
-        'λ measures how far price moves per unit of net aggressor flow; the higher it is, the less liquid the market. The asymmetry shows which side of the 12 nearest levels has fewer orders. The book is a snapshot: orders can vanish in a fraction of a second.'
+        'λ mierzy, o ile przesuwa się cena na jednostkę netto przepływu agresora — im wyżej, tym rynek mniej płynny. Gdy przedział 95% obejmuje zero, λ jest nieodróżnialne od zera i pokazujemy to zamiast liczby. Asymetria pokazuje, po której stronie 12 najbliższych poziomów stoi mniej zleceń. Arkusz to migawka: zlecenia mogą zniknąć w ułamku sekundy.',
+        'λ measures how far price moves per unit of net aggressor flow; the higher it is, the less liquid the market. When the 95% interval includes zero, λ is indistinguishable from zero and we show that instead of a number. The asymmetry shows which side of the 12 nearest levels has fewer orders. The book is a snapshot: orders can vanish in a fraction of a second.'
       ),
       check: tr(
         'Porównuj λ o różnych porach dnia i przed publikacjami makro; rosnące λ oznacza rynek łatwiejszy do przesunięcia.',
         'Compare λ at different times of day and before macro releases; a rising λ means a market that is easier to push.'
       ),
       metricLabel: tr('λ · głębokość BID / ASK', 'λ · BID / ASK depth'),
-      metricValue: `${quant.kyleLambdaPer1M !== null ? `$${fmtFixed(quant.kyleLambdaPer1M, 2)} / $1M` : tr('b/d', 'n/a')} · ${depth ? `${fmtCompact(depth.bid, '$')} / ${fmtCompact(depth.ask, '$')}` : DASH}`,
-    },
-    {
-      id: 'hawkes',
-      title: tr('Proces Hawkesa — grupowanie transakcji', 'Hawkes process: trade clustering'),
-      subtitle: tr('Samowzbudzająca się intensywność agresywnych transakcji', 'Self-exciting intensity of aggressive trades'),
-      formula: 'λ(t) = μ + Σ α · e^(−β(t − tᵢ))',
-      idea: tr(
-        'Agresywne transakcje grupują się w czasie: każda zwiększa szansę następnej. Tutaj μ, α i β są stałe (nieestymowane), więc intensywność opisuje tempo przepływu. Współczynnik rozgałęzienia η wymaga estymacji MLE i nie jest liczony.',
-        'Aggressive trades cluster in time: each one raises the chance of the next. Here μ, α and β are fixed (not estimated), so the intensity describes the pace of flow. The branching ratio η needs MLE estimation and is not computed.'
-      ),
-      check: tr('Obserwuj skoki intensywności przy testach PDH/PDL i notuj, czy ruch był kontynuowany, czy wygasł.', 'Watch intensity spikes at PDH/PDL tests and note whether the move continued or faded.'),
-      metricLabel: tr('λ kupno / sprzedaż · η', 'λ buy / sell · η'),
-      metricValue: `${fmtFixed(quant.hawkesBuyIntensity, 2)} / ${fmtFixed(quant.hawkesSellIntensity, 2)} · η = ${quant.hawkesBranchingRatio != null ? fmtNum(quant.hawkesBranchingRatio) : tr('b/d', 'n/a')}`,
+      metricValue: `${kyle.value === null ? tr('b/d', 'n/a') : kyle.value} (${kyle.detail}) · ${depth ? `${fmtCompact(depth.bid, '$')} / ${fmtCompact(depth.ask, '$')}` : DASH}`,
     },
     {
       id: 'ou',

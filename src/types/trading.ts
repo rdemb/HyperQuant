@@ -90,7 +90,6 @@ export interface ShaakuniConfig {
   impMult: number;
   showKeltner: boolean;
   showLiqHeatmap: boolean;
-  showNeuralCone: boolean;
 }
 
 export interface ShaakuniState {
@@ -130,7 +129,6 @@ export interface LiquidityProfileBucket {
   buyVolumeUsd: number;
   sellVolumeUsd: number;
   deltaUsd: number;
-  gravityPotential: number; // Normalized 0..1 gravitational magnet pull
   isPOC: boolean;
   isValueArea: boolean;
   isLVN: boolean; // Low Volume Node (Air-pocket fast-travel zone)
@@ -237,70 +235,49 @@ export interface BackendQuantTelemetry {
   };
 }
 
+/** Estymata z przedziałem 95%. */
+export interface Interval95 {
+  value: number;
+  lo: number;
+  hi: number;
+}
+
+/** VPIN 0..1 z przedziałem ze średnich partii kubełków; `full` — liczba pełnych kubełków. */
+export interface VpinEstimate extends Interval95 {
+  full: number;
+}
+
+/** λ Kyle'a ($ ruchu ceny na $1M netto przepływu) z przedziałem t; `zeroInside` — przedział obejmuje 0. */
+export interface KyleEstimate extends Interval95 {
+  n: number;
+  zeroInside: boolean;
+}
+
+/** Reżim zmienności BOCPD: P(zmiana w ostatnich 5 świecach), σ reżimu na świecę (log-zwrot), liczba zwrotów. */
+export interface RegimeEstimate {
+  pRecent5: number;
+  sigma: number;
+  n: number;
+}
+
 export interface QuantMathMetrics {
-  // Ornstein-Uhlenbeck Mean Reversion Process: dX_t = theta * (mu - X_t) dt + sigma dW_t
-  ouTheta: number; // Mean reversion speed
+  // Ornstein-Uhlenbeck: dX_t = theta * (mu - X_t) dt + sigma dW_t
+  ouTheta: number; // szybkość powrotu
   ouHalfLifeBars: number; // ln(2) / theta; Infinity gdy brak powrotu do średniej (theta = 0)
-  ouEquilibriumPrice: number; // Anchor (weighted D-EQ & W-EQ)
-  ouZScore: number; // Standardized price deviation from equilibrium
-
-  // Hawkes Self-Exciting Point Process: lambda(t) = mu + sum alpha * exp(-beta * (t - t_i))
-  hawkesBuyIntensity: number;
-  hawkesSellIntensity: number;
-  // null: współczynnik rozgałęzienia wymaga estymacji MLE na znacznikach czasu transakcji — nieestymowany
-  hawkesBranchingRatio: number | null;
-  hawkesNetDominance: number; // -1 to +1
-
-  // Combinatorics & Information Theory
-  shannonEntropyBits: number; // Orderbook + trade directional entropy (0..1+)
-  // < 0,45 powroty, 0,5 błądzenie losowe, > 0,6 trend; null = za mało zwrotów (< 8) albo seria płaska
+  ouEquilibriumPrice: number; // kotwica (0,65·D-EQ + 0,35·W-EQ)
+  ouZScore: number; // odchylenie od kotwicy w σ
+  // Hurst R/S (Anis-Lloyd); null = za mało zwrotów (< 8) albo seria płaska
   hurstExponent: number | null;
-  combinatorialPathProbPDH: number; // Binomial/Catalan barrier hitting probability for PDH before PDL
-  combinatorialPathProbPDL: number;
-  l2MicroPrice: number; // Volume-weighted micro-price from top L2 levels
-  l2OrderbookImbalance: number; // -1 (heavy ask wall) to +1 (heavy bid wall)
-
-  // Mikrostruktura płynności (VPIN, λ Kyle'a, profil wolumenu)
-  // 0..1 Volume-Synchronized Probability of Informed Trading; null = brak wolumenu (żaden pełny kubełek)
-  vpinToxicity: number | null;
-  bookDepthAskUsd: number; // Suma płynności po stronie ASK (12 poziomów L2), USD
-  bookDepthBidUsd: number; // Suma płynności po stronie BID (12 poziomów L2), USD
-  // Lambda Kyle'a: regresja OLS ΔP na netto przepływie agresora ($ ruchu na $1M netto); null gdy < 10 świec z realnym przepływem
-  kyleLambdaPer1M: number | null;
-  pocPrice: number; // Volume Profile Point of Control
+  // null = brak wolumenu (żaden pełny kubełek)
+  vpin: VpinEstimate | null;
+  // null gdy < 10 świec z realnym przepływem WS
+  kyle: KyleEstimate | null;
+  // null gdy < 101 zwrotów zamkniętych świec
+  regime: RegimeEstimate | null;
+  pocPrice: number; // profil wolumenu: Point of Control
   vahPrice: number; // Value Area High (70%)
   valPrice: number; // Value Area Low (70%)
-  primaryMagnetPrice: number; // Strongest combined Gravitational Liquidity Magnet
   liquidityProfile: LiquidityProfileBucket[];
-
-  // Spot vs Perp Orderflow Regime
-  cvdDivergenceScore: number; // Spot vs Perp Z-score spread
-  regimeClassification:
-    // Opis ostatnich świec, nie kierunek na przyszłość
-    | 'Spot CVD Lead'
-    | 'Perp CVD Lead'
-    | 'Momentum Breakout'
-    | 'Mean-Reversion Equilibrium';
-
-  // Neural Time-Series Prediction (Multi-Horizon Attention Model)
-  neuralConfidence: number; // 0..100 — siła heurystyki (|bias|), NIE skalibrowane prawdopodobieństwo
-  neuralDirectionBias: number; // -1 (Strong Short) to +1 (Strong Long)
-  neuralAttentionWeights: {
-    shaakuniOBProximity: number;
-    spotCvdDelta: number;
-    perpFundingAndLiq: number;
-    l2BookImbalance: number;
-    hawkesCascadeVelocity: number;
-  };
-  forecastHorizon: {
-    stepBars: number;
-    label: string;
-    predictedPrice: number;
-    upper1Sigma: number;
-    lower1Sigma: number;
-    upper2Sigma: number;
-    lower2Sigma: number;
-  }[];
 }
 
 export interface OptionVolSurfacePoint {
