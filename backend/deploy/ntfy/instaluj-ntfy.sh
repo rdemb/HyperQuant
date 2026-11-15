@@ -29,10 +29,16 @@ curl -fsSL https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt >/etc/apt
 apt-get update -qq
 apt-get install -y -qq ntfy caddy >/dev/null
 
-echo "3/6 konfiguracja (domena $DOMENA)"
+# Caddy słucha tylko na publicznym adresie domeny (port 443 na innych adresach, np. Tailscale, zostaje wolny dla nich)
+BIND="$(getent ahostsv4 "$DOMENA" | awk '{print $1; exit}')"
+if [ -z "$BIND" ] || ! ip -4 -o addr show | grep -q " $BIND/"; then
+  echo "Rekord A domeny $DOMENA (${BIND:-brak}) nie wskazuje na adres tego serwera — popraw DNS i uruchom ponownie" >&2
+  exit 1
+fi
+echo "3/6 konfiguracja (domena $DOMENA, adres $BIND)"
 mkdir -p /etc/ntfy /var/lib/ntfy /var/cache/ntfy
 sed "s/__DOMENA__/$DOMENA/g" "$SRC/ntfy/server.yml" >/etc/ntfy/server.yml
-sed "s/__DOMENA__/$DOMENA/g" "$SRC/ntfy/Caddyfile" >/etc/caddy/Caddyfile
+sed -e "s/__DOMENA__/$DOMENA/g" -e "s/__BIND__/$BIND/g" "$SRC/ntfy/Caddyfile" >/etc/caddy/Caddyfile
 chown -R ntfy:ntfy /var/lib/ntfy /var/cache/ntfy 2>/dev/null || true
 systemctl enable --now ntfy >/dev/null
 systemctl restart ntfy
