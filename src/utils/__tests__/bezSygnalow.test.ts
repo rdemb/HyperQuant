@@ -23,10 +23,9 @@ const ZAKAZ = /sygna[łl]|\bsignals?\b/i;
 /** Napisy, które są kluczami w kodzie, a nie tekstem (klucz parametru MACD). */
 const KLUCZE = new Set(['signal']);
 /**
- * Pliki bloga przebudowywane równolegle (render, wyniki, co nowego): `results.mjs` ma jeszcze stopkę karty
- * „bez sygnałów” do zamiany w tej przebudowie; `whatsnew.mjs` trzyma sam filtr słów.
+ * `whatsnew.mjs` trzyma sam filtr słów (wzorzec zakazu), więc nie jest tekstem strony.
  */
-const POZA = new Set(['scripts/blog/results.mjs', 'scripts/blog/whatsnew.mjs']);
+const POZA = new Set(['scripts/blog/whatsnew.mjs']);
 
 describe('teksty bez słowa „sygnał” (src i strony bloga)', () => {
   it('żaden napis ani tekst JSX nie zawiera „sygnał” / „signal”', () => {
