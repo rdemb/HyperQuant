@@ -167,7 +167,7 @@ const FlowBody: React.FC<{ flow: CohortFlow; mode: Mode; setMode: (m: Mode) => v
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <div className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium">{tr('Markout transakcji biorców · poza próbą · 24 h', 'Taker trade markout · out of sample · 24 h')}</div>
           <Badge
-            tone="model"
+            tone="model" card="cohort"
             title={tr(
               'Kohorta ustalona w chwili transakcji z danych wcześniejszych; markout = kierunek × zmiana ceny po h, ważony nominałem',
               'Cohort fixed at trade time from earlier data; markout = direction × price change after h, notional-weighted'

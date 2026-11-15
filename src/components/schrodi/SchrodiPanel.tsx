@@ -754,7 +754,7 @@ export const SchrodiPanel: React.FC<{
       </Section>
 
       <div className="border-t border-line px-3 py-2 text-[10px] text-ink-3 leading-snug">
-        <Badge tone="model" title={tr('Wynik modelu liczony z realnych danych', 'Model output computed from real data')}>
+        <Badge tone="model" card="schrodi" title={tr('Wynik modelu liczony z realnych danych', 'Model output computed from real data')}>
           MODEL
         </Badge>{' '}
         {tr(
