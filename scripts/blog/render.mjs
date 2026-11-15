@@ -473,8 +473,8 @@ export function layout(
 <meta name="description" content="${esc(description)}">${robots ? `\n<meta name="robots" content="${robots}">` : ''}
 <link rel="canonical" href="${esc(url)}">${hreflang}
 <link rel="alternate" type="application/rss+xml" title="HyperQuant · Analizy BTC" href="${site.url}blog/feed.xml">
-<link rel="icon" type="image/svg+xml" href="${root}favicon.svg">
-<link rel="apple-touch-icon" href="${root}icons/apple-touch-icon.png">
+<link rel="icon" type="image/svg+xml" href="${root}favicon.svg?v=2">
+<link rel="apple-touch-icon" href="${root}icons/apple-touch-icon.png?v=2">
 <meta name="theme-color" content="#0C0D0F">
 <meta property="og:type" content="${type}">
 <meta property="og:locale" content="${OG_LOCALE[lang]}">${localeAlt}
@@ -498,7 +498,7 @@ export function layout(
 </head>
 <body>
 <header class="site-header"><div class="wrap">
-<a class="brand" href="${root}">${LOGO}HyperQuant<span>BTC · Hyperliquid</span></a>
+<a class="brand" href="${root}">${LOGO}HyperQuant<span>${lang === 'en' ? 'BTC &amp; gold' : 'BTC i złoto'} · Hyperliquid</span></a>
 <nav aria-label="${lang === 'en' ? 'Main' : 'Główna'}">${nav}${rss}${langLink}</nav>
 </div></header>
 <main class="wrap">

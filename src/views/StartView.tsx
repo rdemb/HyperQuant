@@ -152,7 +152,7 @@ const StartView: React.FC = () => {
           <p className="mb-8 flex items-center gap-3.5 text-xs font-bold tracking-[0.14em] text-ink-2 uppercase lg:mb-10">
             <span className="font-mono tracking-normal">Nº 01</span>
             <span aria-hidden="true" className="h-px w-12 bg-ink-1" />
-            {tr('desk BTC i Hyperliquid', 'a BTC and Hyperliquid desk')}
+            {tr('desk BTC i złota · Hyperliquid', 'a BTC and gold desk · Hyperliquid')}
           </p>
           <h1 id="start-title" className="display flex flex-col text-[clamp(52px,7.2vw,104px)] leading-[0.92] font-extrabold">
             {lines.map((x) =>
