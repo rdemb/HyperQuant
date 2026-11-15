@@ -7,6 +7,7 @@ import { BLOCKS, TIME_ZONE, localDate, placedBlocks } from './posts.mjs';
 
 export const INDEX_LIMIT = 40;
 import { coverAlt } from './cover.mjs';
+import { deskLabels } from '../../src/config/deskMarkets.ts';
 export const FEED_LIMIT = 50;
 const LADDER_GAP = 28;
 const LADDER_GAP_NOTES = 44;
@@ -390,7 +391,7 @@ const RAIL = {
     ],
     pubs: [['blog', 'Blog', 'blog/', 'newspaper'], ['results', 'Wyniki', 'wyniki/', 'list-checks'], ['news', 'Co nowego', 'co-nowego/', 'rotate-ccw-clock']],
     pubTitle: 'Publikacje',
-    tag: 'BTC i złoto · Hyperliquid',
+    tag: `${esc(deskLabels())} · Hyperliquid`,
     aria: 'Nawigacja',
   },
   en: {
@@ -400,7 +401,7 @@ const RAIL = {
     ],
     pubs: [['blog', 'Blog (PL)', 'blog/', 'newspaper'], ['results', 'Results', 'en/results/', 'list-checks'], ['news', "What's new", 'en/whats-new/', 'rotate-ccw-clock']],
     pubTitle: 'Publications',
-    tag: 'BTC &amp; gold · Hyperliquid',
+    tag: `${esc(deskLabels())} · Hyperliquid`,
     aria: 'Navigation',
   },
 };
@@ -546,7 +547,7 @@ export function layout(
 ${rail(lang, root, current, url, `${rss}${langLink}`.replace(/class="nav-(rss|lang)"/g, 'class="rail__extra"'))}
 <div class="shell__main">
 <header class="site-header"><div class="wrap${wide ? ' wrap--wide' : ''}">
-<a class="brand" href="${root}">${LOGO}HyperQuant<span>${lang === 'en' ? 'BTC &amp; gold' : 'BTC i złoto'} · Hyperliquid</span></a>
+<a class="brand" href="${root}">${LOGO}HyperQuant<span>${esc(deskLabels())} · Hyperliquid</span></a>
 <nav aria-label="${lang === 'en' ? 'Main' : 'Główna'}">${nav}${rss}${langLink}</nav>
 </div></header>
 <main class="wrap${wide ? ' wrap--wide' : ''}">
