@@ -143,6 +143,18 @@ export function blogMapScan(st: BlogMapsState, picked: Pick<BlogMap, 'publishedA
   return { asOf: picked.publishedAt };
 }
 
+/** Stałe progi i skale warstw LIVE dopisywane do podpowiedzi plakietki (plan 59, E3 i E6). */
+export const LIVE_NOTE: Record<string, string> = {
+  showHeatmap: tr(
+    ' Skala względna widoku: kolory od 60. do 99,5. percentyla wielkości poziomów w widocznych migawkach, więc przy przewijaniu kolor tego samego poziomu może się zmienić.',
+    ' A view-relative scale: colours run from the 60th to the 99.5th percentile of level sizes in the visible snapshots, so the same level can change colour when you scroll.'
+  ),
+  showLiq: tr(
+    ' Klastry: 3 największe przedziały około 0,25% ceny z każdej strony, od 1 mln USD.',
+    ' Clusters: the 3 largest bins of about 0.25% of the price on each side, from USD 1M.'
+  ),
+};
+
 /** Warstwy z migawek skanera (plik z `asOf`): po 2 min wiek zamiast LIVE. */
 const SCANNER = new Set(['showLiq', 'showWhales']);
 /** Plakietka „—” warstwy, której danych rynek nie ma (`marketCaps`); null — rynek ma te dane. */
@@ -188,7 +200,7 @@ export function layerBadge(key: string, ctx: { coin: string; now: number; scan?:
     if ('why' in scan) return { tone: 'stale', text: '—', hint: scan.why };
     const age = scannerAge(scan.asOf, ctx.now);
     if (age) return { tone: 'stale', text: age, hint: tr(`Migawka skanera sprzed ${age} (stan z ${fmtHm(scan.asOf)})`, `Scanner snapshot from ${age} ago (as of ${fmtHm(scan.asOf)})`) };
-    return { tone: 'live', text: 'LIVE', hint: tr(`LIVE: migawka skanera z ${fmtHm(scan.asOf)}`, `LIVE: scanner snapshot as of ${fmtHm(scan.asOf)}`) };
+    return { tone: 'live', text: 'LIVE', hint: tr(`LIVE: migawka skanera z ${fmtHm(scan.asOf)}`, `LIVE: scanner snapshot as of ${fmtHm(scan.asOf)}`) + (LIVE_NOTE[key] ?? '') };
   }
   if (key === 'showBlogMap') {
     const scan = ctx.scan ?? { why: WAIT_TEXT };
@@ -204,7 +216,7 @@ export function layerBadge(key: string, ctx: { coin: string; now: number; scan?:
     };
   }
   const method = (METHOD_HINT as Readonly<Record<string, string>>)[key];
-  return { tone: TONE[src], text: src, hint: method ?? SOURCE_HINT[src] };
+  return { tone: TONE[src], text: src, hint: method ?? SOURCE_HINT[src] + (LIVE_NOTE[key] ?? '') };
 }
 
 /** Krótkie nazwy warstw w legendzie. */
