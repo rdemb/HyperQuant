@@ -1,4 +1,5 @@
 import React from 'react';
+import { ouHalfLifeText } from '../../components/noiseText';
 import { useDesk } from '../../state/DeskContext';
 import { Stat, fmtPct, DASH, fmtFixed, fmtNum } from '../../ui';
 import { FundingStrip } from '../market/FundingStrip';
@@ -133,7 +134,7 @@ export const DeskRail: React.FC = () => {
           label={tr(<>Powrót do <span className="whitespace-nowrap">D-EQ</span></>, <>Reversion to <span className="whitespace-nowrap">D-EQ</span></>)}
           source={{ tone: 'model', card: 'ou', label: 'MODEL', title: tr('Regresja OU wokół 0,65·D-EQ + 0,35·W-EQ', 'OU regression around 0.65·D-EQ + 0.35·W-EQ') }}
           value={<span className="text-base">Z {quant.ouZScore > 0 ? '+' : ''}{fmtNum(quant.ouZScore)}σ</span>}
-          hint={`t½ ${Number.isFinite(quant.ouHalfLifeBars) ? `${fmtNum(quant.ouHalfLifeBars)} ${tr('świec', 'bars')}` : tr('∞ (brak powrotu)', '∞ (no reversion)')} · ${sessionNameAt(feed.nowTick)}`}
+          hint={`${ouHalfLifeText(quant.ouTheta, quant.ouHalfLifeBars)} · ${sessionNameAt(feed.nowTick)}`}
         />
       </div>
 

@@ -66,9 +66,35 @@ describe.each(['pl', 'en'] as const)('Badania: nazwy reżimów opisowe (%s)', (l
     expect(keys.length).toBeGreaterThanOrEqual(4);
     for (const k of keys) {
       expect(k).not.toMatch(/bullish|bearish/i);
-      const html = renderToStaticMarkup(<QuantRegimePanel quant={{ ...emptyQuantMetrics(), regimeClassification: k }} currentPrice={100_000} timeframeSec={300} />);
+      const html = renderToStaticMarkup(<QuantRegimePanel quant={{ ...emptyQuantMetrics(), regimeClassification: k }} />);
       expect(html, k).not.toMatch(/bullish|bearish|wzrostow|spadkow|popytow|podażow/i);
     }
+  });
+});
+
+describe('Badania: bez przewidywanej ceny i z pasmem szumu', () => {
+  it('panel reżimu nie pokazuje trajektorii, strzałek kierunku ani wag heurystyki', async () => {
+    S.lang = 'pl';
+    vi.resetModules();
+    const { QuantRegimePanel } = await import('../../components/QuantSignalDesk');
+    const { emptyQuantMetrics } = await import('../quantMathEngine');
+    const q = { ...emptyQuantMetrics(), forecastHorizon: [{ stepBars: 4, predictedPrice: 101_000, upper1Sigma: 101_500, lower1Sigma: 100_500 }] } as QuantMathMetrics;
+    const html = renderToStaticMarkup(<QuantRegimePanel quant={q} />);
+    expect(html).not.toMatch(/▲|▼|101[\s ]?000|Trajektoria|Wagi cech/);
+  });
+
+  it('Hurst w paśmie szumu i OU bez dowodu powrotu nie udają cechy rynku', async () => {
+    S.lang = 'pl';
+    vi.resetModules();
+    const { QuantMetricTiles } = await import('../../components/QuantSignalDesk');
+    const { emptyQuantMetrics } = await import('../quantMathEngine');
+    const slow = renderToStaticMarkup(<QuantMetricTiles quant={{ ...emptyQuantMetrics(), hurstExponent: 0.52, ouTheta: 0.05, ouHalfLifeBars: 13.9 }} />);
+    expect(slow).toContain('w zakresie szumu');
+    expect(slow).toContain('bez dowodu powrotu');
+    expect(slow).not.toMatch(/t½ 13/);
+    const fast = renderToStaticMarkup(<QuantMetricTiles quant={{ ...emptyQuantMetrics(), hurstExponent: 0.66, ouTheta: 0.2, ouHalfLifeBars: 3.5 }} />);
+    expect(fast).toContain('powyżej pasma szumu');
+    expect(fast).toMatch(/t½ 3,5/);
   });
 });
 

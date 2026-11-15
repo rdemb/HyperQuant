@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { ouHalfLifeText } from './noiseText';
 import { L2OrderbookLevel, LiquidityProfileBucket, QuantMathMetrics, ShaakuniState } from '../types/trading';
 import { bookDepth } from '../utils/bookDepth';
 import { Badge, Panel, Stat, DASH, fmtCompact, fmtPct, fmtPrice, fmtSigned, fmtFixed, fmtNum } from '../ui';
@@ -486,9 +487,9 @@ export const MicrostructureMethods: React.FC<{
         'OU opisuje, jak szybko cena wraca do kotwicy; Z-score mówi, jak daleko od niej jesteśmy w odchyleniach standardowych. Parametry z krótkiej historii są niestabilne, a duże |Z| bywa początkiem trendu, nie okazją.',
         'OU describes how fast price returns to the anchor; the Z-score says how far from it we are in standard deviations. Parameters from a short history are unstable, and a large |Z| can be the start of a trend, not an opportunity.'
       ),
-      check: tr('Czytaj t½ razem z Hurstem: H > 0,6 przy dużym |Z| przemawia przeciw założeniu powrotu.', 'Read t½ together with Hurst: H > 0.6 with a large |Z| argues against the reversion assumption.'),
+      check: tr('Na 40 świecach czyste błądzenie losowe daje θ > 0 w 2/3 przypadków, więc t½ pokazujemy dopiero przy θ > 0,133 (t½ < 5,2 świecy, fałszywy alarm 5%). Czytaj go razem z Hurstem: H powyżej pasma szumu przy dużym |Z| przemawia przeciw założeniu powrotu.', 'On 40 candles a pure random walk gives θ > 0 in 2/3 of cases, so t½ is shown only when θ > 0.133 (t½ < 5.2 candles, 5% false alarms). Read it together with Hurst: H above the noise band with a large |Z| argues against the reversion assumption.'),
       metricLabel: 'Z · t½',
-      metricValue: `Z ${fmtSigned(quant.ouZScore, 2)}σ · t½ ${Number.isFinite(quant.ouHalfLifeBars) ? `${fmtFixed(quant.ouHalfLifeBars, 1)} ${tr('świec', 'candles')}` : '∞'} · D-EQ ${fmtPrice(shaakuni.deq, 0)}`,
+      metricValue: `Z ${fmtSigned(quant.ouZScore, 2)}σ · ${ouHalfLifeText(quant.ouTheta, quant.ouHalfLifeBars)} · D-EQ ${fmtPrice(shaakuni.deq, 0)}`,
     },
   ];
   const sel = methods.find((m) => m.id === selectedId) ?? methods[0];
