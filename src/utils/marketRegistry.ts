@@ -1,3 +1,4 @@
+import { ENABLED_MARKETS } from '../config/deskMarkets.ts';
 /**
  * Rejestr rynków `markets.json` — format współdzielony przez skaner i stronę (bez importów zewnętrznych; uruchamiany
  * także natywnie przez Node 24). Czysta logika: bez sieci i bez zegara.
@@ -384,14 +385,11 @@ export const DEFAULT_MARKETS: readonly ChartMarket[] = [
 ];
 
 /**
- * Rynki do wyboru w aplikacji (decyzja Rafała 14.11.2026): desk BTC, złoto (`xyz:GOLD`, giełda HIP-3, najpłynniejsze
- * złoto na Hyperliquid) jako kontekst makro. Rejestr zostaje ogólny (mechanizmy rynków, progi, skaner); zawężone są listy
- * wyboru: strona Rynki, wybór rynku wykresu, przełączanie skrótem i paleta ⌘K. Parametry złota z API Hyperliquid (11.2026).
+ * Rynki do wyboru w aplikacji: włączone rynki desku z konfiguracji (`src/config/deskMarkets.ts`, dziś BTC, złoto i S&P 500).
+ * Rejestr zostaje ogólny (mechanizmy rynków, progi, skaner); zawężone są listy wyboru: strona Rynki, wybór rynku wykresu,
+ * przełączanie skrótem i paleta ⌘K. Parametry z API Hyperliquid (11.2026), aktualne z rejestru, gdy jest.
  */
-export const APP_MARKETS: readonly ChartMarket[] = [
-  { coin: 'BTC', dex: '', szDecimals: 5, maxLeverage: 40, scanner: 'full', class: 'crypto' },
-  { coin: 'xyz:GOLD', dex: 'xyz', szDecimals: 4, maxLeverage: 25, scanner: 'none', class: 'commodity' },
-];
+export const APP_MARKETS: readonly ChartMarket[] = ENABLED_MARKETS.map((m) => ({ coin: m.coin, dex: m.dex, szDecimals: m.szDecimals, maxLeverage: m.maxLeverage, scanner: m.scanner, class: m.class }));
 
 /** Rynki aplikacji z listy (wpis rejestru z aktualnymi parametrami albo parametry domyślne), w kolejności `APP_MARKETS`. */
 export function appMarkets(list: readonly ChartMarket[]): ChartMarket[] {
