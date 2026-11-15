@@ -2,6 +2,7 @@
 import { Marked } from 'marked';
 import { footprintHtml, sessionHtml, sessionTitle } from './charts.mjs';
 import { IMAGE_FILE } from './intake.mjs';
+import { IKONY } from './ikony.mjs';
 import { BLOCKS, TIME_ZONE, localDate, placedBlocks } from './posts.mjs';
 
 export const INDEX_LIMIT = 40;
@@ -340,6 +341,52 @@ const NAV = {
   ],
 };
 
+/**
+ * Dolny pasek telefonu i tabletu (poniżej 1024 px), jak w aplikacji: trzy fazy dnia i Rynki, reszta w „Więcej” (Lekcje,
+ * Badania, Źródła, Agenci AI i strony serwisu). „Więcej” to <details>: działa bez skryptu (CSP strony: skrypty tylko z plików).
+ */
+const BOTTOM = {
+  pl: {
+    bar: [['before', 'Przed sesją', '#before', 'sunrise'], ['charts', 'W sesji', '#charts', 'chart-candlestick'], ['after', 'Po sesji', '#after', 'sunset'], ['markets', 'Rynki', '#markets', 'table-2']],
+    more: [
+      ['lessons', 'Lekcje', 'lekcje/', 'graduation-cap'],
+      ['research', 'Badania', '#research', 'flask-conical'],
+      ['sources', 'Źródła', '#sources', 'database'],
+      ['agents', 'Agenci AI', '#agents', 'bot'],
+      ['blog', 'Blog', 'blog/', 'newspaper'],
+      ['results', 'Wyniki', 'wyniki/', 'list-checks'],
+      ['news', 'Co nowego', 'co-nowego/', 'rotate-ccw-clock'],
+    ],
+    label: 'Więcej',
+    aria: 'Główna (telefon)',
+  },
+  en: {
+    bar: [['before', 'Pre-session', '#before', 'sunrise'], ['charts', 'In session', '#charts', 'chart-candlestick'], ['after', 'Post-session', '#after', 'sunset'], ['markets', 'Markets', '#markets', 'table-2']],
+    more: [
+      ['lessons', 'Lessons', 'en/lessons/', 'graduation-cap'],
+      ['research', 'Research', '#research', 'flask-conical'],
+      ['sources', 'Sources', '#sources', 'database'],
+      ['agents', 'AI agents', '#agents', 'bot'],
+      ['blog', 'Blog (PL)', 'blog/', 'newspaper'],
+      ['results', 'Results', 'en/results/', 'list-checks'],
+      ['news', "What's new", 'en/whats-new/', 'rotate-ccw-clock'],
+    ],
+    label: 'More',
+    aria: 'Main (phone)',
+  },
+};
+
+function bottomNav(lang, root, current, url) {
+  const b = BOTTOM[lang];
+  const link = ([key, label, href, icon], cls) => {
+    const here = key === current;
+    const doc = here && sameDocument(`${root}${href}`, url);
+    return `<a class="${cls}${here ? ' is-here' : ''}" href="${root}${href}"${doc ? ' aria-current="page"' : ''}>${IKONY[icon]}<span>${label}</span></a>`;
+  };
+  const inMore = b.more.some(([key]) => key === current);
+  return `<nav class="bottom-nav" aria-label="${b.aria}"><div class="bottom-nav__row">${b.bar.map((i) => link(i, 'bottom-nav__item')).join('')}<details class="bottom-nav__more"><summary class="bottom-nav__item${inMore ? ' is-here' : ''}">${IKONY.ellipsis}<span>${b.label}</span></summary><div class="bottom-nav__menu">${b.more.map((i) => link(i, 'bottom-nav__link')).join('')}</div></details></div></nav>`;
+}
+
 /** Znak HyperQuant „Chronograf H” (ten sam co ikona aplikacji, scripts/icons/ikona.mjs), kolory z tokenów bloga. */
 const LOGO = '<svg class="brand-mark" width="24" height="24" viewBox="40 40 432 432" aria-hidden="true"><g fill="none" stroke-linecap="round" stroke-width="30"><path d="M270.9 78.6A178 178 0 0 1 417.1 331.8" stroke="var(--line-strong)"/><path d="M402.2 357.6A178 178 0 0 1 201.9 425.6" stroke="var(--ink-3)"/><path d="M174.4 414.2A178 178 0 0 1 241.1 78.6" stroke="var(--ink-1)"/></g><g fill="var(--ink-1)"><rect x="183" y="150" width="14" height="212" rx="7"/><rect x="160" y="184" width="60" height="132" rx="14"/><rect x="315" y="138" width="14" height="196" rx="7"/><rect x="292" y="166" width="60" height="122" rx="14"/><rect x="214" y="238" width="84" height="26" rx="13"/></g><circle cx="187.9" cy="420.5" r="34" fill="var(--accent)" stroke="var(--page)" stroke-width="12"/></svg>';
 const OG_LOCALE = { pl: 'pl_PL', en: 'en_GB' };
@@ -461,6 +508,7 @@ ${main}
 <p>${esc(disclaimer)}</p>
 <p>${FOOTER[lang](root, site)}</p>
 </div></footer>
+${bottomNav(lang, root, current, url)}
 </body>
 </html>
 `;
