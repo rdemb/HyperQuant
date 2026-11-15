@@ -64,8 +64,41 @@ export function build() {
     }
     files[`LICENSE-${f.pkg}.txt`] = readFileSync(join(dir, 'LICENSE'), 'utf8');
   }
+  css.push(...FALLBACKS.map(fallbackFace));
   files['fonts.css'] = `${css.join('\n\n')}\n`;
   return files;
+}
+
+/**
+ * Fonty zastępcze z metrykami dopasowanymi do naszych (zanim font się wczyta): ten sam tekst zajmuje tyle samo miejsca
+ * w poziomie (`size-adjust`) i w pionie (`ascent-override`, `descent-override`), więc podmiana fontu nie przesuwa układu
+ * (CLS). Szerokość zmierzona w Chrome na tekście z aplikacji (polski i angielski, cyfry) względem Ariala albo Courier New
+ * tej samej grubości; metryki pionowe z tabel fontów (unitsPerEm 1000). Bricolage dla nagłówków: grubość 700, szerokość 90%.
+ */
+export const FALLBACKS = [
+  { family: 'Bricolage Fallback', weight: '100 900', local: ['Arial Bold', 'Arial-BoldMT', 'Arial'], size: 91.3, ascent: 930, descent: 270 },
+  { family: 'Plus Jakarta Fallback', weight: '100 500', local: ['Arial', 'ArialMT'], size: 101.86, ascent: 1038, descent: 222 },
+  { family: 'Plus Jakarta Fallback', weight: '501 900', local: ['Arial Bold', 'Arial-BoldMT'], size: 98.0, ascent: 1038, descent: 222 },
+  { family: 'JetBrains Mono Fallback', weight: '100 500', local: ['Courier New', 'CourierNewPSMT'], size: 99.98, ascent: 1020, descent: 300 },
+  { family: 'JetBrains Mono Fallback', weight: '501 900', local: ['Courier New Bold', 'CourierNewPS-BoldMT'], size: 99.59, ascent: 1020, descent: 300 },
+];
+
+const pct = (v) => `${Number(v.toFixed(2))}%`;
+
+export function fallbackFace(f) {
+  const em = 10 * f.size; // unitsPerEm 1000 × size-adjust
+  return [
+    `/* zastępczy: ${f.family} ${f.weight} */`,
+    '@font-face {',
+    `  font-family: '${f.family}';`,
+    `  font-weight: ${f.weight};`,
+    `  src: ${f.local.map((n) => `local('${n}')`).join(', ')};`,
+    `  size-adjust: ${pct(f.size)};`,
+    `  ascent-override: ${pct((f.ascent / em) * 100)};`,
+    `  descent-override: ${pct((f.descent / em) * 100)};`,
+    '  line-gap-override: 0%;',
+    '}',
+  ].join('\n');
 }
 
 function main() {

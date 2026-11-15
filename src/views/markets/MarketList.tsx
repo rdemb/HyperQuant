@@ -48,7 +48,9 @@ const MarketCard: React.FC<{ row: MarketRowModel }> = ({ row }) => (
           {row.cls !== null && <span>{CLASS_LABEL[row.cls]}</span>}
         </p>
       </div>
-      <span className="flex shrink-0 items-center gap-1.5 text-[11px] text-ink-3">
+      {/* Stała szerokość w obu stanach (powód braku danych i LIVE z godziną): bez tego linia giełdy po lewej łamie się
+          inaczej przed odczytem i po nim, a karta podskakuje (CLS) */}
+      <span className="flex w-[132px] shrink-0 items-center justify-end gap-1.5 text-[11px] text-ink-3">
         {row.readAt !== null ? (
           <>
             <Badge tone="live" size="sm" title={tr('Realne dane Hyperliquid; godzina odczytu w czasie lokalnym', 'Real Hyperliquid data; reading time in local time')}>
@@ -57,7 +59,9 @@ const MarketCard: React.FC<{ row: MarketRowModel }> = ({ row }) => (
             <span className="font-mono tabular-nums">{row.readAt}</span>
           </>
         ) : (
-          <span className="max-w-[180px] text-right">{row.why}</span>
+          <span className="line-clamp-3 text-right" title={row.why ?? undefined}>
+            {row.why}
+          </span>
         )}
       </span>
     </header>
