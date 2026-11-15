@@ -1,8 +1,9 @@
 import React from 'react';
 import { tr } from '../../i18n';
 import { Badge, BadgeTone, Panel } from '../../ui';
+import type { ModelCardId } from '../../ui/modelCard';
 
-type Kind = 'LIVE' | 'MODEL' | 'SIM';
+export type Kind = 'LIVE' | 'MODEL' | 'SIM';
 const KIND_TONE: Record<Kind, BadgeTone> = { LIVE: 'live', MODEL: 'model', SIM: 'sim' };
 const KIND_TITLE: Record<Kind, string> = {
   LIVE: tr('Realne dane ze źródła', 'Real data from the source'),
@@ -10,7 +11,9 @@ const KIND_TITLE: Record<Kind, string> = {
   SIM: tr('Symulacja — tylko w trybie modelu, zawsze oznaczona', 'Simulation — only in model mode, always labelled'),
 };
 
-interface Row {
+export interface Row {
+  /** Karta modelu przy plakietkach MODEL tej liczby (shell/KartaModelu) */
+  card?: ModelCardId;
   metric: string;
   source: string;
   method: string;
@@ -20,7 +23,7 @@ interface Row {
   caveat?: string;
 }
 
-const GROUPS: { title: string; rows: Row[] }[] = [
+export const GROUPS: { title: string; rows: Row[] }[] = [
   {
     title: tr('Hyperliquid — rdzeń desku', 'Hyperliquid — the desk core'),
     rows: [
@@ -432,6 +435,7 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         refresh: '60 s',
       },
       {
+        card: 'macro',
         metric: tr('Proxy makro (HIP-3)', 'Macro proxies (HIP-3)'),
         source: tr('Hyperliquid HIP-3 (dex xyz): indeksy, złoto, ropa, FX', 'Hyperliquid HIP-3 (xyz dex): indices, gold, oil, FX'),
         method: tr(
@@ -448,6 +452,7 @@ const GROUPS: { title: string; rows: Row[] }[] = [
     title: tr('Modele liczone z danych', 'Models computed from data'),
     rows: [
       {
+        card: 'schrodi',
         metric: tr('Schrödi: duży ruch i kierunek BTC na 1 h (W sesji)', 'Schrödi: BTC big move and direction for 1 h (In session)'),
         source: tr('Świece HL 1m, 5m, 1h, 1d + kalendarz makro desku', 'HL 1m, 5m, 1h, 1d candles + the desk macro calendar'),
         method: tr(
@@ -506,6 +511,7 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         refresh: tr('z każdą świecą', 'every candle'),
       },
       {
+        card: 'vpin',
         metric: 'VPIN',
         source: tr('Świece HL (podział WS lub BVC)', 'HL candles (WS or BVC split)'),
         method: tr('50 kubełków o równym wolumenie; VPIN = średnia |V_B − V_S| / V', '50 equal-volume buckets; VPIN = mean |V_B − V_S| / V'),
@@ -517,6 +523,7 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         ),
       },
       {
+        card: 'kyle',
         metric: tr('λ Kyle’a', 'Kyle’s λ'),
         source: tr('Świece z realnym przepływem agresora (WS)', 'Candles with real aggressor flow (WS)'),
         method: tr(
@@ -527,6 +534,7 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         refresh: tr('z każdą świecą', 'every candle'),
       },
       {
+        card: 'hurst',
         metric: tr('Wykładnik Hursta', 'Hurst exponent'),
         source: tr('Zwroty z zamknięć świec HL', 'Returns from HL candle closes'),
         method: tr(
@@ -538,6 +546,7 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         caveat: tr('Lo (1991): klasyczne R/S myli krótką pamięć z długą.', 'Lo (1991): classic R/S mistakes short memory for long memory.'),
       },
       {
+        card: 'ou',
         metric: 'Ornstein-Uhlenbeck',
         source: tr('Zamknięcia świec HL', 'HL candle closes'),
         method: tr(
@@ -548,6 +557,7 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         refresh: tr('z każdą świecą', 'every candle'),
       },
       {
+        card: 'vol',
         metric: tr('Model zmienności', 'Volatility model'),
         source: tr(
           'Hyperliquid API: candleSnapshot BTC 1h (~5000 ≈ 208 dni) i 5m (~5000 ≈ 17 dni)',
@@ -565,6 +575,7 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         ),
       },
       {
+        card: 'mc2h',
         metric: tr('Monte Carlo — zasięg 2 h', 'Monte Carlo — 2 h range'),
         source: tr('Model zmienności, świece HL, poziomy PDH/PDL/D-EQ, arkusz L2', 'Volatility model, HL candles, PDH/PDL/D-EQ levels, L2 book'),
         method: tr(
@@ -619,6 +630,7 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         ),
       },
       {
+        card: 'ledger',
         metric: tr('Weryfikowalny dziennik desku', 'Verifiable desk ledger'),
         source: tr(
           'Skaner HyperQuant: model zmienności ze świec 1h/5m, PDH/PDL ze świec 1d, rozstrzygnięcia ze świec 1m (publiczne API Hyperliquid); gałąź ledger repo danych',
@@ -707,6 +719,7 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         ),
       },
       {
+        card: 'modelVsMarket',
         metric: tr('Model vs rynek (HIP-4, Badania)', 'Model vs market (HIP-4, Research)'),
         source: tr(
           'outcomeMeta i l2Book rynków wynikowych Hyperliquid (strona „Tak” = arkusz #<10·outcome>); model zmienności desku (świece 1h/5m)',
@@ -741,6 +754,7 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         ),
       },
       {
+        card: 'book',
         metric: tr('Mechanika arkusza (Badania)', 'Book mechanics (Research)'),
         source: tr(
           'WS bbo (najlepsze kwotowania, ~co 150 ms), l2Book (~co 5 s) i trades Hyperliquid w przeglądarce — od otwarcia strony, maks. 30 min',
@@ -772,6 +786,7 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         ),
       },
       {
+        card: 'cohort',
         metric: tr('Przepływ kohort', 'Cohort flow'),
         source: tr(
           'Skaner HyperQuant: WS trades BTC (pole users = [kupujący, sprzedający], side = strona agresora); pozycje i ranking kont z książki adresów',
@@ -789,6 +804,7 @@ const GROUPS: { title: string; rows: Row[] }[] = [
         ),
       },
       {
+        card: 'cascade',
         metric: tr('Kaskada likwidacji', 'Liquidation cascade'),
         source: tr(
           'Mapa likwidacji, dzienna zmienność (model zmienności), obrót 24 h z API',
@@ -933,7 +949,7 @@ export const LineageTable: React.FC = () => (
               </th>
             </tr>
             {g.rows.map((r) => (
-              <tr key={r.metric} className="align-top hover:bg-surface-2/60 transition-colors duration-150">
+              <tr key={r.metric} id={r.card ? `model-${r.card}` : undefined} className="scroll-mt-28 align-top hover:bg-surface-2/60 transition-colors duration-150">
                 <th scope="row" className="px-3 py-2 font-medium text-ink-1 sticky left-0 z-10 bg-surface-1 max-lg:shadow-[1px_0_0_var(--color-line)]">{r.metric}</th>
                 <td className="px-3 py-2 text-ink-2">{r.source}</td>
                 <td className="px-3 py-2 text-ink-2 leading-relaxed">

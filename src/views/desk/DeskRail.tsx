@@ -67,6 +67,7 @@ export const DeskRail: React.FC = () => {
           missing={!mc}
           source={{
             tone: 'model',
+            card: 'mc2h',
             label: 'MODEL',
             title:
               mc?.method === 'fhs-har'
@@ -121,7 +122,7 @@ export const DeskRail: React.FC = () => {
       <div className="bg-surface-1 border border-line rounded-xl p-3.5">
         <Stat
           label={<>VPIN · <span className="normal-case">λ</span></>}
-          source={{ tone: 'model', label: 'MODEL', title: tr('VPIN na kubełkach wolumenowych; λ z OLS na realnym przepływie WS', 'VPIN on volume buckets; λ from OLS on real WS flow') }}
+          source={{ tone: 'model', card: 'vpin', label: 'MODEL', title: tr('VPIN na kubełkach wolumenowych; λ z OLS na realnym przepływie WS', 'VPIN on volume buckets; λ from OLS on real WS flow') }}
           value={quant.vpinToxicity === null ? DASH : <span className="text-base">{fmtPct(quant.vpinToxicity * 100, 1, false)}</span>}
           hint={`${quant.vpinToxicity === null ? `${tr('VPIN: brak wolumenu w świecach', 'VPIN: no candle volume')} · ` : ''}λ = ${quant.kyleLambdaPer1M !== null ? `$${fmtFixed(quant.kyleLambdaPer1M, 2)} / $1M` : tr('b/d', 'n/a')}`}
         />
@@ -130,7 +131,7 @@ export const DeskRail: React.FC = () => {
       <div className="bg-surface-1 border border-line rounded-xl p-3.5">
         <Stat
           label={tr(<>Powrót do <span className="whitespace-nowrap">D-EQ</span></>, <>Reversion to <span className="whitespace-nowrap">D-EQ</span></>)}
-          source={{ tone: 'model', label: 'MODEL', title: tr('Regresja OU wokół 0,65·D-EQ + 0,35·W-EQ', 'OU regression around 0.65·D-EQ + 0.35·W-EQ') }}
+          source={{ tone: 'model', card: 'ou', label: 'MODEL', title: tr('Regresja OU wokół 0,65·D-EQ + 0,35·W-EQ', 'OU regression around 0.65·D-EQ + 0.35·W-EQ') }}
           value={<span className="text-base">Z {quant.ouZScore > 0 ? '+' : ''}{fmtNum(quant.ouZScore)}σ</span>}
           hint={`t½ ${Number.isFinite(quant.ouHalfLifeBars) ? `${fmtNum(quant.ouHalfLifeBars)} ${tr('świec', 'bars')}` : tr('∞ (brak powrotu)', '∞ (no reversion)')} · ${sessionNameAt(feed.nowTick)}`}
         />

@@ -1,4 +1,5 @@
 import React from 'react';
+import type { ModelCardId } from './modelCard';
 import { Badge, BadgeTone } from './Badge';
 import { DASH } from './format';
 
@@ -8,7 +9,8 @@ interface StatProps {
   /** Zmiana: liczba ze znakiem; kolor wg kierunku, zawsze ze znakiem ▲▼ */
   delta?: { value: number | null; text: string } | null;
   hint?: React.ReactNode;
-  source?: { tone: BadgeTone; label: string; title?: string };
+  /** `card` — plakietka otwiera kartę modelu (`ui/modelCard`) */
+  source?: { tone: BadgeTone; label: string; title?: string; card?: ModelCardId };
   /**
    * Brak liczby: bez plakietki źródła (LIVE, MODEL, SIM — obok „—” udawałaby dane). Domyślnie, gdy wartość to „—”;
    * „—” owinięte w JSX trzeba podać jawnie. Stan danych (BRAK, STALE, „< 24 h”) zostaje, bo to powód braku.
@@ -27,7 +29,7 @@ export const Stat: React.FC<StatProps> = ({ label, value, delta, hint, source, m
     <div className="flex items-center justify-between gap-2">
       <span className="min-w-0 text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium leading-snug">{label}</span>
       {source && !(missing && SOURCE_TONES.has(source.tone)) && (
-        <Badge tone={source.tone} title={source.title}>
+        <Badge tone={source.tone} title={source.title} card={source.card}>
           {source.label}
         </Badge>
       )}
