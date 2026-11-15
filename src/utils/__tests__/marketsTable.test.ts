@@ -78,9 +78,9 @@ describe('odpowiedź giełdy → liczby rynków', () => {
   it('nazwy z przedrostkiem i bez; złe pola → null, zła odpowiedź → null', () => {
     const raw = [{ universe: [{ name: 'NVDA' }, { name: 'xyz:TSLA' }, { name: 'BAD' }] }, [ctx('180.5', '1000'), ctx('250', '20'), { markPx: 'x', openInterest: '-3', funding: 'nope' }]];
     const m = parseDexCtxs(raw, 'xyz');
-    expect(m?.get('xyz:NVDA')).toEqual({ markPx: 180.5, openInterest: 1000, dayNtlVlm: 1000, funding: 0.0000125 });
+    expect(m?.get('xyz:NVDA')).toEqual({ markPx: 180.5, openInterest: 1000, dayNtlVlm: 1000, funding: 0.0000125, oraclePx: 180.5, midPx: null, impactPxs: null });
     expect(m?.get('xyz:TSLA')?.markPx).toBe(250);
-    expect(m?.get('xyz:BAD')).toEqual({ markPx: null, openInterest: null, dayNtlVlm: null, funding: null });
+    expect(m?.get('xyz:BAD')).toEqual({ markPx: null, openInterest: null, dayNtlVlm: null, funding: null, oraclePx: null, midPx: null, impactPxs: null });
     expect(parseDexCtxs(null, '')).toBeNull();
     expect(parseDexCtxs({}, '')).toBeNull();
     expect(parseDexCtxs([{ universe: 'x' }, []], '')).toBeNull();
@@ -163,6 +163,8 @@ describe('model tabeli (gotowe teksty dla widoku)', () => {
       chartWhy: null,
       scanner: { text: 'mapa likwidacji', why: null },
       wallStreet: { label: 'ws BTC', note: null, why: null },
+      ctx: expect.objectContaining({ markPx: 80_000 }),
+      szDecimals: 5,
     });
     expect(rows[1]).toMatchObject({ fundingHour: '−0,0100%', fundingYear: '−87,6%', scanner: { text: '—', why: 'bez skanera ETH' } });
   });

@@ -12,15 +12,35 @@ import { lang, tr } from '../i18n';
 import { SessionDial } from './start/SessionDial';
 import { type DayPhase, dayPhase, fmtSpan, sessionClock, useNow } from '../shell/dzien';
 import { FlowReel } from './start/FlowReel';
-import { InstrumentCards } from './start/InstrumentCards';
-import { deskPhrase } from '../config/deskMarkets';
+import { MarketsNow } from './start/MarketsNow';
+import { ENABLED_MARKETS, deskMarketOf, deskPhrase } from '../config/deskMarkets';
 
 // Czwórka i teren rysowany canvasem: osobne pakiety, ładowane dopiero pod hero (pierwszy ekran bez modułów wykresu)
 const FourCard = lazy(() => import('./before/FourCard').then((m) => ({ default: m.FourCard })));
 const LiquidityTerrain = lazy(() => import('./start/LiquidityTerrain'));
 
-/** Rynek Startu: BTC (Czwórka, mapa skanera i dziennik prognoz są dla BTC) */
-const START_COIN = 'BTC';
+/** Rynek Czwórki na Starcie: wybór z „Rynków teraz”, zapamiętany na urządzeniu (domyślnie BTC; mapa i dziennik zostają dla BTC) */
+const START_MARKET_KEY = 'hq.start.market.v1';
+function readStartMarket(): string {
+  try {
+    const v = window.localStorage.getItem(START_MARKET_KEY);
+    return v && ENABLED_MARKETS.some((m) => m.coin === v) ? v : 'BTC';
+  } catch {
+    return 'BTC';
+  }
+}
+function useStartMarket(): [string, (coin: string) => void] {
+  const [coin, setCoin] = useState(readStartMarket);
+  const set = (c: string) => {
+    setCoin(c);
+    try {
+      window.localStorage.setItem(START_MARKET_KEY, c);
+    } catch {
+      // Pamięć zablokowana: wybór tylko na tę wizytę
+    }
+  };
+  return [coin, set];
+}
 const LOCALE = lang === 'pl' ? 'pl-PL' : 'en-GB';
 
 type Phase = DayPhase;
@@ -124,6 +144,12 @@ const StartView: React.FC = () => {
   const [terrainRef, terrainSeen] = useSeen<HTMLDivElement>();
   // Czwórka ciągnie moduły Przed sesją (~150 KB gzip): ładowana dopiero przy ekranie, żeby nie blokować pierwszego widoku
   const [fourRef, fourSeen] = useSeen<HTMLElement>();
+  const [startCoin, setStartCoin] = useStartMarket();
+  const startLabel = deskMarketOf(startCoin)?.label ?? startCoin;
+  // Rynki bez pełnego skanera: dla nich nie ma pozycji, likwidacji ani dziennika prognoz
+  const rest = ENABLED_MARKETS.filter((m) => m.scanner !== 'full');
+  const otherMarkets = deskPhrase('pl', 'gen', rest);
+  const otherMarketsEn = deskPhrase('en', 'nom', rest);
   const go = (v: ViewId) => (e: React.MouseEvent) => {
     e.preventDefault();
     setView(v);
@@ -186,19 +212,30 @@ const StartView: React.FC = () => {
               {tr('Skąd jest każda liczba', 'Where every number comes from')}
             </a>
           </div>
-          {/* Wybór instrumentu: rynki aplikacji z konfiguracji */}
-          <InstrumentCards />
+          {/* Rynki teraz: rynki desku z konfiguracji (projekt 60, §8) */}
+          <MarketsNow selected={startCoin} onSelect={setStartCoin} />
         </motion.div>
       </section>
 
       {/* Czwórka: te same cztery liczby i ta sama funkcja co Przed sesją (i serwer MCP) */}
-      <section ref={fourRef} aria-label={tr('Cztery liczby BTC', 'BTC four numbers')} className="border-t border-line px-4 py-10 lg:px-14">
+      <section ref={fourRef} aria-label={tr(`Cztery liczby: ${startLabel}`, `Four numbers: ${startLabel}`)} className="border-t border-line px-4 py-10 lg:px-14">
         <LocalBoundary what={tr('Czwórka', 'Four numbers')}>
           <Suspense fallback={<div className="h-[180px] rounded-xl border border-line bg-surface-1" />}>
-            {fourSeen ? <FourCard coin={START_COIN} /> : <div className="h-[180px] rounded-xl border border-line bg-surface-1" />}
+            {fourSeen ? <FourCard key={startCoin} coin={startCoin} /> : <div className="h-[180px] rounded-xl border border-line bg-surface-1" />}
           </Suspense>
         </LocalBoundary>
       </section>
+
+      {/* Głębia tylko dla BTC: pozycje, likwidacje, przepływ kont i dziennik prognoz (projekt 60, S4) */}
+      <div data-tylko-btc className="border-t border-line px-4 pt-12 lg:px-14">
+        <p className="text-[11px] font-bold tracking-[0.14em] text-ink-3 uppercase">{tr('Tylko BTC: pozycje, likwidacje i prognozy', 'BTC only: positions, liquidations and forecasts')}</p>
+        <p className="mt-2 max-w-[640px] text-sm text-ink-2">
+          {tr(
+            `Dla ${otherMarkets} tych danych nie ma: Hyperliquid nie udostępnia pozycji rynków HIP-3, a dziennik prognoz prowadzimy dla BTC. Dlatego poniższe rozdziały są zawsze o BTC.`,
+            `There is no such data for ${otherMarketsEn}: Hyperliquid does not expose positions on HIP-3 markets, and the forecast ledger covers BTC. So the chapters below are always about BTC.`
+          )}
+        </p>
+      </div>
 
       <Chapter
         nr="02"
@@ -332,7 +369,7 @@ const StartView: React.FC = () => {
       </Chapter>
 
       {/* Pochodzenie liczby jako język wizualny */}
-      <section aria-labelledby="prov-title" className="mx-4 grid gap-x-10 gap-y-7 rounded-2xl bg-ink-1 p-8 text-page lg:mx-14 lg:grid-cols-4 lg:p-11">
+      <section aria-labelledby="prov-title" className="mx-4 grid gap-x-10 gap-y-7 rounded-2xl bg-ink-1 p-8 text-page lg:mx-14 lg:grid-cols-5 lg:p-11">
         <h2 id="prov-title" className="display text-[32px] leading-[1.02] font-bold">
           {tr('Pochodzenie liczby jest częścią liczby.', "A number's origin is part of the number.")}
         </h2>
@@ -340,6 +377,7 @@ const StartView: React.FC = () => {
           ['LIVE', 'bg-lume', tr('Pobrane z API przed chwilą, zawsze z godziną odczytu. Nieświeże gaśnie do „—”.', 'Fetched from the API just now, always with its read time. Stale data fades to “—”.')],
           ['MODEL', 'bg-[linear-gradient(90deg,var(--color-page)_50%,transparent_50%)]', tr('Policzone nazwaną metodą: HAR, mediana 20 dni, Dalton. Nazwa stoi przy liczbie.', 'Computed by a named method: HAR, 20-day median, Dalton. The name sits next to the number.')],
           ['SIM', 'border-dashed', tr('Symulacja jest zawsze podpisana. Brak danych to kreska i powód, nigdy liczba na niby.', 'Simulation is always labelled. Missing data is a dash and a reason, never a stand-in number.')],
+          ['HIP-3', 'bg-transparent', tr('Rynki HIP-3 (trade.xyz): cena z wyroczni rynku bazowego; poza jego godzinami wycena samej platformy, oznaczona jako „cena platformy”.', 'HIP-3 markets (trade.xyz): the price comes from the underlying market oracle; outside its hours it is the platform’s own price, marked “platform price”.')],
         ].map(([k, mark, v]) => (
           <p key={k} className="flex flex-col gap-2">
             <span className="flex items-center gap-2.5 text-[13px] font-bold tracking-[0.08em]">

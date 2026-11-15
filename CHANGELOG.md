@@ -4,6 +4,16 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Start: rynki teraz, godziny rynku bazowego i jakość danych (2026-11-15)
+<!-- co-nowego: grupa=rynki | pl=Start pokazuje BTC, złoto i S&P 500 naraz: cena, ruch od otwarcia sesji, czy giełda bazowa jest otwarta i jakość danych; Czwórka dla wybranego rynku | en=Start shows BTC, gold and the S&P 500 together: price, move since the session open, whether the underlying exchange is open and data quality; the Four numbers for the chosen market -->
+
+#### Dodane
+- **Rynki teraz** na Starcie (`MarketsNow`, zamiast kart instrumentów): wiersz na rynek desku z ceną LIVE, ruchem od otwarcia sesji bazowej (BTC od 00:00 UTC, złoto od otwarcia sesji CME, S&P 500 od otwarcia albo zamknięcia NYSE; bez strzałek i kolorów kierunku), stanem rynku bazowego z godziną najbliższej zmiany i plakietką jakości danych. Wiersz wybiera rynek Czwórki (zapamiętany w `hq.start.market.v1`), strzałka otwiera wykres.
+- **Godziny rynku bazowego** (`utils/underlying.ts`): harmonogram trade.xyz (niedziela 18:00 – piątek 17:00 ET, przerwa 17:00–18:00 ET), sesja regularna NYSE i święta NYSE dla S&P 500; testy z czasem letnim w USA i Wielkim Piątkiem. Święta CME i ICE czekają na sprawdzenie u źródła.
+- **Jakość danych HIP-3** (`utils/marketQuality.ts`, plakietka `QualityChip`): rozjazd ceny mark od wyroczni i spread impact z tego samego odczytu co strona Rynki; poza godzinami rynku bazowego „cena platformy” zamiast oceny. Progi wstępne z konfiguracji rynków.
+- Grupa **„Tylko BTC”** nad rozdziałami ze skanera, przepływu i dziennika oraz wiersz o rynkach HIP-3 w części o pochodzeniu liczb.
+
+
 ### S&P 500 w desku, rynki z jednej konfiguracji (2026-11-15)
 <!-- co-nowego: grupa=rynki | pl=S&P 500 dołącza do BTC i złota: karta na stronie Rynki, wykres w W sesji i wybór na Starcie | en=The S&P 500 joins BTC and gold: a card on the Markets page, a chart In session and a pick on Start -->
 
@@ -11,6 +21,7 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 - **S&P 500** (`xyz:SP500`, giełda HIP-3 trade.xyz) jako trzeci rynek aplikacji: karta na stronie Rynki, wykres w W sesji (wybór rynku, skrót `M`, paleta ⌘K) i karta na Starcie. Parametry z API Hyperliquid (dokładność rozmiaru 3, dźwignia do 50×).
 - **Konfiguracja rynków desku** (`src/config/deskMarkets.ts`): jedna lista z nazwami PL i EN, klasą, rynkiem bazowym i jego kalendarzem, katalogiem historii i progami jakości; Brent jako wpis wyłączony. Z niej rynki aplikacji (`APP_MARKETS`), podpis marki w aplikacji i na blogu, teksty Rynków i Startu.
 - **`scripts/markets/sync.mjs`**: opisy w `index.html` (tytuł, meta, Open Graph, X, JSON-LD, noscript), nazwa i opis manifestu oraz tabela rynków w README z konfiguracji; `--check` w CI. Test `marketNames.test.ts` pilnuje, żeby nazw rynków nie wpisywać na sztywno w interfejsie (jawne wyjątki z powodem).
+
 
 ### Wskaźniki: progi z hipotezy zerowej i uczciwsze opisy (2026-11-15)
 <!-- co-nowego: grupa=wykres | pl=OFI pokazuje oczekiwaną zmianę dopiero powyżej progu szumu dla danego okna, wielkość zleceń podaje próg istotności KS, a szerokość agresji ma nową miarę równomierności | en=OFI shows the expected change only above the noise floor for the window, order size gives the KS significance floor, and aggression breadth gets a new evenness measure -->
