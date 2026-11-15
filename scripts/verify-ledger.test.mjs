@@ -699,7 +699,17 @@ describe('miary podsumowania (Kupiec 60%, PIT, przedziały z bootstrapu po dobac
       const sc = summary.scores.ret[h];
       expect(sc.crpssCi.days).toBe(12);
       expect(sc.crpssCi.lo).not.toBeNull();
-      expect(m.ret[h].crpssCi).toEqual(sc.crpssCi);
+      // Diagnoza rzadkiej rozbieżności z CI (15.11.2026, przebieg 43740556082: dla 1 h wartość zgodna, a granice równe
+      // granicom 4 h; lokalnie nieodtworzona w 380 powtórzeniach na tej samej wersji Node). Przy rozbieżności liczymy obie
+      // strony jeszcze raz w świeżych wywołaniach: zgodność powtórek wskazuje na niedeterminizm środowiska, a powtórzona
+      // rozbieżność na różnicę danych. Wynik trafia do komunikatu asercji; sama asercja bez zmian.
+      let diagnoza;
+      if (JSON.stringify(m.ret[h].crpssCi) !== JSON.stringify(sc.crpssCi)) {
+        const again = measures(records, summary.asOf).ret[h].crpssCi;
+        const fresh = ledgerOf().summary.scores.ret[h].crpssCi;
+        diagnoza = `DIAGNOZA crpssCi h=${h} node=${process.version} ${JSON.stringify({ weryfikatorPonownie: again, podsumowaniePonownie: fresh })}`;
+      }
+      expect(m.ret[h].crpssCi, diagnoza).toEqual(sc.crpssCi);
       expect(m.ret[h].aciInf).toEqual(sc.aciInf);
       expect(m.ret[h].pit.bins).toEqual(sc.pit.bins);
       expect(m.ret[h].pit.chi2).toBe(sc.pit.chi2);
