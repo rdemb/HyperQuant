@@ -1,7 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { ShaakuniConfig } from '../types/trading';
 import { computeAggrLiquidationHeatmap, computeShaakuniIndicator } from '../utils/shaakuniEngine';
-import { computeOrderFlowImbalanceHeatmap, computeQuantMathAndNeuralForecast } from '../utils/quantMathEngine';
+import { computeOrderFlowImbalanceHeatmap, computeQuantMetrics } from '../utils/quantMathEngine';
 import { soundEngine } from '../utils/soundEngine';
 import { DeskFeed, useDeskFeed } from './useDeskFeed';
 import { LAST_VIEW_KEY, followHash, landingView } from './route';
@@ -41,8 +41,6 @@ const DEFAULT_SHAAKUNI: ShaakuniConfig = {
   impMult: 0.7,
   showKeltner: true,
   showLiqHeatmap: true,
-  // Stożek heurystyczny domyślnie wyłączony — na głównym wykresie nie pokazujemy kierunkowych podpowiedzi
-  showNeuralCone: false,
 };
 
 /** Pamięć przeglądarki; null, gdy zablokowana (tryb prywatny). */
@@ -124,8 +122,8 @@ function useDeskState() {
   );
   const heatmap = useMemo(() => timed('desk:heatmap', () => computeAggrLiquidationHeatmap(feed.bars)), [feed.bars]);
   const quant = useMemo(
-    () => timed('desk:quant', () => computeQuantMathAndNeuralForecast(feed.bars, shaakuni, heatmap, feed.hlTrades, feed.bids, feed.asks)),
-    [feed.bars, shaakuni, heatmap, feed.hlTrades, feed.bids, feed.asks]
+    () => timed('desk:quant', () => computeQuantMetrics(feed.bars, shaakuni)),
+    [feed.bars, shaakuni]
   );
   // OFI tylko z transakcji z ostatnich 60 s — w spokojnym rynku stare transakcje nie mogą „wykrywać” wyczerpania
   const recentHlTrades = useMemo(() => {

@@ -1,30 +1,42 @@
 import {
   AggrTradeTick,
+  KyleEstimate,
   L2OrderbookLevel,
-  LiquidationHeatmapCell,
   LiquidityProfileBucket,
   OFIMomentumSummary,
   OHLCVBar,
   OrderFlowImbalanceTick,
   QuantMathMetrics,
+  RegimeEstimate,
   ShaakuniState,
+  VpinEstimate,
 } from '../types/trading';
 import { tr } from '../i18n';
-import { fmtFixed, fmtNum, fmtPrice } from '../ui/format';
+import { fmtNum, fmtPrice } from '../ui/format';
+import { Bocpd, regimePrior } from './bocpd';
 
 /**
- * Metryki opisowe przepływu i mikrostruktury BTC-PERP (Hyperliquid) — co jest estymatorem, a co heurystyką:
- * 1) Ornstein-Uhlenbeck: OLS AR(1) wokół kotwicy 0.65·D-EQ + 0.35·W-EQ (kotwica ustalona, nie estymowana).
- * 2) „Hawkes”: intensywność samowzbudna ze STAŁYMI μ, α, β (bez estymacji MLE, bez współczynnika rozgałęzienia) — heurystyka.
- * 3) Prawdopodobieństwo PDH vs PDL z odległości (heurystyka, nie formuła barier) i entropia Shannona na 6 koszykach (heurystyka).
- * 4) VPIN (BVC, Easley–López de Prado–O'Hara 2012), λ Kyle'a (OLS na realnym przepływie), profil wolumenu (POC/VAH/VAL)
- *    oraz „pole przyciągania” U(p) z ręcznie dobranymi wagami (heurystyka).
- * 5) Liniowa kombinacja powyższych z ręcznie ustawionymi wagami + tanh („neural*” w nazwach pól z powodów historycznych):
- *    NIE jest wytrenowaną siecią ani sygnałem — UI pokazuje ją jako „siłę heurystyki”, a stożek ±1σ domyślnie jest wyłączony.
+ * Metryki opisowe przepływu i mikrostruktury (Badania, Przed sesją) — same estymatory z metodą i niepewnością:
+ * 1) Ornstein-Uhlenbeck: OLS AR(1) wokół kotwicy 0.65·D-EQ + 0.35·W-EQ (kotwica ustalona, nie estymowana); t½ w UI
+ *    tylko powyżej progu szumu (noiseBands).
+ * 2) Hurst: R/S z korektą Anis-Lloyd na 45 zwrotach; w UI pasmo 90% szumu.
+ * 3) VPIN (BVC, Easley–López de Prado–O'Hara 2012) z przedziałem 95% ze średnich partii kubełków.
+ * 4) λ Kyle'a (OLS na realnym przepływie WS) z przedziałem t; przedział obejmujący 0 = „nieodróżnialne od zera”.
+ * 5) Reżim zmienności: BOCPD (Adams i MacKay 2007) na log-zwrotach zamkniętych świec, prior jak we wskaźniku wykresu.
+ * 6) Profil wolumenu ostatnich 80 świec: POC, VAH, VAL, LVN.
+ * Bez heurystyk z ręcznymi wagami (dawny „Hawkes” ze stałymi, entropia, pole przyciągania, trajektoria) — plan 59, B8.
  */
 
 /** Próg reżimu trendowego dla skorygowanego H: ≈ 96. percentyl rozkładu pod szumem (n = 45, symulacja). */
 export const HURST_TREND_THRESHOLD = 0.6;
+
+/** Kwantyl 0,975 rozkładu t-Studenta z `df` stopniami swobody (rozwinięcie Cornisha–Fishera; przy df ≥ 8 błąd < 0,002). */
+export function t975(df: number): number {
+  const z = 1.959963985;
+  const z3 = z ** 3;
+  const z5 = z ** 5;
+  return z + (z3 + z) / (4 * df) + (5 * z5 + 16 * z3 + 3 * z) / (96 * df * df);
+}
 
 /** Wartość oczekiwana R/S dla szumu iid (Anis-Lloyd 1976 z korektą Petersa (n − ½)/n). */
 function expectedRescaledRange(n: number): number {
@@ -63,21 +75,24 @@ export function hurstAnisLloyd(returns: number[]): number | null {
   return Math.max(0, Math.min(1, h));
 }
 
+/** Partie średnich do przedziału VPIN (50 kubełków → 10 partii po 5). */
+const VPIN_BATCHES = 10;
+
 /**
- * VPIN na kubełkach o równym wolumenie (Easley, López de Prado, O'Hara 2012).
- * Podział kupno/sprzedaż w świecach: realny z WS albo BVC. Wolumen świecy jest rozlewany
- * proporcjonalnie do kolejnych kubełków; VPIN = średnia |V_B − V_S| / V z pełnych kubełków.
- * Bez wolumenu albo bez pełnego kubełka VPIN nieokreślony → null, nie 0.
+ * VPIN na kubełkach o równym wolumenie (Easley, López de Prado, O'Hara 2012) z przedziałem 95% ze średnich partii.
+ * Podział kupno/sprzedaż w świecach: realny z WS albo BVC. Wolumen świecy jest rozlewany proporcjonalnie do kolejnych
+ * kubełków; VPIN = średnia |V_B − V_S| / V z pełnych kubełków. Przedział: kubełki w kolejności czasu dzielone na 10
+ * partii, se = sd(średnich partii) / √10, granice VPIN ∓ t₀,₉₇₅(9)·se obcięte do [0, 1]. Bez wolumenu albo bez pełnego
+ * kubełka VPIN nieokreślony → null, nie 0.
  */
-export function computeVpinBvc(bars: OHLCVBar[], bucketCount: number = 50): number | null {
+export function vpinEstimate(bars: OHLCVBar[], bucketCount: number = 50): VpinEstimate | null {
   const totalVol = bars.reduce((acc, b) => acc + b.vbuy + b.vsell, 0);
   if (!(totalVol > 0)) return null;
   const bucketVol = totalVol / bucketCount;
   let fill = 0;
   let buy = 0;
   let sell = 0;
-  let sumImb = 0;
-  let full = 0;
+  const imb: number[] = [];
   for (const b of bars) {
     let remaining = b.vbuy + b.vsell;
     if (remaining <= 0) continue;
@@ -89,23 +104,43 @@ export function computeVpinBvc(bars: OHLCVBar[], bucketCount: number = 50): numb
       fill += take;
       remaining -= take;
       if (fill >= bucketVol - 1e-9) {
-        sumImb += Math.abs(buy - sell) / bucketVol;
-        full++;
+        imb.push(Math.abs(buy - sell) / bucketVol);
         fill = 0;
         buy = 0;
         sell = 0;
       }
     }
   }
-  return full > 0 ? sumImb / full : null;
+  const full = imb.length;
+  if (full === 0) return null;
+  const value = imb.reduce((a, x) => a + x, 0) / full;
+  const k = Math.min(VPIN_BATCHES, full);
+  if (k < 2) return { value, lo: Number.NaN, hi: Number.NaN, full };
+  const per = Math.floor(full / k);
+  const means: number[] = [];
+  for (let b = 0; b < k; b++) {
+    const end = b === k - 1 ? full : (b + 1) * per;
+    let s = 0;
+    for (let i = b * per; i < end; i++) s += imb[i];
+    means.push(s / (end - b * per));
+  }
+  const mm = means.reduce((a, x) => a + x, 0) / k;
+  const sd = Math.sqrt(means.reduce((a, x) => a + (x - mm) ** 2, 0) / (k - 1));
+  const half = t975(k - 1) * (sd / Math.sqrt(k));
+  return { value, lo: Math.max(0, value - half), hi: Math.min(1, value + half), full };
+}
+
+/** Sam VPIN (bez przedziału): null bez pełnego kubełka. */
+export function computeVpinBvc(bars: OHLCVBar[], bucketCount: number = 50): number | null {
+  return vpinEstimate(bars, bucketCount)?.value ?? null;
 }
 
 /**
- * Lambda Kyle'a: OLS ΔP_t = λ·Q_t + ε na świecach z realnym przepływem agresora (WS).
- * Na świecach BVC regresja byłaby kołowa (Q wyliczone z ΔP) — wtedy null.
- * Wynik w $ ruchu ceny na $1M netto przepływu.
+ * Lambda Kyle'a: OLS ΔP_t = a + λ·Q_t + ε na świecach z realnym przepływem agresora (WS), z przedziałem 95%:
+ * se = √(Σe² / (n − 2) / Σ(Q − Q̄)²), granice λ ∓ t₀,₉₇₅(n − 2)·se. Na świecach BVC regresja byłaby kołowa (Q wyliczone
+ * z ΔP) — wtedy null. Wynik w $ ruchu ceny na $1M netto przepływu.
  */
-export function kyleLambdaOls(bars: OHLCVBar[], minBars: number = 10): number | null {
+export function kyleEstimate(bars: OHLCVBar[], minBars: number = 10): KyleEstimate | null {
   const dp: number[] = [];
   const q: number[] = [];
   for (let i = 1; i < bars.length; i++) {
@@ -113,67 +148,81 @@ export function kyleLambdaOls(bars: OHLCVBar[], minBars: number = 10): number | 
     dp.push(bars[i].close - bars[i - 1].close);
     q.push((bars[i].vbuy - bars[i].vsell) / 1e6);
   }
-  if (q.length < minBars) return null;
-  const mq = q.reduce((a, b) => a + b, 0) / q.length;
-  const mp = dp.reduce((a, b) => a + b, 0) / dp.length;
+  const n = q.length;
+  if (n < minBars) return null;
+  const mq = q.reduce((a, b) => a + b, 0) / n;
+  const mp = dp.reduce((a, b) => a + b, 0) / n;
   let cov = 0;
   let varQ = 0;
-  for (let i = 0; i < q.length; i++) {
+  for (let i = 0; i < n; i++) {
     cov += (q[i] - mq) * (dp[i] - mp);
     varQ += (q[i] - mq) ** 2;
   }
-  return varQ > 0 ? cov / varQ : null;
+  if (!(varQ > 0)) return null;
+  const value = cov / varQ;
+  let sse = 0;
+  for (let i = 0; i < n; i++) sse += (dp[i] - mp - value * (q[i] - mq)) ** 2;
+  const se = Math.sqrt(sse / (n - 2) / varQ);
+  const half = t975(n - 2) * se;
+  const lo = value - half;
+  const hi = value + half;
+  return { value, lo, hi, n, zeroInside: lo <= 0 && hi >= 0 };
 }
 
-/** Zestaw metryk dla braku danych (ceny NaN, VPIN, Hurst i λ null, listy puste). */
+/** Sama λ Kyle'a (bez przedziału): null bez realnego przepływu. */
+export function kyleLambdaOls(bars: OHLCVBar[], minBars: number = 10): number | null {
+  return kyleEstimate(bars, minBars)?.value ?? null;
+}
+
+/** BOCPD reżimu: jak we wskaźniku „Reżim zmienności” na wykresie (prior ze 100 pierwszych zwrotów, α₀ = 2, długość 200). */
+export const REGIME_PRIOR_N = 100;
+const REGIME_WINDOW = 300;
+const REGIME_HAZARD = 1 / 200;
+let regimeMemo: { key: string; v: RegimeEstimate | null } | null = null;
+
+/**
+ * Reżim zmienności z log-zwrotów zamkniętych świec (do 300 ostatnich): P(zmiana w ostatnich 5 świecach) i σ reżimu
+ * na świecę. Mniej niż 101 zwrotów → null. Liczony raz na nową zamkniętą świecę (pamięć ostatniego wyniku).
+ */
+export function regimeEstimate(closes: readonly number[]): RegimeEstimate | null {
+  const from = Math.max(0, closes.length - REGIME_WINDOW - 1);
+  const key = `${closes.length}|${closes[from]}|${closes[closes.length - 1]}`;
+  if (regimeMemo?.key === key) return regimeMemo.v;
+  const r: number[] = [];
+  for (let i = from + 1; i < closes.length; i++) {
+    const x = Math.log(closes[i] / closes[i - 1]);
+    if (Number.isFinite(x)) r.push(x);
+  }
+  let v: RegimeEstimate | null = null;
+  if (r.length > REGIME_PRIOR_N) {
+    const det = new Bocpd({ hazard: REGIME_HAZARD, alpha0: 2, beta0: regimePrior(r.slice(0, REGIME_PRIOR_N)), rMax: REGIME_WINDOW });
+    for (const x of r) det.update(x);
+    const s = det.state();
+    v = { pRecent5: s.pRecent5, sigma: s.sigma, n: r.length };
+  }
+  regimeMemo = { key, v };
+  return v;
+}
+
+/** Zestaw metryk dla braku danych (ceny NaN, estymatory null, listy puste). */
 export function emptyQuantMetrics(): QuantMathMetrics {
   return {
     ouTheta: 0,
     ouHalfLifeBars: Number.POSITIVE_INFINITY,
     ouEquilibriumPrice: Number.NaN,
     ouZScore: 0,
-    hawkesBuyIntensity: 0,
-    hawkesSellIntensity: 0,
-    hawkesBranchingRatio: null,
-    hawkesNetDominance: 0,
-    shannonEntropyBits: 0,
     hurstExponent: null,
-    combinatorialPathProbPDH: Number.NaN,
-    combinatorialPathProbPDL: Number.NaN,
-    l2MicroPrice: Number.NaN,
-    l2OrderbookImbalance: 0,
-    vpinToxicity: null,
-    bookDepthAskUsd: 0,
-    bookDepthBidUsd: 0,
-    kyleLambdaPer1M: null,
+    vpin: null,
+    kyle: null,
+    regime: null,
     pocPrice: Number.NaN,
     vahPrice: Number.NaN,
     valPrice: Number.NaN,
-    primaryMagnetPrice: Number.NaN,
     liquidityProfile: [],
-    cvdDivergenceScore: 0,
-    regimeClassification: 'Mean-Reversion Equilibrium',
-    neuralConfidence: 0,
-    neuralDirectionBias: 0,
-    neuralAttentionWeights: {
-      shaakuniOBProximity: 0,
-      spotCvdDelta: 0,
-      perpFundingAndLiq: 0,
-      l2BookImbalance: 0,
-      hawkesCascadeVelocity: 0,
-    },
-    forecastHorizon: [],
   };
 }
 
-export function computeQuantMathAndNeuralForecast(
-  bars: OHLCVBar[],
-  shaakuni: ShaakuniState,
-  heatmap: LiquidationHeatmapCell[],
-  recentTrades: AggrTradeTick[],
-  bids: L2OrderbookLevel[],
-  asks: L2OrderbookLevel[]
-): QuantMathMetrics {
+export function computeQuantMetrics(bars: OHLCVBar[], shaakuni: ShaakuniState): QuantMathMetrics {
   const n = bars.length;
   // Za mało danych (np. przed pierwszą synchronizacją) — neutralne metryki z NaN zamiast liczb zastępczych
   if (n < 3) return emptyQuantMetrics();
@@ -181,7 +230,7 @@ export function computeQuantMathAndNeuralForecast(
   const currentPrice = lastBar.close;
   const atr = lastBar.atr || Math.max(1, lastBar.high - lastBar.low);
 
-  // 1. Ornstein-Uhlenbeck (OU) Process Estimation: dX_t = theta * (mu - X_t) dt + sigma dW_t
+  // 1. Ornstein-Uhlenbeck (OU): dX_t = theta * (mu - X_t) dt + sigma dW_t
   const deq = shaakuni.deq ?? currentPrice;
   const weq = shaakuni.weq ?? currentPrice;
   const equilibriumPrice = deq * 0.65 + weq * 0.35;
@@ -190,19 +239,16 @@ export function computeQuantMathAndNeuralForecast(
   let sumXY = 0;
   let sumX2 = 0;
   let sumResiduals2 = 0;
-
   for (let i = n - lookback; i < n; i++) {
     const xPrev = bars[i - 1].close - equilibriumPrice;
     const dx = bars[i].close - bars[i - 1].close;
     sumXY += xPrev * dx;
     sumX2 += xPrev * xPrev;
   }
-
   // Brak powrotu do średniej (nachylenie ≥ 0) → θ = 0 i t½ = ∞, bez wartości zastępczej
   const rawSlope = sumX2 > 1e-6 ? sumXY / sumX2 : 0;
   const ouTheta = Math.max(0, Math.min(1, -rawSlope));
   const ouHalfLifeBars = ouTheta > 0 ? Math.LN2 / ouTheta : Number.POSITIVE_INFINITY;
-
   for (let i = n - lookback; i < n; i++) {
     const dev = bars[i].close - equilibriumPrice;
     sumResiduals2 += dev * dev;
@@ -210,89 +256,17 @@ export function computeQuantMathAndNeuralForecast(
   const ouStdDev = Math.max(1, Math.sqrt(sumResiduals2 / Math.max(1, lookback)));
   const ouZScore = (currentPrice - equilibriumPrice) / ouStdDev;
 
-  // 2. Hawkes Self-Exciting Point Process on Live Order Flow
-  const now = Date.now();
-  const mu = 0.85;
-  const alpha = 0.42;
-  const beta = 0.55;
-  let buyExcitation = 0;
-  let sellExcitation = 0;
-
-  for (let i = 0; i < Math.min(80, recentTrades.length); i++) {
-    const t = recentTrades[i];
-    const dtSec = Math.max(0.05, (now - t.timestamp) / 1000);
-    if (dtSec > 30) continue;
-    const sizeWeight = Math.min(4.0, Math.log10(Math.max(1000, t.sizeUsd)) / 4.5);
-    const liqBoost = t.isLiquidation ? 1.85 : 1.0;
-    const kernel = alpha * sizeWeight * liqBoost * Math.exp(-beta * dtSec);
-    if (t.side === 'buy') {
-      buyExcitation += kernel;
-    } else {
-      sellExcitation += kernel;
-    }
-  }
-
-  const hawkesBuyIntensity = mu + buyExcitation;
-  const hawkesSellIntensity = mu + sellExcitation;
-  const totalHawkes = hawkesBuyIntensity + hawkesSellIntensity;
-  const hawkesNetDominance =
-    totalHawkes > 0
-      ? (hawkesBuyIntensity - hawkesSellIntensity) / totalHawkes
-      : 0;
-  // Współczynnik rozgałęzienia wymaga estymacji MLE (μ, α, β) — stałe α/β to nie pomiar
-  const hawkesBranchingRatio: number | null = null;
-
-  // 3. L2 Orderbook Micro-Price, Imbalance & Shannon Information Entropy
-  // Micro-price tylko z realnego arkusza; bez arkusza = NaN (UI pokaże „—”)
-  const topBid = bids[0];
-  const topAsk = asks[0];
-  const l2MicroPrice =
-    topBid && topAsk && topBid.sizeUsd + topAsk.sizeUsd > 0
-      ? (topBid.price * topAsk.sizeUsd + topAsk.price * topBid.sizeUsd) / (topBid.sizeUsd + topAsk.sizeUsd)
-      : Number.NaN;
-
-  const sumBidUsd = bids.slice(0, 12).reduce((acc, b) => acc + b.sizeUsd, 0);
-  const sumAskUsd = asks.slice(0, 12).reduce((acc, a) => acc + a.sizeUsd, 0);
-  const l2OrderbookImbalance =
-    sumBidUsd + sumAskUsd > 0
-      ? (sumBidUsd - sumAskUsd) / (sumBidUsd + sumAskUsd)
-      : 0;
-
-  const buckets = [
-    Math.max(1, lastBar.spotVbuy),
-    Math.max(1, lastBar.spotVsell),
-    Math.max(1, lastBar.perpVbuy),
-    Math.max(1, lastBar.perpVsell),
-    Math.max(1, sumBidUsd),
-    Math.max(1, sumAskUsd),
-  ];
-  const totalMass = buckets.reduce((a, b) => a + b, 0);
-  let entropy = 0;
-  for (const val of buckets) {
-    const p = val / totalMass;
-    if (p > 0) entropy -= p * Math.log2(p);
-  }
-  const maxEntropy = Math.log2(buckets.length);
-  const shannonEntropyBits = entropy / maxEntropy;
-
-  // 4. Hurst Exponent via Rescaled Range (R/S) — skorygowany Anis-Lloyd
+  // 2. Hurst (R/S, Anis-Lloyd) na 45 ostatnich zwrotach
   const returns: number[] = [];
-  for (let i = Math.max(1, n - 45); i < n; i++) {
-    returns.push(Math.log(bars[i].close / bars[i - 1].close));
-  }
+  for (let i = Math.max(1, n - 45); i < n; i++) returns.push(Math.log(bars[i].close / bars[i - 1].close));
   const hurstExponent = hurstAnisLloyd(returns);
 
-  // 5. VPIN (Volume-Synchronized Probability of Informed Trading) & Kyle's Lambda
-  const vpinToxicity = computeVpinBvc(bars);
+  // 3–5. VPIN i λ Kyle'a z przedziałami; reżim BOCPD na zamkniętych świecach (bieżąca świeca w trakcie nie wchodzi)
+  const vpin = vpinEstimate(bars);
+  const kyle = kyleEstimate(bars);
+  const regime = regimeEstimate(bars.slice(0, -1).map((b) => b.close));
 
-  // Głębokość arkusza (12 poziomów, USD) i lambda Kyle'a z regresji na realnym przepływie
-  const bookDepthAskUsd = Math.round(sumAskUsd);
-  const bookDepthBidUsd = Math.round(sumBidUsd);
-  const kyleLambdaPer1M = kyleLambdaOls(bars);
-
-  // 6. Profil wolumenu (POC / VAH / VAL / LVN) i pole przyciągania U(p) z wolumenu i masy OB.
-  // Bez „paliwa likwidacyjnego”: Badania nie mają pozycji kont, a liczby w USD ze stałych byłyby zmyślone
-  // (zmierzona mapa likwidacji z pozycji kont jest w widoku „Przed sesją”).
+  // 6. Profil wolumenu (POC / VAH / VAL / LVN) z 80 ostatnich świec na 24 poziomach
   const profileBucketsCount = 24;
   const visibleSlice = bars.slice(-80);
   let minP = Math.min(...visibleSlice.map((b) => b.low));
@@ -302,58 +276,28 @@ export function computeQuantMathAndNeuralForecast(
     maxP = Math.max(maxP, shaakuni.pdh + 80);
   }
   const bucketStep = Math.max(20, (maxP - minP) / profileBucketsCount);
-
-  const rawBuckets: {
-    price: number;
-    buyVol: number;
-    sellVol: number;
-    gravity: number;
-  }[] = [];
-
+  const rawBuckets: { price: number; buyVol: number; sellVol: number }[] = [];
   for (let idx = 0; idx < profileBucketsCount; idx++) {
     const pCenter = Number((minP + (idx + 0.5) * bucketStep).toFixed(0));
     const pLow = pCenter - bucketStep / 2;
     const pHigh = pCenter + bucketStep / 2;
-
     let buyVol = 0;
     let sellVol = 0;
     for (const b of visibleSlice) {
       if (b.high >= pLow && b.low <= pHigh) {
-        // Overlap proportion
-        const overlap =
-          Math.min(b.high, pHigh) - Math.max(b.low, pLow);
+        const overlap = Math.min(b.high, pHigh) - Math.max(b.low, pLow);
         const barRange = Math.max(1, b.high - b.low);
         const weight = Math.max(0.1, overlap / barRange);
         buyVol += b.vbuy * weight;
         sellVol += b.vsell * weight;
       }
     }
-
-    // Pole przyciągania U(p): masa świeżych OB i wolumen, ważone odległością od ceny (heurystyka)
-    let obMass = 0;
-    for (const ob of shaakuni.orderBlocks) {
-      if (ob.state === 'fresh' && pCenter >= ob.bottom - bucketStep && pCenter <= ob.top + bucketStep) {
-        obMass += ob.pocVolume * 0.45;
-      }
-    }
-
-    const distFromCurrent = Math.max(bucketStep * 0.6, Math.abs(pCenter - currentPrice));
-    const gravity = (obMass + (buyVol + sellVol) * 0.18) / Math.pow(distFromCurrent, 0.55);
-
-    rawBuckets.push({
-      price: pCenter,
-      buyVol: Math.round(buyVol),
-      sellVol: Math.round(sellVol),
-      gravity,
-    });
+    rawBuckets.push({ price: pCenter, buyVol: Math.round(buyVol), sellVol: Math.round(sellVol) });
   }
 
   let maxBucketVol = 1;
   let pocIdx = 0;
   let totalProfileVol = 0;
-  let maxGravity = 1;
-  let primaryMagnetPrice = deq;
-
   rawBuckets.forEach((rb, i) => {
     const tot = rb.buyVol + rb.sellVol;
     totalProfileVol += tot;
@@ -361,32 +305,16 @@ export function computeQuantMathAndNeuralForecast(
       maxBucketVol = tot;
       pocIdx = i;
     }
-    if (rb.gravity > maxGravity && Math.abs(rb.price - currentPrice) > bucketStep * 0.8) {
-      maxGravity = rb.gravity;
-      primaryMagnetPrice = rb.price;
-    }
   });
-
   const pocPrice = rawBuckets[pocIdx]?.price ?? currentPrice;
 
-  // Compute 70% Value Area (VAH / VAL) expanding from POC
-  let vaAccum = rawBuckets[pocIdx]
-    ? rawBuckets[pocIdx].buyVol + rawBuckets[pocIdx].sellVol
-    : 0;
+  // Value Area 70% rozszerzana od POC o większego sąsiada
+  let vaAccum = rawBuckets[pocIdx] ? rawBuckets[pocIdx].buyVol + rawBuckets[pocIdx].sellVol : 0;
   let lowIdx = pocIdx;
   let highIdx = pocIdx;
-  while (
-    vaAccum < totalProfileVol * 0.7 &&
-    (lowIdx > 0 || highIdx < rawBuckets.length - 1)
-  ) {
-    const nextLowVol =
-      lowIdx > 0
-        ? rawBuckets[lowIdx - 1].buyVol + rawBuckets[lowIdx - 1].sellVol
-        : -1;
-    const nextHighVol =
-      highIdx < rawBuckets.length - 1
-        ? rawBuckets[highIdx + 1].buyVol + rawBuckets[highIdx + 1].sellVol
-        : -1;
+  while (vaAccum < totalProfileVol * 0.7 && (lowIdx > 0 || highIdx < rawBuckets.length - 1)) {
+    const nextLowVol = lowIdx > 0 ? rawBuckets[lowIdx - 1].buyVol + rawBuckets[lowIdx - 1].sellVol : -1;
+    const nextHighVol = highIdx < rawBuckets.length - 1 ? rawBuckets[highIdx + 1].buyVol + rawBuckets[highIdx + 1].sellVol : -1;
     if (nextHighVol >= nextLowVol && highIdx < rawBuckets.length - 1) {
       highIdx++;
       vaAccum += nextHighVol;
@@ -397,141 +325,20 @@ export function computeQuantMathAndNeuralForecast(
       break;
     }
   }
-
   const valPrice = rawBuckets[lowIdx]?.price ?? currentPrice - atr;
   const vahPrice = rawBuckets[highIdx]?.price ?? currentPrice + atr;
 
   const liquidityProfile: LiquidityProfileBucket[] = rawBuckets.map((rb, idx) => {
     const totalVolumeUsd = rb.buyVol + rb.sellVol;
-
     return {
       price: rb.price,
       totalVolumeUsd,
       buyVolumeUsd: rb.buyVol,
       sellVolumeUsd: rb.sellVol,
       deltaUsd: rb.buyVol - rb.sellVol,
-      gravityPotential: Number(Math.min(1, rb.gravity / Math.max(1, maxGravity)).toFixed(3)),
       isPOC: idx === pocIdx,
       isValueArea: idx >= lowIdx && idx <= highIdx,
       isLVN: totalVolumeUsd < maxBucketVol * 0.28,
-    };
-  });
-
-  // 7. Combinatorial Barrier Hitting Probability (PDH vs PDL)
-  const pdh = shaakuni.pdh ?? currentPrice + atr * 2.5;
-  const pdl = shaakuni.pdl ?? currentPrice - atr * 2.5;
-  const distToPDH = Math.max(1, pdh - currentPrice);
-  const distToPDL = Math.max(1, currentPrice - pdl);
-  const geomProbPDH = distToPDL / (distToPDH + distToPDL);
-
-  const recentSlice = bars.slice(-16);
-  const spotCvdChange =
-    recentSlice[recentSlice.length - 1].cvdSpot - recentSlice[0].cvdSpot;
-  const perpCvdChange =
-    recentSlice[recentSlice.length - 1].cvdPerp - recentSlice[0].cvdPerp;
-  const normSpot = spotCvdChange / Math.max(1, Math.abs(spotCvdChange) + Math.abs(perpCvdChange));
-  const normPerp = perpCvdChange / Math.max(1, Math.abs(spotCvdChange) + Math.abs(perpCvdChange));
-  // Bez wolumenu spot (sam Hyperliquid) dywergencja spot/perp jest niezdefiniowana → 0
-  const hasSpotFlow = recentSlice.some((b) => b.spotVbuy + b.spotVsell > 0);
-  const cvdDivergenceScore = hasSpotFlow ? normSpot - normPerp : 0;
-
-  const freshOBs = shaakuni.orderBlocks.filter((ob) => ob.state === 'fresh');
-  let obBias = 0;
-  for (const ob of freshOBs) {
-    const dist = Math.abs(currentPrice - ob.mid);
-    if (dist < atr * 3) {
-      const proximityWeight = Math.exp(-dist / (atr * 1.2));
-      obBias += (ob.type === 'bull' ? 1 : -1) * proximityWeight;
-    }
-  }
-  obBias = Math.max(-1, Math.min(1, obBias));
-
-  let upperLiqMass = 0;
-  let lowerLiqMass = 0;
-  for (const cell of heatmap) {
-    const dist = Math.max(10, Math.abs(cell.priceLevel - currentPrice));
-    const pull = (cell.strength * cell.count) / Math.pow(dist, 0.65);
-    if (cell.isResistance) upperLiqMass += pull;
-    else lowerLiqMass += pull;
-  }
-  const liqMagnetBias =
-    upperLiqMass + lowerLiqMass > 0
-      ? (upperLiqMass - lowerLiqMass) / (upperLiqMass + lowerLiqMass)
-      : 0;
-
-  // 8. Neural Attention Network Forward Pass
-  const rawWeights = {
-    shaakuniOBProximity: 0.28 + Math.abs(obBias) * 0.2,
-    spotCvdDelta: 0.26 + Math.abs(normSpot) * 0.18,
-    perpFundingAndLiq: 0.2 + Math.abs(liqMagnetBias) * 0.15,
-    l2BookImbalance: 0.14 + Math.abs(l2OrderbookImbalance) * 0.12,
-    hawkesCascadeVelocity: 0.12 + Math.abs(hawkesNetDominance) * 0.15,
-  };
-  const weightSum = Object.values(rawWeights).reduce((a, b) => a + b, 0);
-  const neuralAttentionWeights = {
-    shaakuniOBProximity: Number((rawWeights.shaakuniOBProximity / weightSum).toFixed(3)),
-    spotCvdDelta: Number((rawWeights.spotCvdDelta / weightSum).toFixed(3)),
-    perpFundingAndLiq: Number((rawWeights.perpFundingAndLiq / weightSum).toFixed(3)),
-    l2BookImbalance: Number((rawWeights.l2BookImbalance / weightSum).toFixed(3)),
-    hawkesCascadeVelocity: Number((rawWeights.hawkesCascadeVelocity / weightSum).toFixed(3)),
-  };
-
-  const linearActivation =
-    obBias * neuralAttentionWeights.shaakuniOBProximity * 1.45 +
-    (normSpot * 0.7 + cvdDivergenceScore * 0.5) *
-      neuralAttentionWeights.spotCvdDelta *
-      1.5 +
-    liqMagnetBias * neuralAttentionWeights.perpFundingAndLiq * 1.25 +
-    l2OrderbookImbalance * neuralAttentionWeights.l2BookImbalance * 1.2 +
-    hawkesNetDominance * neuralAttentionWeights.hawkesCascadeVelocity * 1.3 -
-    Math.max(-0.4, Math.min(0.4, ouZScore * 0.12));
-
-  const neuralDirectionBias = Math.tanh(linearActivation * 1.85);
-  // Score 0..100 = siła heurystyki |bias|; nieskalibrowane, więc nie jest to prawdopodobieństwo
-  const neuralConfidence = Math.round(Math.min(100, Math.abs(neuralDirectionBias) * 100));
-
-  const combinatorialPathProbPDH = Math.max(
-    0.04,
-    Math.min(0.96, geomProbPDH + neuralDirectionBias * 0.18)
-  );
-  const combinatorialPathProbPDL = Number((1 - combinatorialPathProbPDH).toFixed(3));
-
-  let regimeClassification: QuantMathMetrics['regimeClassification'] =
-    'Mean-Reversion Equilibrium';
-  if (cvdDivergenceScore > 0.22 && obBias >= 0) {
-    regimeClassification = 'Spot CVD Lead';
-  } else if (cvdDivergenceScore < -0.22 && obBias <= 0) {
-    regimeClassification = 'Perp CVD Lead';
-  } else if (hurstExponent !== null && hurstExponent > HURST_TREND_THRESHOLD) {
-    regimeClassification = 'Momentum Breakout';
-  }
-
-  const horizons = [
-    { stepBars: 1, label: '+5m' },
-    { stepBars: 3, label: '+15m' },
-    { stepBars: 6, label: '+30m' },
-    { stepBars: 12, label: '+1h' },
-  ];
-
-  const forecastHorizon = horizons.map((h) => {
-    const stepScale = Math.sqrt(h.stepBars);
-    const ouPull =
-      (equilibriumPrice - currentPrice) * (1 - Math.exp(-ouTheta * h.stepBars * 0.45));
-    const neuralDrift = neuralDirectionBias * atr * 0.52 * stepScale;
-    const kalmanMomentum = (lastBar?.kalmanVelocity ?? 0) * Math.min(3, h.stepBars * 0.35);
-
-    const predictedPrice = Number(
-      (currentPrice + neuralDrift + ouPull * 0.35 + kalmanMomentum).toFixed(1)
-    );
-    const sigma = atr * 0.42 * stepScale;
-    return {
-      stepBars: h.stepBars,
-      label: h.label,
-      predictedPrice,
-      upper1Sigma: Number((predictedPrice + sigma).toFixed(1)),
-      lower1Sigma: Number((predictedPrice - sigma).toFixed(1)),
-      upper2Sigma: Number((predictedPrice + sigma * 1.96).toFixed(1)),
-      lower2Sigma: Number((predictedPrice - sigma * 1.96).toFixed(1)),
     };
   });
 
@@ -540,31 +347,14 @@ export function computeQuantMathAndNeuralForecast(
     ouHalfLifeBars: Number(ouHalfLifeBars.toFixed(1)),
     ouEquilibriumPrice: Number(equilibriumPrice.toFixed(1)),
     ouZScore: Number(ouZScore.toFixed(2)),
-    hawkesBuyIntensity: Number(hawkesBuyIntensity.toFixed(2)),
-    hawkesSellIntensity: Number(hawkesSellIntensity.toFixed(2)),
-    hawkesBranchingRatio,
-    hawkesNetDominance: Number(hawkesNetDominance.toFixed(3)),
-    shannonEntropyBits: Number(shannonEntropyBits.toFixed(3)),
     hurstExponent: hurstExponent === null ? null : Number(hurstExponent.toFixed(3)),
-    combinatorialPathProbPDH: Number(combinatorialPathProbPDH.toFixed(3)),
-    combinatorialPathProbPDL,
-    l2MicroPrice: Number(l2MicroPrice.toFixed(1)),
-    l2OrderbookImbalance: Number(l2OrderbookImbalance.toFixed(3)),
-    vpinToxicity: vpinToxicity === null ? null : Number(vpinToxicity.toFixed(3)),
-    bookDepthAskUsd,
-    bookDepthBidUsd,
-    kyleLambdaPer1M,
+    vpin,
+    kyle,
+    regime,
     pocPrice,
     vahPrice,
     valPrice,
-    primaryMagnetPrice,
     liquidityProfile,
-    cvdDivergenceScore: Number(cvdDivergenceScore.toFixed(3)),
-    regimeClassification,
-    neuralConfidence,
-    neuralDirectionBias: Number(neuralDirectionBias.toFixed(3)),
-    neuralAttentionWeights,
-    forecastHorizon,
   };
 }
 
