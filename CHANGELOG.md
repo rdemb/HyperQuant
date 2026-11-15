@@ -10,6 +10,12 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 #### Zmienione
 - **`hyperquant-tematy`**: świece 1d (PDH/PDL) w pamięci, odświeżane co 10 min albo po zmianie doby UTC; w próbie na sucho odpytywanie co 2 min. Ok. 42 wagi/min przy publikacji (było ok. 80), ok. 12 na sucho. `backend/README.md`: łączny budżet wag API Hyperliquid na adresie IP VPS (skaner do 800, tematy, alarmy, inne programy; limit 1200 na IP).
 
+### Karta modelu: co liczba twierdzi i czy jest sprawdzona (2026-11-15)
+<!-- co-nowego: grupa=prognozy | pl=Karta modelu mówi, co liczba twierdzi, i pokazuje status sprawdzenia: zapis przed faktem, test planowany albo sam opis | en=The model card says what the number claims and shows its check status: recorded before the fact, test planned or description only -->
+
+#### Zmienione
+- **Karta modelu** (`shell/KartaModelu.tsx`): nad metodą zdanie „Co twierdzi” (co jest, a co nie jest sprawdzane) i status sprawdzenia w czterech stanach: zapisywany przed faktem (z wynikiem z rejestru albo dziennika kota), test planowany (sprawdzian na danych od 2024 zapisany przed uruchomieniem), sprawdzony bez mocy, opis bez prognozy. Proste objaśnienia miar: pokrycie przedziału (dobrze przy ok. 90% / 60%, mniej — za wąskie, więcej — za szerokie), test Kupca (powyżej 0,05 zgodne z nominałem), BSS (powyżej 0 lepiej niż baza).
+
 ### Tematy publiczne 24/7 i strona Prywatność (2026-11-15)
 <!-- co-nowego: grupa=blog | pl=Strona Prywatność: co zostaje na urządzeniu, z kim łączy się przeglądarka, alarmy i tematy 24/7 | en=Privacy page: what stays on your device, who your browser connects to, 24/7 alerts and topics -->
 
