@@ -81,6 +81,18 @@ const OTHER_SCORE: Partial<Record<ModelCardId, string>> = {
   ),
 };
 
+/** Pasmo szumu: jak wygląda liczba z czystego szumu przy tym samym oknie (symulacja N = 20 000). */
+const NOISE: Partial<Record<ModelCardId, string>> = {
+  hurst: tr(
+    'Na 45 zwrotach czystego szumu 90% wartości H leży w przedziale 0,40–0,59 (mediana 0,50), a H ≥ 0,6 wychodzi w 3,9% przypadków. Wartość w tym przedziale pokazujemy jako „w zakresie szumu”: nie mówi nic o rynku.',
+    'On 45 returns of pure noise 90% of H values fall in 0.40–0.59 (median 0.50), and H ≥ 0.6 comes out in 3.9% of cases. A value in this range is shown as “within the noise range”: it says nothing about the market.'
+  ),
+  ou: tr(
+    'Na 40 świecach czystego błądzenia losowego (bez żadnego powrotu) θ > 0 wychodzi w 65,5% przypadków, z medianą t½ 23,8 świecy. Dlatego t½ pokazujemy dopiero przy θ > 0,133 (t½ < 5,2 świecy, 95. percentyl pod błądzeniem, fałszywy alarm 5%); niżej piszemy „bez dowodu powrotu”.',
+    'On 40 candles of a pure random walk (no reversion at all) θ > 0 comes out in 65.5% of cases, with a median t½ of 23.8 candles. So t½ is shown only when θ > 0.133 (t½ < 5.2 candles, the 95th percentile under a random walk, 5% false alarms); below that we say “no evidence of reversion”.'
+  ),
+};
+
 const pct = (v: number | null | undefined, d = 1) => (typeof v === 'number' && Number.isFinite(v) ? `${fmtFixed(v * 100, d)}%` : DASH);
 const num = (v: number | null | undefined, d = 3) => (typeof v === 'number' && Number.isFinite(v) ? fmtFixed(v, d) : DASH);
 const day = (t: number) => new Date(t).toLocaleString(lang === 'en' ? 'en-GB' : 'pl-PL', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
@@ -242,6 +254,12 @@ export const KartaModelu: React.FC<{ id: ModelCardId; anchor: HTMLElement; onClo
             </span>
             <span className="text-ink-3">{STATUS_TEXT[STATUS[id]][1]}</span>
           </p>
+          {NOISE[id] && (
+            <p data-pasmo-szumu className="mt-2 border-t border-line pt-2 text-[12px] text-ink-2">
+              <span className="font-medium text-ink-1">{tr('Pasmo szumu. ', 'Noise band. ')}</span>
+              {NOISE[id]}
+            </p>
+          )}
         </div>
         {row ? (
           <dl className="flex flex-col gap-3">
