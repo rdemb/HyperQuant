@@ -1,4 +1,5 @@
 import { INTERVALS } from '../core/time';
+import { replayHashParts } from './hashCore';
 import { type ChartSettings } from '../chart/settings';
 import { stationIdOf, type StationId } from '../chart/stations';
 import { LAYERS_OFF } from '../chart/templates';
@@ -76,13 +77,7 @@ export function parseReplayLink(hash: string): ReplayLink | null {
 
 /** Adres strony dla powtórki (pola bez wartości pomijane). */
 export function replayHash(l: Partial<ReplayLink> & { source: ReplaySource; coin: Market }): string {
-  const parts = [`replay=${l.source}`, `m=${l.coin}`];
-  if (l.interval) parts.push(`i=${l.interval}`);
-  if (l.view) parts.push(`v=${l.view}`);
-  if (l.from != null) parts.push(`from=${iso(l.from)}`);
-  if (l.to != null) parts.push(`to=${iso(l.to)}`);
-  if (l.t != null) parts.push(`t=${iso(l.t)}`);
-  if (l.station) parts.push(`station=${l.station}`);
+  const parts = replayHashParts(l);
   if (l.layers) parts.push(`layers=${l.layers.map(layerName).join(',')}`);
   if (l.zone) parts.push(`zone=${l.zone[0]}-${l.zone[1]}`);
   return `#charts?${parts.join('&')}`;
