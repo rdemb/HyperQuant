@@ -1,7 +1,8 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { IndicatorSettings } from '../chart/IndicatorSettings';
-import { closedBars, effortLegend } from '../chart/effortLayer';
+import { ZONE_ABOVE, ZONE_BELOW, closedBars, effortLegend, zoneInk } from '../chart/effortLayer';
+import { PRO } from '../chart/theme';
 import { type EffortBox, type EffortZone, effortZones } from '../core/effortZones';
 import { IndicatorEngine } from '../indicators/engine';
 import { indicatorDef, indicatorsFromLink, parseIndicators, tfAllowed, usesInstanceColor } from '../indicators/registry';
@@ -57,12 +58,12 @@ describe('legenda', () => {
       .join(' ');
 
   it('pasma po stronach z liczbą dalszych, ostatnia seria pudełek i świece z taśmą', () => {
-    expect(text(sel)).toBe('strefy: 2 popytu · 1 podaży (dalej 3) · pudełko: kupno, 4 świece temu · taśma 32 z 32');
+    expect(text(sel)).toBe('strefy: 2 pod ceną · 1 nad ceną (dalej 3) · pudełko: kupno, 4 świece temu · taśma 32 z 32');
   });
 
   it('bez pudełka „—”; bez taśmy „pudełka: —, brak taśmy”; tryb Historia', () => {
-    expect(text({ ...sel, boxes: [], far: { demand: 0, supply: 0 } })).toBe('strefy: 2 popytu · 1 podaży · pudełko: — · taśma 32 z 32');
-    expect(text({ ...sel, boxes: [], tapeRecent: 0 })).toBe('strefy: 2 popytu · 1 podaży (dalej 3) · pudełka: —, brak taśmy');
+    expect(text({ ...sel, boxes: [], far: { demand: 0, supply: 0 } })).toBe('strefy: 2 pod ceną · 1 nad ceną · pudełko: — · taśma 32 z 32');
+    expect(text({ ...sel, boxes: [], tapeRecent: 0 })).toBe('strefy: 2 pod ceną · 1 nad ceną (dalej 3) · pudełka: —, brak taśmy');
     expect(text({ ...sel, history: true })).toBe('historia: 3 strefy · 1 seria pudełek · taśma 32 z 32');
   });
 
@@ -107,9 +108,8 @@ describe('wpis w rejestrze', () => {
       'z ostatnich 32 świec ma taśmę',
       'najbliższe ostatniemu zamknięciu',
       'od świecy, na której zamknięciu strefa powstała',
-      'w 52% przypadków, tak samo jak losowy poziom',
+      'w 52% przypadków, tak jak losowy poziom',
       'nie przewidują odbicia',
-      'miejsca do obserwacji, nie sygnały',
     ])
       expect(def.convention, s).toContain(s);
     expect(indicatorDef('effort').convention).not.toContain('przybliżona ze świecy (wolumen');
@@ -144,5 +144,19 @@ describe('zapis wskaźnika: tryb Historia', () => {
     expect(JSON.parse(JSON.stringify(a))).toEqual(old);
     expect(parseIndicators([{ ...old, history: true }]).list[0].history).toBe(true);
     expect('history' in parseIndicators([{ ...old, history: 'tak' }]).list[0]).toBe(false);
+  });
+});
+
+describe('strefy Effort w kolorach poziomów (plan 59, C2)', () => {
+  it('strefy z rodziny poziomów, nie w kolorach kupna i sprzedaży; dwa odcienie dla stron', () => {
+    expect(ZONE_BELOW).toBe(PRO.level);
+    for (const c of [ZONE_BELOW, ZONE_ABOVE]) expect([PRO.buy, PRO.sell].map((x) => x.toLowerCase())).not.toContain(c.toLowerCase());
+    expect(zoneInk(1)(1)).not.toBe(zoneInk(1)(-1));
+  });
+
+  it('teksty stref bez „popyt” i „podaż”; opis z wynikiem sprawdzianu', () => {
+    const d = indicatorDef('effort')!;
+    for (const t of [d.hint, d.convention ?? '']) expect(t).not.toMatch(/popyt|podaż|demand|supply/i);
+    expect(d.convention).toContain('52%');
   });
 });

@@ -323,18 +323,18 @@ export const IndicatorSettings: React.FC<{ x: IndicatorInstance; loaded: number;
                   )
                 : def.outcomes
                   ? tr(
-                      'Różnica między rynkiem a modelem to dwie wyceny tego samego pytania, nie sygnał: wynik Briera w legendzie mówi, jak trafne były dotąd obie.',
-                      'The difference between the market and the model is two prices of the same question, not a signal: the Brier score in the legend says how accurate both have been so far.'
+                      'Różnica między rynkiem a modelem to dwie wyceny tego samego pytania, nie rekomendacja: wynik Briera w legendzie mówi, jak trafne były dotąd obie.',
+                      'The difference between the market and the model is two prices of the same question, not a recommendation: the Brier score in the legend says how accurate both have been so far.'
                     )
                   : def.pbRanges
                     ? tr(
-                        'To miejsca do obserwacji, nie sygnały: ✓ i ✗ przy 👀 oraz wynik w legendzie mówią, jak często cena szła potem dalej w stronę 👀. Alarmy aktywnej strefy ustawisz z menu wykresu (prawy przycisk).',
-                        'These are places to watch, not signals: ✓ and ✗ at 👀 and the result in the legend say how often the price then travelled further toward 👀. Set alerts for the active zone from the chart menu (right click).'
+                        'Strefy i poziomy opisują strukturę, nie miejsca wejścia. Alarmy aktywnej strefy ustawisz z menu wykresu (prawy przycisk).',
+                        'Zones and levels describe structure, not entry places. Set alerts for the active zone from the chart menu (right click).'
                       )
                     : def.effortZones
                       ? tr(
-                          'Strefy i pudełka to miejsca do obserwacji, nie sygnały: opisują, gdzie rynek przyjął agresję i gdzie ją pokazał, nie co zrobi dalej.',
-                          'Zones and boxes are places to watch, not signals: they describe where the market absorbed aggression and where it showed it, not what it will do next.'
+                          'Strefy i pudełka to miejsca do obserwacji, nie wskazania wejścia: opisują, gdzie rynek przyjął agresję i gdzie ją pokazał, nie co zrobi dalej.',
+                          'Zones and boxes are places to watch, not entry cues: they describe where the market absorbed aggression and where it showed it, not what it will do next.'
                         )
                       : tr('Wskaźnik opisuje ostatnie świece, nie przewiduje następnych.', 'An indicator describes recent candles; it does not predict the next ones.')}
             </p>

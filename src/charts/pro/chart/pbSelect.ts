@@ -5,19 +5,18 @@ import { LIFE, type Range } from '../core/pbRanges';
  * - zakres w budowie nie jest rysowany (zmieniał się albo znikał zawsze); legenda mówi „w budowie: 2 dotknięcia z 3”,
  * - rysowany zakres aktywny (wypełnienie od świecy potwierdzenia, wcześniejsza część jako kropkowany obrys, kółka
  *   dotknięć) i ostatni zakończony (sam obrys); dotąd po potwierdzeniu pojawiał się prostokąt sięgający ok. 4 h wstecz,
- * - najwyżej 3 ostatnie miejsca 👀 i najwyżej 2 poziomy tygodnia i doby najbliższe nad ceną oraz 2 pod nią,
+ * - najwyżej 2 poziomy tygodnia i doby najbliższe nad ceną oraz 2 pod nią,
  * - stan chwili X tylko z zakresów potwierdzonych do X (przeliczenie ze świec zamkniętych do X).
  */
 
-export const PB_SPOTS_MAX = 3;
 export const PB_LEVELS_PER_SIDE = 2;
 /** Dotknięcia potrzebne do ważności zakresu (do legendy zakresu w budowie). */
 export const PB_TOUCHES = 3;
 
-/** Wynik miejsc 👀 z 2026 r. do opisu wskaźnika (PL i EN). */
+/** Sprawdzian dawnych miejsc wejścia metody (2026 r.) do opisu wskaźnika (PL i EN); miejsc już nie pokazujemy. */
 export const PB_EVIDENCE = {
-  pl: 'W 2026 r. (BTC 5m) ruch o 1 ATR w stronę 👀, zanim cena przeszła 1 ATR przeciw, liczony od zamknięcia świecy: A 52% (n 183), B 48% (n 29), C 53% (n 59), czyli bez przewagi.',
-  en: 'In 2026 (BTC 5m), a 1 ATR move toward 👀 before a 1 ATR move against, measured from the candle close: A 52% (n 183), B 48% (n 29), C 53% (n 59), i.e. no edge.',
+  pl: 'Wcześniej pokazywaliśmy miejsca wejścia tej metody; sprawdzian na 2026 r. (BTC 5m: ruch o 1 ATR w stronę miejsca, zanim cena przeszła 1 ATR przeciw) nie znalazł przewagi (A 52%, n 183; B 48%, n 29; C 53%, n 59), więc je usunęliśmy.',
+  en: 'We used to show this method’s entry places; a 2026 check (BTC 5m: a 1 ATR move toward the place before a 1 ATR move against) found no edge (A 52%, n 183; B 48%, n 29; C 53%, n 59), so we removed them.',
 };
 
 const confirmed = (r: Range, last: number) => r.kv !== null && r.kv <= last;
@@ -44,12 +43,6 @@ export function selectRanges(rs: readonly Range[], last: number): { active: numb
  */
 export function boxSpan(r: Range, last: number, active: boolean): { from: number; fillFrom: number; to: number; open: boolean } {
   return { from: r.e + 1, fillFrom: r.kv ?? r.e + 1, to: active ? last : r.end, open: active };
-}
-
-/** Indeksy najwyżej `PB_SPOTS_MAX` najnowszych miejsc 👀 (po chwili `t`). */
-export function selectSpots(list: readonly { t: number }[]): Set<number> {
-  const idx = list.map((_, i) => i).sort((a, b) => list[b].t - list[a].t || b - a);
-  return new Set(idx.slice(0, PB_SPOTS_MAX));
 }
 
 /** Indeksy poziomów do rysowania: najwyżej `PB_LEVELS_PER_SIDE` najbliższe nad ceną `price` i tyle samo pod nią. */

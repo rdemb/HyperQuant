@@ -1,20 +1,19 @@
 import type { IChartApiBase, IPrimitivePaneRenderer, IPrimitivePaneView, ISeriesApi, ISeriesPrimitive, Logical, SeriesAttachedParameter, SeriesType, Time } from 'lightweight-charts';
 import { tr } from '../../../i18n';
 import { numLang } from '../../../ui/format';
-import { type Bar5, HORIZON_MS, LIFE, type Levels, type Outcome, type Range, type Rule, type Spot, TF_MS, atr, dayLevels, inDtWindow, ranges, resolve, score, typicalHourBp, weekLevels } from '../core/pbRanges';
+import { type Bar5, LIFE, type Levels, type Range, TF_MS, atr, dayLevels, ranges, typicalHourBp, weekLevels } from '../core/pbRanges';
 import { utcDayStart, utcWeekStart } from '../core/sessions';
 import type { ProBar, ProStore } from '../store/proStore';
 import { fmtPx } from './layout';
 import { logicalOfTime } from './overlay';
 import { MONO, PRO, rgba } from './theme';
-import { PB_TOUCHES, boxSpan, formingNote, nearestLevels, selectRanges, selectSpots } from './pbSelect';
+import { PB_TOUCHES, boxSpan, formingNote, nearestLevels, selectRanges } from './pbSelect';
 
 /**
  * Warstwa wskaźnika „Zakresy P/b (Nill)” na wykresie ceny (interwały do 1 h, na żywo): zakresy P/b ze świec 5m z
- * dotknięciami i impulsem, poziomy profilu poprzedniego tygodnia i doby, miejsca 👀 (A, B, C) bez celów, przy
- * rozstrzygniętych wynik wyścigu do bariery (✓ ✗) oraz opis w legendzie: stan strefy, typowa godzina i wynik 👀 na
- * wczytanej historii świec. Strefa aktywna daje alarmy z menu wykresu. Co rysujemy (zakres aktywny i ostatni
- * zakończony, 3 ostatnie 👀, 2 + 2 najbliższe poziomy, bez zakresu w budowie) wybiera `pbSelect.ts`.
+ * dotknięciami i impulsem, poziomy profilu poprzedniego tygodnia i doby oraz opis w legendzie: stan strefy i typowa
+ * godzina. Opis struktury, bez miejsc wejścia. Strefa aktywna daje alarmy z menu wykresu. Co rysujemy (zakres aktywny
+ * i ostatni zakończony, 2 + 2 najbliższe poziomy, bez zakresu w budowie) wybiera `pbSelect.ts`.
  */
 
 export interface PbStyle {
@@ -37,33 +36,18 @@ const DAY = 86_400_000;
 /** Świece 5m: od tygodnia przed początkiem bieżącego tygodnia (profil poprzedniego tygodnia z rozbiegiem ATR). */
 const FROM_BEFORE_WEEK = 8 * DAY;
 const MIN_BARS = 200;
-const HORIZON_BARS = HORIZON_MS / TF_MS;
 
 const WEEK = PRO.level;
 const DAY_INK = rgba(PRO.ink2, 0.85);
 const BACK = rgba(PRO.bg, 0.86);
-/** Przybliżona szerokość znaku podpisu (px, czcionka 10 px) do rozsuwania podpisów 👀. */
-const LABEL_W = 6.5;
-
-interface Mark {
-  spot: Spot;
-  t: number;
-  dim: boolean;
-  flow: boolean;
-  res: Outcome | null;
-}
 
 interface View {
   ranges: Range[];
   /** Poziom poprzedniego tygodnia w zasięgu zakresu ± 0,5 ATR; po indeksie zakresu. */
   level: boolean[];
-  marks: Mark[][];
   week: Levels | null;
   day: Levels | null;
   hourBp: number | null;
-  /** Wyniki rozstrzygniętych 👀 z wczytanej historii po regule i liczba dni tej historii. */
-  results: Record<Rule, (Outcome | null)[]>;
-  days: number;
 }
 
 interface Box {
@@ -80,16 +64,6 @@ interface Box {
   imp: [number, number, number, number];
 }
 
-interface DrawnMark {
-  x: number;
-  y: number;
-  /** Środek podpisu: pod ceną dla kupna, nad nią dla sprzedaży, odsunięty od wcześniejszych podpisów obok. */
-  ty: number;
-  side: 1 | -1;
-  text: string;
-  dim: boolean;
-}
-
 interface HLine {
   x0: number;
   x1: number;
@@ -99,8 +73,6 @@ interface HLine {
 }
 
 type State = 'off' | 'replay' | 'interval' | 'loading' | 'ready';
-
-const pct = (x: number) => `${numLang(String(Math.round(x * 100)))}%`;
 
 export class PbRangeLayer implements ISeriesPrimitive<Time> {
   private chart: IChartApiBase<Time> | null = null;
@@ -118,10 +90,9 @@ export class PbRangeLayer implements ISeriesPrimitive<Time> {
   private key = '';
   private view: View | null = null;
   private boxes: Box[] = [];
-  private marks: DrawnMark[] = [];
   private lines: HLine[] = [];
-  /** Po każdej scenie: pudełka, linie poziomów i miejsca 👀 na ekranie (pomiar układu czyta je z wykresu). */
-  onCounts: ((c: { boxes: number; lines: number; marks: number }) => void) | null = null;
+  /** Po każdej scenie: pudełka i linie poziomów na ekranie (pomiar układu czyta je z wykresu). */
+  onCounts: ((c: { boxes: number; lines: number }) => void) | null = null;
   private readonly views: readonly IPrimitivePaneView[];
 
   /** `styleOf` — styl widocznego wskaźnika (null — ukryty: bez rysowania i bez pobierania świec 5m). */
@@ -202,30 +173,11 @@ export class PbRangeLayer implements ISeriesPrimitive<Time> {
             }
             ctx.textAlign = 'left';
           }
-          ctx.textAlign = 'center';
-          for (const m of this.marks) {
-            ctx.globalAlpha = m.dim ? 0.45 : 1;
-            const dy = m.side > 0 ? 14 : -14;
-            ctx.fillStyle = PRO.ink1;
-            ctx.beginPath();
-            ctx.moveTo(m.x, m.y);
-            ctx.lineTo(m.x - 4, m.y + dy * 0.5);
-            ctx.lineTo(m.x + 4, m.y + dy * 0.5);
-            ctx.closePath();
-            ctx.fill();
-            const w = ctx.measureText(m.text).width;
-            ctx.fillStyle = BACK;
-            ctx.fillRect(m.x - w / 2 - 3, m.ty - 7, w + 6, 14);
-            ctx.fillStyle = PRO.ink1;
-            ctx.fillText(m.text, m.x, m.ty);
-          }
-          ctx.textAlign = 'left';
-          ctx.globalAlpha = 1;
         }),
     };
     this.views = [
       { zOrder: () => 'bottom', renderer: () => back },
-      // Krawędzie, podpisy i 👀 nad świecami (świeca nie zasłania tekstu)
+      // Krawędzie i podpisy nad świecami (świeca nie zasłania tekstu)
       { zOrder: () => 'top', renderer: () => front },
     ];
   }
@@ -297,55 +249,21 @@ export class PbRangeLayer implements ISeriesPrimitive<Time> {
       const lv = weekOf(b[k].t);
       return lv !== null && [lv.vah, lv.val, ...lv.lvn].some((x) => x >= r.lo - 0.5 * A[k] && x <= r.hi + 0.5 * A[k]);
     });
-    const results: View['results'] = { A: [], B: [], C: [] };
-    const marks = rs.map((r) =>
-      r.spots.map((s): Mark => {
-        const t = b[s.k].t + TF_MS;
-        const h = typicalHourBp(b, t);
-        const res = h === null ? null : resolve({ t, side: s.side, px: s.px, h }, b.slice(s.k + 1, s.k + 2 + HORIZON_BARS), this.now);
-        if (h !== null) results[s.rule].push(res);
-        return {
-          spot: s,
-          t,
-          dim: !inDtWindow(t),
-          flow: s.rule !== 'A' && r.x !== null && this.flow(store, b, r, s),
-          res,
-        };
-      }),
-    );
     this.view = {
       ranges: rs,
       level,
-      marks,
       week: weekOf(this.now),
       day: dayLevels(b, this.now),
       hourBp: typicalHourBp(b, this.now),
-      results,
-      days: (b[b.length - 1].t + TF_MS - b[0].t) / DAY,
     };
-  }
-
-  /** Wybicie z agresją taśmy w jego stronę i rosnącym OI (od świecy wybicia do świecy miejsca); bez taśmy albo OI — nie. */
-  private flow(store: ProStore, b: readonly Bar5[], r: Range, s: Spot): boolean {
-    const from = b[r.x!].t;
-    const to = b[s.k].t + TF_MS;
-    if (!store.coverage.covers(from, to)) return false;
-    const oi0 = store.oi.atWithin(from, 180_000);
-    const oi1 = store.oi.atWithin(to, 180_000);
-    if (oi0 === null || oi1 === null) return false;
-    let d = 0;
-    store.tape.forEach(from, to, (_t, _px, sz, side) => (d += side * sz));
-    const dirx = s.rule === 'B' ? s.side : -s.side;
-    return Math.sign(d) === dirx && oi1 > oi0;
   }
 
   updateAllViews(): void {
     this.boxes = [];
-    this.marks = [];
     this.lines = [];
     this.style = this.styleOf();
     this.scene();
-    this.onCounts?.({ boxes: this.boxes.length, lines: this.lines.length, marks: this.marks.length });
+    this.onCounts?.({ boxes: this.boxes.length, lines: this.lines.length });
   }
 
   private scene(): void {
@@ -390,10 +308,6 @@ export class PbRangeLayer implements ISeriesPrimitive<Time> {
     // Zakres aktywny i ostatni zakończony; zakres w budowie tylko w legendzie
     const pick = selectRanges(v.ranges, last);
     const drawn = [pick.done, pick.active].filter((i): i is number => i !== null);
-    // Najwyżej 3 najnowsze 👀 z rysowanych zakresów
-    const spotList = drawn.flatMap((i) => v.marks[i].map((m) => ({ m, t: m.t })));
-    const spotsShown = selectSpots(spotList);
-    const shownMarks = new Set(spotList.filter((_, k) => spotsShown.has(k)).map((s) => s.m));
     for (const i of drawn) {
       const r = v.ranges[i];
       const active = i === pick.active;
@@ -433,19 +347,6 @@ export class PbRangeLayer implements ISeriesPrimitive<Time> {
           : [],
         imp: [x(b[r.e - 15].t), yo, x(b[r.e].t + TF_MS), ye],
       });
-      for (const m of v.marks[i]) {
-        if (!shownMarks.has(m)) continue;
-        const yy = y(m.spot.px);
-        if (yy === null) continue;
-        const res = m.res === 'hit' ? ' ✓' : m.res === 'miss' ? ' ✗' : '';
-        const text = `👀 ${m.spot.rule}${m.flow ? ' ⚡' : ''}${res}`;
-        const xx = x(m.t);
-        const dy = m.spot.side > 0 ? 14 : -14;
-        // Podpisy blisko siebie (wejście tuż przed wybiciem i powrót tuż po nim) jeden pod drugim, nie na sobie
-        let ty = yy + dy;
-        for (let k = 0; k < 3 && this.marks.some((o) => Math.abs(o.x - xx) < LABEL_W * (text.length + o.text.length) * 0.5 && Math.abs(o.ty - ty) < 14); k++) ty += dy;
-        this.marks.push({ x: xx, y: yy, ty, side: m.spot.side, text, dim: m.dim });
-      }
     }
   }
 
@@ -469,7 +370,7 @@ export class PbRangeLayer implements ISeriesPrimitive<Time> {
     return until > this.now ? { s: r.s, lo: r.lo, hi: r.hi, touches: r.touches.length, until } : null;
   }
 
-  /** Opis w legendzie: stan strefy, typowa godzina i wynik 👀 z wczytanej historii świec 5m. */
+  /** Opis w legendzie: stan strefy i typowa godzina. */
   legend(color: string): { text: string; color: string }[] {
     if (this.state === 'replay')
       return [
@@ -511,31 +412,6 @@ export class PbRangeLayer implements ISeriesPrimitive<Time> {
         text: `${tr('typowa godzina', 'typical hour')} ${numLang(String(Math.round(v.hourBp)))} bp`,
         color: PRO.ink2,
       });
-    const all = score([...v.results.A, ...v.results.B, ...v.results.C]);
-    const days = numLang(String(Math.round(v.days)));
-    if (all.n === 0 || !all.ci)
-      parts.push({
-        text: tr(`👀 z ${days} dni: brak rozstrzygnięć`, `👀 over ${days} days: none settled`),
-        color: PRO.ink3,
-      });
-    else if (this.phone)
-      parts.push({
-        text: `👀 ${all.hits}/${all.n} = ${pct(all.ci.p)}`,
-        color: PRO.ink2,
-      });
-    else {
-      const rules = (['A', 'B', 'C'] as const).map((r) => {
-        const s = score(v.results[r]);
-        return `${r} ${s.hits}/${s.n}`;
-      });
-      parts.push({
-        text: tr(
-          `👀 z ${days} dni: ${rules.join(' · ')} · razem ${pct(all.ci.p)} (95% ${pct(all.ci.lo)}–${pct(all.ci.hi)}), bez przewagi ≈ 50%`,
-          `👀 over ${days} days: ${rules.join(' · ')} · all ${pct(all.ci.p)} (95% ${pct(all.ci.lo)}–${pct(all.ci.hi)}), no edge ≈ 50%`,
-        ),
-        color: PRO.ink2,
-      });
-    }
     return parts;
   }
 }

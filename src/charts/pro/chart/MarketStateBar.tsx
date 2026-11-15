@@ -162,8 +162,8 @@ export const MarketStateBar: React.FC<{ store: ProStore; series: CandleSeries; v
           </dl>
           <p className="mt-2.5 text-[10.5px] leading-snug text-ink-3">
             {tr(
-              `Opis ze stałych reguł na danych tego wykresu: ostatnie ${STATE_BARS} świec ${series.interval.label}, odświeżany co 5 s. To nie sygnał ani rekomendacja.`,
-              `A description from fixed rules on this chart's data: the last ${STATE_BARS} ${series.interval.label} candles, refreshed every 5 s. Not a signal or a recommendation.`
+              `Opis ze stałych reguł na danych tego wykresu: ostatnie ${STATE_BARS} świec ${series.interval.label}, odświeżany co 5 s. To nie rekomendacja.`,
+              `A description from fixed rules on this chart's data: the last ${STATE_BARS} ${series.interval.label} candles, refreshed every 5 s. Not a recommendation.`
             )}
           </p>
         </div>

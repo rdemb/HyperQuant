@@ -58,8 +58,8 @@ export const SessionReview: React.FC = () => {
         eyebrow={tr('Rozliczenie · BTC', 'Review · BTC')}
         title={tr('Rozliczenie sesji', 'Session review')}
         note={tr(
-          'Dzień tradera to sesja: Londyn od 08:00 czasu londyńskiego, NY od 09:30 czasu nowojorskiego, IB to pierwsza godzina. Opis, nie sygnał.',
-          'The trading day is a session: London from 08:00 London time, NY from 09:30 New York time, the IB is the first hour. A description, not a signal.'
+          'Dzień tradera to sesja: Londyn od 08:00 czasu londyńskiego, NY od 09:30 czasu nowojorskiego, IB to pierwsza godzina. Opis, nie rekomendacja.',
+          'The trading day is a session: London from 08:00 London time, NY from 09:30 New York time, the IB is the first hour. A description, not a recommendation.'
         )}
       />
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">

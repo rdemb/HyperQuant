@@ -7,7 +7,7 @@
  * (4) odległość ceny od VWAP doby w σ.
  * Tu cała logika czterech liczb bez modułów wykresu (te same reguły co Rozliczenie: `sessionFacts`, `settleRange`,
  * `mapHitsText`; stan skanera z `scanState`, VWAP z `dayVwap`), wspólna dla karty Czwórki i serwera MCP; wejścia z magazynu
- * rynku wykresu składa `views/before/fourInputs`. Opis, nie sygnał.
+ * rynku wykresu składa `views/before/fourInputs`. Opis, nie rekomendacja.
  */
 import { tr } from '../i18n';
 import { DASH, fmtCompact, fmtFixed } from '../ui/format';
@@ -177,7 +177,7 @@ export function clarityNum(x: FourInputs): FourNumber {
   const dayHint = `MODEL · Dalton: ${dot(isAbsent(d) ? d.why : d.hint)}`;
   const mapHint = isAbsent(m) ? `${tr('Mapa', 'Map')}: ${dot(m.why)}` : dot(m.hint);
   // Ten sam powód obu części (np. świece w drodze) raz
-  const hint = isAbsent(d) && isAbsent(m) && d.why === m.why ? dayHint : `${dayHint} ${mapHint} ${tr('Opis, nie sygnał.', 'A description, not a signal.')}`;
+  const hint = isAbsent(d) && isAbsent(m) && d.why === m.why ? dayHint : `${dayHint} ${mapHint} ${tr('Opis, nie rekomendacja.', 'A description, not a recommendation.')}`;
   const flag = isAbsent(m) ? null : m.flag;
   return {
     id: 'clarity',

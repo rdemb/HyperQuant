@@ -40,6 +40,8 @@ const GLEBIA = {
   volSell: rgba('#CA3829', 0.6),
   priceLine: '#3fc6dd',
   vwap: '#E2E9F0',
+  // Jaśniejszy odcień bursztynu poziomów: strefy Effort nad ceną (pod ceną — sam bursztyn poziomów)
+  levelSoft: '#F2C988',
   svwap: '#C1B3F2',
   /** Strefa ceny z linku powtórki (token zone, fiolet kategorii). */
   zone: CAT.violet,
