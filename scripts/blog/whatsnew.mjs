@@ -9,6 +9,7 @@
 import { execFileSync } from 'node:child_process';
 import { TITLE_GUARDS, guardHits } from '../../src/utils/safeguards.mjs';
 import { esc, layout } from './render.mjs';
+import { IKONY } from './ikony.mjs';
 
 export const NEWS_PATHS = { pl: 'co-nowego/', en: 'en/whats-new/' };
 /** Grupy w kolejności na stronie */
@@ -151,6 +152,9 @@ export function newsPeriods(items, ms) {
     });
 }
 
+// Ikony grup (lucide, te same co w nawigacji)
+const GROUP_ICON = { wykres: IKONY['chart-candlestick'], prognozy: IKONY['list-checks'], rynki: IKONY['table-2'], skaner: IKONY['database'], blog: IKONY['newspaper'] };
+
 const MONTHS = {
   pl: ['stycznia', 'lutego', 'marca', 'kwietnia', 'maja', 'czerwca', 'lipca', 'sierpnia', 'września', 'października', 'listopada', 'grudnia'],
   en: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'],
@@ -191,6 +195,13 @@ const T = {
     changelog: 'pełny CHANGELOG',
     card: { title: 'Co nowego w HyperQuant', subtitle: 'Historia zmian od pierwszej wersji, najnowsze na górze' },
     cardFoot: 'otwarty kod · historia zmian',
+    spot: 'Najświeższe',
+    mix: 'Na czym skupiały się zmiany',
+    axis: 'Oś wersji',
+    statVersions: 'wersji',
+    statChanges: 'zmian opisanych',
+    statSince: 'od',
+    statLast: 'ostatnia zmiana',
   },
   en: {
     title: "What's new in HyperQuant: release history · HyperQuant",
@@ -209,6 +220,13 @@ const T = {
     changelog: 'the full CHANGELOG',
     card: { title: "What's new in HyperQuant", subtitle: 'Release history since the first version, newest first' },
     cardFoot: 'open source · release history',
+    spot: 'Latest',
+    mix: 'Where the changes went',
+    axis: 'Version timeline',
+    statVersions: 'versions',
+    statChanges: 'changes described',
+    statSince: 'since',
+    statLast: 'last change',
   },
 };
 
@@ -231,25 +249,51 @@ export function whatsNewPage(site, lang, news = {}, disclaimer) {
   const period = (p, i) => {
     const label = p.versions.length ? t.version(p.versions) : t.unreleased(p.after);
     const many = p.from !== p.to;
+    const chips = p.groups.map((g) => `<span class="news-chip news-chip--${g.group}">${GROUP_ICON[g.group]}${esc(NEWS_GROUPS[g.group][lang])}<b>${g.items.length}</b></span>`).join('');
     const groups = p.groups
       .map(
-        (g) => `<h3>${esc(NEWS_GROUPS[g.group][lang])} <span class="news-n">(${g.items.length})</span></h3>
+        (g) => `<h3 class="news-h news-h--${g.group}">${GROUP_ICON[g.group]}${esc(NEWS_GROUPS[g.group][lang])} <span class="news-n">(${g.items.length})</span></h3>
 <ul class="news-list">${g.items.map((x) => `<li>${many ? `<time datetime="${x.date}">${short(x.date)}</time> ` : ''}${esc(x[lang])}</li>`).join('')}</ul>`
       )
       .join('\n');
-    return `<details class="news-period"${i === 0 ? ' open' : ''}>
-<summary><b>${esc(label)}</b> · <time datetime="${p.to}">${esc(span(lang, p.from, p.to))}</time> · ${esc(t.count(p.count))}</summary>
-${groups}
-</details>`;
+    return `<li class="news-node${i === 0 ? ' is-latest' : ''}"><details class="news-period"${i === 0 ? ' open' : ''}>
+<summary><span class="news-sum"><b>${esc(label)}</b><span class="news-when"><time datetime="${p.to}">${esc(span(lang, p.from, p.to))}</time> · ${esc(t.count(p.count))}</span></span><span class="news-chips">${chips}</span></summary>
+<div class="news-body">${groups}</div>
+</details></li>`;
   };
-  const timeline = !parsed ? `<p>${na(t.missing)}</p>` : periods.length ? periods.map(period).join('\n') : `<p>${na(t.empty)}</p>`;
+  // Najświeższe zmiany (z ostatniego okresu, do 6) jako karty, i udział grup we wszystkich zmianach
+  const all = parsed ? parsed.items : [];
+  const latest = periods[0] ? periods[0].groups.flatMap((g) => g.items).sort((a, b) => b.date.localeCompare(a.date) || a.line - b.line).slice(0, 6) : [];
+  const spotlight = latest.length
+    ? `<section class="news-spot" aria-labelledby="news-spot-h"><h2 id="news-spot-h">${esc(t.spot)}</h2><ol>${latest
+        .map((x) => `<li class="spot spot--${x.group}"><span class="spot-top">${GROUP_ICON[x.group]}<span>${esc(NEWS_GROUPS[x.group][lang])}</span><time datetime="${x.date}">${short(x.date)}</time></span><p>${esc(x[lang])}</p></li>`)
+        .join('')}</ol></section>`
+    : '';
+  const shares = Object.keys(NEWS_GROUPS)
+    .map((g) => ({ g, n: all.filter((x) => x.group === g).length }))
+    .filter((s) => s.n);
+  const mix = all.length
+    ? `<section class="news-mix" aria-labelledby="news-mix-h"><h2 id="news-mix-h">${esc(t.mix)}</h2><div class="mix-bar" role="img" aria-label="${esc(shares.map((s) => `${NEWS_GROUPS[s.g][lang]}: ${s.n}`).join(', '))}">${shares
+        .map((s) => `<span class="mix-${s.g}" style="flex:${s.n}"></span>`)
+        .join('')}</div><ul class="mix-legend">${shares.map((s) => `<li class="mix-l--${s.g}">${GROUP_ICON[s.g]}${esc(NEWS_GROUPS[s.g][lang])}<b>${s.n}</b></li>`).join('')}</ul></section>`
+    : '';
+  const versionsCount = milestones(parsed?.versions ?? [], news.tags ?? []).reduce((a, m) => a + m.versions.length, 0);
+  const first = all.map((x) => x.date).sort()[0];
+  const stats = all.length
+    ? `<dl class="news-stats"><div><dt>${esc(t.statVersions)}</dt><dd>${versionsCount}</dd></div><div><dt>${esc(t.statChanges)}</dt><dd>${all.length}</dd></div><div><dt>${esc(t.statSince)}</dt><dd>${esc(day(lang, first))}</dd></div><div><dt>${esc(t.statLast)}</dt><dd>${esc(day(lang, periods[0].to))}</dd></div></dl>`
+    : '';
+  const timeline = !parsed ? `<p>${na(t.missing)}</p>` : periods.length ? `<ol class="news-axis">${periods.map(period).join('\n')}</ol>` : `<p>${na(t.empty)}</p>`;
   const main = `<article class="page page--news">
+<header class="news-hero">
 <p class="eyebrow"><span>${esc(t.eyebrow)}</span></p>
 <h1>${esc(t.h1)}</h1>
-<section class="block" id="intro">
 <p class="lead">${esc(t.lead)}</p>
-</section>
+${stats}
+</header>
+${spotlight}
+${mix}
 <section class="block" id="timeline">
+<h2 class="news-axis-h">${esc(t.axis)}</h2>
 ${timeline}
 </section>
 <section class="block" id="source">
@@ -286,6 +330,7 @@ ${approxUntil ? `<p>${esc(t.approx(day(lang, approxUntil)))}</p>
       main,
       lang,
       current: 'news',
+      wide: true,
       alternates,
       ...(disclaimer ? { disclaimer } : {}),
     }),
