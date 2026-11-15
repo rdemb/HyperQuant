@@ -31,6 +31,49 @@ export const LEDGER_PART: Partial<Record<ModelCardId, 'ret' | 'ret+touch' | 'mar
 };
 
 /** Ocena poza rejestrem desku (inny dziennik), podana słowami z miejscem, gdzie ją widać. */
+/** Jedno zdanie: co liczba twierdzi (co jest, a co nie jest sprawdzane). */
+export const CLAIM: Record<ModelCardId, string> = {
+  vol: tr('Jak szeroki może być ruch BTC w najbliższej godzinie i 4 godzinach (rozkład zwrotu, bez kierunku).', 'How wide the BTC move may be over the next hour and 4 hours (return distribution, no direction).'),
+  mc2h: tr('Jak daleko cena może dojść w ciągu 2 godzin i jaka jest szansa dotknięcia poziomów dnia (symulacja ścieżek).', 'How far price may travel within 2 hours and the chance of touching the day levels (path simulation).'),
+  ledger: tr('Prognozy zapisane przed faktem: rozkład zwrotu 1 h i 4 h oraz szanse dotknięcia PDH, D-EQ i PDL w 2 h; wynik liczony po fakcie.', 'Forecasts recorded before the fact: the 1 h and 4 h return distribution and the chances of touching PDH, D-EQ and PDL within 2 h; scored after the fact.'),
+  schrodi: tr('Szansa dużego ruchu BTC w najbliższej godzinie; kierunek tylko ze słabościami opisanymi niżej.', 'The chance of a big BTC move in the next hour; direction only with the weaknesses described below.'),
+  vpin: tr('Jaka część wolumenu to jednostronna nierównowaga kupna i sprzedaży (miara przepływu, nie prognoza).', 'What share of volume is one-sided buy-sell imbalance (a flow measure, not a forecast).'),
+  kyle: tr('O ile przesuwa cenę każdy milion USD przepływu netto agresorów.', 'How far each million USD of net aggressor flow moves price.'),
+  hurst: tr('Czy zwroty ostatnich świec mają skłonność do trwania (H > 0,5) czy do powrotu (H < 0,5).', 'Whether recent candle returns tend to persist (H > 0.5) or to revert (H < 0.5).'),
+  ou: tr('Jak szybko cena wracała ostatnio do poziomu równowagi (półokres powrotu).', 'How fast price has recently returned to an equilibrium level (half-life of reversion).'),
+  cascade: tr('Jak duży mógłby być ruch końcowy, gdyby szok uruchomił likwidacje z mapy, a one kolejne (górna granica, scenariusz).', 'How large the final move could be if a shock set off liquidations from the map and they set off more (an upper bound, a scenario).'),
+  cohort: tr('Która grupa uczestników była per saldo stroną agresywną i jak jej transakcje wypadły po czasie (markout poza próbą).', 'Which participant group was the net aggressor and how its trades fared afterwards (out-of-sample markout).'),
+  macro: tr('Jaka część ruchu BTC szła razem z rynkami makro na Hyperliquid (β, R²); związek, nie przyczyna.', 'What share of the BTC move went together with macro markets on Hyperliquid (β, R²); association, not cause.'),
+  modelVsMarket: tr('Czy model desku i rynek wynikowy HIP-4 dają podobne prawdopodobieństwa tym samym pytaniom.', 'Whether the desk model and the HIP-4 outcome market give similar probabilities for the same questions.'),
+  book: tr('Jak zachowuje się arkusz zleceń: głębokość, odbudowa i koszt wykonania (estymatory opisu).', 'How the order book behaves: depth, refill and execution cost (descriptive estimators).'),
+  uwiezieni: tr('Gdzie weszły otwarte pozycje i jaka ich część jest pod wodą; opis, bez twierdzenia o reakcji ceny.', 'Where open positions entered and what part is under water; a description with no claim about price reaction.'),
+};
+
+/** Status sprawdzenia (4 stany, rekomendacja z 15.11): zapis przed faktem z wynikiem, test planowany, sprawdzony bez mocy, sam opis. */
+export type Walidacja = 'zapis' | 'test' | 'bezMocy' | 'opis';
+export const STATUS: Record<ModelCardId, Walidacja> = {
+  vol: 'zapis',
+  mc2h: 'zapis',
+  ledger: 'zapis',
+  modelVsMarket: 'zapis',
+  schrodi: 'zapis',
+  vpin: 'test',
+  kyle: 'test',
+  hurst: 'test',
+  ou: 'test',
+  cascade: 'test',
+  cohort: 'test',
+  macro: 'test',
+  book: 'opis',
+  uwiezieni: 'opis',
+};
+const STATUS_TEXT: Record<Walidacja, [string, string]> = {
+  zapis: [tr('zapisywany przed faktem', 'recorded before the fact'), tr('Prognozy idą do rejestru, zanim wiadomo, co się stanie; wynik niżej.', 'Forecasts go into the ledger before the outcome is known; the score is below.')],
+  test: [tr('test planowany', 'test planned'), tr('Sprawdzian na danych od 2024 zapisany przed uruchomieniem; do tego czasu liczba bez wyniku poza próbą.', 'A test on data from 2024, recorded before it runs; until then the number has no out-of-sample score.')],
+  bezMocy: [tr('sprawdzony: bez mocy', 'tested: no power'), tr('Sprawdzian nie znalazł przewagi nad prostą bazą; liczba zostaje jako opis z przedziałem.', 'The test found no edge over a simple baseline; the number stays as a description with an interval.')],
+  opis: [tr('opis, bez prognozy', 'description, no forecast'), tr('Liczba opisuje stan; niczego nie przewiduje, więc nie ma czego rozliczać.', 'The number describes a state; it predicts nothing, so there is nothing to score.')],
+};
+
 const OTHER_SCORE: Partial<Record<ModelCardId, string>> = {
   schrodi: tr(
     'Prognozy kota mają osobny dziennik: dowód przewagi, alarm dryfu i kalibracja w Po sesji (dymek kota).',
@@ -59,8 +102,8 @@ const RetBlock: React.FC<{ h: string; r: RetScores | undefined }> = ({ h, r }) =
       <dl className="divide-y divide-line">
         <Line label={tr('Rozliczone prognozy', 'Settled forecasts')} value={fmtFixed(r.n, 0)} />
         <Line label="CRPSS" value={num(r.crpss)} note={tr('wobec rozkładu normalnego; > 0 lepiej', 'vs a normal benchmark; > 0 is better')} />
-        <Line label={tr('Pokrycie przedziału 90%', '90% interval coverage')} value={pct(r.cov90?.rate)} note={r.cov90?.kupiecP != null ? tr(`test Kupca p = ${num(r.cov90.kupiecP, 2)}`, `Kupiec test p = ${num(r.cov90.kupiecP, 2)}`) : undefined} />
-        <Line label={tr('Pokrycie przedziału 60%', '60% interval coverage')} value={pct(r.cov60?.rate)} />
+        <Line label={tr('Pokrycie przedziału 90%', '90% interval coverage')} value={pct(r.cov90?.rate)} note={tr(`dobrze przy ok. 90%: mniej — przedziały za wąskie, więcej — za szerokie${r.cov90?.kupiecP != null ? `; test Kupca p = ${num(r.cov90.kupiecP, 2)} (powyżej 0,05: zgodne z 90%)` : ''}`, `good near 90%: less means intervals too narrow, more too wide${r.cov90?.kupiecP != null ? `; Kupiec test p = ${num(r.cov90.kupiecP, 2)} (above 0.05: consistent with 90%)` : ''}`)} />
+        <Line label={tr('Pokrycie przedziału 60%', '60% interval coverage')} value={pct(r.cov60?.rate)} note={tr('dobrze przy ok. 60%', 'good near 60%')} />
       </dl>
     ) : (
       <p className="py-1.5 text-[13px] text-ink-3">{tr('Jeszcze bez rozliczeń tego horyzontu.', 'No settlements for this horizon yet.')}</p>
@@ -95,7 +138,7 @@ const Scores: React.FC<{ part: 'ret' | 'ret+touch' | 'market'; s: DeskLedgerSumm
             <Line
               label="BSS"
               value={`${num(t.bssClim ?? t.bss, 2)} / ${num(t.bssDist, 2)}`}
-              note={tr('wobec częstości poziomu / wobec odległości', 'vs level base rate / vs distance')}
+              note={tr('wobec częstości poziomu / wobec odległości; powyżej 0 lepiej niż baza', 'vs level base rate / vs distance; above 0 beats the baseline')}
             />
           </dl>
         </div>
@@ -190,6 +233,16 @@ export const KartaModelu: React.FC<{ id: ModelCardId; anchor: HTMLElement; onClo
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3 flex flex-col gap-4 text-[13px] leading-relaxed">
+        <div className="rounded-xl border border-line bg-surface-2 p-3">
+          <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-ink-3">{tr('Co twierdzi', 'What it claims')}</p>
+          <p className="mt-1 text-ink-1">{CLAIM[id]}</p>
+          <p className="mt-2 flex flex-wrap items-baseline gap-x-2 text-[12px]">
+            <span data-walidacja={STATUS[id]} className={`rounded-full border px-2 py-0.5 font-medium ${STATUS[id] === 'zapis' ? 'border-lume/50 text-lume' : STATUS[id] === 'bezMocy' ? 'border-warn/50 text-warn' : 'border-line-strong text-ink-2'}`}>
+              {STATUS_TEXT[STATUS[id]][0]}
+            </span>
+            <span className="text-ink-3">{STATUS_TEXT[STATUS[id]][1]}</span>
+          </p>
+        </div>
         {row ? (
           <dl className="flex flex-col gap-3">
             <div>

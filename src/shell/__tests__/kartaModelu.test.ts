@@ -20,3 +20,21 @@ describe('karta modelu', () => {
     expect(Object.keys(LEDGER_PART).sort()).toEqual(['ledger', 'mc2h', 'modelVsMarket', 'vol']);
   });
 });
+
+describe('karta modelu: co twierdzi i status sprawdzenia', () => {
+  it('każda karta ma zdanie „co twierdzi” bez słów kierunku i porady oraz jeden z czterech statusów', async () => {
+    const { CLAIM, STATUS } = await import('../KartaModelu');
+    const { MODEL_CARD_IDS } = await import('../../ui/modelCard');
+    for (const id of MODEL_CARD_IDS) {
+      expect(CLAIM[id].length, id).toBeGreaterThan(30);
+      expect(CLAIM[id], id).not.toMatch(/sygna|signal|kup |sprzedaj|buy |sell /i);
+      expect(['zapis', 'test', 'bezMocy', 'opis'], id).toContain(STATUS[id]);
+    }
+  });
+
+  it('status „zapisywany przed faktem” tylko dla modeli z rozliczeniami (rejestr desku albo dziennik kota)', async () => {
+    const { STATUS, LEDGER_PART } = await import('../KartaModelu');
+    const zapis = Object.entries(STATUS).filter(([, s]) => s === 'zapis').map(([id]) => id).sort();
+    expect(zapis).toEqual([...Object.keys(LEDGER_PART), 'schrodi'].sort());
+  });
+});
