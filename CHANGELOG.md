@@ -4,6 +4,12 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Wyniki: stopka karty bez słowa zakazanego (2026-11-15)
+<!-- co-nowego: ukryj -->
+
+#### Zmienione
+- Stopka obrazka strony Wyniki: „dziennik prognoz · zapis przed faktem” (EN „recorded before the fact”); test `bezSygnalow` obejmuje już `results.mjs`.
+
 ### Okno wskaźników: grupy według pytań i karta każdego wskaźnika (2026-11-15)
 <!-- co-nowego: grupa=wykres | pl=Wskaźniki HyperQuant w oknie są pogrupowane według pytań tradera, mają plakietkę źródła, a po rozwinięciu opisu kartę: co twierdzą i czy to sprawdzono | en=HyperQuant indicators in the dialog are grouped by trader questions, carry a source badge and, when the description is expanded, a card: what they claim and whether it was tested -->
 
