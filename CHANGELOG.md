@@ -4,6 +4,13 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Uwięzieni: gdzie weszły pozycje BTC (2026-11-15)
+<!-- co-nowego: grupa=skaner | pl=Nowy panel Uwięzieni na Przed sesją: ceny wejścia otwartych pozycji BTC, ile longów i shortów jest pod wodą i jak daleko do likwidacji | en=New Trapped positions panel in Pre-session: entry prices of open BTC positions, how many longs and shorts are under water and how far liquidation is -->
+
+#### Dodane
+- **Mapa wejść w skanerze** (`src/utils/entryMap.ts`, `backend/scanner/scanner.ts`): z tych samych odczytów pozycji co mapa likwidacji skaner publikuje `entry-map/BTC.json` — kubełki cen wejścia (~0,25% ceny, longi i shorty, ważone wartością wejścia), udział „pod wodą” przy cenie mark, kwartyle odległości do likwidacji ważone wartością, pokrycie open interest, wiek odczytów. Same agregaty, bez adresów; kubełek z mniej niż 3 pozycjami zaokrąglony do 2 cyfr znaczących. Błąd budowy nie wstrzymuje mapy likwidacji. Opis w README repo danych.
+- **Panel „Uwięzieni”** na Przed sesją (`views/desk/EntryMapPanel.tsx`, `state/useEntryMap.ts`): longi i shorty pod wodą (udział i wartość), mediana odległości do likwidacji, pokrycie, histogram cen wejścia wokół ceny ze strefami „pod wodą”; plakietka MODEL z kartą modelu (wiersz w tabeli pochodzenia). Opis pozycji, bez twierdzenia o reakcji ceny przy tych poziomach. Do czasu wdrożenia nowej wersji skanera panel mówi, że mapy jeszcze nie ma.
+
 ### BTC i złoto w nazwie aplikacji, nowa ikona po instalacji (2026-11-15)
 <!-- co-nowego: grupa=blog | pl=Nazwa aplikacji i opisy mówią o BTC i złocie; zainstalowana aplikacja dostaje nową ikonę | en=The app name and descriptions now say BTC and gold; the installed app gets the new icon -->
 
