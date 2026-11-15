@@ -124,6 +124,13 @@ const K = {
   whaleShortLine: rgba(PRO.sellInk, 0.45),
   whaleLiq: PRO.warn,
   whaleLiqLine: rgba(PRO.warn, 0.45),
+  // Migawka skanera starsza niż 2 min: te same kolory przygaszone (plan 59, E8)
+  whaleLongOld: rgba(PRO.buyInk, 0.5),
+  whaleShortOld: rgba(PRO.sellInk, 0.5),
+  whaleLongLineOld: rgba(PRO.buyInk, 0.22),
+  whaleShortLineOld: rgba(PRO.sellInk, 0.22),
+  whaleLiqOld: rgba(PRO.warn, 0.5),
+  whaleLiqLineOld: rgba(PRO.warn, 0.22),
   tagBg: rgba(PRO.bg, 0.88),
   axisText: PRO.page,
 } as const;
@@ -306,6 +313,13 @@ const sameRefs = (refs: readonly ProBar[], bars: readonly ProBar[], from: number
   return true;
 };
 
+/** Kolory warstwy wielorybów; `old` (migawka starsza niż 2 min) — te same przygaszone (plan 59, E8). */
+export function whaleInks(old: boolean): { long: string; short: string; longLine: string; shortLine: string; liq: string; liqLine: string } {
+  return old
+    ? { long: K.whaleLongOld, short: K.whaleShortOld, longLine: K.whaleLongLineOld, shortLine: K.whaleShortLineOld, liq: K.whaleLiqOld, liqLine: K.whaleLiqLineOld }
+    : { long: K.whaleLong, short: K.whaleShort, longLine: K.whaleLongLine, shortLine: K.whaleShortLine, liq: K.whaleLiq, liqLine: K.whaleLiqLine };
+}
+
 export class IndicatorOverlay implements ISeriesPrimitive<Time> {
   private chart: IChartApiBase<Time> | null = null;
   private series: ISeriesApi<SeriesType, Time> | null = null;
@@ -334,6 +348,7 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
   private days: DayLevels[] = [];
   private liq: LiqLevel[] = [];
   private whales: WhaleView | null = null;
+  private whalesOld = false;
   private profileCache: ProfileCache = { key: '', profile: null };
   private profileBars: readonly ProBar[] | null = null;
   private periodCache = new Map<number, PeriodCache>();
@@ -487,8 +502,10 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
     this.requestUpdate?.();
   }
 
-  setWhales(w: WhaleView | null): void {
+  /** `old` — migawka starsza niż 2 min: warstwa przygaszona (wiek w legendzie), ukryta po 20 min jak dotąd. */
+  setWhales(w: WhaleView | null, old = false): void {
     this.whales = w;
+    this.whalesOld = old;
     this.requestUpdate?.();
   }
 
@@ -697,6 +714,7 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
     this.whaleHits = [];
     if (t.showWhales && this.whales) {
       const inView = (y: number) => y >= 0 && y <= H;
+      const C = whaleInks(this.whalesOld);
       // Na telefonie podpis tylko dotkniętej linii — inaczej podpisy zasłaniają wąski wykres
       const tag = (key: string, y: number, text: string, color: string) => {
         this.whaleHits.push({ y, key });
@@ -707,20 +725,20 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
         const long = p.side === 'long';
         const y = Y(p.entry);
         if (inView(y)) {
-          s.hlines.push({ x0: 0, x1: W, y, color: long ? K.whaleLongLine : K.whaleShortLine, dash: DASH.whale });
-          tag(`p:${p.id}:${p.side}`, y, `${p.id} ${long ? 'L' : 'S'} ${fmtCompact(p.usd, '$')} ×${Math.round(p.lev)}`, long ? K.whaleLong : K.whaleShort);
+          s.hlines.push({ x0: 0, x1: W, y, color: long ? C.longLine : C.shortLine, dash: DASH.whale });
+          tag(`p:${p.id}:${p.side}`, y, `${p.id} ${long ? 'L' : 'S'} ${fmtCompact(p.usd, '$')} ×${Math.round(p.lev)}`, long ? C.long : C.short);
         }
         const yl = p.liq === null ? Number.NaN : Y(p.liq);
         if (inView(yl)) {
-          s.hlines.push({ x0: 0, x1: W, y: yl, color: K.whaleLiqLine, dash: DASH.liq });
-          tag(`l:${p.id}:${p.side}`, yl, `${p.id} ${tr('likw.', 'liq.')} ${long ? 'L' : 'S'}`, K.whaleLiq);
+          s.hlines.push({ x0: 0, x1: W, y: yl, color: C.liqLine, dash: DASH.liq });
+          tag(`l:${p.id}:${p.side}`, yl, `${p.id} ${tr('likw.', 'liq.')} ${long ? 'L' : 'S'}`, C.liq);
         }
       }
       // Zlecenia konta po jednej stronie i jednego rodzaju (drabinka) — kreska na każdej cenie, łącznik i jeden podpis z liczbą i sumą
       const orders = this.whales.orders.filter((x) => inView(Y(x.px)));
       for (const g of groupWhaleOrders(orders).slice(0, WHALE_ORDERS)) {
         const bid = g.side === 'bid';
-        const color = bid ? K.whaleLong : K.whaleShort;
+        const color = bid ? C.long : C.short;
         const dash = g.kind === 'limit' ? DASH.none : DASH.dot;
         for (const o of orders) {
           if (o.id === g.id && o.side === g.side && o.kind === g.kind) s.hlines.push({ x0: W - WHALE_TICK_PX, x1: W, y: Y(o.px), color, dash });

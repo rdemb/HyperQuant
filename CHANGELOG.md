@@ -10,6 +10,26 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 #### Zmienione
 - **Kolory rodzin** (plan 59, G2): nowo dodany wskaźnik z grup HyperQuant dostaje kolor swojej rodziny zamiast kolejnego wolnego z palety — zmienność i zakres (RVOL, reżim, Hawkes, stożek) fiolet strefy, skład przepływu (powracający, wielkość zleceń) turkus, koszt zlecenia ask jasny i bid ciemniejszy szary, poziomy (zakresy P/b, strefy Effort) bursztyn. Presja zostaje w kolorach znaku, klasyczne przy palecie; zapisane wskaźniki użytkowników bez zmian.
 
+### TPO: IB doby UTC w kolorze IB; CVD: znacznik po luce w taśmie (2026-11-15)
+<!-- co-nowego: grupa=wykres | pl=Pierwsza godzina doby w profilu TPO ma kolor warstwy IB i znika, gdy IB sesji jest włączone, a CVD po luce w taśmie ma znacznik ↺ | en=The first hour of the day in the TPO profile uses the IB layer colour and hides when the session IB is on, and CVD gets a ↺ mark after a gap in the tape -->
+
+#### Zmienione
+- **IB doby UTC w TPO** (plan 59, E4): pasek pierwszej godziny doby UTC w kolorze warstwy IB (zamiast liliowego), opis „IB doby UTC… to nie initial balance sesji”; przy włączonej warstwie IB sesji nie jest rysowany (dwa różne IB naraz).
+- **CVD po luce** (E7): przy pierwszej świecy po luce w taśmie znacznik „↺” (CVD liczy od nowa, poziom po luce nie jest porównywalny z poziomem sprzed niej) i zdanie w opisie warstwy; `flow.cvdRestarts`.
+
+### Legenda: źródło footprintu, Delty i CVD; wieloryby przygaszone przy starej migawce (2026-11-15)
+<!-- co-nowego: grupa=wykres | pl=Legenda wykresu pokazuje źródło LIVE także przy footprincie, Delcie i CVD, a linie wielorybów bledną, gdy dane skanera mają ponad 2 minuty | en=The chart legend now shows the LIVE source for the footprint, Delta and CVD too, and whale lines fade when the scanner data is over 2 minutes old -->
+
+#### Zmienione
+- **Plakietki źródła** (plan 59, E5): legenda ma plakietkę LIVE dla footprintu (widok świec footprint), Delty i CVD, jak każda inna warstwa.
+- **Wieloryby** (E8): migawka skanera starsza niż 2 min (jak wiek w plakietce legendy) — linie i podpisy z kryciem 0,5 (linie 0,22) zamiast pełnych kolorów; po 20 min warstwa znika jak dotąd (`whaleInks`).
+
+### W sesji: pierwsza treść przed modułami wykresu (2026-11-15)
+<!-- co-nowego: grupa=wykres | pl=W sesji na telefonie pokazuje się szybciej: najpierw objaśnienie ekranu, wykres dochodzi zaraz po nim | en=In session shows up faster on phones: the screen guide appears first, the chart follows right after -->
+
+#### Zmienione
+- **SessionView bez statycznych modułów wykresu** (projekt 58, F2 krok 4): wykres (`ChartsView`), przepływ kohort i taśma likwidacji ładowane leniwie; karta pierwszego kontaktu (element LCP) korzysta tylko z lekkich modułów, a nagranie i powtórka 15 min dociągają się po kliknięciu. Adres powtórki ma rdzeń bez ustawień wykresu (`replay/hashCore.ts`, ten sam zapis co `replayHash`). Lighthouse mobile lokalnie (#charts): LCP 7,1 → 4,8–4,9 s, FCP 4,2 → 3,3 s.
+
 ### Karta wskaźnika z legendy wykresu (2026-11-15)
 <!-- co-nowego: grupa=wykres | pl=Kliknij nazwę wskaźnika w legendzie: okno ustawień mówi, co liczba twierdzi, czy to sprawdzono i jakie jest pasmo szumu | en=Click an indicator name in the legend: the settings window says what the number claims, whether it was tested and what the noise band is -->
 

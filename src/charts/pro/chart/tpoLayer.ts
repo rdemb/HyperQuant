@@ -76,7 +76,8 @@ const T = {
   poc: PRO.profilePoc,
   nakedPoc: PRO.nakedPoc,
   va: rgba(PRO.ink2, 0.7),
-  ib: PRO.svwap,
+  // IB doby UTC w kolorze warstwy IB (plan 59, E4): jedna nazwa, jeden kolor; przy włączonej warstwie IB ukryty
+  ib: PRO.ib,
   single: PRO.warn,
   tail: rgba(PRO.ink2, 0.55),
   time: rgba(PRO.ink1, 0.7),
@@ -259,6 +260,7 @@ const sameRefs = (refs: readonly ProBar[], bars: readonly ProBar[], from: number
 };
 
 export class TpoLayer implements ISeriesPrimitive<Time> {
+  private ibLayer = false;
   private chart: IChartApiBase<Time> | null = null;
   private series: ISeriesApi<SeriesType, Time> | null = null;
   private requestUpdate: (() => void) | null = null;
@@ -398,9 +400,11 @@ export class TpoLayer implements ISeriesPrimitive<Time> {
     return this.views;
   }
 
-  setOn(on: boolean, positions: boolean): void {
+  /** `ibLayer` — warstwa IB sesji włączona: IB doby UTC z TPO nie jest rysowane (dwa różne IB naraz myliłyby). */
+  setOn(on: boolean, positions: boolean, ibLayer = false): void {
     this.on = on;
     this.positions = positions;
+    this.ibLayer = ibLayer;
     this.requestUpdate?.();
   }
 
@@ -588,7 +592,7 @@ export class TpoLayer implements ISeriesPrimitive<Time> {
         this.objects++;
         this.marks.push({ x: xa - 3, y0: yVah, y1: yVal, color: T.va, w: 2 });
       }
-      if (p.ib) {
+      if (p.ib && !this.ibLayer) {
         const yh = y(p.ib.hi);
         const yl = y(p.ib.lo);
         if (yh !== null && yl !== null) {
