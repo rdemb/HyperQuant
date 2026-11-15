@@ -36,6 +36,7 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 - Kafle „Hawkes” ze stałymi μ, α, β (dopasowany Hawkes jest w panelu mechaniki arkusza) i „Entropia”; w laboratorium mikrostruktury pole przyciągania U(p), „magnes”, dywergencja spot/perp i wiersz heurystycznego Hawkesa.
 - Z silnika (`computeQuantMetrics`, dawniej `computeQuantMathAndNeuralForecast`) pola bez odbiorcy: heurystyki kierunku i trajektorii, wagi cech, szanse PDH/PDL z odległości, mikrocena i głębokość (UI bierze głębokość z `bookDepth`), pole `showNeuralCone`. Pakiet Badań mniejszy o 6,3 KB, wejścia o 1,4 KB.
 
+
 ### Wskaźniki: bez miejsc wejścia P/b i z neutralnymi strefami Effort (2026-11-15)
 <!-- co-nowego: grupa=wykres | pl=Zakresy P/b pokazują same strefy i poziomy, bez dawnych miejsc wejścia; strefy Effort mają kolory poziomów i nazwy pod ceną i nad ceną | en=P/b ranges show only zones and levels, without the former entry places; Effort zones use level colours and are named below and above the price -->
 
