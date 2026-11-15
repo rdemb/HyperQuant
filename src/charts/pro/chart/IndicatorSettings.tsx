@@ -17,6 +17,7 @@ import {
 } from '../indicators/registry';
 import { INTERVALS, MONTH, intervalById } from '../core/time';
 import { tr } from '../../../i18n';
+import { STATUS_LABEL, indicatorCard } from '../indicators/cards';
 
 /**
  * Okno ustawień wskaźnika, jak w TradingView: zakładki Parametry, Styl i Opis, „Domyślne”, Anuluj i OK.
@@ -91,6 +92,7 @@ export const IndicatorSettings: React.FC<{ x: IndicatorInstance; loaded: number;
   const grab = useRef<{ x: number; y: number; ox: number; oy: number } | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const def = indicatorDef(x.id);
+  const card = indicatorCard(x.id);
   const set = (p: Partial<IndicatorInstance>) => onChange({ ...x, ...p });
   const cancel = () => {
     onChange(start);
@@ -158,6 +160,20 @@ export const IndicatorSettings: React.FC<{ x: IndicatorInstance; loaded: number;
         <button type="button" aria-label={tr('Zamknij', 'Close')} title={tr('Zamknij', 'Close')} onClick={onClose} className="w-8 h-8 inline-flex items-center justify-center rounded-md text-ink-3 hover:text-ink-1 hover:bg-surface-3">
           <X className="w-4 h-4" />
         </button>
+      </div>
+      {/* Karta wskaźnika (plan 59, F2): co liczba twierdzi, status sprawdzenia i pasmo szumu — z legendy jednym kliknięciem */}
+      <div data-karta-wskaznika className="mx-3 mt-1 mb-2 rounded-lg border border-line bg-surface-1 px-2.5 py-2 leading-snug text-ink-2">
+        <span className="block text-[10px] uppercase tracking-[0.08em] text-ink-3">{tr('Co twierdzi', 'What it claims')}</span>
+        <span className="block text-ink-1">{card.claim}</span>
+        <span data-walidacja={card.status} className="mt-1 inline-block rounded-full border border-line-strong px-1.5 text-[10px]">
+          {STATUS_LABEL[card.status]}
+        </span>
+        {card.noise && (
+          <span className="mt-1 block">
+            <span className="font-medium text-ink-1">{tr('Pasmo szumu. ', 'Noise band. ')}</span>
+            {card.noise}
+          </span>
+        )}
       </div>
       <div role="tablist" className="flex gap-3 px-3 border-b border-line">
         {TABS.map((t) => (
