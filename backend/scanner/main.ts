@@ -379,6 +379,7 @@ const DATA_README = [
   'Repozytorium zawiera zawsze jeden commit z bieżącym stanem.',
   '',
   '- `liq-map/BTC.json` — mapa likwidacji BTC z pozycji on-chain Hyperliquid: kubełki cen likwidacji, pokrycie open interest, wiek odczytów.',
+  '- `entry-map/BTC.json` — mapa uwięzionych pozycji BTC z tych samych odczytów: rozkład cen wejścia (~0,25% ceny, longi i shorty, ważony wartością wejścia), udział „pod wodą” przy cenie mark, kwartyle odległości do likwidacji, pokrycie open interest; opis pozycji, bez kierunku.',
   '- `liq-tape/BTC.json` — likwidacje śledzonych pozycji z 24 h, potwierdzone fillami z polem `liquidation`: czas, strona, rozmiar, cena, błąd mapy.',
   '- `cohorts/BTC.json` — przepływ kohort (market makerzy, statystycznie poinformowani, wieloryby, reszta): kubełki 15 min z 24 h, markouty poza próbą; k-anonimowość (komórki z < 5 uczestnikami lub z dominującym uczestnikiem ukryte); wolumen taśmy i ukryte komórki razem w oknach 1 h i 24 h.',
   '- `liquidity/BTC.json` — profil płynności arkusza: mediana głębokości obu stron w ±10 / ±20 bp wg godziny UTC (do 30 dni), bieżąca płynność względem normy godziny, odporność po gwałtownych ruchach.',
@@ -397,7 +398,7 @@ const DATA_README = [
   '',
   'Gałąź `health` — stan strażnika skanera (`alert.json`, `report.md`) zapisywany przy zmianie stanu; workflow tej gałęzi otwiera i zamyka zgłoszenie `alert-danych`.',
   '',
-  'Wyłącznie agregaty — bez adresów portfeli. Źródło: publiczne API Hyperliquid. Metoda: src/utils/liqMap.ts w repo HyperQuant.',
+  'Wyłącznie agregaty — bez adresów portfeli. Źródło: publiczne API Hyperliquid. Metoda: src/utils/liqMap.ts i src/utils/entryMap.ts w repo HyperQuant.',
   '',
 ].join('\n');
 
@@ -413,7 +414,7 @@ async function gitPublishTick(): Promise<void> {
     }
   }
   // Pliki opcjonalne (np. kohorty po błędzie budowy) nie wstrzymują publikacji mapy
-  for (const key of [`liq-tape/${cfg.coin}.json`, `cohorts/${cfg.coin}.json`, `ledger/${cfg.coin}/summary.json`, `liquidity/${cfg.coin}.json`, `lab/${cfg.coin}.json`, 'whales.json', 'markets.json', 'alerts/keys.json']) {
+  for (const key of [`liq-tape/${cfg.coin}.json`, `entry-map/${cfg.coin}.json`, `cohorts/${cfg.coin}.json`, `ledger/${cfg.coin}/summary.json`, `liquidity/${cfg.coin}.json`, `lab/${cfg.coin}.json`, 'whales.json', 'markets.json', 'alerts/keys.json']) {
     try {
       files.push([key, readFileSync(join(cfg.outDir, key), 'utf8')]);
     } catch {

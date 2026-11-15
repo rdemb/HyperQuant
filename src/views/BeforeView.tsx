@@ -12,6 +12,7 @@ import { LiquidityByHourPanel } from './before/LiquidityByHourPanel';
 import { MoveClockPanel } from './before/MoveClockPanel';
 import { DeskRail } from './desk/DeskRail';
 import { LiquidationMapPanel } from './desk/LiquidationMapPanel';
+import { EntryMapPanel } from './desk/EntryMapPanel';
 import { FundingVenues } from './market/FundingVenues';
 import { MacroCalendar } from './market/MacroCalendar';
 import { MacroTiles } from './market/MacroTiles';
@@ -49,6 +50,7 @@ const BeforeView: React.FC<{ onPhase?: (phase: PhaseId) => void }> = ({ onPhase 
           </LocalBoundary>
           <AuctionContextPanel />
           <LiquidationMapPanel />
+          <EntryMapPanel />
           <LiquidityByHourPanel />
         </div>
         <div className="flex flex-col gap-4 [&>*]:min-w-0">
