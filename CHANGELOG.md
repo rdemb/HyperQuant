@@ -4,6 +4,13 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Legenda: źródło footprintu, Delty i CVD; wieloryby przygaszone przy starej migawce (2026-11-15)
+<!-- co-nowego: grupa=wykres | pl=Legenda wykresu pokazuje źródło LIVE także przy footprincie, Delcie i CVD, a linie wielorybów bledną, gdy dane skanera mają ponad 2 minuty | en=The chart legend now shows the LIVE source for the footprint, Delta and CVD too, and whale lines fade when the scanner data is over 2 minutes old -->
+
+#### Zmienione
+- **Plakietki źródła** (plan 59, E5): legenda ma plakietkę LIVE dla footprintu (widok świec footprint), Delty i CVD, jak każda inna warstwa.
+- **Wieloryby** (E8): migawka skanera starsza niż 2 min (jak wiek w plakietce legendy) — linie i podpisy z kryciem 0,5 (linie 0,22) zamiast pełnych kolorów; po 20 min warstwa znika jak dotąd (`whaleInks`).
+
 ### W sesji: pierwsza treść przed modułami wykresu (2026-11-15)
 <!-- co-nowego: grupa=wykres | pl=W sesji na telefonie pokazuje się szybciej: najpierw objaśnienie ekranu, wykres dochodzi zaraz po nim | en=In session shows up faster on phones: the screen guide appears first, the chart follows right after -->
 
