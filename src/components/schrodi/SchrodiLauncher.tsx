@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { Suspense, lazy, useEffect, useState } from 'react';
 import { tr } from '../../i18n';
 import { useDeskLedger } from '../../state/useDeskLedger';
 import { isCat } from '../../utils/deskLedger';
@@ -7,8 +7,11 @@ import { driftAlarms } from '../../utils/schrodiTrust';
 import { DIR_TONE, dirProven, upOdds } from './direction';
 import { MOVE_PCT_PROMOTED, moodLevel, moveCalNote, moveLevelWord, moveView } from './moveLevel';
 import { SchrodiCat } from './SchrodiCat';
-import { SchrodiPanel, moodOf } from './SchrodiPanel';
+import { moodOf } from './mood';
 import { useSchrodi } from './useSchrodi';
+
+// Dymek kota ładowany po pierwszym kliknięciu: na starcie W sesji to ok. 27 KB niewykonanego kodu
+const SchrodiPanel = lazy(() => import('./SchrodiPanel').then((m) => ({ default: m.SchrodiPanel })));
 
 /**
  * Kot w pasku stanu pod wykresem (nie zasłania świec ani wskaźników): mały Schrödi z poziomem dużego ruchu wobec typowej
@@ -47,7 +50,9 @@ export const SchrodiLauncher: React.FC<{ className?: string }> = ({ className })
     <div className={`relative ${className ?? ''}`}>
       {open && st.status === 'ready' && (
         <div className="absolute bottom-full left-0 mb-1.5 z-40 w-[min(340px,calc(100vw-32px))] max-h-[min(560px,calc(100dvh-15rem))] overflow-y-auto rounded-xl shadow-2xl">
-          <SchrodiPanel f={st.f} model={st.model} at={st.at} now={now} stale={stale} hist={st.hist} hour={st.hour} onClose={() => setOpen(false)} />
+          <Suspense fallback={null}>
+            <SchrodiPanel f={st.f} model={st.model} at={st.at} now={now} stale={stale} hist={st.hist} hour={st.hour} onClose={() => setOpen(false)} />
+          </Suspense>
         </div>
       )}
       <button

@@ -1,7 +1,7 @@
 import React, { useEffect, useId, useState } from 'react';
 import { Frame as FrameIcon } from 'lucide-react';
 import { Badge, DASH, sourceTag } from '../../ui';
-import { FrameDialog, type FrameSource } from '../../charts/pro/chart/FrameDialog';
+import type { FrameSource } from '../../charts/pro/chart/FrameDialog';
 import { mapQuality } from '../../charts/pro/chart/frame';
 import { type Market, storeFor } from '../../charts/pro/store/proStore';
 import { capsOf } from '../../state/markets';
@@ -13,6 +13,9 @@ import { type FourNumber, type FourNumbers, fourNumbersText } from '../../utils/
 import { fourNumbers, readFourInputs } from './fourInputs';
 import { fourCanvas, fourTitle } from './fourFrame';
 import { tr } from '../../i18n';
+
+// Klatka do zrzutu dopiero po kliknięciu
+const FrameDialog = React.lazy(() => import('../../charts/pro/chart/FrameDialog').then((m) => ({ default: m.FrameDialog })));
 
 /** Bez zmian w magazynie (cisza, brak połączenia) i tak co tyle przeliczamy: wiek migawki skanera, granice sesji. */
 const TICK_MS = 30_000;
@@ -65,7 +68,11 @@ export const FourCard: React.FC<{ coin: Market }> = ({ coin }) => {
           </button>
         }
       />
-      {frame && <FrameDialog src={frame} onClose={() => setFrame(null)} />}
+      {frame && (
+        <React.Suspense fallback={null}>
+          <FrameDialog src={frame} onClose={() => setFrame(null)} />
+        </React.Suspense>
+      )}
     </>
   );
 };
