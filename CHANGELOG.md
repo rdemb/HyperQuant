@@ -12,6 +12,16 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 - **Nowa ikona w zainstalowanej aplikacji**: adresy ikon w manifeście, favicon i ikona Apple z wersją (`?v=2`), żeby zainstalowana aplikacja i przeglądarka pobrały ikonę „Chronograf H” (wcześniej ten sam adres trzymał starą ikonę w pamięci).
 - **README**: BTC i złoto (wstęp, W sesji, Rynki jako karty dwóch instrumentów, nowy wiersz Start), kolumna DOM od 1440 px; pomoc skrótów: kolumna DOM od 1440 px.
 
+### Załoga: strażnicy z twarzami i dok (2026-11-15)
+<!-- co-nowego: grupa=wykres | pl=Strażnicy mają postacie (Latarnik, Dzwonnik, Sejsmograf, Kotwicz, Iskra, Skarbnik) i pływający dok; Sufler podsuwa gotowe pytania dla Twojego asystenta AI | en=Guards now have characters (Lighthouse, Bell-ringer, Seismograph, Anchor, Spark, Treasurer) and a floating dock; the Prompter hands your AI assistant ready questions -->
+
+#### Zmienione
+- **Załoga** (`shell/wyspa/persony.ts`, `Postac.tsx`, `Dok.tsx`): każdy rodzaj strażnika ma postać-czasomierz z rodziny znaku „Chronograf” (tarcza z oczami, pierścień czasu, emblemat roboty): Latarnik (PDH, PDL), Dzwonnik (otwarcia sesji), Sejsmograf (ruch 15 min), Kotwicz (własny poziom), Iskra (likwidacje z giełd CEX), Skarbnik (funding); Sufler to przepisy dla agenta AI przez serwer MCP. Stany: śpi, czuwa (mruga, pierścień obiega tarczę), zdarzenie (podskok, dymek). Animacje w CSS, wyłączone przy „ogranicz ruch”.
+- **Dok**: pływająca wyspa z twarzami pracującej załogi (bez reguł: trzech polecanych, uśpionych) i Suflerem, przeciągana w dowolne miejsce i zwijana do jednej twarzy (pozycja na tym urządzeniu; na telefonie domyślnie zwinięty w rogu). Zdarzenie strażnika: dymek z postacią nad dokiem zamiast powiadomienia w rogu. Przycisk w nagłówku pokazuje twarz prowadzącej postaci.
+- **Panel załogi**: cała załoga u góry, karta wybranej postaci: co pilnuje, jak często naprawdę się odzywa (kalibracja z 60 dni: PDH ok. 3,4 i PDL 2,7 na dobę, ruch 1% ok. 1,1, funding 15% ok. raz na 2 tygodnie), kiedy działa (otwarta karta; w tle do minuty później; zablokowany telefon — wcale), jej reguły i gotowe warunki; Sufler z nazwami poleceń serwera MCP.
+- **Likwidacje uczciwie**: Hyperliquid nie publikuje strumienia likwidacji, dane są tylko ze strumieni Binance, Bybit i OKX (włączanych w ustawieniach); bez nich Iskra śpi z powodem i przyciskiem włączenia, a strażnik nie udaje zera.
+- **Funding** poza gotowymi warunkami domyślnymi wyspy (stoi przy ok. 11% rocznie, próg 15% ok. raz na 2 tygodnie) — Skarbnik pokazuje to wprost.
+
 ### Paczka MCP 0.1.5: gotowe polecenia (2026-11-15)
 <!-- co-nowego: grupa=blog | pl=Serwer MCP HyperQuant 0.1.5: pięć gotowych poleceń (przed sesją, teraz, rozliczenie sesji, poziom ceny, krótki wpis) | en=HyperQuant MCP server 0.1.5: five ready-made prompts (pre-session, now, session review, price level, short note) -->
 
