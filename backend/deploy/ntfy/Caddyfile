@@ -1,0 +1,8 @@
+# Caddy przed serwerem ntfy HyperQuant (instalacja: instaluj-ntfy.sh wstawia domenę). Certyfikat Let's Encrypt automatycznie.
+# Bez dyrektywy `log`: Caddy nie zapisuje dziennika dostępu (adresów IP). Adres klienta idzie do ntfy tylko do limitów.
+__DOMENA__ {
+	encode gzip
+	reverse_proxy 127.0.0.1:2586 {
+		header_up X-Real-IP {remote_host}
+	}
+}
