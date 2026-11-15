@@ -4,6 +4,15 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Przed sesją płynniej na telefonie (2026-11-15)
+<!-- co-nowego: grupa=wykres | pl=Przed sesją na telefonie nie przycina się już przy żywych danych: wykres nie przegląda pustych minut taśmy przy każdej klatce | en=Pre-session on phones no longer stutters with live data: the chart no longer scans empty tape minutes on every frame -->
+
+#### Naprawione
+- **Taśma wykresu** (`Tape.signature`, `forEach`, `hasAny`): pętla po minutach przycięta do zasięgu taśmy. Wcześniej profil doby (`tpoLayer.flowFor`) i footprint przeglądały 1440 pustych minut na dobę przy każdej klatce. Pomiar (telefon, CPU 4×, 60 s na żywych danych, Przed sesją): długie zadania 160 → 4 na minutę, czas długich zadań 10,7 s → 0,29 s na minutę.
+
+#### Dodane
+- **Pomiar kosztu obliczeń desku** (`src/utils/deskPerf.ts`): liczniki ms i liczby przeliczeń (`shaakuni`, `heatmap`, `quant`, `ofi`) oraz odświeżeń kontekstu, odczyt `window.__hqDeskPerf()`; same liczniki w pamięci.
+
 ### Serwer ntfy: Caddy tylko na publicznym adresie (2026-11-15)
 <!-- co-nowego: ukryj -->
 
