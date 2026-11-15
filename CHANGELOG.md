@@ -4,6 +4,14 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### S&P 500 w desku, rynki z jednej konfiguracji (2026-11-15)
+<!-- co-nowego: grupa=rynki | pl=S&P 500 dołącza do BTC i złota: karta na stronie Rynki, wykres w W sesji i wybór na Starcie | en=The S&P 500 joins BTC and gold: a card on the Markets page, a chart In session and a pick on Start -->
+
+#### Dodane
+- **S&P 500** (`xyz:SP500`, giełda HIP-3 trade.xyz) jako trzeci rynek aplikacji: karta na stronie Rynki, wykres w W sesji (wybór rynku, skrót `M`, paleta ⌘K) i karta na Starcie. Parametry z API Hyperliquid (dokładność rozmiaru 3, dźwignia do 50×).
+- **Konfiguracja rynków desku** (`src/config/deskMarkets.ts`): jedna lista z nazwami PL i EN, klasą, rynkiem bazowym i jego kalendarzem, katalogiem historii i progami jakości; Brent jako wpis wyłączony. Z niej rynki aplikacji (`APP_MARKETS`), podpis marki w aplikacji i na blogu, teksty Rynków i Startu.
+- **`scripts/markets/sync.mjs`**: opisy w `index.html` (tytuł, meta, Open Graph, X, JSON-LD, noscript), nazwa i opis manifestu oraz tabela rynków w README z konfiguracji; `--check` w CI. Test `marketNames.test.ts` pilnuje, żeby nazw rynków nie wpisywać na sztywno w interfejsie (jawne wyjątki z powodem).
+
 ### Co nowego i Wyniki w nowym układzie (2026-11-15)
 <!-- co-nowego: grupa=blog | pl=Co nowego z liczbami, kartami najświeższych zmian i osią wersji; Wyniki z kaflami najważniejszych liczb na górze i tabelami bez ucinania | en=What's new with key numbers, cards for the latest changes and a version timeline; Results with tiles for the key numbers on top and tables that are no longer cut off -->
 
