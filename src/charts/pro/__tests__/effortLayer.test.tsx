@@ -160,3 +160,15 @@ describe('strefy Effort w kolorach poziomów (plan 59, C2)', () => {
     expect(d.convention).toContain('52%');
   });
 });
+
+describe('karta wskaźnika w oknie ustawień (plan 59, F2)', () => {
+  it('okno z legendy pokazuje, co wskaźnik twierdzi, i status sprawdzenia', async () => {
+    const { indicatorCard, STATUS_LABEL } = await import('../indicators/cards');
+    const x = indicatorsFromLink('effort()')[0];
+    const html = renderToStaticMarkup(<IndicatorSettings x={x} loaded={100} chart="5m" onChange={() => {}} onClose={() => {}} />);
+    const card = indicatorCard('effort');
+    expect(html).toContain('data-karta-wskaznika');
+    expect(html).toContain(card.claim);
+    expect(html).toContain(STATUS_LABEL[card.status]);
+  });
+});

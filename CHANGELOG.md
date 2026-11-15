@@ -4,6 +4,12 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Karta wskaźnika z legendy wykresu (2026-11-15)
+<!-- co-nowego: grupa=wykres | pl=Kliknij nazwę wskaźnika w legendzie: okno ustawień mówi, co liczba twierdzi, czy to sprawdzono i jakie jest pasmo szumu | en=Click an indicator name in the legend: the settings window says what the number claims, whether it was tested and what the noise band is -->
+
+#### Dodane
+- **Karta wskaźnika w oknie ustawień** (plan 59, F2): nazwa wskaźnika w legendzie otwiera ustawienia, a na ich górze jest karta z `indicators/cards.ts`: co twierdzi, status sprawdzenia (zapis przed faktem, test planowany, sprawdzony bez mocy, opis) i pasmo szumu, jeśli jest. Działa też na telefonie, bez osobnego przycisku.
+
 ### Wyniki: stopka karty bez słowa zakazanego (2026-11-15)
 <!-- co-nowego: ukryj -->
 
