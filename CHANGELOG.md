@@ -4,6 +4,12 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Kolory wskaźników według znaczenia (2026-11-15)
+<!-- co-nowego: grupa=wykres | pl=Wskaźniki mają kolor według tego, co mierzą: zmienność fiolet, skład przepływu turkus, koszt szarość, poziomy bursztyn | en=Indicators are coloured by what they measure: volatility violet, flow composition teal, cost grey, levels amber -->
+
+#### Zmienione
+- **Kolory rodzin** (plan 59, G2): nowo dodany wskaźnik z grup HyperQuant dostaje kolor swojej rodziny zamiast kolejnego wolnego z palety — zmienność i zakres (RVOL, reżim, Hawkes, stożek) fiolet strefy, skład przepływu (powracający, wielkość zleceń) turkus, koszt zlecenia ask jasny i bid ciemniejszy szary, poziomy (zakresy P/b, strefy Effort) bursztyn. Presja zostaje w kolorach znaku, klasyczne przy palecie; zapisane wskaźniki użytkowników bez zmian.
+
 ### TPO: IB doby UTC w kolorze IB; CVD: znacznik po luce w taśmie (2026-11-15)
 <!-- co-nowego: grupa=wykres | pl=Pierwsza godzina doby w profilu TPO ma kolor warstwy IB i znika, gdy IB sesji jest włączone, a CVD po luce w taśmie ma znacznik ↺ | en=The first hour of the day in the TPO profile uses the IB layer colour and hides when the session IB is on, and CVD gets a ↺ mark after a gap in the tape -->
 

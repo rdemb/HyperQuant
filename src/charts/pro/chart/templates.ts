@@ -1,5 +1,5 @@
 import { ChartSettings, parseSettings } from './settings';
-import { INDICATOR_COLORS, IndicatorId, IndicatorInstance, Params, defaultWidth, indicatorDef, parseParams } from '../indicators/registry';
+import { INDICATOR_COLORS, IndicatorId, familyColor, IndicatorInstance, Params, defaultWidth, indicatorDef, parseParams } from '../indicators/registry';
 
 /**
  * Szablony wykresu: własne zestawy ustawień użytkownika (interwał, rodzaj wykresu, panele, wskaźniki, warstwy) do
@@ -69,7 +69,7 @@ export const inds = (...specs: IndSpec[]): IndicatorInstance[] => {
       iid: `${id}${n}`,
       id,
       params: { ...parseParams(def, null), ...params } as Params,
-      color: INDICATOR_COLORS[i % INDICATOR_COLORS.length],
+      color: familyColor(id) ?? INDICATOR_COLORS[i % INDICATOR_COLORS.length],
       alpha: 1,
       width: defaultWidth(def),
       labels: true,
