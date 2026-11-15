@@ -1,5 +1,5 @@
-import { replayHash } from '../charts/pro/replay/link';
-import type { Market } from '../charts/pro/store/proStore';
+import { replayHashCore } from '../charts/pro/replay/hashCore';
+type Market = string;
 import type { MarketCaps } from './marketCaps';
 import { HIST_HOUR_MS, type HistoryIndex } from './tapeHistory';
 
@@ -53,5 +53,5 @@ export function quickReplay(coin: Market, caps: Pick<MarketCaps, 'scanner'>, now
   if (!caps.scanner) return { ok: false, reason: 'market' };
   const from = now - QUICK_REPLAY_MS;
   if (!index || coveredMs(index, coin, from, now) < QUICK_REPLAY_MIN_COVER_MS) return { ok: false, reason: 'no-recording' };
-  return { ok: true, hash: replayHash({ source: 'history', coin, from, to: now, station: 'cockpit' }) };
+  return { ok: true, hash: replayHashCore({ source: 'history', coin, from, to: now, station: 'cockpit' }) };
 }

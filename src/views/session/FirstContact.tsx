@@ -1,9 +1,8 @@
 import { History, X } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
 import { FOCUSABLE } from '../../charts/pro/chart/dialogFocus';
-import { fetchIndex } from '../../charts/pro/replay/data';
-import { replayBase } from '../../charts/pro/replay/session';
-import type { Market } from '../../charts/pro/store/proStore';
+// Nagranie i powtórka (moduły wykresu) ładowane dopiero po kliknięciu: karta pierwszego kontaktu to element LCP W sesji
+type Market = string;
 import { tr } from '../../i18n';
 import { dismissOnEscape, markSeen, quickReplay, quickReplayVisible, startOnboarding, tipsPending } from '../../utils/onboarding';
 import { capsOf } from '../../state/markets';
@@ -82,6 +81,7 @@ export const FirstContact: React.FC<{ coin: Market }> = ({ coin }) => {
       setWhy(tr('Ta przeglądarka nie odczyta nagrania — użyj nowszej wersji.', 'This browser cannot read the recording — use a newer version.'));
       return;
     }
+    const [{ fetchIndex }, { replayBase }] = await Promise.all([import('../../charts/pro/replay/data'), import('../../charts/pro/replay/session')]);
     const base = replayBase('history');
     const index = base ? await fetchIndex(base, (u) => fetch(u, { signal: AbortSignal.timeout(20_000) })) : null;
     const r = quickReplay(coin, capsOf(coin), Date.now(), index);
