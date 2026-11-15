@@ -463,7 +463,7 @@ const Szyna: React.FC<{ go: (v: ViewId) => void }> = ({ go }) => {
           <span data-marka className="block font-display text-[17px] font-bold leading-none tracking-tight [font-stretch:85%] text-ink-1">
             HyperQuant
           </span>
-          <span className="block mt-1 font-mono text-[10px] leading-none text-ink-3">BTC · Hyperliquid</span>
+          <span className="block mt-1 font-mono text-[10px] leading-none text-ink-3">{tr('BTC i złoto · Hyperliquid', 'BTC & gold · Hyperliquid')}</span>
         </span>
       </ViewLink>
       <nav aria-label={tr('Główna', 'Main')} className="flex flex-col gap-6">

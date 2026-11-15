@@ -29,12 +29,12 @@ describe('index.html po angielsku', () => {
       meta('name', 'twitter:description'),
     ])
       expect(v).toMatch(/[a-z]{3}/);
-    expect(/<title>([^<]+)<\/title>/.exec(html)?.[1]).toBe('HyperQuant: BTC order-flow charts and desk for Hyperliquid');
+    expect(/<title>([^<]+)<\/title>/.exec(html)?.[1]).toBe('HyperQuant: BTC and gold order-flow desk for Hyperliquid');
     expect(meta('property', 'og:locale')).toBe('en_GB');
     expect(meta('property', 'og:locale:alternate')).toBe('pl_PL');
     const ld = JSON.parse(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/.exec(html)![1]);
     expect(ld.inLanguage).toEqual(['en', 'pl']);
-    expect(ld.description).toMatch(/^Free, open BTC day-trading desk/);
+    expect(ld.description).toMatch(/^Free, open day-trading desk for BTC and gold/);
     expect(ld.operatingSystem).toBe('Any (modern browser)');
   });
 
