@@ -70,3 +70,17 @@ export function underlyingAt(m: Pick<DeskMarket, 'underlying'>, ms: number, cal:
 
 /** Cena ustalana przez platformę (rynek bazowy nie notuje): wykres i liczby mają to pokazać. */
 export const platformPriced = (u: Underlying): boolean => u.state === 'closed' || u.state === 'break' || u.state === 'holiday';
+
+/** Chwila (ms) godziny `minuteET` (minuta doby czasu Nowego Jorku) w dniu nowojorskim chwili `now`. */
+export function etToday(now: number, minuteET: number): number {
+  const { minute } = nyClock(now);
+  const t = Math.floor(now / 60_000) * 60_000 + (minuteET - minute) * 60_000;
+  // Doba ze zmianą czasu: poprawka o różnicę, jeśli zegar Nowego Jorku w wyniku nie wskazuje celu
+  const d = nyClock(t).minute - minuteET;
+  return t - d * 60_000;
+}
+
+/** Otwarcia rynków bazowych dziś (znaczniki na tarczy Startu): NYSE 9:30 ET i sesja CME 18:00 ET. */
+export function baseOpens(now: number): { nyse: number; cme: number } {
+  return { nyse: etToday(now, 9 * 60 + 30), cme: etToday(now, 18 * 60) };
+}
