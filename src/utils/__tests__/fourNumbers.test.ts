@@ -186,3 +186,17 @@ describe('ceny w podpowiedziach Czwórki z dokładnością osi rynku (szDecimals
     expect(pepe).not.toContain(fmtPx(0.0045));
   });
 });
+
+describe('rynek bez skanera (HIP-3): spread zamiast paliwa (projekt 60, S2)', () => {
+  it('S&P 500: druga liczba to spread impact, paliwo nie jest liczone; BTC zostaje przy paliwie', async () => {
+    const { fourNumbers, spreadNum } = await import('../fourNumbers');
+    const sp = { coin: 'xyz:SP500', dex: 'xyz', szDecimals: 3, maxLeverage: 50, scanner: 'none' as const };
+    const n = fourNumbers({ ...inputs(), coin: 'xyz:SP500', markets: [...DEFAULT_MARKETS, sp], spreadBp: 1.34 });
+    expect(n.items.map((i) => i.id)).toEqual(['clarity', 'spread', 'hourWidth', 'vwap']);
+    expect(n.items[1]).toMatchObject({ title: 'Spread teraz', value: '1,3 pb', badge: 'LIVE' });
+    expect(n.items[1].hint).toContain('Paliwo tylko dla BTC');
+    expect(spreadNum({ ...inputs(), spreadBp: null }).value).toBe('—');
+    expect(spreadNum({ ...inputs(), spreadBp: null }).hint).toContain('brak notowań impact');
+    expect(fourNumbers(inputs()).items[1].id).toBe('fuel');
+  });
+});
