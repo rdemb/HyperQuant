@@ -1,5 +1,5 @@
 /**
- * Serwer MCP HyperQuant: rejestruje każde narzędzie z `TOOLS`. Wynik narzędzia przechodzi `toToolResult` (bezpieczniki
+ * Serwer MCP HyperQuant: rejestruje każde narzędzie z `TOOLS` i każde gotowe polecenie z `PROMPTS` (przepisy skilla). Wynik narzędzia przechodzi `toToolResult` (bezpieczniki
  * treści), a wyjątek w narzędziu kończy się odpowiedzią `isError` z krótkim komunikatem, nie zerwaniem połączenia.
  */
 import { McpServer } from '@modelcontextprotocol/server';
@@ -7,6 +7,7 @@ import type { CallToolResult } from '@modelcontextprotocol/server';
 import { tr } from '../../src/i18n';
 import { blocked, guardedCut, toToolResult } from './envelope';
 import type { Sources } from './sources';
+import { PROMPTS, promptMessages } from './prompts';
 import { TOOLS, type ToolDef } from './tools/index';
 
 const MSG_MAX = 200;
@@ -46,6 +47,12 @@ export function createServer(src: Sources): McpServer {
     const meta = { title: t.title, description: t.description, annotations };
     if (t.input) server.registerTool(t.name, { ...meta, inputSchema: t.input }, (args) => call(t, src, args));
     else server.registerTool(t.name, meta, () => call(t, src, {}));
+  }
+  // Gotowe polecenia (przepisy skilla): klient pokazuje je jako polecenia do wyboru, model dostaje przepis i zasady
+  for (const p of PROMPTS) {
+    const meta = { title: p.title, description: p.description };
+    if (p.args) server.registerPrompt(p.name, { ...meta, argsSchema: p.args }, (args) => promptMessages(p, args as Record<string, string | undefined>));
+    else server.registerPrompt(p.name, meta, () => promptMessages(p, {}));
   }
   return server;
 }
