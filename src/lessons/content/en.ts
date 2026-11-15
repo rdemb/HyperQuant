@@ -256,7 +256,7 @@ export const en: LessonsContent = {
               ],
             },
           ],
-          reveal: 'At 14:15 price slides from 81,890 to 81,106 (2) in ten minutes, below the lower edge of the value area (VAL around 81,500). The New York initial balance is now complete: 81,106–82,088.',
+          reveal: 'Between 14:10 and 14:25 price slides from 81,890 to 81,106 (2), below the lower edge of the value area (VAL around 81,500). The New York initial balance is now complete: 81,106–82,088.',
         },
         {
           context: "It is 14:30. In twenty minutes price has gone from the day's high to the day's low. It is now bouncing and sits at 81,470, below VAL.",
