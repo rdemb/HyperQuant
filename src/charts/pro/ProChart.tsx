@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import React, { Suspense, lazy, useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Bell, BellOff, BellPlus, Camera, ChevronDown, ChevronsRight, Columns2, Copy, Eye, EyeOff, Frame as FrameIcon, Grid2x2, History, Info, Keyboard, Layers, Link, ListOrdered, Maximize2, Minimize2, Minus, MoreHorizontal, PenTool, RotateCcw, SlidersHorizontal, Square, X } from 'lucide-react';
 import { Badge, BadgeTone, LocalBoundary, Segmented, numLang } from '../../ui';
 import { BAR_BTN, DropdownSelect, barBtnTone } from '../../ui/Dropdown';
@@ -24,10 +24,10 @@ import { HoverSignal, Legend } from './chart/Legend';
 import { LOT_FLOOR, type LiquidityPick } from './chart/liquidity';
 import { type FrameQuality, IMAGE_FAILED, brandedScreenshot, downloadCanvas, fileStamp } from './chart/screenshot';
 import { defaultFrameTitle, mapQuality, tapeQuality } from './chart/frame';
-import { FrameDialog, type FrameSource } from './chart/FrameDialog';
+import type { FrameSource } from './chart/FrameDialog';
 import { MAX_ALERTS, type PriceAlert, addAlert, alertBook, alertLines, alertLog, askNotifications, hasLine, lastSeen, lineLabel, markSeen, newAlert, primeAlertSound, removeAlert } from './chart/alerts';
 import { type LinkAlarm, linkAlerts, parseAlarmLink } from './chart/alarmLink';
-import { AlarmLinkCard, type AlertDraft, AlertsMenu } from './chart/AlertsMenu';
+import type { AlertDraft } from './chart/AlertsMenu';
 import { onAlertEvents, startAlertWatch } from './chart/alertWatch';
 import { DEFAULT_TTL_MS, defaultDir, eventText } from '../../utils/alertRules';
 import { fmtPx as fmtPxOf, priceDigits } from './chart/layout';
@@ -36,8 +36,7 @@ import { ChartLayout, ChartSettings, NARROW_QUERY, PHONE_PANES, PhonePane, DROPP
 import { Station, activePanelSet, panelSetPanel, priceLayerCount, stationById, stationKey, stationPanel } from './chart/stations';
 import { ChartTemplate, applyTemplate, loadTemplates, saveAs, saveTemplates } from './chart/templates';
 import { NumbersCard, StatGroupPicker } from './chart/NumbersCard';
-import { IndicatorsDialog, type IndicatorsSection, type ToggleItem } from './chart/IndicatorsDialog';
-import { IndicatorSettings } from './chart/IndicatorSettings';
+import type { IndicatorsSection, ToggleItem } from './chart/IndicatorsDialog';
 import { indicatorLabel, indicatorsLink } from './indicators/registry';
 import { NAKED_POC_SHOWN, PROFILE_EVIDENCE } from './chart/profileSelect';
 import { IB_EVIDENCE } from './chart/ibSelect';
@@ -76,6 +75,28 @@ import { ReplayBar } from './replay/ReplayBar';
 import { type ReplayLink, linkPatch, parseReplayLink, replayHash } from './replay/link';
 import { type ReplaySession, replayBase } from './replay/session';
 import { lang, tr } from '../../i18n';
+
+// Okna otwierane dopiero na prośbę (klatka, alarmy, wskaźniki) ładują się leniwie: na starcie W sesji to ok. 50 KB
+// niewykonanego kodu. Po pierwszym malowaniu wykresu pobieramy je w wolnej chwili, żeby pierwsze otwarcie nie czekało.
+const loadFrame = () => import('./chart/FrameDialog');
+const loadAlerts = () => import('./chart/AlertsMenu');
+const loadIndicators = () => import('./chart/IndicatorsDialog');
+const loadIndicatorSettings = () => import('./chart/IndicatorSettings');
+const FrameDialog = lazy(() => loadFrame().then((m) => ({ default: m.FrameDialog })));
+const AlertsMenu = lazy(() => loadAlerts().then((m) => ({ default: m.AlertsMenu })));
+const AlarmLinkCard = lazy(() => loadAlerts().then((m) => ({ default: m.AlarmLinkCard })));
+const IndicatorsDialog = lazy(() => loadIndicators().then((m) => ({ default: m.IndicatorsDialog })));
+const IndicatorSettings = lazy(() => loadIndicatorSettings().then((m) => ({ default: m.IndicatorSettings })));
+function prefetchDialogs(): () => void {
+  const run = () => void Promise.all([loadFrame(), loadAlerts(), loadIndicators(), loadIndicatorSettings()]).catch(() => undefined);
+  const w = window as Window & { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number; cancelIdleCallback?: (id: number) => void };
+  if (w.requestIdleCallback) {
+    const id = w.requestIdleCallback(run, { timeout: 8000 });
+    return () => w.cancelIdleCallback?.(id);
+  }
+  const t = window.setTimeout(run, 4000);
+  return () => window.clearTimeout(t);
+}
 
 /** Warstwy przepływu zawsze na liście „Warstwy” (wyłączone — do włączenia jednym dotknięciem). */
 const QUICK_LAYERS = ['showVwap', 'showHeatmap', 'showBubbles', 'showClashes', 'showLots'] as const;
@@ -304,6 +325,8 @@ export const ProChart: React.FC<{
   // Jednorazowa informacja o usuniętych wskaźnikach wolumenu (klucz ustawiany po zamknięciu; tylko panel 1)
   const [droppedNote, setDroppedNote] = useState(() => panel === 0 && !inReplay && noticePending());
   // Zapis innego panelu mógł zostać wczytany po tym panelu; sprawdzane też przy zmianie ustawień
+  // Okna (klatka, alarmy, wskaźniki) pobierane w wolnej chwili po starcie, żeby pierwsze otwarcie nie czekało na sieć
+  useEffect(() => prefetchDialogs(), []);
   useEffect(() => {
     if (panel === 0 && !inReplay && noticePending()) setDroppedNote(true);
   }, [panel, inReplay, settings]);
@@ -1061,7 +1084,11 @@ export const ProChart: React.FC<{
       )}
 
       {/* Klatka z menu „Więcej” na telefonie: po zamknięciu fokus na przycisk „Więcej” (pozycji menu już nie ma) */}
-      {frameSrc && <FrameDialog src={frameSrc} onClose={() => setFrameSrc(null)} returnFocus={() => moreBtnRef.current} />}
+      {frameSrc && (
+        <Suspense fallback={null}>
+          <FrameDialog src={frameSrc} onClose={() => setFrameSrc(null)} returnFocus={() => moreBtnRef.current} />
+        </Suspense>
+      )}
 
       {replay && <ReplayBar session={replay.session} narrow={narrow} onExit={replay.onExit} />}
 
@@ -1123,6 +1150,7 @@ export const ProChart: React.FC<{
           <DrawMenu tools={tools} onAlert={drawAlert} />
           <DrawSettings tools={tools} />
           {editing && (
+            <Suspense fallback={null}>
             <IndicatorSettings
               key={editing.iid}
               x={editing}
@@ -1131,6 +1159,7 @@ export const ProChart: React.FC<{
               onChange={(x) => setSettings((s) => ({ ...s, indicators: s.indicators.map((y) => (y.iid === x.iid ? x : y)) }))}
               onClose={() => setIndEdit(null)}
             />
+            </Suspense>
           )}
           <DrawList tools={tools} />
           <DrawHint tools={tools} />
@@ -1182,7 +1211,9 @@ export const ProChart: React.FC<{
           )}
           {linkPreview && (
             <div className="absolute left-2 top-2 z-40 w-[min(380px,calc(100%-16px))] max-h-[calc(100%-16px)] overflow-y-auto rounded-xl">
-              <AlarmLinkCard list={linkPreview} existing={alerts.length} onAdd={addLinkSet} onClose={() => setLinkSet(null)} />
+              <Suspense fallback={null}>
+                <AlarmLinkCard list={linkPreview} existing={alerts.length} onAdd={addLinkSet} onClose={() => setLinkSet(null)} />
+              </Suspense>
             </div>
           )}
           {droppedNote && (
@@ -1240,10 +1271,13 @@ export const ProChart: React.FC<{
                   now={store.serverNow()}
                 />
               ) : menu === 'alerts' ? (
-                <AlertsMenu key={alertDraft ? `${alertDraft.price}-${alertDraft.kind}` : 'new'} coin={store.coin} price={store.lastPrice()} draft={alertDraft} serverNow={() => store.serverNow()} />
+                <Suspense fallback={null}>
+                  <AlertsMenu key={alertDraft ? `${alertDraft.price}-${alertDraft.kind}` : 'new'} coin={store.coin} price={store.lastPrice()} draft={alertDraft} serverNow={() => store.serverNow()} />
+                </Suspense>
               ) : menu === 'keys' ? (
                 <KeysMenu />
               ) : (
+                <Suspense fallback={null}>
                 <IndicatorsDialog
                   s={settings}
                   layers={flowLayers(settings, iv.ms, liq, whales, bigUsd)}
@@ -1256,6 +1290,7 @@ export const ProChart: React.FC<{
                   onEdit={editIndicator}
                   onClose={() => setMenu(null)}
                 />
+                </Suspense>
               )}
             </div>
           )}
