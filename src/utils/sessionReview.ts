@@ -2,7 +2,7 @@
  * Rozliczenie doby (Po sesji, spec §7.11): dzień tradera to sesja, więc rozliczamy ostatnią zamkniętą sesję Londynu i NY
  * oraz sesję w toku. Każdy wiersz to jedna liczba z plakietką LIVE albo MODEL (MODEL z nazwą metody w podpowiedzi),
  * a brak danych — „—” z powodem, nigdy 0 ani liczba zastępcza. Wiersze z okna danych innego niż sesja (stożek: 30 dni
- * dziennika, kohorty: ostatnie 24 h) są tak podpisane i oznaczone `scope: 'window'`. Opis, nie sygnał.
+ * dziennika, kohorty: ostatnie 24 h) są tak podpisane i oznaczone `scope: 'window'`. Opis, nie rekomendacja.
  */
 import { tr } from '../i18n';
 import { DASH, fmtCompact, fmtFixed, fmtPrice, fmtSigned } from '../ui/format';
@@ -121,8 +121,8 @@ function dayTypeRow(x: ReviewInputs, f: Got<SessionFacts> | undefined): ReviewRo
     value: DAY_TYPE_LABEL[t],
     badge: 'MODEL',
     hint: tr(
-      `${m}: IB ${fmtPx(f.ibLo)}–${fmtPx(f.ibHi)}, zakres sesji ${fmtPx(f.lo)}–${fmtPx(f.hi)} (${k}× IB), zamknięcie ${fmtPx(f.close)}${x.inProgress ? ' (sesja w toku, typ może się zmienić)' : ''}. Do 1,15× IB normalny, od 2× z zamknięciem w skrajnych 20% po stronie wybicia trendowy, wybicie w obie strony neutralny, reszta wariant normalny. Ze świec 1m sesji. Opis, nie sygnał.`,
-      `${m}: IB ${fmtPx(f.ibLo)}–${fmtPx(f.ibHi)}, session range ${fmtPx(f.lo)}–${fmtPx(f.hi)} (${k}× IB), close ${fmtPx(f.close)}${x.inProgress ? ' (session in progress, the type may change)' : ''}. Up to 1.15× IB normal, from 2× with a close in the outer 20% on the breakout side trend, a breakout on both sides neutral, otherwise normal variation. From the session's 1m candles. A description, not a signal.`
+      `${m}: IB ${fmtPx(f.ibLo)}–${fmtPx(f.ibHi)}, zakres sesji ${fmtPx(f.lo)}–${fmtPx(f.hi)} (${k}× IB), zamknięcie ${fmtPx(f.close)}${x.inProgress ? ' (sesja w toku, typ może się zmienić)' : ''}. Do 1,15× IB normalny, od 2× z zamknięciem w skrajnych 20% po stronie wybicia trendowy, wybicie w obie strony neutralny, reszta wariant normalny. Ze świec 1m sesji. Opis, nie rekomendacja.`,
+      `${m}: IB ${fmtPx(f.ibLo)}–${fmtPx(f.ibHi)}, session range ${fmtPx(f.lo)}–${fmtPx(f.hi)} (${k}× IB), close ${fmtPx(f.close)}${x.inProgress ? ' (session in progress, the type may change)' : ''}. Up to 1.15× IB normal, from 2× with a close in the outer 20% on the breakout side trend, a breakout on both sides neutral, otherwise normal variation. From the session's 1m candles. A description, not a recommendation.`
     ),
     scope: 'session',
     replayAt: sessionEnd(x),
@@ -194,8 +194,8 @@ function ibRow(x: ReviewInputs, f: Got<SessionFacts> | undefined): ReviewRow {
     value,
     badge: 'LIVE',
     hint: tr(
-      `IB sesji ${name(s)} (pierwsza godzina, ${fmtHm(s.start)}–${fmtHm(s.ibEnd)}): ${range}. Zakres sesji ${fmtPx(f.lo)}–${fmtPx(f.hi)} to ${k} IB${first}. Wybicie to wyjście ceny poza IB po pierwszej godzinie. Ze świec 1m. Opis aukcji, nie sygnał.`,
-      `The ${name(s)} session IB (first hour, ${fmtHm(s.start)}–${fmtHm(s.ibEnd)}): ${range}. The session range ${fmtPx(f.lo)}–${fmtPx(f.hi)} is ${k} the IB${first}. A breakout is price leaving the IB after the first hour. From 1m candles. A description of the auction, not a signal.`
+      `IB sesji ${name(s)} (pierwsza godzina, ${fmtHm(s.start)}–${fmtHm(s.ibEnd)}): ${range}. Zakres sesji ${fmtPx(f.lo)}–${fmtPx(f.hi)} to ${k} IB${first}. Wybicie to wyjście ceny poza IB po pierwszej godzinie. Ze świec 1m. Opis aukcji, nie rekomendacja.`,
+      `The ${name(s)} session IB (first hour, ${fmtHm(s.start)}–${fmtHm(s.ibEnd)}): ${range}. The session range ${fmtPx(f.lo)}–${fmtPx(f.hi)} is ${k} the IB${first}. A breakout is price leaving the IB after the first hour. From 1m candles. A description of the auction, not a recommendation.`
     ),
     scope: 'session',
     replayAt: f.breakAt ?? (x.inProgress ? null : s.ibEnd),
@@ -431,8 +431,8 @@ function cohortsRow(x: ReviewInputs): ReviewRow {
     value: `${COHORT_LABEL[best.c]} ${fmtSigned(best.v, 1)} ${BP}`,
     badge: 'LIVE',
     hint: tr(
-      `Markout 60 min transakcji biorców według kohorty: średnia ważona nominałem w pb (dodatni — cena poszła w kierunku transakcji) z 24 ostatnich sfinalizowanych godzin, stan z ${asOf}. Najwyższy ma kohorta ${COHORT_LABEL[best.c]}. Dane dobowe skanera, nie wynik tej sesji. Opis, nie sygnał.`,
-      `60 min markout of taker trades by cohort: a notional-weighted average in bp (positive means price moved in the trade's direction) over the last 24 finalized hours, as of ${asOf}. The highest is ${COHORT_LABEL[best.c]}. The scanner's daily data, not this session's result. A description, not a signal.`
+      `Markout 60 min transakcji biorców według kohorty: średnia ważona nominałem w pb (dodatni — cena poszła w kierunku transakcji) z 24 ostatnich sfinalizowanych godzin, stan z ${asOf}. Najwyższy ma kohorta ${COHORT_LABEL[best.c]}. Dane dobowe skanera, nie wynik tej sesji. Opis, nie rekomendacja.`,
+      `60 min markout of taker trades by cohort: a notional-weighted average in bp (positive means price moved in the trade's direction) over the last 24 finalized hours, as of ${asOf}. The highest is ${COHORT_LABEL[best.c]}. The scanner's daily data, not this session's result. A description, not a recommendation.`
     ),
     detail,
     scope: 'window',

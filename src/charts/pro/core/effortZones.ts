@@ -89,7 +89,7 @@ export type ZoneKind = 'absorption' | 'discount' | 'flip';
 
 export interface EffortZone {
   id: number;
-  /** 1 — strefa popytu (pod ceną), −1 — podaży (nad ceną). */
+  /** 1 — strefa pod ceną, −1 — strefa nad ceną. */
   side: Side;
   kind: ZoneKind;
   /** Początek prostokąta (świeca krańca swingu albo przebicia). */

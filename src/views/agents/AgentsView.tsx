@@ -638,8 +638,8 @@ const Rules: React.FC = () => (
       <li>{tr('Każda odpowiedź ma czas danych (asOf, UTC) i źródła z adresami.', 'Every response has the data time (asOf, UTC) and its sources with URLs.')}</li>
       <li>
         {tr(
-          'Bez rad: opis rynku, bez sygnałów kupna i sprzedaży, wejść, celów i stopów.',
-          'No advice: a market description, with no buy or sell signals, entries, targets or stops.'
+          'Bez rad: opis rynku, bez rekomendacji kupna i sprzedaży, wejść, celów i stopów.',
+          'No advice: a market description, with no buy or sell recommendations, entries, targets or stops.'
         )}
       </li>
       <li>
@@ -687,8 +687,8 @@ const AgentsView: React.FC = () => (
     </section>
     <p className="text-xs text-ink-3 leading-relaxed max-w-prose">
       {tr(
-        'Opis rynku, nie porada inwestycyjna. HyperQuant to narzędzie edukacyjne: nie generuje sygnałów transakcyjnych, a asystent z jego narzędziami też nie. Handel instrumentami z dźwignią wiąże się z wysokim ryzykiem utraty kapitału.',
-        'Market description, not investment advice. HyperQuant is an educational tool: it does not generate trading signals, and neither does an assistant using its tools. Trading leveraged instruments carries a high risk of losing capital.'
+        'Opis rynku, nie porada inwestycyjna. HyperQuant to narzędzie edukacyjne: nie generuje rekomendacji transakcyjnych, a asystent z jego narzędziami też nie. Handel instrumentami z dźwignią wiąże się z wysokim ryzykiem utraty kapitału.',
+        'Market description, not investment advice. HyperQuant is an educational tool: it does not generate trading recommendations, and neither does an assistant using its tools. Trading leveraged instruments carries a high risk of losing capital.'
       )}
     </p>
   </div>
