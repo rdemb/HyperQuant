@@ -4,6 +4,16 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Wskaźniki: progi z hipotezy zerowej i uczciwsze opisy (2026-11-15)
+<!-- co-nowego: grupa=wykres | pl=OFI pokazuje oczekiwaną zmianę dopiero powyżej progu szumu dla danego okna, wielkość zleceń podaje próg istotności KS, a szerokość agresji ma nową miarę równomierności | en=OFI shows the expected change only above the noise floor for the window, order size gives the KS significance floor, and aggression breadth gets a new evenness measure -->
+
+#### Zmienione
+- **OFI**: próg R² dla oczekiwanej zmiany zależy od okna (t² / (t² + n − 2), test nachylenia 5%: 30 świec → 0,13, 100 → 0,04) zamiast stałego 0,1, który przy oknie 30 przepuszczał ok. 9% okien szumu; próg w legendzie obok R².
+- **Wielkość zleceń**: KS opisany i liczony jako test dwóch prób, próg 1% = 1,628·√((n + m)/(n·m)) w legendzie obok KS.
+- **Zmiana OI i delta**: próbka OI musi być młodsza niż świeca (na 1m próbka sprzed 3 min dawała zmianę z sąsiedniej świecy).
+- **Szerokość agresji**: nowa „równomierność” (n_eff / liczba kont, 0–1), niezależna od liczby kont w świecy.
+- **Mapa ciepła i klastry likwidacji**: podpowiedź plakietki opisuje względną skalę widoku (p60–p99,5) i progi klastrów (3 przedziały ~0,25% z każdej strony, od 1 mln USD).
+
 ### Badania: reżim zmienności z BOCPD, VPIN i λ z przedziałem, bez heurystyk (2026-11-15)
 <!-- co-nowego: grupa=prognozy | pl=Badania pokazują reżim zmienności z bayesowskiego wykrywania zmian, a VPIN i λ Kyle’a mają przedział 95%; zniknęły liczby z ręcznie dobranych wag | en=Research now shows the volatility regime from Bayesian change detection, and VPIN and Kyle’s λ come with a 95% interval; numbers built from hand-picked weights are gone -->
 
