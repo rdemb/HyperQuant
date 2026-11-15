@@ -4,6 +4,16 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Wyspa: strażnicy BTC i przepisy MCP (2026-11-15)
+<!-- co-nowego: grupa=wykres | pl=Strażnicy BTC w nagłówku: powiadomienie przy PDH, PDL, otwarciu sesji, skrajnym fundingu, dużym ruchu i likwidacjach; reguły tylko na Twoim urządzeniu | en=BTC guards in the header: a notification at PDH, PDL, a session open, extreme funding, a large move or liquidations; rules stay on your device -->
+
+#### Dodane
+- **Wyspa** (przycisk „Strażnicy” w nagłówku od 380 px, na najwęższym telefonie w menu „Więcej”; panel ładowany leniwie, `shell/wyspa/Wyspa.tsx`): zakładki Strażnicy i Agenci AI.
+- **Strażnicy** (`shell/wyspa/straznicy.ts`, czyste funkcje z testami): przecięcie poziomu ceny, PDH albo PDL, otwarcie sesji (Azja, Londyn, Nowy Jork), funding roczny ponad próg (w obie strony), ruch ceny w 15 min i likwidacje w 5 min ponad próg (ze świec desku). Zdarzenie raz na przejście przez próg, przerwa 10 min na regułę, najwyżej 12 reguł. Gotowe warunki jednym dotknięciem i własne progi; pauza wszystkich; dziennik 30 zdarzeń.
+- **Bez kont i serwera**: reguły, dziennik i pauza w `localStorage` tego urządzenia (`hq.wyspa.*`), wspólne dla kart przez zdarzenie `storage`. Liczone w powłoce przy zmianie ceny (najwyżej raz na sekundę), tylko przy danych LIVE i otwartej karcie. Powiadomienie systemowe i dźwięk przez moduł alarmów wykresu (ładowany przy pierwszym zdarzeniu), a w aplikacji krótka wyspa w rogu na 8 s (nad dolnym paskiem na telefonie). Teksty opisują stan rynku, bez kierunku.
+- **Agenci AI w wyspie**: polecenie serwera MCP do skopiowania, pięć przepisów (pytanie do skopiowania i narzędzia, z `views/agents/catalog`), link do pełnej instrukcji.
+- `ui:check` „Wyspa” (1440, 390, 360): otwarcie właściwą drogą, panel w ekranie i nad dolnym paskiem, bez przewijania w bok, gotowy strażnik dodany i zapisany, licznik w nagłówku, Escape zamyka. Kontrola granic pakietu: panel wyspy poza pierwszym pakietem.
+
 ### Szybszy pierwszy ekran: fonty w HTML (2026-11-14)
 <!-- co-nowego: ukryj -->
 

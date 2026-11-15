@@ -2,7 +2,7 @@
 /**
  * Kontrola zbudowanego pakietu (po `npm run build`, manifest Vite w dist/.vite/manifest.json):
  * 1. Pierwszy pakiet bez widoków: domknięcie statycznych importów wejścia (index.html) nie zawiera plików widoków
- *    (src/views/), przebudowanych widoków (src/nowy/ poza rejestrem widoki.ts) ani palety ⌘K (src/shell/PaletaPolecen.tsx):
+ *    (src/views/), przebudowanych widoków (src/nowy/ poza rejestrem widoki.ts) ani palety ⌘K (src/shell/PaletaPolecen.tsx) ani panelu wyspy (src/shell/wyspa/Wyspa.tsx):
  *    każda z nich ładuje się leniwie, dopiero gdy jest potrzebna.
  * 2. Wersja service workera: rejestracja (src/shell/usePwa.ts, wersja z import.meta.url) siedzi w pliku wejściowym
  *    wskazanym przez dist/index.html — inaczej każde sprawdzenie wdrożenia widziałoby „nową wersję”.
@@ -27,10 +27,11 @@ else {
     widziane.add(k);
     for (const i of manifest[k]?.imports ?? []) stos.push(i);
   }
-  const leniwe = (p) => p.startsWith('src/views/') || (p.startsWith('src/nowy/') && p !== 'src/nowy/widoki.ts') || p === 'src/shell/PaletaPolecen.tsx';
+  const leniwe = (p) => p.startsWith('src/views/') || (p.startsWith('src/nowy/') && p !== 'src/nowy/widoki.ts') || p === 'src/shell/PaletaPolecen.tsx' || p === 'src/shell/wyspa/Wyspa.tsx';
   const zle = [...widziane].filter((k) => leniwe(k) || leniwe(manifest[k]?.src ?? ''));
   if (zle.length) bledy.push(`wejście statycznie importuje moduły, które mają być leniwe: ${zle.join(', ')}`);
   if (!manifest['src/shell/PaletaPolecen.tsx']?.isDynamicEntry) bledy.push('src/shell/PaletaPolecen.tsx nie jest osobnym modułem dynamicznym');
+  if (!manifest['src/shell/wyspa/Wyspa.tsx']?.isDynamicEntry) bledy.push('src/shell/wyspa/Wyspa.tsx nie jest osobnym modułem dynamicznym');
 
   const html = readFileSync(join(DIST, 'index.html'), 'utf8');
   const skrypt = html.match(/<script[^>]+src="\.\/(assets\/[^"]+\.js)"/)?.[1];
@@ -46,4 +47,4 @@ if (bledy.length) {
   console.error(`Granice pakietu złamane:\n- ${bledy.join('\n- ')}`);
   process.exit(1);
 }
-console.log('Granice pakietu: wejście bez widoków i palety ⌘K (leniwe), rejestracja SW w pliku wejściowym');
+console.log('Granice pakietu: wejście bez widoków, palety ⌘K i panelu wyspy (leniwe), rejestracja SW w pliku wejściowym');
