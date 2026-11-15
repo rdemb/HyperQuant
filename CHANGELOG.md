@@ -4,6 +4,12 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Paczka MCP 0.1.5: gotowe polecenia (2026-11-15)
+<!-- co-nowego: grupa=blog | pl=Serwer MCP HyperQuant 0.1.5: pięć gotowych poleceń (przed sesją, teraz, rozliczenie sesji, poziom ceny, krótki wpis) | en=HyperQuant MCP server 0.1.5: five ready-made prompts (pre-session, now, session review, price level, short note) -->
+
+#### Zmienione
+- **`hyperquant-mcp` 0.1.5**: prompty MCP `prepare_session`, `session_now`, `review_session`, `check_level`, `market_note` (opis w sekcji „Serwer MCP: gotowe polecenia” niżej). Polecenia instalacji w README i szablonach z wersją `npx -y hyperquant-mcp@0.1.5`.
+
 ### Dolne menu także na blogu i stronach serwisu (2026-11-15)
 <!-- co-nowego: grupa=blog | pl=Na telefonie Blog, Wyniki, Co nowego, Lekcje i Wykresy mają to samo dolne menu co aplikacja | en=On a phone the Blog, Results, What's new, Lessons and Charts pages have the same menu bar at the foot of the screen as the app -->
 
@@ -15,7 +21,7 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 <!-- co-nowego: ukryj -->
 
 #### Dodane
-- **Prompty MCP** (`mcp/src/prompts.ts`, rejestrowane w `createServer`): `prepare_session`, `session_now`, `review_session`, `check_level`, `market_note` — pięć przepisów skilla HyperQuant w tej samej kolejności, każdy z listą narzędzi, kolejnością wywołań, tym, co podać, i wspólnymi zasadami (liczby tylko z narzędzi, plakietka i czas, „—” z powodem, bez kierunku i porady, stopka). Argumenty walidowane (`session`: `london`/`ny`; `level`: liczba). README paczki: sekcja „Prompts”. W paczce npm dopiero po następnym wydaniu (`npm-publish.yml`, ręcznie).
+- **Prompty MCP** (`mcp/src/prompts.ts`, rejestrowane w `createServer`): `prepare_session`, `session_now`, `review_session`, `check_level`, `market_note` — pięć przepisów skilla HyperQuant w tej samej kolejności, każdy z listą narzędzi, kolejnością wywołań, tym, co podać, i wspólnymi zasadami (liczby tylko z narzędzi, plakietka i czas, „—” z powodem, bez kierunku i porady, stopka). Argumenty walidowane (`session`: `london`/`ny`; `level`: liczba). README paczki: sekcja „Prompts”. Wydane w 0.1.5.
 - Testy: jedno polecenie na przepis `SKILL.md`, tylko istniejące narzędzia, `prompts/list` i `prompts/get` przez protokół, odrzucenie złych argumentów.
 
 ### Strona nie skacze przy wczytywaniu (2026-11-15)
