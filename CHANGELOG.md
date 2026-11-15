@@ -4,6 +4,12 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### W sesji: pierwsza treść przed modułami wykresu (2026-11-15)
+<!-- co-nowego: grupa=wykres | pl=W sesji na telefonie pokazuje się szybciej: najpierw objaśnienie ekranu, wykres dochodzi zaraz po nim | en=In session shows up faster on phones: the screen guide appears first, the chart follows right after -->
+
+#### Zmienione
+- **SessionView bez statycznych modułów wykresu** (projekt 58, F2 krok 4): wykres (`ChartsView`), przepływ kohort i taśma likwidacji ładowane leniwie; karta pierwszego kontaktu (element LCP) korzysta tylko z lekkich modułów, a nagranie i powtórka 15 min dociągają się po kliknięciu. Adres powtórki ma rdzeń bez ustawień wykresu (`replay/hashCore.ts`, ten sam zapis co `replayHash`). Lighthouse mobile lokalnie (#charts): LCP 7,1 → 4,8–4,9 s, FCP 4,2 → 3,3 s.
+
 ### Wskaźniki: progi z hipotezy zerowej i uczciwsze opisy (2026-11-15)
 <!-- co-nowego: grupa=wykres | pl=OFI pokazuje oczekiwaną zmianę dopiero powyżej progu szumu dla danego okna, wielkość zleceń podaje próg istotności KS, a szerokość agresji ma nową miarę równomierności | en=OFI shows the expected change only above the noise floor for the window, order size gives the KS significance floor, and aggression breadth gets a new evenness measure -->
 
