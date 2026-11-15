@@ -35,3 +35,15 @@ describe('dolny pasek stron statycznych (telefon i tablet)', () => {
     expect(w).not.toMatch(/aria-current/);
   });
 });
+
+describe('szyna boczna stron statycznych (komputer)', () => {
+  const rail = (html) => html.match(/<aside class="rail"[\s\S]*?<\/aside>/)?.[0] ?? '';
+  it('te same pozycje co szyna aplikacji: 8 w grupach i 3 publikacje; bieżąca strona podświetlona; marka i język w szynie', () => {
+    const r = rail(page('pl', 'news', 'co-nowego/'));
+    expect(r.match(/class="rail__item/g)).toHaveLength(11);
+    expect(r).toMatch(/class="rail__item is-here" href="\.\.\/co-nowego\/" aria-current="page"/);
+    expect(r).toContain('class="rail__brand"');
+    expect(r).toMatch(/Dzień tradera[\s\S]*Rynki i wiedza[\s\S]*Publikacje/);
+    expect(rail(page('en', 'news', 'en/whats-new/'))).toMatch(/Trading day[\s\S]*Markets and knowledge[\s\S]*Publications/);
+  });
+});

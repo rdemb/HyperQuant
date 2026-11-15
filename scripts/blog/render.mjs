@@ -376,6 +376,49 @@ const BOTTOM = {
   },
 };
 
+/**
+ * Szyna boczna (komputer, od 1024 px), jak w aplikacji: marka, „Dzień tradera” (trzy fazy), „Rynki i wiedza”, na dole
+ * „Publikacje” (blog, wyniki, co nowego) i przełącznik języka. 1024–1599 px: 88 px, ikona z nazwą pod nią; od 1600 px
+ * 240 px z nazwami w rzędzie i tytułami grup. Bieżąca strona: tło i pasek lume (aria-current tylko na tym dokumencie).
+ */
+const RAIL = {
+  pl: {
+    groups: [
+      ['Dzień tradera', [['before', 'Przed sesją', '#before', 'sunrise'], ['charts', 'W sesji', '#charts', 'chart-candlestick'], ['after', 'Po sesji', '#after', 'sunset']]],
+      ['Rynki i wiedza', [['markets', 'Rynki', '#markets', 'table-2'], ['lessons', 'Lekcje', 'lekcje/', 'graduation-cap'], ['research', 'Badania', '#research', 'flask-conical'], ['sources', 'Źródła', '#sources', 'database'], ['agents', 'Agenci AI', '#agents', 'bot']]],
+    ],
+    pubs: [['blog', 'Blog', 'blog/', 'newspaper'], ['results', 'Wyniki', 'wyniki/', 'list-checks'], ['news', 'Co nowego', 'co-nowego/', 'rotate-ccw-clock']],
+    pubTitle: 'Publikacje',
+    tag: 'BTC i złoto · Hyperliquid',
+    aria: 'Nawigacja',
+  },
+  en: {
+    groups: [
+      ['Trading day', [['before', 'Pre-session', '#before', 'sunrise'], ['charts', 'In session', '#charts', 'chart-candlestick'], ['after', 'Post-session', '#after', 'sunset']]],
+      ['Markets and knowledge', [['markets', 'Markets', '#markets', 'table-2'], ['lessons', 'Lessons', 'en/lessons/', 'graduation-cap'], ['research', 'Research', '#research', 'flask-conical'], ['sources', 'Sources', '#sources', 'database'], ['agents', 'AI agents', '#agents', 'bot']]],
+    ],
+    pubs: [['blog', 'Blog (PL)', 'blog/', 'newspaper'], ['results', 'Results', 'en/results/', 'list-checks'], ['news', "What's new", 'en/whats-new/', 'rotate-ccw-clock']],
+    pubTitle: 'Publications',
+    tag: 'BTC &amp; gold · Hyperliquid',
+    aria: 'Navigation',
+  },
+};
+
+function rail(lang, root, current, url, extra) {
+  const r = RAIL[lang];
+  const item = ([key, label, href, icon]) => {
+    const here = key === current;
+    const doc = here && sameDocument(`${root}${href}`, url);
+    return `<li><a class="rail__item${here ? ' is-here' : ''}" href="${root}${href}"${doc ? ' aria-current="page"' : ''}><span class="rail__icon" title="${label}">${IKONY[icon]}</span><span class="rail__label">${label}</span></a></li>`;
+  };
+  const group = ([title, items]) => `<div class="rail__group"><p class="rail__title">${title}</p><ul>${items.map(item).join('')}</ul></div>`;
+  return `<aside class="rail" aria-label="${r.aria}">
+<a class="rail__brand" href="${root}">${LOGO}<span class="rail__name"><span>HyperQuant</span><small>${r.tag}</small></span></a>
+<nav aria-label="${lang === 'en' ? 'Main' : 'Główna'}">${r.groups.map(group).join('')}</nav>
+<div class="rail__foot"><p class="rail__title">${r.pubTitle}</p><ul>${r.pubs.map(item).join('')}</ul>${extra}</div>
+</aside>`;
+}
+
 function bottomNav(lang, root, current, url) {
   const b = BOTTOM[lang];
   const link = ([key, label, href, icon], cls) => {
@@ -497,6 +540,9 @@ export function layout(
 <script type="application/ld+json">${JSON.stringify(jsonLd).replace(/</g, '\\u003c')}</script>
 </head>
 <body>
+<div class="shell">
+${rail(lang, root, current, url, `${rss}${langLink}`.replace(/class="nav-(rss|lang)"/g, 'class="rail__extra"'))}
+<div class="shell__main">
 <header class="site-header"><div class="wrap">
 <a class="brand" href="${root}">${LOGO}HyperQuant<span>${lang === 'en' ? 'BTC &amp; gold' : 'BTC i złoto'} · Hyperliquid</span></a>
 <nav aria-label="${lang === 'en' ? 'Main' : 'Główna'}">${nav}${rss}${langLink}</nav>
@@ -508,6 +554,8 @@ ${main}
 <p>${esc(disclaimer)}</p>
 <p>${FOOTER[lang](root, site)}</p>
 </div></footer>
+</div>
+</div>
 ${bottomNav(lang, root, current, url)}
 </body>
 </html>
