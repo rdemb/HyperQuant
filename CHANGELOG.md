@@ -13,6 +13,16 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 #### Dodane
 - **Pomiar kosztu obliczeń desku** (`src/utils/deskPerf.ts`): liczniki ms i liczby przeliczeń (`shaakuni`, `heatmap`, `quant`, `ofi`) oraz odświeżeń kontekstu, odczyt `window.__hqDeskPerf()`; same liczniki w pamięci.
 
+### Badania: uczciwsze Hurst i OU, bez przewidywanej ceny (2026-11-15)
+<!-- co-nowego: grupa=prognozy | pl=Hurst pokazuje, kiedy wartość mieści się w zakresie szumu, a półokres powrotu OU pojawia się tylko wtedy, gdy odróżnia się od błądzenia losowego | en=Hurst now says when a value is within the noise range, and the OU half-life appears only when it stands out from a random walk -->
+
+#### Usunięte
+- **Trajektoria heurystyczna i wagi cech** w panelu reżimu (Badania): przewidywana cena na 4 horyzonty ze strzałkami pochodziła z nieskalibrowanej sumy cech. Panel pokazuje sam reżim z reguł.
+
+#### Zmienione
+- **Hurst** (Badania): wartość w paśmie 90% czystego szumu przy 45 zwrotach (0,40–0,59, symulacja N = 20 000) jest opisana „w zakresie szumu” i wyszarzona; poza pasmem z podaniem strony.
+- **OU** (Badania, Przed sesją, laboratorium mikrostruktury): t½ tylko przy θ > 0,133 (95. percentyl pod błądzeniem losowym na 40 świecach, t½ < 5,2 świecy); niżej „bez dowodu powrotu”. Karta modelu Hursta i OU ma sekcję „Pasmo szumu” z wynikiem symulacji.
+
 ### Serwer ntfy: Caddy tylko na publicznym adresie (2026-11-15)
 <!-- co-nowego: ukryj -->
 
