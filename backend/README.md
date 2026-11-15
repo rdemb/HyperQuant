@@ -124,13 +124,15 @@ i najwyżej 8 zdarzeń na dobę na temat. Zdarzenia idą do tematów z przedrost
 na naszym serwerze ntfy (nazwy podajemy publicznie po teście serwera); treść to opis stanu po polsku i angielsku, bez kierunku.
 
 - **Serwer ntfy na VPS** (`backend/deploy/ntfy/`): ntfy z oficjalnego repozytorium apt na `127.0.0.1:2586`, przed nim Caddy
-  (HTTPS, certyfikat Let's Encrypt) pod domeną z rekordem A na adres VPS. Wszyscy tylko czytają (`auth-default-access: read-only`);
+  (HTTPS, certyfikat Let's Encrypt) pod domeną z rekordem A na adres VPS. **Tylko rekord A, bez AAAA:** Caddy słucha
+  wyłącznie na adresie IPv4 z rekordu A (`default_bind`, port 443 Tailscale zostaje wolny), więc klienci IPv6 i walidacja
+  Let's Encrypt, która woli IPv6, trafiliby w adres bez serwera; skrypt instalacji przerywa pracę, gdy domena ma AAAA. Wszyscy tylko czytają (`auth-default-access: read-only`);
   publikuje użytkownik `hq-wydawca` tokenem (tylko zapis tematów `hq-*`). Token w `/etc/hyperquant/topics.env` (root 0600),
   nigdy w repo ani w dzienniku. Limity zapytań na adres klienta w pamięci ntfy (adres od Caddy w `X-Real-IP`).
 - **Prywatność**: Caddy bez dyrektywy `log` (bez dziennika dostępu), ntfy z `log-level: error`, wiadomości najwyżej 1 h
   (`cache-duration`), bez `upstream-base-url` (nic nie trafia do ntfy.sh, na iOS powiadomienia przychodzą z opóźnieniem).
   Opis dla użytkowników: strona Prywatność (`prywatnosc/`, `en/privacy/`).
-- **Instalacja** (root, po wdrożeniu kodu podpisanym tagiem i po rekordzie DNS):
+- **Instalacja** (root, po wdrożeniu kodu podpisanym tagiem i po rekordzie DNS A, bez AAAA):
   `bash /opt/hyperquant/app/backend/deploy/ntfy/instaluj-ntfy.sh ntfy.hyperquant.tech` — instaluje ntfy i Caddy, tworzy
   wydawcę i token, otwiera porty 80 i 443 w ufw (jeśli włączony), uruchamia usługę tematów z `HQ_TOPICS=0` (próba na sucho:
   liczy i pisze do dziennika, nic nie wysyła) i robi autotest (`test-ntfy.sh`: HTTPS, 403 bez tokenu, 403 tokenem poza `hq-*`,
