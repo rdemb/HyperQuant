@@ -4,6 +4,12 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Start: godzina otwarcia NYSE przy S&P 500 (2026-11-15)
+<!-- co-nowego: grupa=rynki | pl=Karta S&P 500 w Rynkach teraz podaje osobno godzinę otwarcia NYSE i powrotu futures, zamiast jednej wspólnej | en=The S&P 500 card in Markets now shows the NYSE open and the futures return as two separate times instead of one -->
+
+#### Naprawione
+- **Rynki teraz, S&P 500 poza sesją** (kontrola faktów przed kampanią): w weekend i w przerwie 17:00–18:00 ET karta pisała „NYSE zamknięta do” z godziną powrotu futures (niedziela 18:00 ET, czyli pon. 00:00 w Polsce), a NYSE otwiera się o 9:30 ET (15:30 w Polsce). Teraz dwie godziny: „NYSE zamknięta do pon. 15:30; futures od pon. 00:00” albo „…; futures: przerwa do 00:00”. Opis może zająć dwie linie zamiast ucięcia. Test `underlyingText.test.ts` (niezależny od strefy czasowej maszyny).
+
 ### Kolory wskaźników według znaczenia (2026-11-15)
 <!-- co-nowego: grupa=wykres | pl=Wskaźniki mają kolor według tego, co mierzą: zmienność fiolet, skład przepływu turkus, koszt szarość, poziomy bursztyn | en=Indicators are coloured by what they measure: volatility violet, flow composition teal, cost grey, levels amber -->
 
