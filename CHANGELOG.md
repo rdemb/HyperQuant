@@ -4,6 +4,12 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Lekcje: godzina dołka w ćwiczeniu „Dzień równowagi” (2026-11-15)
+<!-- co-nowego: ukryj -->
+
+#### Naprawione
+- **Dzień równowagi** (kontrola faktów przed kampanią): odsłonięcie mówiło „o 16:15 … do 81 106 w dziesięć minut”, a minimum 81 106 jest w świecy od 16:20 (świeca 16:15 ma 81 108). Teraz „między 16:10 a 16:25”; wersja angielska analogicznie w UTC. Znaczniki na wykresie bez zmian (16:00 i 16:20).
+
 ### Start: godzina otwarcia NYSE przy S&P 500 (2026-11-15)
 <!-- co-nowego: grupa=rynki | pl=Karta S&P 500 w Rynkach teraz podaje osobno godzinę otwarcia NYSE i powrotu futures, zamiast jednej wspólnej | en=The S&P 500 card in Markets now shows the NYSE open and the futures return as two separate times instead of one -->
 
