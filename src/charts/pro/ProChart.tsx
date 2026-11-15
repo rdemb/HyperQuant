@@ -2032,7 +2032,7 @@ const KEY_GROUPS: { title: string; keys: [string, string][] }[] = [
       ['Alt+1 … 6', tr('Układ w kolejności faz: Mapa dnia, Paliwo, Kokpit, Aukcja, Wielkie ręce, Rozliczenie', 'Layout in phase order: Day map, Fuel, Cockpit, Auction, Big hands, Day review')],
       ['Alt+7 … 9', tr('Pierwsze trzy karty własne', 'The first three tabs of your own')],
       ['Alt+↑ / Alt+↓', tr('Karta tej fazy z wyższym / niższym interwałem, ta sama chwila na wykresie', 'The tab of this phase with the higher / lower timeframe, same moment on the chart')],
-      ['D', tr('Kolumna DOM i taśmy obok wykresu (W sesji, od 1280 px)', 'The DOM and tape column next to the chart (In session, from 1280 px)')],
+      ['D', tr('Kolumna DOM i taśmy obok wykresu (W sesji, od 1440 px)', 'The DOM and tape column next to the chart (In session, from 1440 px)')],
       [tr('Dwuklik na karcie', 'Double-click a tab'), tr('Zmień nazwę', 'Rename')],
       [tr('Prawy przycisk na karcie', 'Right-click a tab'), tr('Kopia, wzorzec, zamknięcie', 'Copy, preset, close')],
       [tr('Przeciągnij kartę', 'Drag a tab'), tr('Zmień kolejność', 'Reorder')],

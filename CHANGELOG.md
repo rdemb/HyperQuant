@@ -4,6 +4,14 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### BTC i złoto w nazwie aplikacji, nowa ikona po instalacji (2026-11-15)
+<!-- co-nowego: grupa=blog | pl=Nazwa aplikacji i opisy mówią o BTC i złocie; zainstalowana aplikacja dostaje nową ikonę | en=The app name and descriptions now say BTC and gold; the installed app gets the new icon -->
+
+#### Zmienione
+- **Nazwa i opisy**: tytuł strony, opisy (SEO, Open Graph, X), dane strukturalne, `<noscript>` i manifest PWA („HyperQuant — BTC & Gold Day Trading Desk”) mówią o BTC i złocie zamiast tylko o BTC; podpis marki w szynie, na Starcie i na stronach statycznych („BTC i złoto · Hyperliquid”). Opisy funkcji tylko dla BTC (blog, dziennik prognoz, skaner, lekcje, HIP-4, serwer MCP) bez zmian.
+- **Nowa ikona w zainstalowanej aplikacji**: adresy ikon w manifeście, favicon i ikona Apple z wersją (`?v=2`), żeby zainstalowana aplikacja i przeglądarka pobrały ikonę „Chronograf H” (wcześniej ten sam adres trzymał starą ikonę w pamięci).
+- **README**: BTC i złoto (wstęp, W sesji, Rynki jako karty dwóch instrumentów, nowy wiersz Start), kolumna DOM od 1440 px; pomoc skrótów: kolumna DOM od 1440 px.
+
 ### Załoga: strażnicy z twarzami i dok (2026-11-15)
 <!-- co-nowego: grupa=wykres | pl=Strażnicy mają postacie (Latarnik, Dzwonnik, Sejsmograf, Kotwicz, Iskra, Skarbnik) i pływający dok; Sufler podsuwa gotowe pytania dla Twojego asystenta AI | en=Guards now have characters (Lighthouse, Bell-ringer, Seismograph, Anchor, Spark, Treasurer) and a floating dock; the Prompter hands your AI assistant ready questions -->
 

@@ -1,7 +1,7 @@
 {
-  "name": "HyperQuant — BTC Day Trading Desk",
+  "name": "HyperQuant — BTC & Gold Day Trading Desk",
   "short_name": "HyperQuant",
-  "description": "Free BTC-PERP day-trading desk for Hyperliquid: preparation, session and review of the day on market data. It does not generate signals.",
+  "description": "Free day-trading desk for BTC-PERP and gold (xyz:GOLD) on Hyperliquid: preparation, session and review of the day on market data. It does not generate signals.",
   "lang": "en",
   "dir": "ltr",
   "start_url": "./#charts",
@@ -12,9 +12,9 @@
   "theme_color": "#0C0D0F",
   "categories": ["finance", "productivity"],
   "icons": [
-    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
-    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    { "src": "icons/icon-192.png?v=2", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png?v=2", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png?v=2", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ],
   "shortcuts": [
     {
@@ -22,21 +22,21 @@
       "short_name": "Pre-session",
       "description": "Preparation: day map, fuel and hours, macro calendar, funding and liquidation map",
       "url": "./#before",
-      "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+      "icons": [{ "src": "icons/icon-192.png?v=2", "sizes": "192x192", "type": "image/png" }]
     },
     {
       "name": "In session",
       "short_name": "In session",
       "description": "Cockpit: live footprint, DOM column and tapes, cohorts and liquidations",
       "url": "./#charts",
-      "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+      "icons": [{ "src": "icons/icon-192.png?v=2", "sizes": "192x192", "type": "image/png" }]
     },
     {
       "name": "Post-session",
       "short_name": "Post-session",
       "description": "Review: day review, forecast ledger and trade journal",
       "url": "./#after",
-      "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+      "icons": [{ "src": "icons/icon-192.png?v=2", "sizes": "192x192", "type": "image/png" }]
     }
   ]
 }
