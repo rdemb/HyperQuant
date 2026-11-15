@@ -303,7 +303,32 @@ export function legendChips(
     seen.add(ind.id);
     out.push({ key: ind.id, label: def.short, ...layerBadge(ind.id, { coin: x.coin, now: x.now }) });
   }
-  return out;
+  return foldMissing(out, x.coin);
+}
+
+const MISSING = new Set([NO_SCANNER_BADGE, NO_FORECASTS_BADGE, BTC_ONLY_BADGE, NO_CEX_BADGE]);
+
+/**
+ * Warstwy bez danych na tym rynku (bez skanera, prognoz, map z bloga, HIP-4 albo giełd) — od dwóch zwinięte do jednej
+ * plakietki z jednym zdaniem zamiast kilku „—” (projekt 60, W1): rynek HIP-3 nie udaje danych, których nie ma.
+ */
+function foldMissing(chips: LayerChip[], coin: string): LayerChip[] {
+  const missing = chips.filter((c) => MISSING.has(c.text));
+  if (missing.length < 2) return chips;
+  const at = chips.indexOf(missing[0]);
+  const rest = chips.filter((c) => !MISSING.has(c.text));
+  const names = missing.map((c) => c.label).join(', ');
+  const summary: LayerChip = {
+    key: 'missing',
+    label: tr('Bez danych', 'No data'),
+    tone: 'neutral',
+    text: tr(`—, ${missing.length} warstwy`, `—, ${missing.length} layers`),
+    hint: tr(
+      `Na rynku ${coin} brak: ${names}. Hyperliquid nie udostępnia pozycji rynków HIP-3, a prognozy, mapy z bloga i rynki HIP-4 są dla BTC.`,
+      `No ${names} on ${coin}. Hyperliquid does not expose positions on HIP-3 markets, and forecasts, blog maps and HIP-4 markets are for BTC.`
+    ),
+  };
+  return [...rest.slice(0, at), summary, ...rest.slice(at)];
 }
 
 /**

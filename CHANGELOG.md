@@ -4,6 +4,21 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Złoto i S&P 500 na wykresie: cena platformy zacieniona, warstwy bez danych zwinięte (2026-11-15)
+<!-- co-nowego: grupa=wykres | pl=Na wykresie złota i S&P 500 zacienione są godziny, gdy giełda bazowa nie notuje (cena platformy), a warstwy bez danych pokazuje jedna plakietka zamiast kilku kresek | en=On gold and S&P 500 charts the hours when the underlying exchange is closed are shaded (platform price), and layers without data show as one badge instead of several dashes -->
+
+#### Dodane
+- **Cena platformy na wykresie** (projekt 60, Q2): na rynkach HIP-3 zacienione okresy bez notowań rynku bazowego (weekend od piątku 17:00 do niedzieli 18:00 ET, przerwy 17:00–18:00 ET, dni wolne NYSE dla S&P 500) z podpisem; `underlying.closedSpans` liczy przedziały po dniach nowojorskich, z pamięcią.
+- **Legenda bez udawania danych** (W1): od dwóch warstw bez danych na tym rynku (bez skanera, prognoz, map z bloga, HIP-4, giełd) jedna plakietka „Bez danych” z jednym zdaniem zamiast kilku „—”.
+- **Start**: rozdział terenu likwidacji nazwany „Gdzie leży paliwo BTC?” z plakietką BTC; przy wybranym złocie albo S&P 500 zdanie, że mapa istnieje tylko dla BTC.
+
+### Trójka i spread dla złota i S&P 500, znaczniki NYSE i CME na tarczy (2026-11-15)
+<!-- co-nowego: grupa=rynki | pl=Dla złota i S&P 500 karta liczb pokazuje spread zamiast paliwa, a tarcza Startu zaznacza otwarcia NYSE i sesji CME | en=For gold and the S&P 500 the numbers card shows the spread instead of fuel, and the Start dial marks the NYSE and CME session opens -->
+
+#### Dodane
+- **Trójka i spread** (`fourNumbers.spreadNum`): na rynku bez skanera druga liczba Czwórki to spread impact teraz (pb, LIVE z kontekstu rynku w WebSocket, `impactPxs`), z wyjaśnieniem, że paliwo jest tylko dla BTC; nagłówek karty „Trójka i spread · GOLD”. BTC bez zmian.
+- **Znaczniki rynków bazowych** na tarczy Startu: otwarcie NYSE 9:30 ET i sesji CME 18:00 ET w czasie lokalnym (`underlying.baseOpens`, test z dniem zmiany czasu w USA).
+
 ### Okno wskaźników: grupy według pytań i karta każdego wskaźnika (2026-11-15)
 <!-- co-nowego: grupa=wykres | pl=Wskaźniki HyperQuant w oknie są pogrupowane według pytań tradera, mają plakietkę źródła, a po rozwinięciu opisu kartę: co twierdzą i czy to sprawdzono | en=HyperQuant indicators in the dialog are grouped by trader questions, carry a source badge and, when the description is expanded, a card: what they claim and whether it was tested -->
 
