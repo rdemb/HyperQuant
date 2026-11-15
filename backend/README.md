@@ -135,6 +135,11 @@ na naszym serwerze ntfy (nazwy podajemy publicznie po teście serwera); treść 
   wydawcę i token, otwiera porty 80 i 443 w ufw (jeśli włączony), uruchamia usługę tematów z `HQ_TOPICS=0` (próba na sucho:
   liczy i pisze do dziennika, nic nie wysyła) i robi autotest (`test-ntfy.sh`: HTTPS, 403 bez tokenu, 403 tokenem poza `hq-*`,
   publikacja tokenem do tematu testowego `hq-test` i jej odczyt bez tokenu, brak dzienników dostępu, plik tokenu 0600).
+- **Budżet wag API Hyperliquid na adresie IP VPS** (limit Hyperliquid: 1200 wag/min na IP): skaner do 800 wag/min (suma
+  `HQ_WEIGHT_PER_MIN`, `HQ_LIQ_WEIGHT_PER_MIN`, `HQ_FORECAST_WEIGHT_PER_MIN`, `HQ_WHALE_WEIGHT_PER_MIN`, pilnowana w konfiguracji),
+  tematy ok. 42 wagi/min przy publikacji (świece 1m co 30 s po ok. 20 wag, 1d z pamięci co 10 min), w próbie na sucho ok. 12;
+  serwer alarmów głównie przez WebSocket (zapytania o świece tylko po luce w taśmie). Inne programy na tym samym adresie
+  (np. HyperBot) liczą się do tego samego limitu: zapas ponad skaner i tematy to ok. 350 wag/min.
 - **Włączenie**: `HQ_TOPICS=1` w `/etc/hyperquant/topics.env` i `systemctl restart hyperquant-tematy`. **Cofnięcie**:
   `HQ_TOPICS=0` (albo `systemctl disable --now hyperquant-tematy`), w razie potrzeby `systemctl disable --now ntfy caddy`.
 

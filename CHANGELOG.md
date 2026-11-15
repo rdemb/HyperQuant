@@ -4,6 +4,12 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Tematy 24/7: mniej zapytań do API (2026-11-15)
+<!-- co-nowego: ukryj -->
+
+#### Zmienione
+- **`hyperquant-tematy`**: świece 1d (PDH/PDL) w pamięci, odświeżane co 10 min albo po zmianie doby UTC; w próbie na sucho odpytywanie co 2 min. Ok. 42 wagi/min przy publikacji (było ok. 80), ok. 12 na sucho. `backend/README.md`: łączny budżet wag API Hyperliquid na adresie IP VPS (skaner do 800, tematy, alarmy, inne programy; limit 1200 na IP).
+
 ### Tematy publiczne 24/7 i strona Prywatność (2026-11-15)
 <!-- co-nowego: grupa=blog | pl=Strona Prywatność: co zostaje na urządzeniu, z kim łączy się przeglądarka, alarmy i tematy 24/7 | en=Privacy page: what stays on your device, who your browser connects to, 24/7 alerts and topics -->
 

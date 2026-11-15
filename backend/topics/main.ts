@@ -7,6 +7,7 @@
  * - HQ_NTFY_URL — adres serwera ntfy (lokalnie http://127.0.0.1:2586), HQ_NTFY_TOKEN — token wydawcy (tylko zapis
  *   tematów z przedrostkiem). Token nigdy nie trafia do dziennika.
  * - HQ_TOPIC_PREFIX — przedrostek tematów (domyślnie hq-btc), HQ_STATE_DIR — katalog stanu (przerwy i liczniki).
+ * Wagi API: świece 1m co 30 s (na sucho co 2 min), 1d z pamięci co 10 min — ok. 42 wagi/min (na sucho ok. 12).
  * Cofnięcie: HQ_TOPICS=0 (albo usunięcie pliku) i `systemctl stop hyperquant-tematy`.
  */
 import { readFileSync, writeFileSync, renameSync } from 'node:fs';
@@ -63,8 +64,16 @@ let state = load();
 let sent = 0;
 let dry = 0;
 
+// Świece 1d (PDH/PDL zmieniają się raz na dobę): w pamięci, odświeżane co 10 min albo po zmianie doby UTC
+let d1Cache: { at: number; day: number; bars: { t: number; h: number; l: number; c: number }[] } | null = null;
+async function dayCandles(now: number) {
+  const day = Math.floor(now / 86_400_000);
+  if (!d1Cache || d1Cache.day !== day || now - d1Cache.at > 10 * 60_000) d1Cache = { at: now, day, bars: await candles('1d', 3 * 86_400_000) };
+  return d1Cache.bars;
+}
+
 async function tick(): Promise<void> {
-  const [m1, d1] = await Promise.all([candles('1m', 20 * 60_000), candles('1d', 3 * 86_400_000)]);
+  const [m1, d1] = await Promise.all([candles('1m', 20 * 60_000), dayCandles(Date.now())]);
   const snap = snapFrom(Date.now(), m1, d1);
   if (!snap) return;
   const r = evaluate(state, snap);
@@ -81,7 +90,8 @@ async function tick(): Promise<void> {
   save(state);
 }
 
-setInterval(() => void tick().catch((e) => console.error(`[tematy] ${String(e).slice(0, 200)}`)), 30_000);
+// Budżet wag Hyperliquid (ten sam adres IP co skaner): candleSnapshot ok. 20 wag; publikacja co 30 s ≈ 42 wagi/min, próba na sucho co 2 min ≈ 12
+setInterval(() => void tick().catch((e) => console.error(`[tematy] ${String(e).slice(0, 200)}`)), enabled ? 30_000 : 120_000);
 setInterval(() => console.log(`[tematy] ${enabled ? `wysłane ${sent}` : `próba na sucho: zdarzeń ${dry}`} (godzina)`), 3_600_000);
 console.log(`[tematy] start: ${enabled ? 'publikacja włączona' : 'próba na sucho (HQ_TOPICS≠1)'}, tematy ${prefix}-*`);
 void tick().catch((e) => console.error(`[tematy] ${String(e).slice(0, 200)}`));
