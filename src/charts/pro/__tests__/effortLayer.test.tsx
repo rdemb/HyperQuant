@@ -80,8 +80,8 @@ describe('legenda', () => {
 describe('wpis w rejestrze', () => {
   const def = indicatorDef('effort');
 
-  it('w „Więcej z HyperQuant”, na wykresie ceny, bez parametrów, plotów i interwału; kolory stron stałe', () => {
-    expect(def).toMatchObject({ tier: 'second', short: 'Effort', group: 'hyperquant', pane: 'price', params: [], plots: [], format: 'price', effortZones: true });
+  it('w grupie „Poziomy i rynki prognoz”, na wykresie ceny, bez parametrów, plotów i interwału; kolory stron stałe', () => {
+    expect(def).toMatchObject({ tier: 'front', short: 'Effort', group: 'hyperquant', pane: 'price', params: [], plots: [], format: 'price', effortZones: true });
     expect(def.name).toBe('Strefy absorpcji i pudełka Effort');
     expect(def.warmup({})).toBe(0);
     expect(tfAllowed(def)).toBe(false);

@@ -1500,7 +1500,7 @@ export class ProChartController {
     const ms = this.series.interval.ms;
     // Wskaźniki z taśmy, OI i arkusza: odczyt OI jak w panelu ΔOI (starszy niż kilka minut to przerwa w danych)
     const flow = {
-      oiAt: (t: number) => this.store.oi.atWithin(t, HL_OI_MAX_AGE),
+      oiAt: (t: number, maxAgeMs = HL_OI_MAX_AGE) => this.store.oi.atWithin(t, Math.min(HL_OI_MAX_AGE, maxAgeMs)),
       book: () => this.store.book('near')?.list() ?? [],
       exactBook: () => this.store.exactBook()?.list() ?? [],
       orders: (from: number, to: number) => this.store.orders.range(from, to),
