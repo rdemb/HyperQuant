@@ -152,6 +152,190 @@ main.wrap {
   padding-bottom: 48px;
 }
 
+/* ───── Szyna boczna (komputer, od 1024 px; jak w aplikacji: 88 px z nazwami pod ikonami, od 1600 px 240 px) ───── */
+.rail {
+  display: none;
+}
+@media (min-width: 1024px) {
+  :root {
+    --rail-w: 88px;
+  }
+  .shell {
+    display: flex;
+    min-height: 100dvh;
+  }
+  .shell__main {
+    flex: 1;
+    min-width: 0;
+  }
+  /* Nawigacja i marka w szynie; górny pasek strony niepotrzebny */
+  .site-header {
+    display: none;
+  }
+  .rail {
+    position: sticky;
+    top: 0;
+    height: 100dvh;
+    width: 88px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    padding: 16px 8px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    border-right: 1px solid var(--line);
+    background: rgb(19 21 24 / 0.6);
+  }
+  .rail ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .rail nav {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+  .rail__brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 40px;
+    padding: 0 6px;
+    border-radius: 8px;
+    color: var(--ink-1);
+    text-decoration: none;
+  }
+  .rail__brand .brand-mark {
+    width: 28px;
+    height: 28px;
+  }
+  .rail__name {
+    display: none;
+  }
+  .rail__title {
+    display: none;
+    margin: 0 0 6px;
+    padding: 0 12px;
+    font: 600 10px/1 var(--font-mono);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  .rail__item {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    min-height: 56px;
+    padding: 0 4px;
+    border-radius: 8px;
+    color: var(--ink-3);
+    font: 500 10.5px/1.2 var(--font-sans);
+    text-align: center;
+    text-decoration: none;
+    transition: color 150ms, background-color 150ms;
+  }
+  .rail__item:hover {
+    color: var(--ink-1);
+    background: rgb(26 29 33 / 0.7);
+  }
+  .rail__item.is-here {
+    color: var(--ink-1);
+    background: var(--surface-2);
+    box-shadow: inset 0 0 0 1px var(--line-strong);
+  }
+  .rail__item.is-here::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 8px;
+    bottom: 8px;
+    width: 2px;
+    border-radius: 2px;
+    background: var(--accent);
+  }
+  .rail__icon {
+    display: inline-flex;
+  }
+  .rail__label {
+    max-width: 100%;
+  }
+  .rail__foot {
+    margin-top: auto;
+  }
+  .rail__foot .rail__item {
+    min-height: 48px;
+  }
+  .rail__extra {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 36px;
+    margin-top: 6px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    color: var(--ink-3);
+    font: 500 12px/1 var(--font-sans);
+    text-decoration: none;
+  }
+  .rail__extra:hover {
+    color: var(--ink-1);
+  }
+}
+@media (min-width: 1600px) {
+  :root {
+    --rail-w: 240px;
+  }
+  .rail {
+    width: 240px;
+    padding: 16px 12px;
+  }
+  .rail__name {
+    display: block;
+  }
+  .rail__name span {
+    display: block;
+    font: 700 17px/1 var(--font-display);
+    font-stretch: 85%;
+    letter-spacing: -0.01em;
+  }
+  .rail__name small {
+    display: block;
+    margin-top: 4px;
+    font: 400 10px/1 var(--font-mono);
+    color: var(--ink-3);
+  }
+  .rail__title {
+    display: block;
+  }
+  .rail__item {
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 12px;
+    min-height: 40px;
+    padding: 0 12px;
+    font-size: 14px;
+    text-align: left;
+  }
+  .rail__foot .rail__item {
+    min-height: 36px;
+    font-size: 13px;
+  }
+  .rail__label {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
 /* ───── Dolny pasek (telefon i tablet, poniżej 1024 px; jak w aplikacji) ───── */
 .bottom-nav {
   display: none;
@@ -1466,7 +1650,7 @@ h1 {
 /* Na szerokim ekranie zrzut wychodzi poza kolumnę tekstu, żeby szczegóły wykresu były czytelne */
 @media (min-width: 900px) {
   .shot {
-    --shot-w: min(1120px, calc(100vw - 48px));
+    --shot-w: min(1120px, calc(100vw - var(--rail-w, 0px) - 48px));
     width: var(--shot-w);
     margin-left: calc((100% - var(--shot-w)) / 2);
   }
