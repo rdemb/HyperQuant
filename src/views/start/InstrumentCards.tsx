@@ -3,25 +3,25 @@ import { ArrowUpRight } from 'lucide-react';
 import { tr } from '../../i18n';
 import { useMarketsPage } from '../../state/useMarketsTable';
 import { Badge } from '../../ui';
+import { DESK_MARKETS } from '../../config/deskMarkets';
 
 /**
- * Wybór instrumentu na Starcie (rynki aplikacji: BTC i złoto): karta z ceną LIVE i godziną odczytu, fundingiem
+ * Wybór instrumentu na Starcie (rynki aplikacji z konfiguracji): karta z ceną LIVE i godziną odczytu, fundingiem
  * i otwartymi pozycjami; klik otwiera W sesji z wykresem tego rynku (link `#charts?m=…`, wybór zostaje w ustawieniach
  * wykresu). Te same dane co strona Rynki (`useMarketsPage`). Opis rynku, bez kierunku ceny.
  */
-const NAMES: Record<string, { name: string; sub: string }> = {
-  BTC: { name: 'Bitcoin', sub: tr('BTC-PERP · Hyperliquid', 'BTC-PERP · Hyperliquid') },
-  'xyz:GOLD': { name: tr('Złoto', 'Gold'), sub: tr('xyz:GOLD · giełda HIP-3', 'xyz:GOLD · HIP-3 exchange') },
-};
+const NAMES: Record<string, { name: string; sub: string }> = Object.fromEntries(
+  DESK_MARKETS.map((m) => [m.coin, { name: tr(m.full.pl, m.full.en), sub: m.dex ? tr(`${m.coin} · giełda HIP-3`, `${m.coin} · HIP-3 exchange`) : `${m.coin}-PERP · Hyperliquid` }])
+);
 
 export const InstrumentCards: React.FC = () => {
   const { rows } = useMarketsPage();
   return (
-    <div role="group" aria-labelledby="start-instrument" className="mt-10 max-w-[560px]">
+    <div role="group" aria-labelledby="start-instrument" className="mt-10 max-w-[760px]">
       <p id="start-instrument" className="mb-3 text-[11px] font-bold tracking-[0.14em] text-ink-3 uppercase">
         {tr('Instrument', 'Instrument')}
       </p>
-      <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 sm:grid-cols-3">
         {rows.map((r) => {
           const n = NAMES[r.coin] ?? { name: r.name, sub: r.exchangeTitle };
           return (

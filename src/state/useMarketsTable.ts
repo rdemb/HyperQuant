@@ -174,7 +174,7 @@ export interface MarketsPage {
  */
 export function useMarketsPage(): MarketsPage {
   const { markets: all, ready } = useMarkets();
-  // Strona Rynki: rynki aplikacji (BTC i złoto), parametry z rejestru
+  // Strona Rynki: rynki aplikacji (konfiguracja rynków desku), parametry z rejestru
   const markets = useMemo(() => appMarkets(all), [all]);
   const poller = useMemo(() => new MarketsPoller(browserDeps()), []);
   const dexKey = registryDexes(markets).join('|');

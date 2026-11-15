@@ -24,7 +24,7 @@ describe('widok „Rynki”: bez kierunku ceny i ocen', () => {
 
   it('etykiety kart rynków przez tr (PL i EN)', () => {
     const table = read('../markets/MarketList.tsx');
-    for (const pair of ["tr('Obrót 24 h', '24h volume')", "tr('Otwarte poz.', 'Open int.')", "tr('Funding 1 h', 'Funding 1h')", "tr('Wykres', 'Chart')", "tr('Złoto', 'Gold')"])
+    for (const pair of ["tr('Obrót 24 h', '24h volume')", "tr('Otwarte poz.', 'Open int.')", "tr('Funding 1 h', 'Funding 1h')", "tr('Wykres', 'Chart')", 'tr(m.full.pl, m.full.en)'])
       expect(table).toContain(pair);
   });
 });
@@ -42,9 +42,9 @@ describe('widok „Rynki”: dane osobno, wygląd osobno', () => {
     for (const m of view.matchAll(/^import (.+) from '\.\.\/utils\/[^']+';$/gm)) expect(m[1], m[0]).toMatch(/^type /);
   });
 
-  it('rynki aplikacji: BTC i złoto, opis strony mówi, skąd liczby i co robi przeglądarka', () => {
+  it('rynki aplikacji z konfiguracji, opis strony mówi, skąd liczby i co robi przeglądarka', () => {
     const view = views[0][1];
-    expect(view).toContain('BTC (giełda główna Hyperliquid) i złoto (xyz:GOLD, giełda HIP-3)');
+    expect(view).toContain("${deskPhrase('pl')}: BTC z giełdy głównej Hyperliquid, reszta z giełdy HIP-3");
     expect(view).toContain('serwer HyperQuant nic nie pobiera');
     expect(read('../../state/useMarketsTable.ts')).toContain('appMarkets(all)');
   });
