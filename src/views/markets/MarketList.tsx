@@ -4,9 +4,10 @@ import { tr } from '../../i18n';
 import { Badge } from '../../ui';
 import type { MarketRowModel } from '../../utils/marketsTable';
 import type { MarketClass } from '../../utils/marketRegistry';
+import { DESK_MARKETS, deskLabels } from '../../config/deskMarkets';
 
 /**
- * Rynki aplikacji (BTC i złoto) jako karty instrumentów: nazwa, giełda i klasa, cena z odczytem LIVE (albo „—” z powodem),
+ * Rynki aplikacji (z konfiguracji rynków desku) jako karty instrumentów: nazwa, giełda i klasa, cena z odczytem LIVE (albo „—” z powodem),
  * obrót 24 h, otwarte pozycje, funding godzinowy i roczny, przycisk wykresu. Same teksty z modelu wiersza
  * (`utils/marketsTable.rowModel`); opis rynku, bez kierunku ceny.
  */
@@ -21,7 +22,7 @@ export const CLASS_LABEL: Record<MarketClass, string> = {
 };
 
 /** Pełna nazwa instrumentu (karty); inne rynki — nazwa z rejestru. */
-const FULL: Record<string, string> = { BTC: 'Bitcoin', 'xyz:GOLD': tr('Złoto', 'Gold') };
+const FULL: Record<string, string> = Object.fromEntries(DESK_MARKETS.map((m) => [m.coin, tr(m.full.pl, m.full.en)]));
 /** Symbol kontraktu w karcie (BTC jak w nagłówku aplikacji: BTC-PERP); inne rynki — nazwa z giełdy. */
 const TICKER: Record<string, string> = { BTC: 'BTC-PERP' };
 
@@ -85,7 +86,7 @@ const MarketCard: React.FC<{ row: MarketRowModel }> = ({ row }) => (
 );
 
 export const MarketList: React.FC<{ rows: MarketRowModel[] }> = ({ rows }) => (
-  <div role="list" aria-label={tr('Rynki: BTC i złoto', 'Markets: BTC and gold')} className="grid grid-cols-1 gap-4 md:grid-cols-2">
+  <div role="list" aria-label={`${tr('Rynki', 'Markets')}: ${deskLabels()}`} className="grid grid-cols-1 gap-4 md:grid-cols-2">
     {rows.map((r) => (
       <div role="listitem" key={r.coin} className="min-w-0">
         <MarketCard row={r} />
