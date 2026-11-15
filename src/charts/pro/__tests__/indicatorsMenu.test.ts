@@ -1,18 +1,32 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { INDICATORS, menuEntries, parseIndicators } from '../indicators/registry';
+import { INDICATORS, MENU_GROUPS, menuEntries, parseIndicators } from '../indicators/registry';
+import { LAYER_SOURCE } from '../chart/layerSources';
 import { visibleEntries } from '../chart/menuSelection';
 import { DROPPED_NOTICE_KEY, parseSettings, startSettings } from '../chart/settings';
 
-const FRONT = ['oiflow', 'absorption', 'breadth', 'repeat', 'makers', 'twap', 'slippage', 'rvol', 'ofi', 'ordersize'];
-const SECOND = ['cone', 'outcomes', 'regime', 'hawkes', 'pbrange', 'effort'];
-const CLASSIC = ['ema', 'sma', 'vwma', 'atr', 'bb', 'keltner', 'pivots'];
+// Grupy według pytań tradera (plan 59, G1)
+const GROUPS = [
+  ['presja', ['absorption', 'ofi', 'oiflow']],
+  ['sklad', ['breadth', 'repeat', 'makers', 'ordersize', 'twap', 'hawkes']],
+  ['ruch', ['rvol', 'regime', 'slippage', 'cone']],
+  ['poziomy', ['pbrange', 'effort', 'outcomes']],
+] as const;
+const FRONT = GROUPS.flatMap(([, ids]) => ids) as string[];
+const SECOND: string[] = [];
+const CLASSIC = ['ema', 'sma', 'atr', 'bb', 'pivots', 'hv'];
 
 describe('menu wskaźników', () => {
   it('przybliżenia wolumenu usunięte z rejestru', () => {
     for (const id of ['obv', 'cmf', 'mfi', 'netvol']) expect(INDICATORS.find((d) => d.id === id)).toBeUndefined();
   });
 
-  it('warstwy menu: front, second i classic w ustalonej kolejności', () => {
+  it('grupy menu według pytań: kolejność grup i wskaźników; każdy wskaźnik grupy ma źródło (LIVE albo MODEL)', () => {
+    expect(MENU_GROUPS.map((g) => [g.id, [...g.ids]])).toEqual(GROUPS.map(([id, ids]) => [id, [...ids]]));
+    for (const id of FRONT) expect(LAYER_SOURCE[id], id).toMatch(/^(LIVE|MODEL)$/);
+    expect(menuEntries('search').map((d) => d.id)).toEqual(expect.arrayContaining(['vwma', 'keltner']));
+  });
+
+  it('warstwy menu: front (grupy), second pusta i classic w ustalonej kolejności', () => {
     expect(menuEntries('front').map((d) => d.id)).toEqual(FRONT);
     expect(menuEntries('second').map((d) => d.id)).toEqual(SECOND);
     expect(menuEntries('classic').map((d) => d.id).sort()).toEqual([...CLASSIC].sort());
@@ -38,9 +52,9 @@ describe('Klasyczne zwinięte nie podpowiadają niewidocznych wierszy', () => {
     { key: 'oiflow', section: 'hl', tier: 'front', words: 'oiflow', label: 'oiflow' },
   ];
   const o = { q: '', section: 'classic', classicOpen: false, favs: [], hlOrder: ['oiflow'], norm: (t: string) => t.toLowerCase() };
-  it('zwinięte bez zapytania: pusto; rozwinięte: siedem; z zapytaniem: wyniki', () => {
+  it('zwinięte bez zapytania: pusto; rozwinięte: sześć; z zapytaniem: wyniki', () => {
     expect(visibleEntries(entries, o)).toEqual([]);
-    expect(visibleEntries(entries, { ...o, classicOpen: true })).toHaveLength(7);
+    expect(visibleEntries(entries, { ...o, classicOpen: true })).toHaveLength(6);
     expect(visibleEntries(entries, { ...o, q: 'ema' }).map((e) => e.key)).toEqual(['ema']);
     expect(visibleEntries(entries, { ...o, section: 'hl' }).map((e) => e.key)).toEqual(['oiflow']);
   });

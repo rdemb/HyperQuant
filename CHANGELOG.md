@@ -4,6 +4,16 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Okno wskaźników: grupy według pytań i karta każdego wskaźnika (2026-11-15)
+<!-- co-nowego: grupa=wykres | pl=Wskaźniki HyperQuant w oknie są pogrupowane według pytań tradera, mają plakietkę źródła, a po rozwinięciu opisu kartę: co twierdzą i czy to sprawdzono | en=HyperQuant indicators in the dialog are grouped by trader questions, carry a source badge and, when the description is expanded, a card: what they claim and whether it was tested -->
+
+#### Zmienione
+- **Okno wskaźników**: „Tylko w HyperQuant” w czterech grupach pytań (Kto naciska i czy cena ustępuje; Kto stoi za ruchem; Kiedy ruch i ile kosztuje wejście; Poziomy i rynki prognoz) zamiast „Więcej z HyperQuant”; przy każdym plakietka źródła (LIVE albo MODEL).
+- **Klasyczne**: EMA, SMA, ATR, Bollinger, pivoty i HV; VWMA i Keltner w wyszukiwaniu.
+
+#### Dodane
+- **Karta wskaźnika** (`indicators/cards.ts`): twierdzenie PL i EN, status w 4 stanach jak karta modelu (Effort: sprawdzony bez mocy; stożek i HIP-4: zapisywane przed faktem) i pasmo szumu; widoczna po rozwinięciu opisu w oknie wskaźników.
+
 ### Wskaźniki: progi z hipotezy zerowej i uczciwsze opisy (2026-11-15)
 <!-- co-nowego: grupa=wykres | pl=OFI pokazuje oczekiwaną zmianę dopiero powyżej progu szumu dla danego okna, wielkość zleceń podaje próg istotności KS, a szerokość agresji ma nową miarę równomierności | en=OFI shows the expected change only above the noise floor for the window, order size gives the KS significance floor, and aggression breadth gets a new evenness measure -->
 
