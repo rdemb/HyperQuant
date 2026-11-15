@@ -1,7 +1,7 @@
 {
-  "name": "HyperQuant — BTC & Gold Day Trading Desk",
+  "name": "HyperQuant — Hyperliquid Day Trading Desk",
   "short_name": "HyperQuant",
-  "description": "Free day-trading desk for BTC-PERP and gold (xyz:GOLD) on Hyperliquid: preparation, session and review of the day on market data. It does not generate signals.",
+  "description": "Free day-trading desk for BTC, gold and the S&P 500 on Hyperliquid: preparation, session and review of the day on market data. It does not generate signals.",
   "lang": "en",
   "dir": "ltr",
   "start_url": "./#charts",
