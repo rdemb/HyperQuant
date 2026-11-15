@@ -1,0 +1,31 @@
+[Unit]
+Description=HyperQuant — tematy publiczne 24/7 (katalog warunków BTC → ntfy)
+After=network-online.target ntfy.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=hyperquant
+Group=hyperquant
+WorkingDirectory=/opt/hyperquant/app
+Environment=HQ_STATE_DIR=/var/lib/hyperquant/state
+Environment=NODE_OPTIONS=--max-old-space-size=96
+# HQ_TOPICS, HQ_NTFY_URL, HQ_NTFY_TOKEN, HQ_TOPIC_PREFIX — plik root 0600, tworzy go instaluj-ntfy.sh (HQ_TOPICS=0)
+EnvironmentFile=-/etc/hyperquant/topics.env
+ExecStart=/opt/hyperquant/node/bin/node backend/topics/main.ts
+Restart=always
+RestartSec=10
+
+CPUQuota=10%
+MemoryMax=128M
+TasksMax=16
+
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/hyperquant/state
+
+[Install]
+WantedBy=multi-user.target

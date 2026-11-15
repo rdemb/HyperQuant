@@ -115,6 +115,29 @@ telefon ◄── usługa push przeglądarki (FCM, Mozilla, Apple, WNS) ◄─�
 - Instalacja przez `install.sh`; aktualizacja automatyczna restartuje usługę po zmianie jej kodu (`backend/alerts`, `src/utils`,
   wspólne moduły skanera). Podgląd: `journalctl -u hyperquant-alerts -f`, co godzinę liczba wysłanych powiadomień.
 
+## Tematy publiczne 24/7 (ntfy)
+
+Powiadomienia o stanie rynku BTC dla każdego, bez konta i bez danych u nas: usługa `hyperquant-tematy` (`backend/topics/`) co 30 s
+pobiera świece BTC z publicznego API Hyperliquid i liczy jawny katalog warunków (`katalog.ts`): przecięcie PDH, przecięcie PDL,
+otwarcia Londynu i Nowego Jorku, ruch ≥ 1% w 15 min (kalibracja z 60 dni: ok. 3,4 / 2,7 / 2 / 1,1 na dobę), przerwa 10 min
+i najwyżej 8 zdarzeń na dobę na temat. Zdarzenia idą do tematów z przedrostkiem `HQ_TOPIC_PREFIX`
+na naszym serwerze ntfy (nazwy podajemy publicznie po teście serwera); treść to opis stanu po polsku i angielsku, bez kierunku.
+
+- **Serwer ntfy na VPS** (`backend/deploy/ntfy/`): ntfy z oficjalnego repozytorium apt na `127.0.0.1:2586`, przed nim Caddy
+  (HTTPS, certyfikat Let's Encrypt) pod domeną z rekordem A na adres VPS. Wszyscy tylko czytają (`auth-default-access: read-only`);
+  publikuje użytkownik `hq-wydawca` tokenem (tylko zapis tematów `hq-*`). Token w `/etc/hyperquant/topics.env` (root 0600),
+  nigdy w repo ani w dzienniku. Limity zapytań na adres klienta w pamięci ntfy (adres od Caddy w `X-Real-IP`).
+- **Prywatność**: Caddy bez dyrektywy `log` (bez dziennika dostępu), ntfy z `log-level: error`, wiadomości najwyżej 1 h
+  (`cache-duration`), bez `upstream-base-url` (nic nie trafia do ntfy.sh, na iOS powiadomienia przychodzą z opóźnieniem).
+  Opis dla użytkowników: strona Prywatność (`prywatnosc/`, `en/privacy/`).
+- **Instalacja** (root, po wdrożeniu kodu podpisanym tagiem i po rekordzie DNS):
+  `bash /opt/hyperquant/app/backend/deploy/ntfy/instaluj-ntfy.sh ntfy.hyperquant.tech` — instaluje ntfy i Caddy, tworzy
+  wydawcę i token, otwiera porty 80 i 443 w ufw (jeśli włączony), uruchamia usługę tematów z `HQ_TOPICS=0` (próba na sucho:
+  liczy i pisze do dziennika, nic nie wysyła) i robi autotest (`test-ntfy.sh`: HTTPS, 403 bez tokenu, 403 tokenem poza `hq-*`,
+  publikacja tokenem do tematu testowego `hq-test` i jej odczyt bez tokenu, brak dzienników dostępu, plik tokenu 0600).
+- **Włączenie**: `HQ_TOPICS=1` w `/etc/hyperquant/topics.env` i `systemctl restart hyperquant-tematy`. **Cofnięcie**:
+  `HQ_TOPICS=0` (albo `systemctl disable --now hyperquant-tematy`), w razie potrzeby `systemctl disable --now ntfy caddy`.
+
 ## Publikacja do publicznego repo danych (zalecane, bez kosztów)
 
 Skaner co 2 min wypycha jeden commit z bieżącymi plikami do publicznego repo [rdemb/hyperquant-data](https://github.com/rdemb/hyperquant-data)
