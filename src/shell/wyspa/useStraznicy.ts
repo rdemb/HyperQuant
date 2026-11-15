@@ -25,7 +25,7 @@ const MIN_STEP_MS = 1000;
  * przy pauzie albo danych innych niż na żywo nie liczy nic. Zwraca ostatnie zdarzenie do krótkiej wyspy w rogu.
  */
 export function useStraznicy(): { flash: GuardEvent | null; dismiss: () => void } {
-  const { feed, shaakuni } = useDesk();
+  const { feed, shaakuni, cexEnabled } = useDesk();
   const prev = useRef<Snapshot | null>(null);
   const [flash, setFlash] = useState<GuardEvent | null>(null);
 
@@ -47,7 +47,8 @@ export function useStraznicy(): { flash: GuardEvent | null; dismiss: () => void 
       pdl: fin(shaakuni.pdl),
       fundingApr: fin(feed.backendTelemetry?.fundingAnnualizedPct),
       move15Pct: w.move15Pct,
-      liq5Usd: w.liq5Usd,
+      // Likwidacje tylko ze strumieni giełd CEX (Hyperliquid ich nie publikuje); bez strumieni brak liczby, nie zero
+      liq5Usd: cexEnabled ? w.liq5Usd : null,
       session: sessionAt(now).id,
     };
     const events = evaluate(rules, prev.current, cur, LABELS);
@@ -59,7 +60,7 @@ export function useStraznicy(): { flash: GuardEvent | null; dismiss: () => void 
     void import('../../charts/pro/chart/alerts').then(({ notifyAlert }) => {
       for (const e of events) notifyAlert(tr('Strażnik BTC', 'BTC guard'), e.text, `wyspa-${e.ruleId}`);
     });
-  }, [live, feed.currentPrice, feed.nowTick, feed.bars, feed.timeframeSec, feed.backendTelemetry, shaakuni.pdh, shaakuni.pdl]);
+  }, [live, cexEnabled, feed.currentPrice, feed.nowTick, feed.bars, feed.timeframeSec, feed.backendTelemetry, shaakuni.pdh, shaakuni.pdl]);
 
   // Krótka wyspa znika sama po 8 s
   useEffect(() => {
