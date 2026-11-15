@@ -93,13 +93,23 @@ export class Tape {
     return true;
   }
 
+  /**
+   * Minuty [m0, end) do przejścia: zakres przycięty do zasięgu taśmy (kawałki powstają tylko przy przyjętej transakcji,
+   * więc poza [firstTime, lastTime] ich nie ma). Bez tego doba bez danych to 1440 pustych odczytów na klatkę wykresu.
+   */
+  private span(from: number, to: number): [number, number] {
+    if (!(this.firstTime <= this.lastTime)) return [0, 0];
+    return [minuteOf(Math.max(from, this.firstTime)), Math.min(to, this.lastTime + 1)];
+  }
+
   chunk(minute: number): MinuteChunk | undefined {
     return this.chunks.get(minute);
   }
 
   /** Transakcje z [from, to) w kolejności czasu. */
   forEach(from: number, to: number, fn: (t: number, px: number, sz: number, side: Side) => void): void {
-    for (let m = minuteOf(from); m < to; m += MINUTE) {
+    const [m0, end] = this.span(from, to);
+    for (let m = m0; m < end; m += MINUTE) {
       const c = this.chunks.get(m);
       if (!c) continue;
       const n = c.t.length;
@@ -114,7 +124,8 @@ export class Tape {
 
   /** Czy w [from, to) jest jakakolwiek transakcja. */
   hasAny(from: number, to: number): boolean {
-    for (let m = minuteOf(from); m < to; m += MINUTE) {
+    const [m0, end] = this.span(from, to);
+    for (let m = m0; m < end; m += MINUTE) {
       const c = this.chunks.get(m);
       if (c && c.t.length > 0 && c.t[c.t.length - 1] >= from && c.t[0] < to) return true;
     }
@@ -125,7 +136,8 @@ export class Tape {
   signature(from: number, to: number): string {
     let v = 0;
     let n = 0;
-    for (let m = minuteOf(from); m < to; m += MINUTE) {
+    const [m0, end] = this.span(from, to);
+    for (let m = m0; m < end; m += MINUTE) {
       const c = this.chunks.get(m);
       if (!c) continue;
       if (c.version > v) v = c.version;
