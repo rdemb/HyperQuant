@@ -46,6 +46,7 @@ import { useStraznicy } from './wyspa/useStraznicy';
 import { Dok, useZaloga } from './wyspa/Dok';
 import { Postac } from './wyspa/Postac';
 import type { PersonaId } from './wyspa/persony';
+import { deskLabels } from '../config/deskMarkets';
 
 // Widoki ładowane leniwie (mniejszy pierwszy bundle; wykresy faz w osobnym pakiecie)
 const StartView = lazy(() => import('../views/StartView'));
@@ -466,7 +467,7 @@ const Szyna: React.FC<{ go: (v: ViewId) => void }> = ({ go }) => {
           <span data-marka className="block font-display text-[17px] font-bold leading-none tracking-tight [font-stretch:85%] text-ink-1">
             HyperQuant
           </span>
-          <span className="block mt-1 font-mono text-[10px] leading-none text-ink-3">{tr('BTC i złoto · Hyperliquid', 'BTC & gold · Hyperliquid')}</span>
+          <span className="block mt-1 font-mono text-[10px] leading-none text-ink-3">{`${deskLabels()} · Hyperliquid`}</span>
         </span>
       </ViewLink>
       <nav aria-label={tr('Główna', 'Main')} className="flex flex-col gap-6">
