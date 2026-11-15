@@ -12,7 +12,7 @@ export const pl: LessonsContent = {
     eyebrow: 'Akademia HyperQuant',
     title: 'Lekcje na naszych wykresach',
     lead:
-      'Prawdziwe sytuacje z rynku BTC na Hyperliquid, zatrzymane w ważnym momencie. Odpowiadasz, co widzisz i gdzie byłby błąd, a potem odsłaniamy dalszy ciąg. Oceniamy tok rozumowania, nie zysk: bez sygnałów kup/sprzedaj i bez obiecywania wyników.',
+      'Prawdziwe sytuacje z rynku BTC na Hyperliquid, zatrzymane w ważnym momencie. Odpowiadasz, co widzisz i gdzie byłby błąd, a potem odsłaniamy dalszy ciąg. Oceniamy tok rozumowania, nie zysk: bez wskazań kup/sprzedaj i bez obiecywania wyników.',
     tabs: { exercises: 'Ćwiczenia', atlas: 'Wskaźniki', combine: 'Jak łączyć', myths: 'Mity i dane', risk: 'Ryzyko' },
     progress: (done, total) => `Ukończone: ${done} z ${total}`,
     level: (n) => ['Podstawy', 'Średni', 'Zaawansowany'][n - 1],
@@ -155,7 +155,7 @@ export const pl: LessonsContent = {
                 {
                   label: 'Dzień trendu: rosnący VWAP, cena stale nad nim, PDH przebity i utrzymany. Nie walczę z ruchem; wejścia szukałbym raczej na cofnięciu do struktury.',
                   feedback:
-                    'Tak. Pasmo σ to linijka, a nie sygnał. W trendzie cena potrafi godzinami jechać po paśmie +1σ…+2σ. Rozsądny proces to czekanie na cofnięcie do struktury (np. pasmo +1σ, przebity poziom) z jasnym unieważnieniem, albo brak transakcji.',
+                    'Tak. Pasmo σ to linijka, a nie wskazanie wejścia. W trendzie cena potrafi godzinami jechać po paśmie +1σ…+2σ. Rozsądny proces to czekanie na cofnięcie do struktury (np. pasmo +1σ, przebity poziom) z jasnym unieważnieniem, albo brak transakcji.',
                 },
                 {
                   label: 'Kupuję teraz, bo trend jest silny.',
@@ -355,7 +355,7 @@ export const pl: LessonsContent = {
                   feedback: 'Tak. Footprint pokazuje, kto był agresywny i na jakich cenach. Spadek OI dodaje kontekst: część tej agresji to wychodzenie z pozycji, nie nowe przekonanie.',
                 },
                 { label: 'To absorpcja: sprzedający wchłaniają kupno.', feedback: 'Absorpcja wyglądałaby inaczej: duże kupno, a cena stoi w miejscu. Tu cena przeszła 300 USD w górę, więc kupno nie zostało wchłonięte.' },
-                { label: 'Delta +534 to sygnał kupna.', feedback: 'Delta opisuje przeszłą świecę. Sama w sobie nie mówi, co zrobi następna.' },
+                { label: 'Delta +534 to powód do kupna.', feedback: 'Delta opisuje przeszłą świecę. Sama w sobie nie mówi, co zrobi następna.' },
               ],
             },
             {
@@ -381,7 +381,7 @@ export const pl: LessonsContent = {
           'Strefa nierównowagi to opis przeszłości, a nie wsparcie z gwarancją. Użyteczna jest jako mapa: tam, gdzie była agresja, łatwo sprawdzić, czy wciąż jest.',
         ],
         honest:
-          'Uczciwie o footprincie: w testach na danych historycznych, które robiliśmy przy budowie desku, same nierównowagi, ich serie, absorpcja ani dywergencje CVD nie dawały przewagi po kosztach. Dlatego uczymy ich jako kontekstu i potwierdzenia tego, co mówi lokalizacja, a nie jako sygnałów.',
+          'Uczciwie o footprincie: w testach na danych historycznych, które robiliśmy przy budowie desku, same nierównowagi, ich serie, absorpcja ani dywergencje CVD nie dawały przewagi po kosztach. Dlatego uczymy ich jako kontekstu i potwierdzenia tego, co mówi lokalizacja, a nie jako wskazań wejścia.',
       },
       zoneLabels: ['logiczne unieważnienie', 'nierównowagi kupna z 20:45'],
     },
@@ -403,7 +403,7 @@ export const pl: LessonsContent = {
           'Cena nad VWAP: kupujący dnia są średnio na plusie; pod VWAP: na minusie.',
           'W równowadze krawędzie pasm bywają skrajami zakresu; w trendzie cena potrafi jechać po paśmie +1σ…+2σ.',
         ],
-        traps: ['Pasmo ±2σ to nie sygnał odwrócenia: w dniu trendu „drogo” robi się coraz drożej.', 'Rano, przy małej liczbie świec, pasma są wąskie i łatwo je przebić.'],
+        traps: ['Pasmo ±2σ to nie zapowiedź odwrócenia: w dniu trendu „drogo” robi się coraz drożej.', 'Rano, przy małej liczbie świec, pasma są wąskie i łatwo je przebić.'],
         combine: ['Z profilem: VWAP przy POC to zgoda co do wartości dnia.', 'Z przepływem: utrzymanie VWAP przy agresywnej sprzedaży mówi więcej niż samo dotknięcie.'],
         where: 'Wskaźniki → VWAP dnia, Pasma VWAP ±1σ i ±2σ, VWAP sesji',
         station: 'day-map', // VWAP dnia (pasma σ: Wskaźniki)
@@ -586,7 +586,7 @@ export const pl: LessonsContent = {
         what: 'Ten sam rynek na trzech giełdach: CVD, zmiana OI i finansowanie z Hyperliquid, Binance i Bybit.',
         how: 'Dane Binance i Bybit pobiera przeglądarka czytelnika (domyślnie wyłączone, włączasz w Źródłach); desk ich nie przechowuje. Tablica liczb zbiera statystyki świec w jednym miejscu.',
         read: ['Ruch na Hyperliquid bez potwierdzenia na Binance bywa lokalny i krótkotrwały.', 'Rozjazd finansowania między giełdami pokazuje, gdzie tłoczy się dźwignia.'],
-        traps: ['Różne giełdy, różne kontrakty i różni uczestnicy: zgodność to kontekst, nie sygnał.'],
+        traps: ['Różne giełdy, różne kontrakty i różni uczestnicy: zgodność to kontekst, nie wskazanie wejścia.'],
         combine: ['Z CVD i OI na Hyperliquid: czy przepływ jest wspólny dla całego rynku.'],
         where: 'Wskaźniki → CVD giełd, ΔOI giełd; Tablica liczb pod wykresem',
         station: 'big-hands', // pytanie o cały rynek; panele giełd na życzenie
@@ -683,7 +683,7 @@ export const pl: LessonsContent = {
       'Oceniaj decyzję po procesie, a nie po wyniku jednej transakcji. Dobra decyzja może przegrać, zła może wygrać.',
     ],
     recipesTitle: 'Gotowe zestawy pytań',
-    recipesIntro: 'To nie są sygnały. To zestawy pytań do typowych sytuacji, z miejscem, w którym widać, że się mylisz.',
+    recipesIntro: 'To nie są wskazania wejścia. To zestawy pytań do typowych sytuacji, z miejscem, w którym widać, że się mylisz.',
     recipeLabels: { context: 'Kontekst', flow: 'Przepływ', risk: 'Unieważnienie', against: 'Co przeczy' },
     recipes: [
       {

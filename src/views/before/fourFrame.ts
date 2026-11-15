@@ -72,7 +72,7 @@ export function fourCanvas(n: FourNumbers, ratio: FrameRatio): HTMLCanvasElement
   ctx.fillStyle = PRO.ink3;
   ctx.fillText(`${tr('Czwórka', 'Four numbers')} · ${n.coin}`.toLocaleUpperCase(locale), PAD, HEAD_H / 2);
   ctx.textAlign = 'right';
-  ctx.fillText(tr('Cztery liczby przed sesją. Opis, nie sygnał.', 'Four numbers before the session. A description, not a signal.'), W - PAD, HEAD_H / 2);
+  ctx.fillText(tr('Cztery liczby przed sesją. Opis, nie rekomendacja.', 'Four numbers before the session. A description, not a recommendation.'), W - PAD, HEAD_H / 2);
   ctx.fillStyle = LINE;
   ctx.fillRect(0, HEAD_H, W, 1);
   // Kafle z kreską 1 px między nimi

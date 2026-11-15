@@ -156,7 +156,7 @@ export const ModelVsMarketPanel: React.FC = () => {
                   single rolling "perp mark" market expiring on a full quarter hour, 5–10 min before expiry), from {ENS_MIN_N} settled questions; for other
                   expiries and sources the weights were not tested.
                 </li>
-                <li>The model − market difference compares the calibration of two probability sources; it is not a buy or sell signal.</li>
+                <li>The model − market difference compares the calibration of two probability sources; it is not a buy or sell recommendation.</li>
               </ul>
             ) : (
               <ul className="mt-1 list-disc pl-4 space-y-1">
@@ -181,7 +181,7 @@ export const ModelVsMarketPanel: React.FC = () => {
                   samo jak w dzienniku (jedyny rolujący rynek „perp mark” z terminem na pełnym kwadransie, 5–10 min przed terminem), od {ENS_MIN_N}{' '}
                   rozstrzygniętych pytań — dla innych terminów i źródeł wagi nie były sprawdzane.
                 </li>
-                <li>Różnica model − rynek to porównanie kalibracji dwóch źródeł prawdopodobieństwa, nie sygnał kupna ani sprzedaży.</li>
+                <li>Różnica model − rynek to porównanie kalibracji dwóch źródeł prawdopodobieństwa, nie rekomendacja kupna ani sprzedaży.</li>
               </ul>
             )}
           </details>

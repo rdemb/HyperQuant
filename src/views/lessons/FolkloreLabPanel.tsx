@@ -339,7 +339,7 @@ const LabBody: React.FC<{ r: LabReport; stale: boolean }> = ({ r, stale }) => {
               and is checked by <code className="font-mono text-ink-1">scripts/verify-ledger.mjs</code>. The file{' '}
               <code className="font-mono text-ink-1">lab/BTC.json</code> contains all forward events, from which anyone can recompute the e-values.
             </li>
-            <li>This is a statistical measurement, not a trading signal. A “confirmed” rule only says the effect exists. It does not say it pays after costs.</li>
+            <li>This is a statistical measurement, not a trading recommendation. A “confirmed” rule only says the effect exists. It does not say it pays after costs.</li>
           </ul>
         ) : (
           <ul className="list-disc pl-4 mt-1.5 space-y-1 leading-relaxed">
@@ -367,7 +367,7 @@ const LabBody: React.FC<{ r: LabReport; stale: boolean }> = ({ r, stale }) => {
               i sprawdza go <code className="font-mono text-ink-1">scripts/verify-ledger.mjs</code>. Plik <code className="font-mono text-ink-1">lab/BTC.json</code>{' '}
               zawiera wszystkie zdarzenia do przodu, z których każdy może przeliczyć e-wartości.
             </li>
-            <li>To pomiar statystyczny, a nie sygnał transakcyjny. Reguła „potwierdzona” mówi tylko, że efekt istnieje. Nie mówi, że opłaca się po kosztach.</li>
+            <li>To pomiar statystyczny, a nie rekomendacja transakcyjna. Reguła „potwierdzona” mówi tylko, że efekt istnieje. Nie mówi, że opłaca się po kosztach.</li>
           </ul>
         )}
       </details>

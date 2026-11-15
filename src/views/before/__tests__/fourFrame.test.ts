@@ -32,7 +32,7 @@ describe('Czwórka w Klatce: karta na płótnie', () => {
     expect(texts).not.toContain('LIVE');
     const all = texts.join(' ');
     for (const i of N.items) expect(all).toContain(i.hint);
-    expect(all).toContain('Opis, nie sygnał');
+    expect(all).toContain('Opis, nie rekomendacja');
   });
 
   it('16:9 — cztery kafle w jednym rzędzie, 1:1 — 2 × 2', () => {

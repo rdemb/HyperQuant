@@ -91,7 +91,7 @@ export const FourCardView: React.FC<{ n: FourNumbers; action?: React.ReactNode }
           {tr('Czwórka', 'Four numbers')} · {n.coin}
         </h2>
         <div className="flex items-center gap-3">
-          <p className="text-[11px] leading-snug text-ink-3">{tr('Cztery liczby przed sesją. Opis, nie sygnał.', 'Four numbers before the session. A description, not a signal.')}</p>
+          <p className="text-[11px] leading-snug text-ink-3">{tr('Cztery liczby przed sesją. Opis, nie rekomendacja.', 'Four numbers before the session. A description, not a recommendation.')}</p>
           {action}
         </div>
       </header>

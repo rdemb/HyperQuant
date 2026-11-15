@@ -4,6 +4,16 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Wskaźniki: bez miejsc wejścia P/b i z neutralnymi strefami Effort (2026-11-15)
+<!-- co-nowego: grupa=wykres | pl=Zakresy P/b pokazują same strefy i poziomy, bez dawnych miejsc wejścia; strefy Effort mają kolory poziomów i nazwy pod ceną i nad ceną | en=P/b ranges show only zones and levels, without the former entry places; Effort zones use level colours and are named below and above the price -->
+
+#### Usunięte
+- **Zakresy P/b**: miejsca wejścia metody (A, B, C), znacznik przepływu i wynik wyścigu do bariery w legendzie. Sprawdzian na 2026 r. (BTC 5m) nie znalazł przewagi (A 52%, n 183; B 48%, n 29; C 53%, n 59); opis mówi to wprost. Plakietka źródła: MODEL zamiast SIM (reguły na świecach, bez symulacji wyniku).
+
+#### Zmienione
+- **Strefy Effort**: „strefa pod ceną” i „strefa nad ceną” zamiast nazw stron rynku, w kolorach poziomów (dwa odcienie bursztynu); pudełka zostają w kolorach strony agresora. Opis z wynikiem sprawdzianu: 52% utrzymań po pierwszym dotknięciu, tak jak losowy poziom (BTC 5m, n 9 281).
+- **Teksty**: zamiast „sygnał” piszemy „rekomendacja” albo „wskazanie wejścia” w całej aplikacji, lekcjach i stronach serwisu; linia MACD nazywa się „EMA MACD”. Nowy test sprawdza wszystkie napisy w `src` i na stronach bloga.
+
 ### Przed sesją płynniej na telefonie (2026-11-15)
 <!-- co-nowego: grupa=wykres | pl=Przed sesją na telefonie nie przycina się już przy żywych danych: wykres nie przegląda pustych minut taśmy przy każdej klatce | en=Pre-session on phones no longer stutters with live data: the chart no longer scans empty tape minutes on every frame -->
 

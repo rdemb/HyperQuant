@@ -303,8 +303,8 @@ function ibBody(sn: SessionNow, label: string, px: (p: number) => string): Layou
     value,
     badge: 'LIVE',
     hint: tr(
-      `IB sesji ${sessionName(sn.s)} (pierwsza godzina, ${fmtHm(sn.s.start)}–${fmtHm(sn.s.ibEnd)}): ${range}. Zakres sesji ${px(sn.lo)}–${px(sn.hi)} to ${k} IB; wybicie to wyjście ceny poza IB po pierwszej godzinie. Opis aukcji, nie sygnał.`,
-      `The ${sessionName(sn.s)} session IB (first hour, ${fmtHm(sn.s.start)}–${fmtHm(sn.s.ibEnd)}): ${range}. The session range ${px(sn.lo)}–${px(sn.hi)} is ${k} the IB; a breakout is price leaving the IB after the first hour. A description of the auction, not a signal.`
+      `IB sesji ${sessionName(sn.s)} (pierwsza godzina, ${fmtHm(sn.s.start)}–${fmtHm(sn.s.ibEnd)}): ${range}. Zakres sesji ${px(sn.lo)}–${px(sn.hi)} to ${k} IB; wybicie to wyjście ceny poza IB po pierwszej godzinie. Opis aukcji, nie rekomendacja.`,
+      `The ${sessionName(sn.s)} session IB (first hour, ${fmtHm(sn.s.start)}–${fmtHm(sn.s.ibEnd)}): ${range}. The session range ${px(sn.lo)}–${px(sn.hi)} is ${k} the IB; a breakout is price leaving the IB after the first hour. A description of the auction, not a recommendation.`
     ),
   };
 }
@@ -401,8 +401,8 @@ function dayTypeNum(x: LayoutInputs): LayoutNumber {
     value: DAY_TYPE_LABEL[t],
     badge: 'MODEL',
     hint: tr(
-      `MODEL · Dalton: IB ${px(r.ibLo)}–${px(r.ibHi)}, zakres sesji ${px(r.lo)}–${px(r.hi)} (${k}× IB), zamknięcie ${px(r.close)}${r.inProgress ? ' (sesja w toku, typ może się zmienić)' : ''}. Do 1,15× IB normalny, od 2× z zamknięciem w skrajnych 20% po stronie wybicia trendowy, wybicie w obie strony neutralny, reszta wariant normalny. Opis, nie sygnał.`,
-      `MODEL · Dalton: IB ${px(r.ibLo)}–${px(r.ibHi)}, session range ${px(r.lo)}–${px(r.hi)} (${k}× IB), close ${px(r.close)}${r.inProgress ? ' (session in progress, the type may change)' : ''}. Up to 1.15× IB normal, from 2× with a close in the outer 20% on the breakout side trend, a breakout on both sides neutral, otherwise normal variation. A description, not a signal.`
+      `MODEL · Dalton: IB ${px(r.ibLo)}–${px(r.ibHi)}, zakres sesji ${px(r.lo)}–${px(r.hi)} (${k}× IB), zamknięcie ${px(r.close)}${r.inProgress ? ' (sesja w toku, typ może się zmienić)' : ''}. Do 1,15× IB normalny, od 2× z zamknięciem w skrajnych 20% po stronie wybicia trendowy, wybicie w obie strony neutralny, reszta wariant normalny. Opis, nie rekomendacja.`,
+      `MODEL · Dalton: IB ${px(r.ibLo)}–${px(r.ibHi)}, session range ${px(r.lo)}–${px(r.hi)} (${k}× IB), close ${px(r.close)}${r.inProgress ? ' (session in progress, the type may change)' : ''}. Up to 1.15× IB normal, from 2× with a close in the outer 20% on the breakout side trend, a breakout on both sides neutral, otherwise normal variation. A description, not a recommendation.`
     ),
   };
 }
