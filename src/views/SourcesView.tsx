@@ -36,8 +36,8 @@ const SourcesView: React.FC = () => (
     </div>
     <p className="text-xs text-ink-3 leading-relaxed max-w-prose">
       {tr(
-        'HyperQuant to narzędzie edukacyjne. Nie jest poradą inwestycyjną, finansową ani prawną i nie generuje sygnałów transakcyjnych — ocenia plan, który przygotowujesz sam. Handel instrumentami z dźwignią wiąże się z wysokim ryzykiem utraty kapitału.',
-        'HyperQuant is an educational tool. It is not investment, financial or legal advice and does not generate trading signals; it evaluates the plan you prepare yourself. Trading leveraged instruments carries a high risk of losing capital.'
+        'HyperQuant to narzędzie edukacyjne. Nie jest poradą inwestycyjną, finansową ani prawną i nie generuje rekomendacji transakcyjnych — ocenia plan, który przygotowujesz sam. Handel instrumentami z dźwignią wiąże się z wysokim ryzykiem utraty kapitału.',
+        'HyperQuant is an educational tool. It is not investment, financial or legal advice and does not generate trading recommendations; it evaluates the plan you prepare yourself. Trading leveraged instruments carries a high risk of losing capital.'
       )}
     </p>
   </div>

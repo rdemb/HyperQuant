@@ -79,7 +79,7 @@ const SOURCES = {
   regime: 'MODEL',
   hawkes: 'MODEL',
   // Wejścia metody Nilla i ich wynik na historii
-  pbrange: 'SIM',
+  pbrange: 'MODEL',
   // Strefy i pudełka z reguł modelu na świecach i delcie taśmy (opis rynku, nie sygnały)
   effort: 'MODEL',
 } as const satisfies Record<SourceKey, LayerSource>;
@@ -112,12 +112,12 @@ const METHOD_HINT: Record<ModelKey, string> = {
   regime: tr('MODEL · BOCPD: bayesowskie wykrywanie punktów zmiany na zwrotach świec', 'MODEL · BOCPD: Bayesian change-point detection on candle returns'),
   hawkes: tr('MODEL · Hawkes: proces z jądrem wykładniczym dopasowany metodą największej wiarygodności', 'MODEL · Hawkes: a process with an exponential kernel fitted by maximum likelihood'),
   pbrange: tr(
-    'SIM · metoda Nilla: strefy P/b i miejsca, w których metoda by weszła (👀), z wynikiem na historii; to nie transakcje',
-    "SIM · Nill's method: P/b zones and places where the method would enter (👀), with their result on history; not trades"
+    'MODEL · reguły metody Nilla na świecach 5m: strefy P/b i poziomy profilu tygodnia i doby; opis struktury, bez miejsc wejścia',
+    "MODEL · Nill's method rules on 5m candles: P/b zones and weekly and daily profile levels; a description of structure, without entry places"
   ),
   effort: tr(
-    'MODEL · reguły modelu intraday Valentiniego: strefy absorpcji i dyskonta swingu oraz pudełka Effort z delty taśmy (bez taśmy przybliżonej ze świecy); to nie sygnały',
-    "MODEL · Valentini's intraday model rules: absorption and swing discount zones and effort boxes from the tape delta (approximated from the candle without the tape); not signals"
+    'MODEL · reguły modelu intraday Valentiniego: strefy absorpcji i dyskonta swingu oraz pudełka Effort z delty taśmy (bez taśmy przybliżonej ze świecy); to nie wskazania wejścia',
+    "MODEL · Valentini's intraday model rules: absorption and swing discount zones and effort boxes from the tape delta (approximated from the candle without the tape); not entry cues"
   ),
 };
 

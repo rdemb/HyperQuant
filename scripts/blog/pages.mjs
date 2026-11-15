@@ -41,7 +41,7 @@ export function clip(text, max = 160) {
 const T = {
   pl: {
     footSite: 'Narzędzie edukacyjne i analityczne, nie porada inwestycyjna ani wezwanie do transakcji. Handel kontraktami z dźwignią wiąże się z wysokim ryzykiem utraty środków.',
-    cardFoot: 'otwarte dane · bez sygnałów',
+    cardFoot: 'otwarte dane · bez rekomendacji',
     lessons: 'Lekcje',
     charts: 'Wykresy',
     atlas: 'Atlas wskaźników',
@@ -60,7 +60,7 @@ const T = {
       h1: 'Wykresy orderflow BTC na żywo',
       description:
         'Darmowe wykresy BTC, ETH, SOL i HYPE z Hyperliquid: footprint z prawdziwej taśmy, delta, CVD, mapa ciepła arkusza i powtórka nagranej doby. Bez rejestracji.',
-      lead: 'Darmowe wykresy kontraktów BTC, ETH, SOL i HYPE z Hyperliquid na silniku TradingView Lightweight Charts™. Footprint, delta, CVD i mapa ciepła arkusza działają od pierwszej sekundy, bo serwer HyperQuant nagrywa taśmę i arkusz z ostatniej doby. Bez rejestracji i bez sygnałów kupna albo sprzedaży.',
+      lead: 'Darmowe wykresy kontraktów BTC, ETH, SOL i HYPE z Hyperliquid na silniku TradingView Lightweight Charts™. Footprint, delta, CVD i mapa ciepła arkusza działają od pierwszej sekundy, bo serwer HyperQuant nagrywa taśmę i arkusz z ostatniej doby. Bez rejestracji i bez rekomendacji kupna albo sprzedaży.',
       replay: 'Powtórka ostatniej doby',
       shotAlt: 'Wykresy HyperQuant: footprint BTC 1 min z mapą ciepła arkusza, bąblami dużych zleceń, panelem Kto handluje i taśmą zleceń',
       caption: 'Układ Kokpit w powtórce sesji z soboty 24 października 2026: footprint 1 min, mapa ciepła arkusza, bąble dużych zleceń, Kto handluje i taśma zleceń.',
@@ -73,7 +73,7 @@ const T = {
         ],
         [
           'Delta, CVD i Stan rynku',
-          'Świece delty z ekstremami i CVD zerowane na sesję Azji, Londynu i Nowego Jorku, dobę albo tydzień. Stan rynku opisuje bieżącą sytuację jednym zdaniem ze stałych reguł, a „skąd?” pokazuje liczby za każdą jego częścią. To opis, nie sygnał.',
+          'Świece delty z ekstremami i CVD zerowane na sesję Azji, Londynu i Nowego Jorku, dobę albo tydzień. Stan rynku opisuje bieżącą sytuację jednym zdaniem ze stałych reguł, a „skąd?” pokazuje liczby za każdą jego częścią. To opis, nie rekomendacja.',
         ],
         [
           'Arkusz, duże zlecenia i wieloryby',
@@ -108,7 +108,7 @@ const T = {
       title: 'Lekcje orderflow na prawdziwych danych BTC · HyperQuant',
       h1: 'Lekcje orderflow na prawdziwych dniach BTC',
       description:
-        'Darmowe ćwiczenia na prawdziwych dniach BTC i atlas 21 wskaźników orderflow: footprint, CVD, VWAP, profil wolumenu, TPO, likwidacje. Bez sygnałów i obietnic.',
+        'Darmowe ćwiczenia na prawdziwych dniach BTC i atlas 21 wskaźników orderflow: footprint, CVD, VWAP, profil wolumenu, TPO, likwidacje. Bez rekomendacji i obietnic.',
       start: 'Zacznij ćwiczenia',
       shotAlt: 'Lekcje HyperQuant: ćwiczenie na prawdziwym dniu BTC z wykresem zatrzymanym w ważnym momencie i pytaniem',
       caption: 'Ćwiczenie „Kaskada likwidacji i kto kupuje odbicie” na danych z soboty 24 października 2026.',
@@ -129,7 +129,7 @@ const T = {
   },
   en: {
     footSite: 'An educational and analytical tool, not investment advice nor a call to trade. Trading leveraged contracts carries a high risk of losing money.',
-    cardFoot: 'open data · no signals',
+    cardFoot: 'open data · no recommendations',
     lessons: 'Lessons',
     charts: 'Charts',
     atlas: 'Indicator atlas',
@@ -153,7 +153,7 @@ const T = {
       h1: 'Live BTC order-flow charts',
       description:
         'Free BTC, ETH, SOL and HYPE charts with Hyperliquid data: footprint from the real tape, delta, CVD, order-book heatmap and a replay of the recorded day. No sign-up.',
-      lead: 'Free charts of BTC, ETH, SOL and HYPE perpetuals on Hyperliquid, on the TradingView Lightweight Charts™ engine. Footprint, delta, CVD and the order-book heatmap work from the first second, because the HyperQuant server records the last 24 hours of tape and book. No sign-up and no buy or sell signals.',
+      lead: 'Free charts of BTC, ETH, SOL and HYPE perpetuals on Hyperliquid, on the TradingView Lightweight Charts™ engine. Footprint, delta, CVD and the order-book heatmap work from the first second, because the HyperQuant server records the last 24 hours of tape and book. No sign-up and no buy or sell recommendations.',
       replay: 'Replay the last 24 hours',
       shotAlt: 'HyperQuant Charts: 1-minute BTC footprint with the order-book heatmap, large-order bubbles, the Who is trading panel and the order tape',
       caption: 'The Cockpit layout replaying the session of Saturday 24 October 2026: 1-minute footprint, order-book heatmap, large-order bubbles, Who is trading and the order tape.',
@@ -166,7 +166,7 @@ const T = {
         ],
         [
           'Delta, CVD and Market state',
-          'Delta candles with their extremes and CVD reset per Asia, London and New York session, UTC day or week. Market state describes the current situation in one sentence built from fixed rules, and “why?” shows the numbers behind each part. A description, not a signal.',
+          'Delta candles with their extremes and CVD reset per Asia, London and New York session, UTC day or week. Market state describes the current situation in one sentence built from fixed rules, and “why?” shows the numbers behind each part. A description, not a recommendation.',
         ],
         [
           'Order book, large orders and whales',
@@ -201,7 +201,7 @@ const T = {
       title: 'Order-flow lessons on real BTC data · HyperQuant',
       h1: 'Order-flow lessons on real BTC days',
       description:
-        'Free exercises on real BTC days and an atlas of 21 order-flow indicators: footprint, CVD, VWAP, volume profile, TPO, liquidations. No signals, no promises.',
+        'Free exercises on real BTC days and an atlas of 21 order-flow indicators: footprint, CVD, VWAP, volume profile, TPO, liquidations. No recommendations, no promises.',
       start: 'Start the exercises',
       shotAlt: 'HyperQuant Lessons: an exercise on a real BTC day with the chart stopped at a key moment and a question',
       caption: 'The exercise “Liquidation cascade and who buys the bounce” on data from Saturday 24 October 2026.',

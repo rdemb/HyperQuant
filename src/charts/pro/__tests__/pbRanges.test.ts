@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { type Bar5, HORIZON_MS, LIFE, TF_MS, dayLevels, inDtWindow, profileLevels, ranges, resolve, score, typicalHourBp, weekLevels } from '../core/pbRanges';
+import { type Bar5, LIFE, TF_MS, dayLevels, profileLevels, ranges, typicalHourBp, weekLevels } from '../core/pbRanges';
 
 const T0 = Date.UTC(2026, 10, 2, 0, 0); // poniedziałek
 
@@ -50,10 +50,8 @@ describe('Zakresy P/b', () => {
     expect(r.imp).toBeCloseTo(64, 6);
     expect(r.touches.length).toBeGreaterThanOrEqual(3);
     r.touches.forEach((t, i) => i > 0 && expect(t.side).toBe(-r.touches[i - 1].side));
-    // Gra w zakresie: miejsca A naprzemiennie przy dole (kupno) i górze (sprzedaż), bez wybicia
-    const a = r.spots.filter((s) => s.rule === 'A');
-    expect(a.length).toBeGreaterThanOrEqual(2);
-    a.forEach((s, i) => i > 0 && expect(s.side).toBe(-a[i - 1].side));
+    // Bez wybicia i bez miejsc wejścia (plan 59, C1): zakres opisuje samą strukturę
+    expect(Object.keys(r)).not.toContain('spots');
     expect(r.x).toBeNull();
     expect(r.end).toBe(b.length - 1);
   });
@@ -63,39 +61,19 @@ describe('Zakresy P/b', () => {
     const pre = ranges(b.slice(0, e + 48));
     expect(pre).toHaveLength(1);
     expect(pre[0].kv).toBeNull();
-    expect(pre[0].spots).toEqual([]);
     // Te same świece do kv: ten sam zakres co z pełną historią
     const full = ranges(b)[0];
     const cut = ranges(b.slice(0, e + 49))[0];
     expect([cut.kv, cut.hi, cut.lo]).toEqual([full.kv, full.hi, full.lo]);
   });
 
-  it('fałszywe wybicie w górę i powrót w 2 świece: C w dół przy górnej krawędzi', () => {
-    // Zakres kończy się przy górze, wybicie zamknięciem 1068, powrót 1062
+  it('pierwsze zamknięcie poza strefą kończy zakres (wybicie w górę i powrót niczego nie dodają)', () => {
     const { b } = scenario(96, [1068, 1062, 1058, 1055]);
     const r = ranges(b)[0];
     expect(r.x).toBe(b.findIndex((x) => x.c === 1068));
-    const c = r.spots.find((s) => s.rule === 'C');
-    expect(c).toBeDefined();
-    expect(c!.side).toBe(-1);
-    expect(c!.px).toBe(r.hi);
-    expect(c!.k).toBe(r.x! + 1);
-    expect(c!.rr).toBeGreaterThanOrEqual(3);
-    expect(r.spots.some((s) => s.rule === 'B')).toBe(false);
-  });
-
-  it('wybicie, test krawędzi i zamknięcie nad świecą wybicia: B w górę', () => {
-    // Wybicie 1068, dalej 1069, test krawędzi 1065,5 (knot do 1065) i zamknięcie 1070 nad świecą wybicia (1068,5)
-    const { b } = scenario(96, [1068, 1069, 1065.5, 1070, 1074]);
-    const r = ranges(b)[0];
-    const x = r.x!;
-    expect(b[x].c).toBe(1068);
-    const s = r.spots.find((y) => y.rule === 'B');
-    expect(s).toBeDefined();
-    expect(s!.side).toBe(1);
-    expect(b[s!.k].c).toBeGreaterThan(b[x].h);
-    expect(s!.rr).toBeGreaterThanOrEqual(3);
-    expect(r.spots.some((y) => y.rule === 'C')).toBe(false);
+    expect(r.end).toBe(r.x);
+    const up = ranges(scenario(96, [1068, 1069, 1065.5, 1070, 1074]).b)[0];
+    expect(up.end).toBe(up.x);
   });
 
   it('luka w świecach przerywa zakres, a złamany kształt go kasuje', () => {
@@ -159,17 +137,6 @@ describe('Poziomy profilu wolumenu', () => {
 });
 
 describe('Zegar', () => {
-  it('okno day tradingu: 08:00 Londynu do 14:00 Nowego Jorku, dni robocze, ze zmianą czasu', () => {
-    const at = (y: number, m: number, d: number, h: number, mi: number) => Date.UTC(y, m - 1, d, h, mi);
-    expect(inDtWindow(at(2026, 11, 2, 7, 55))).toBe(false);
-    expect(inDtWindow(at(2026, 11, 2, 8, 0))).toBe(true);
-    expect(inDtWindow(at(2026, 11, 2, 18, 55))).toBe(true);
-    expect(inDtWindow(at(2026, 11, 2, 19, 0))).toBe(false);
-    expect(inDtWindow(at(2026, 7, 6, 7, 0))).toBe(true);
-    expect(inDtWindow(at(2026, 7, 6, 18, 0))).toBe(false);
-    expect(inDtWindow(at(2026, 11, 7, 12, 0))).toBe(false);
-  });
-
   it('typowa godzina: mediana zakresu pełnych godzin w bp', () => {
     // Co godzinę 12 świec: zakres godziny 1000–1010 przy otwarciu 1000 = 100 bp
     const closes = Array.from({ length: 24 * 12 }, (_, i) => (i % 12 === 0 ? 1000 : 1005));
@@ -183,41 +150,5 @@ describe('Zegar', () => {
     }));
     expect(typicalHourBp(b, T0 + 24 * 3_600_000)).toBeCloseTo(100, 6);
     expect(typicalHourBp(b.slice(0, 100), T0 + 24 * 3_600_000)).toBeNull();
-  });
-});
-
-describe('Pomiar miejsc', () => {
-  const bar = (i: number, h: number, l: number): Bar5 => ({
-    t: T0 + i * TF_MS,
-    o: 100,
-    h,
-    l,
-    c: 100,
-    v: 1,
-  });
-  const e = { t: T0, side: 1 as const, px: 100, h: 100 }; // bariera 1% w obie strony
-
-  it('trafienie, gdy cena przejdzie barierę w stronę miejsca pierwsza', () => {
-    expect(resolve(e, [bar(0, 100.5, 99.5), bar(1, 101.1, 99.8)], T0 + 600_000)).toBe('hit');
-  });
-
-  it('obie bariery w jednej świecy liczą się przeciw', () => {
-    expect(resolve(e, [bar(0, 101.2, 98.8)], T0 + 300_000)).toBe('miss');
-    expect(resolve({ ...e, side: -1 }, [bar(0, 100.2, 98.9)], T0 + 300_000)).toBe('hit');
-  });
-
-  it('bez rozstrzygnięcia przed końcem horyzontu, „none” po nim, luka w świecach czeka', () => {
-    const flat = Array.from({ length: HORIZON_MS / TF_MS }, (_, i) => bar(i, 100.5, 99.5));
-    expect(resolve(e, flat.slice(0, 10), T0 + 3_000_000)).toBeNull();
-    expect(resolve(e, flat, T0 + HORIZON_MS)).toBe('none');
-    expect(resolve(e, [bar(0, 100.5, 99.5), bar(2, 102, 99.5)], T0 + HORIZON_MS)).toBeNull();
-  });
-
-  it('wynik z przedziałem Wilsona bez otwartych i bez rozstrzygnięć „none”', () => {
-    const s = score([...Array(6).fill('hit'), ...Array(4).fill('miss'), null, 'none']);
-    expect([s.n, s.hits]).toEqual([10, 6]);
-    expect(s.ci!.lo).toBeCloseTo(0.3127, 3);
-    expect(s.ci!.hi).toBeCloseTo(0.8318, 3);
-    expect(score([]).ci).toBeNull();
   });
 });

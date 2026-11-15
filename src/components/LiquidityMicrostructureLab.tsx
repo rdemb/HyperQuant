@@ -439,8 +439,8 @@ export const MicrostructureMethods: React.FC<{
       subtitle: tr('Nierównowaga kupna i sprzedaży w kubełkach wolumenowych (BVC)', 'Buy/sell imbalance in volume buckets (BVC)'),
       formula: tr('VPIN = Σ |V_kupno − V_sprzedaż| / (n · V_kubełka)', 'VPIN = Σ |V_buy − V_sell| / (n · V_bucket)'),
       idea: tr(
-        'VPIN (Easley, López de Prado, O’Hara 2012) opisuje, jak jednostronny jest przepływ. Jego zdolność przewidywania jest sporna (Andersen & Bondarenko 2014), dlatego traktuj go jako opis bieżącego przepływu, a nie sygnał. Dywergencja spot/perp jest liczona tylko przy włączonych źródłach CEX.',
-        "VPIN (Easley, López de Prado, O'Hara 2012) describes how one-sided the flow is. Its predictive power is disputed (Andersen & Bondarenko 2014), so treat it as a description of the current flow, not a signal. The spot/perp divergence is computed only with CEX sources enabled."
+        'VPIN (Easley, López de Prado, O’Hara 2012) opisuje, jak jednostronny jest przepływ. Jego zdolność przewidywania jest sporna (Andersen & Bondarenko 2014), dlatego traktuj go jako opis bieżącego przepływu, a nie rekomendację. Dywergencja spot/perp jest liczona tylko przy włączonych źródłach CEX.',
+        "VPIN (Easley, López de Prado, O'Hara 2012) describes how one-sided the flow is. Its predictive power is disputed (Andersen & Bondarenko 2014), so treat it as a description of the current flow, not a recommendation. The spot/perp divergence is computed only with CEX sources enabled."
       ),
       check: tr(
         'Porównuj bieżący VPIN z jego rozkładem z ostatnich sesji — wysoki percentyl oznacza przepływ nietypowo jednostronny.',

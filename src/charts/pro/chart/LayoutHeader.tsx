@@ -228,8 +228,8 @@ export const LayoutHeader: React.FC<{
         </dl>
         <p className="mt-2.5 text-[10.5px] leading-snug text-ink-3">
           {tr(
-            `Liczby z danych tego wykresu (${store.coin}), odświeżane co 5 s. LIVE — dane Hyperliquid albo skanera, MODEL — wynik modelu z nazwą metody, wiek — migawka skanera starsza niż 2 min. To opis, nie sygnał ani rekomendacja.`,
-            `Numbers from this chart's data (${store.coin}), refreshed every 5 s. LIVE is Hyperliquid or scanner data, MODEL a model output with the method name, an age a scanner snapshot older than 2 min. A description, not a signal or a recommendation.`
+            `Liczby z danych tego wykresu (${store.coin}), odświeżane co 5 s. LIVE — dane Hyperliquid albo skanera, MODEL — wynik modelu z nazwą metody, wiek — migawka skanera starsza niż 2 min. To opis, nie rekomendacja.`,
+            `Numbers from this chart's data (${store.coin}), refreshed every 5 s. LIVE is Hyperliquid or scanner data, MODEL a model output with the method name, an age a scanner snapshot older than 2 min. A description, not a recommendation.`
           )}
         </p>
       </div>

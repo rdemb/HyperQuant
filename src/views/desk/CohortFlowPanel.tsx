@@ -220,8 +220,8 @@ const FlowBody: React.FC<{ flow: CohortFlow; mode: Mode; setMode: (m: Mode) => v
           </li>
           <li>
             {tr(
-              'To opis przepływu, nie sygnał. „Poinformowani” to wynik statystyczny z przeszłości, bez gwarancji na przyszłość.',
-              'This describes flow, it is not a signal. "Informed" is a statistical result from the past, with no guarantee for the future.'
+              'To opis przepływu, nie rekomendacja. „Poinformowani” to wynik statystyczny z przeszłości, bez gwarancji na przyszłość.',
+              'This describes flow, it is not a recommendation. "Informed" is a statistical result from the past, with no guarantee for the future.'
             )}
           </li>
         </ul>

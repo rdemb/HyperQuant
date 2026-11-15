@@ -10,7 +10,7 @@ import { NO_SCANNER, noScannerTitle } from './flowColumnModel';
 /**
  * Kto przyjmuje uderzenia: Hyperliquid podaje przy każdej transakcji konto makera i biorcy, więc widać, czy płynność
  * po każdej stronie daje garstka kont, czy tłum, i czy uderza kilka rąk. Udział trzech największych kont w wartości
- * z 15 min (pseudonimy jak na taśmie) obok zwykłego udziału z ostatniej godziny. Opis, nie sygnał.
+ * z 15 min (pseudonimy jak na taśmie) obok zwykłego udziału z ostatniej godziny. Opis, nie rekomendacja.
  */
 
 export const WHO_MS = 15 * 60_000;
@@ -245,8 +245,8 @@ export const WhoPanel: React.FC<{
     );
   };
   const note = tr(
-    'Hyperliquid podaje konto makera i biorcy przy każdej transakcji, więc widać, czy płynność daje garstka kont, czy tłum. Ostatnie 15 min; „zwykle” = mediana z okien 15 min w ostatniej godzinie, żółte od 1,25× zwykłego. Pseudonimy jak na taśmie; w zapisie serwera konto ma numer na dobę UTC w nowszych plikach (numeracja dobowa), a w starszych plikach — na godzinę UTC, więc na przełomie doby (w starszych plikach — godziny) jedno konto może liczyć się jako dwa. Opis, nie sygnał.',
-    'Hyperliquid gives the maker and taker account of every trade, so you can see whether liquidity comes from a handful of accounts or a crowd. Last 15 min; “usually” = median of 15 min windows in the last hour, yellow from 1.25× usual. Pseudonyms as on the tape; in the server recording an account has a number per UTC day in newer files (daily numbering) and per UTC hour in older files, so at the turn of the day (in older files, of the hour) one account can count as two. A description, not a signal.'
+    'Hyperliquid podaje konto makera i biorcy przy każdej transakcji, więc widać, czy płynność daje garstka kont, czy tłum. Ostatnie 15 min; „zwykle” = mediana z okien 15 min w ostatniej godzinie, żółte od 1,25× zwykłego. Pseudonimy jak na taśmie; w zapisie serwera konto ma numer na dobę UTC w nowszych plikach (numeracja dobowa), a w starszych plikach — na godzinę UTC, więc na przełomie doby (w starszych plikach — godziny) jedno konto może liczyć się jako dwa. Opis, nie rekomendacja.',
+    'Hyperliquid gives the maker and taker account of every trade, so you can see whether liquidity comes from a handful of accounts or a crowd. Last 15 min; “usually” = median of 15 min windows in the last hour, yellow from 1.25× usual. Pseudonyms as on the tape; in the server recording an account has a number per UTC day in newer files (daily numbering) and per UTC hour in older files, so at the turn of the day (in older files, of the hour) one account can count as two. A description, not a recommendation.'
   );
   return (
     <section aria-label={tr('Kto przyjmuje uderzenia', 'Who absorbs the hits')} className={`flex flex-col min-h-0 bg-surface-1 ${className}`}>
