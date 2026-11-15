@@ -154,7 +154,7 @@ const LiqMapBody: React.FC<{ map: LiqMap; delayed: boolean; sigmaDaily: number; 
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <div className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium">{tr('Kaskada: szok → ruch końcowy', 'Cascade: shock → final move')}</div>
           <Badge
-            tone="model"
+            tone="model" card="cascade"
             title={tr(
               'Punkt stały: szok → likwidacje z mapy → wpływ ceny z prawa pierwiastka (Y = 1, pasmo 0,5–1,5) → kolejne likwidacje',
               'Fixed point: shock → liquidations from the map → price impact from the square-root law (Y = 1, band 0.5–1.5) → further liquidations'

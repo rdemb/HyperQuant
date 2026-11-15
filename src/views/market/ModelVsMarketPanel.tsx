@@ -56,7 +56,7 @@ export const ModelVsMarketPanel: React.FC = () => {
             <Badge tone="live" title={tr('Ceny z publicznego arkusza rynków wynikowych Hyperliquid (strona „Yes”)', 'Prices from the public Hyperliquid outcome market book ("Yes" side)')}>
               LIVE
             </Badge>
-            <Badge tone="model" title={tr('Prawdopodobieństwa z modelu zmienności desku (sezonowy log-HAR + FHS, Monte Carlo)', 'Probabilities from the desk volatility model (seasonal log-HAR + FHS, Monte Carlo)')}>
+            <Badge tone="model" card="modelVsMarket" title={tr('Prawdopodobieństwa z modelu zmienności desku (sezonowy log-HAR + FHS, Monte Carlo)', 'Probabilities from the desk volatility model (seasonal log-HAR + FHS, Monte Carlo)')}>
               MODEL
             </Badge>
           </span>

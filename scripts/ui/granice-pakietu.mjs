@@ -27,10 +27,11 @@ else {
     widziane.add(k);
     for (const i of manifest[k]?.imports ?? []) stos.push(i);
   }
-  const leniwe = (p) => p.startsWith('src/views/') || (p.startsWith('src/nowy/') && p !== 'src/nowy/widoki.ts') || p === 'src/shell/PaletaPolecen.tsx';
+  const leniwe = (p) => p.startsWith('src/views/') || (p.startsWith('src/nowy/') && p !== 'src/nowy/widoki.ts') || p === 'src/shell/PaletaPolecen.tsx' || p === 'src/shell/KartaModelu.tsx';
   const zle = [...widziane].filter((k) => leniwe(k) || leniwe(manifest[k]?.src ?? ''));
   if (zle.length) bledy.push(`wejście statycznie importuje moduły, które mają być leniwe: ${zle.join(', ')}`);
   if (!manifest['src/shell/PaletaPolecen.tsx']?.isDynamicEntry) bledy.push('src/shell/PaletaPolecen.tsx nie jest osobnym modułem dynamicznym');
+  if (!manifest['src/shell/KartaModelu.tsx']?.isDynamicEntry) bledy.push('src/shell/KartaModelu.tsx nie jest osobnym modułem dynamicznym');
 
   const html = readFileSync(join(DIST, 'index.html'), 'utf8');
   const skrypt = html.match(/<script[^>]+src="\.\/(assets\/[^"]+\.js)"/)?.[1];

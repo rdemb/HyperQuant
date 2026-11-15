@@ -36,6 +36,7 @@ import { type Theme, setTheme, useTheme } from '../theme';
 import { levelStatusLabel } from '../utils/shaakuniEngine';
 import { NOWE_WIDOKI } from '../nowy/widoki';
 import { PasekDnia } from './PasekDnia';
+import { KartaModeluHost } from './KartaModeluHost';
 import { dayPhase, useNow } from './dzien';
 import type { Akcja } from './polecenia';
 import { sessionNameAt } from '../utils/sessionNames';
@@ -631,6 +632,7 @@ export const AppShell: React.FC = () => {
   return (
     <div data-app-shell className="min-h-dvh flex bg-page text-ink-1">
       <Szyna go={go} />
+      <KartaModeluHost />
       <div className="flex-1 min-w-0 flex flex-col">
         <header ref={headerRef} data-app-header className="pt-safe sticky top-0 z-30 bg-page/90 backdrop-blur-xl border-b border-line">
           <div className="flex items-center gap-2 sm:gap-3 px-4 lg:px-6 h-14">

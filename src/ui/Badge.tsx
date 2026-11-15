@@ -1,4 +1,6 @@
 import React from 'react';
+import { tr } from '../i18n';
+import { type ModelCardId, openModelCard } from './modelCard';
 
 export type BadgeTone = 'live' | 'model' | 'sim' | 'stale' | 'neutral' | 'warn';
 
@@ -22,21 +24,49 @@ const MARKS: Partial<Record<BadgeTone, string>> = {
   stale: 'border-[1.5px] border-warn',
 };
 
-/** Znacznik pochodzenia/stanu danych: LIVE / MODEL / SIM / STALE. `size="sm"` — mniejszy (nagłówek układu na telefonie). */
-export const Badge: React.FC<{ tone: BadgeTone; children: React.ReactNode; title?: string; testId?: string; size?: 'sm' }> = ({
+/**
+ * Znacznik pochodzenia/stanu danych: LIVE / MODEL / SIM / STALE. `size="sm"` — mniejszy (nagłówek układu na telefonie).
+ * `card` — plakietka jest przyciskiem karty modelu (metoda, dane, słabości, wynik poza próbą; `ui/modelCard`).
+ */
+export const Badge: React.FC<{ tone: BadgeTone; children: React.ReactNode; title?: string; testId?: string; size?: 'sm'; card?: ModelCardId }> = ({
   tone,
   children,
   title,
   testId,
   size,
-}) => (
-  <span
-    data-testid={testId}
-    data-tone={tone}
-    title={title}
-    className={`inline-flex items-center gap-1 rounded border font-semibold tracking-wide uppercase whitespace-nowrap ${size === 'sm' ? 'px-1 py-px text-[9px]' : 'px-1.5 py-0.5 text-[10px]'} ${TONES[tone]}`}
-  >
-    {MARKS[tone] && <span aria-hidden="true" className={`shrink-0 rounded-full ${size === 'sm' ? 'size-1.5' : 'size-2'} ${MARKS[tone]}`} />}
-    {children}
-  </span>
-);
+  card,
+}) => {
+  const cls = `inline-flex items-center gap-1 rounded border font-semibold tracking-wide uppercase whitespace-nowrap ${size === 'sm' ? 'px-1 py-px text-[9px]' : 'px-1.5 py-0.5 text-[10px]'} ${TONES[tone]}`;
+  const inner = (
+    <>
+      {MARKS[tone] && <span aria-hidden="true" className={`shrink-0 rounded-full ${size === 'sm' ? 'size-1.5' : 'size-2'} ${MARKS[tone]}`} />}
+      {children}
+    </>
+  );
+  if (!card)
+    return (
+      <span data-testid={testId} data-tone={tone} title={title} className={cls}>
+        {inner}
+      </span>
+    );
+  return (
+    <button
+      type="button"
+      data-testid={testId}
+      data-tone={tone}
+      data-model-card={card}
+      title={title ? `${title} · ${tr('karta modelu', 'model card')}` : tr('Karta modelu', 'Model card')}
+      aria-haspopup="dialog"
+      aria-label={tr(`${typeof children === 'string' ? children : 'MODEL'}: karta modelu`, `${typeof children === 'string' ? children : 'MODEL'}: model card`)}
+      onClick={(e) => {
+        // Plakietka bywa w klikalnej karcie albo wierszu: karta modelu zamiast akcji rodzica
+        e.preventDefault();
+        e.stopPropagation();
+        openModelCard(card, e.currentTarget);
+      }}
+      className={`${cls} cursor-help hover:border-ink-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent transition-colors duration-150`}
+    >
+      {inner}
+    </button>
+  );
+};
