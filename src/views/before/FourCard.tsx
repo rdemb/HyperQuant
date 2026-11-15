@@ -13,6 +13,7 @@ import { type FourNumber, type FourNumbers, fourNumbersText } from '../../utils/
 import { fourNumbers, readFourInputs } from './fourInputs';
 import { fourCanvas, fourTitle } from './fourFrame';
 import { tr } from '../../i18n';
+import { marketLabel } from '../../config/deskMarkets';
 
 // Klatka do zrzutu dopiero po kliknięciu
 const FrameDialog = React.lazy(() => import('../../charts/pro/chart/FrameDialog').then((m) => ({ default: m.FrameDialog })));
@@ -88,7 +89,7 @@ export const FourCardView: React.FC<{ n: FourNumbers; action?: React.ReactNode }
     <section id="czworka" aria-labelledby={titleId} className="min-w-0 rounded-xl border border-line bg-surface-1">
       <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 border-b border-line px-3 pt-2.5 pb-2 sm:px-4">
         <h2 id={titleId} className="text-[11px] font-medium uppercase tracking-[0.08em] text-ink-3">
-          {tr('Czwórka', 'Four numbers')} · {n.coin}
+          {n.items.some((i) => i.id === 'spread') ? tr('Trójka i spread', 'Three numbers and spread') : tr('Czwórka', 'Four numbers')} · {marketLabel(n.coin)}
         </h2>
         <div className="flex items-center gap-3">
           <p className="text-[11px] leading-snug text-ink-3">{tr('Cztery liczby przed sesją. Opis, nie rekomendacja.', 'Four numbers before the session. A description, not a recommendation.')}</p>

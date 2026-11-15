@@ -4,6 +4,13 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Trójka i spread dla złota i S&P 500, znaczniki NYSE i CME na tarczy (2026-11-15)
+<!-- co-nowego: grupa=rynki | pl=Dla złota i S&P 500 karta liczb pokazuje spread zamiast paliwa, a tarcza Startu zaznacza otwarcia NYSE i sesji CME | en=For gold and the S&P 500 the numbers card shows the spread instead of fuel, and the Start dial marks the NYSE and CME session opens -->
+
+#### Dodane
+- **Trójka i spread** (`fourNumbers.spreadNum`): na rynku bez skanera druga liczba Czwórki to spread impact teraz (pb, LIVE z kontekstu rynku w WebSocket, `impactPxs`), z wyjaśnieniem, że paliwo jest tylko dla BTC; nagłówek karty „Trójka i spread · GOLD”. BTC bez zmian.
+- **Znaczniki rynków bazowych** na tarczy Startu: otwarcie NYSE 9:30 ET i sesji CME 18:00 ET w czasie lokalnym (`underlying.baseOpens`, test z dniem zmiany czasu w USA).
+
 ### Start: rynki teraz, godziny rynku bazowego i jakość danych (2026-11-15)
 <!-- co-nowego: grupa=rynki | pl=Start pokazuje BTC, złoto i S&P 500 naraz: cena, ruch od otwarcia sesji, czy giełda bazowa jest otwarta i jakość danych; Czwórka dla wybranego rynku | en=Start shows BTC, gold and the S&P 500 together: price, move since the session open, whether the underlying exchange is open and data quality; the Four numbers for the chosen market -->
 

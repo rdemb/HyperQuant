@@ -45,3 +45,12 @@ describe('rynek bazowy (projekt 60, Q1)', () => {
     expect(underlyingAt(gold, et('2026-03-08T18:00:00', '-04:00')).state).toBe('open');
   });
 });
+
+describe('znaczniki otwarć rynków bazowych', () => {
+  it('NYSE 9:30 ET i CME 18:00 ET, także w dniu zmiany czasu w USA (8.03.2026)', async () => {
+    const { baseOpens } = await import('../underlying');
+    expect(baseOpens(Date.parse('2026-11-18T15:00:00Z'))).toEqual({ nyse: Date.parse('2026-11-18T14:30:00Z'), cme: Date.parse('2026-11-18T23:00:00Z') });
+    // 8.03.2026 po 3:00 EDT (UTC−4): 9:30 ET = 13:30 UTC, 18:00 ET = 22:00 UTC
+    expect(baseOpens(Date.parse('2026-03-08T16:00:00Z'))).toEqual({ nyse: Date.parse('2026-03-08T13:30:00Z'), cme: Date.parse('2026-03-08T22:00:00Z') });
+  });
+});

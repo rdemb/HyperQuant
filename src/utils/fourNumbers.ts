@@ -38,7 +38,7 @@ export const WIDTH_DAYS = 20;
 /** Paliwo: ten ułamek ceny pod nią i nad nią. */
 export const FUEL_BAND = 0.01;
 
-export type FourId = 'clarity' | 'fuel' | 'hourWidth' | 'vwap';
+export type FourId = 'clarity' | 'fuel' | 'spread' | 'hourWidth' | 'vwap';
 
 export interface FourNumber {
   id: FourId;
@@ -81,6 +81,8 @@ export interface FourInputs {
   bars1h?: Got<readonly VBar[]>;
   /** VWAP doby UTC ze świec 1m (jak nagłówek Kokpitu). */
   dayVwap?: Got<{ vwap: number; sd: number }>;
+  /** Spread impact teraz (pb) z kontekstu rynku: zastępuje paliwo na rynkach bez skanera (HIP-3); null = brak cen impact. */
+  spreadBp?: number | null;
 }
 
 /** Wartość wejścia albo null (brak, wczytywanie). */
@@ -365,9 +367,26 @@ export function vwapFour(x: FourInputs): FourNumber {
   return { id: 'vwap', title: tr('Od VWAP', 'From VWAP'), value: n.value, badge: n.badge, hint: n.hint };
 }
 
-/** Cztery liczby Czwórki (zawsze cztery, brak danych — „—” z powodem). */
+/**
+ * (2′) Spread teraz na rynku bez skanera (HIP-3): różnica cen impact kupna i sprzedaży wobec mid, w pb (koszt wejścia
+ * większym zleceniem), LIVE z kontekstu rynku. Zastępuje paliwo, którego bez pozycji nie da się policzyć (projekt 60 S2).
+ */
+export function spreadNum(x: FourInputs): FourNumber {
+  const base = { id: 'spread', title: tr('Spread teraz', 'Spread now'), badge: 'LIVE' } as const;
+  const why = tr(
+    'Paliwo tylko dla BTC: Hyperliquid nie udostępnia pozycji rynków HIP-3. Zamiast niego spread impact: różnica cen, po których większe zlecenie kupna i sprzedaży weszłoby w arkusz, wobec ceny środka.',
+    'Fuel is BTC-only: Hyperliquid does not expose positions on HIP-3 markets. Instead, the impact spread: the gap between the prices at which a larger buy and sell order would fill against the book, relative to the mid price.'
+  );
+  if (x.spreadBp === undefined || x.spreadBp === null || !Number.isFinite(x.spreadBp)) return { ...base, value: DASH, hint: tr(`—: brak notowań impact. ${why}`, `—: no impact quotes. ${why}`) };
+  return { ...base, value: tr(`${fmtFixed(x.spreadBp, 1)} pb`, `${fmtFixed(x.spreadBp, 1)} bp`), hint: why };
+}
+
+/** Rynek z pełnym skanerem ma paliwo; inny — spread (nagłówek „Trójka i spread”). */
+export const hasFuel = (x: Pick<FourInputs, 'coin' | 'markets'>): boolean => marketCaps(x.coin, x.markets ?? DEFAULT_MARKETS).scanner;
+
+/** Cztery liczby Czwórki (zawsze cztery, brak danych — „—” z powodem); bez skanera spread zamiast paliwa. */
 export function fourNumbers(x: FourInputs): FourNumbers {
-  return { coin: x.coin, now: x.now, items: [clarityNum(x), fuelNum(x), hourWidthNum(x), vwapFour(x)] };
+  return { coin: x.coin, now: x.now, items: [clarityNum(x), hasFuel(x) ? fuelNum(x) : spreadNum(x), hourWidthNum(x), vwapFour(x)] };
 }
 
 // ───────────────────────── tekst ─────────────────────────
