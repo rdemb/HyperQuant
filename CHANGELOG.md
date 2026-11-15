@@ -4,6 +4,13 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Dolne menu także na blogu i stronach serwisu (2026-11-15)
+<!-- co-nowego: grupa=blog | pl=Na telefonie Blog, Wyniki, Co nowego, Lekcje i Wykresy mają to samo dolne menu co aplikacja | en=On a phone the Blog, Results, What's new, Lessons and Charts pages have the same menu bar at the foot of the screen as the app -->
+
+#### Naprawione
+- **Dolny pasek na stronach statycznych** (`scripts/blog/render.mjs`, wszystkie strony z szablonu: blog i wpisy, archiwum, Wyniki, Co nowego, Lekcje i atlas, Wykresy, 404, wersje angielskie): poniżej 1024 px ten sam pasek co w aplikacji (Przed sesją, W sesji, Po sesji, Rynki, Więcej) z tymi samymi ikonami (`scripts/blog/ikony.mjs`, dane ikon lucide z aplikacji). „Więcej” (Lekcje, Badania, Źródła, Agenci AI, Blog, Wyniki, Co nowego) na `<details>`, bez skryptu. Nawigacja nagłówka na telefonie i tablecie przeszła do paska; w nagłówku zostaje marka i język. Stopka z miejscem na pasek.
+- Przegląd przy 390 px: 9 widoków aplikacji i 11 stron statycznych — pasek przy dole ekranu, „Więcej” otwiera się w ekranie, stopka niezasłonięta, bez przewijania w bok.
+
 ### Serwer MCP: gotowe polecenia (2026-11-15)
 <!-- co-nowego: ukryj -->
 
