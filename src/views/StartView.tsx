@@ -240,13 +240,16 @@ const StartView: React.FC = () => {
       <Chapter
         nr="02"
         eyebrow={tr('Przed sesją', 'Pre-session')}
-        title={tr('Gdzie leży paliwo?', 'Where is the fuel?')}
+        title={tr('Gdzie leży paliwo BTC?', 'Where is the BTC fuel?')}
         lead={tr(
           'Mapa likwidacji ze skanera HyperQuant jako teren: grzbiety to ceny, przy których otwarte pozycje zostałyby zamknięte. Przód to szczegół, tył to szeroki kształt.',
           'The HyperQuant scanner liquidation map as a landscape: ridges are prices where open positions would be closed. The front is detail, the back is the broad shape.'
         )}
         aside={
           <div className="flex flex-col items-start gap-2 text-[13px] text-ink-2">
+            <Badge tone="neutral" title={tr('Mapa likwidacji istnieje tylko dla BTC (pozycje on-chain z pełnego skanera)', 'The liquidation map exists for BTC only (on-chain positions from the full scanner)')}>
+              BTC
+            </Badge>
             {mapShown && map ? (
               <Badge tone="live" title={tr('Mapa skanera z pozycji on-chain', 'Scanner map from on-chain positions')}>
                 LIVE · {time(map.asOf)} · {fmtFixed(map.coverage.share * 100, 0)}% OI
@@ -270,6 +273,14 @@ const StartView: React.FC = () => {
           )}
         </div>
         <p className="mt-4 text-xs text-ink-3">{tr('Cena przy mapie: cena znakowa z migawki skanera (nie z tej sekundy).', 'Price at the map: the mark price of the scanner snapshot (not this second).')}</p>
+        {deskMarketOf(startCoin)?.scanner !== 'full' && (
+          <p data-teren-tylko-btc className="mt-2 text-xs text-ink-2">
+            {tr(
+              `Wybrany rynek: ${startLabel}. Mapa likwidacji istnieje tylko dla BTC (Hyperliquid nie udostępnia pozycji rynków HIP-3), więc ten rozdział zawsze pokazuje BTC.`,
+              `Selected market: ${startLabel}. The liquidation map exists for BTC only (Hyperliquid does not expose positions on HIP-3 markets), so this chapter always shows BTC.`
+            )}
+          </p>
+        )}
       </Chapter>
 
       <Chapter

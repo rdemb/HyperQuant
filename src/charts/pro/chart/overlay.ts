@@ -45,6 +45,8 @@ import { autoRowStep, fmtPx } from './layout';
 import type { ChartSettings } from './settings';
 import { MONO, PRO, rgba } from './theme';
 import { lang, tr } from '../../../i18n';
+import { type DeskMarket, deskMarketOf } from '../../../config/deskMarkets';
+import { closedSpans } from '../../../utils/underlying';
 
 /**
  * Warstwa wskaźników nad główną serią: VWAP z pasmami ±1σ i ±2σ, VWAP sesji, profil wolumenu widocznego
@@ -79,7 +81,13 @@ export interface IndicatorValues {
   anchor: IndicatorScope['vwapAnchor'];
 }
 
+/** Podpisy zacienienia okresów bez notowań rynku bazowego. */
+const PLATFORM_CLOSED = tr('cena platformy: rynek bazowy zamknięty', 'platform price: underlying market closed');
+const PLATFORM_BREAK = tr('cena platformy: przerwa', 'platform price: break');
+
 const K = {
+  platform: rgba(PRO.ink3, 0.14),
+  platformText: rgba(PRO.ink3, 0.9),
   vwap: PRO.vwap,
   vwapBand1: rgba(PRO.vwap, 0.06),
   vwapBand2: rgba(PRO.vwap, 0.03),
@@ -337,6 +345,8 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
   private whaleHits: { y: number; key: string }[] = [];
   private edge: (() => EdgeTags | null) | null = null;
   private scene: Scene = emptyScene();
+  /** Rynek desku wykresu: na rynkach HIP-3 okresy bez notowań rynku bazowego są zacienione (cena platformy). */
+  private market: DeskMarket | null = null;
   /** Prostokąty narysowanych podpisów (px CSS panelu) z ostatniej klatki: etykiety liczbowe innych warstw je omijają. */
   private drawn: Box[] = [];
 
@@ -424,6 +434,14 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
       this.ibs = this.scope.ib ? initialBalances(bars, intervalMs) : [];
     }
     this.ibDraws = selectIbs(this.ibs, bars, intervalMs, now);
+    this.requestUpdate?.();
+  }
+
+  /** Rynek wykresu (nazwa Hyperliquid): z konfiguracji rynków desku; poza nią bez zacienienia. */
+  setMarket(coin: string): void {
+    const m = deskMarketOf(coin);
+    if (m === this.market) return;
+    this.market = m;
     this.requestUpdate?.();
   }
 
@@ -547,6 +565,17 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
     const lastT = bars[n - 1].t;
     const t = this.toggles;
     const sc = this.scope;
+
+    // Cena platformy (projekt 60, Q2): na rynku HIP-3 okresy, gdy rynek bazowy nie notuje, zacienione pod wszystkim
+    if (this.market && this.market.underlying.calendar !== 'crypto') {
+      for (const c of closedSpans(this.market, visFrom, visTo)) {
+        const x0 = Math.max(0, edge(c.from));
+        const x1 = Math.min(W, edge(c.to));
+        if (!(x1 - x0 >= 1)) continue;
+        s.rects.push({ x: x0, y: 0, w: x1 - x0, h: H, color: K.platform });
+        if (x1 - x0 >= 96) s.texts.push({ x: x0 + 6, y: H - 24, text: c.kind === 'break' ? PLATFORM_BREAK : PLATFORM_CLOSED, color: K.platformText, align: 'left' });
+      }
+    }
 
     // Profil widocznego zakresu (pod świecami, przy prawej krawędzi) i profile sesji od ich początku
     const step = this.rowStep(bars, vt, Y);

@@ -209,3 +209,16 @@ function fakeStore() {
     orders: { range: () => [] },
   };
 }
+
+describe('legenda na rynku HIP-3: warstwy bez danych zwinięte (projekt 60, W1)', () => {
+  it('S&P 500: klastry likwidacji, mapa z bloga i giełdy → jedna plakietka z jednym zdaniem; reszta bez zmian', () => {
+    const s = { ...DEFAULT_SETTINGS, ...LAYERS_OFF, showHeatmap: true, showLiq: true, showBlogMap: true, showVenueCvd: true, indicators: [] };
+    const chips = legendChips(s, { coin: 'xyz:SP500', now: NOW, intervalMs: M5, scan: {} });
+    const missing = chips.filter((c) => c.key === 'missing');
+    expect(missing).toHaveLength(1);
+    expect(missing[0].text).toMatch(/^—, [23] warstwy$/);
+    expect(missing[0].hint).toContain('Hyperliquid nie udostępnia pozycji rynków HIP-3');
+    expect(chips.some((c) => c.text === '—, bez skanera')).toBe(false);
+    expect(chips.find((c) => c.key === 'showHeatmap')?.text).toBe('LIVE');
+  });
+});
