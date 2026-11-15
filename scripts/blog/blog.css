@@ -16,9 +16,9 @@
   --sell: #ca3829;
   --buy-ink: #82bcfc;
   --sell-ink: #f68771;
-  --font-display: 'Bricolage Grotesque', system-ui, sans-serif;
-  --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --font-display: 'Bricolage Grotesque', 'Bricolage Fallback', system-ui, sans-serif;
+  --font-sans: 'Plus Jakarta Sans', 'Plus Jakarta Fallback', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', 'JetBrains Mono Fallback', ui-monospace, monospace;
 }
 
 *,

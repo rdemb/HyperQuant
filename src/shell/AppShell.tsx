@@ -261,7 +261,15 @@ const Item: React.FC<{ label: string; value: string; title?: string; className?:
   </span>
 );
 
-const ViewFallback = () => <EmptyState title={tr('Ładowanie widoku…', 'Loading view…')} />;
+/**
+ * Zastępnik leniwego widoku: zajmuje wysokość ekranu pod nagłówkiem, żeby stopka nie stała na ekranie przed widokiem
+ * i nie skakała w dół, gdy widok się wczyta (przesunięcie układu, CLS, na wolnym łączu).
+ */
+const ViewFallback = () => (
+  <div data-view-fallback className="min-h-[calc(100dvh-var(--hq-header-h,6rem))]">
+    <EmptyState title={tr('Ładowanie widoku…', 'Loading view…')} />
+  </div>
+);
 
 // Bez globalnego przełącznika interwału: widoki z własnymi interwałami (wykresy faz dnia, Lekcje) i bez wykresów (Agenci AI)
 export const OWN_INTERVALS: ViewId[] = ['before', 'charts', 'after', 'lessons', 'agents', 'markets'];
