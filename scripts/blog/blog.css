@@ -151,6 +151,113 @@ main.wrap {
   padding-top: 32px;
   padding-bottom: 48px;
 }
+
+/* ───── Dolny pasek (telefon i tablet, poniżej 1024 px; jak w aplikacji) ───── */
+.bottom-nav {
+  display: none;
+}
+@media (max-width: 1023px) {
+  /* Nawigacja w dolnym pasku; w nagłówku zostaje marka i przełącznik języka */
+  .site-header nav a:not(.nav-lang) {
+    display: none;
+  }
+  /* Miejsce na pasek pod stopką (body: wyższa szczegółowość niż ogólna reguła stopki niżej w pliku) */
+  body .site-footer {
+    padding-bottom: calc(80px + env(safe-area-inset-bottom));
+  }
+  .bottom-nav {
+    display: block;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 20;
+    background: rgb(19 21 24 / 0.95);
+    backdrop-filter: blur(16px);
+    border-top: 1px solid var(--line);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .bottom-nav__row {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+  .bottom-nav__item {
+    position: relative;
+    min-height: 56px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    color: var(--ink-3);
+    font: 500 11px/1.2 var(--font-sans);
+    text-decoration: none;
+    cursor: pointer;
+    list-style: none;
+  }
+  .bottom-nav__item::-webkit-details-marker {
+    display: none;
+  }
+  .bottom-nav__item span {
+    max-width: 100%;
+    padding: 0 4px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .bottom-nav__item.is-here {
+    color: var(--ink-1);
+  }
+  .bottom-nav__item.is-here::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 20px;
+    right: 20px;
+    height: 2px;
+    border-radius: 2px;
+    background: var(--accent);
+  }
+  .bottom-nav__more {
+    position: relative;
+  }
+  .bottom-nav__more[open] > .bottom-nav__item {
+    color: var(--ink-1);
+  }
+  .bottom-nav__menu {
+    position: absolute;
+    right: 8px;
+    bottom: calc(100% + 8px);
+    width: 240px;
+    max-height: 75dvh;
+    overflow-y: auto;
+    padding: 6px;
+    background: var(--surface-2);
+    border: 1px solid var(--line-strong);
+    border-radius: 12px;
+    box-shadow: 0 24px 48px rgb(0 0 0 / 0.5);
+  }
+  .bottom-nav__link {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 44px;
+    padding: 0 12px;
+    border-radius: 8px;
+    color: var(--ink-1);
+    font-size: 14px;
+    text-decoration: none;
+  }
+  .bottom-nav__link:hover {
+    background: var(--surface-3);
+  }
+  .bottom-nav__link.is-here {
+    background: var(--surface-3);
+  }
+}
+.ikona {
+  flex-shrink: 0;
+}
 .site-footer {
   border-top: 1px solid var(--line);
   color: var(--ink-3);

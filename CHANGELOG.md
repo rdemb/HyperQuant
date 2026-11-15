@@ -10,6 +10,13 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 #### Zmienione
 - **`hyperquant-mcp` 0.1.5**: prompty MCP `prepare_session`, `session_now`, `review_session`, `check_level`, `market_note` (opis w sekcji „Serwer MCP: gotowe polecenia” niżej). Polecenia instalacji w README i szablonach z wersją `npx -y hyperquant-mcp@0.1.5`.
 
+### Dolne menu także na blogu i stronach serwisu (2026-11-15)
+<!-- co-nowego: grupa=blog | pl=Na telefonie Blog, Wyniki, Co nowego, Lekcje i Wykresy mają to samo dolne menu co aplikacja | en=On a phone the Blog, Results, What's new, Lessons and Charts pages have the same menu bar at the foot of the screen as the app -->
+
+#### Naprawione
+- **Dolny pasek na stronach statycznych** (`scripts/blog/render.mjs`, wszystkie strony z szablonu: blog i wpisy, archiwum, Wyniki, Co nowego, Lekcje i atlas, Wykresy, 404, wersje angielskie): poniżej 1024 px ten sam pasek co w aplikacji (Przed sesją, W sesji, Po sesji, Rynki, Więcej) z tymi samymi ikonami (`scripts/blog/ikony.mjs`, dane ikon lucide z aplikacji). „Więcej” (Lekcje, Badania, Źródła, Agenci AI, Blog, Wyniki, Co nowego) na `<details>`, bez skryptu. Nawigacja nagłówka na telefonie i tablecie przeszła do paska; w nagłówku zostaje marka i język. Stopka z miejscem na pasek.
+- Przegląd przy 390 px: 9 widoków aplikacji i 11 stron statycznych — pasek przy dole ekranu, „Więcej” otwiera się w ekranie, stopka niezasłonięta, bez przewijania w bok.
+
 ### Serwer MCP: gotowe polecenia (2026-11-15)
 <!-- co-nowego: ukryj -->
 
