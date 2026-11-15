@@ -775,6 +775,12 @@ export const AppShell: React.FC = () => {
               <span>
                 · {tr('czas lokalny', 'local time')} {Intl.DateTimeFormat().resolvedOptions().timeZone}
               </span>
+              <span>
+                ·{' '}
+                <a href={tr('./prywatnosc/', './en/privacy/')} className="underline decoration-line-strong hover:text-ink-1">
+                  {tr('Prywatność', 'Privacy')}
+                </a>
+              </span>
             </p>
           </div>
         </footer>

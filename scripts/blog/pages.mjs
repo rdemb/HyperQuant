@@ -9,6 +9,8 @@ import { RESULTS_PATHS, resultsPage } from './results.mjs';
 import { NEWS_PATHS, whatsNewPage } from './whatsnew.mjs';
 
 const LESSONS = { pl, en };
+import { privacyPage } from './privacy.mjs';
+
 export const LANGS = ['pl', 'en'];
 
 /** Ścieżki stron od korzenia desku. */
@@ -474,7 +476,7 @@ function notFoundPage(site) {
 export function sitePages(site, { results = {}, news = {} } = {}) {
   const out = [];
   for (const lang of LANGS) {
-    out.push(chartsPage(site, lang), lessonsPage(site, lang), resultsPage(site, lang, results), whatsNewPage(site, lang, news, T[lang].footSite));
+    out.push(chartsPage(site, lang), lessonsPage(site, lang), resultsPage(site, lang, results), whatsNewPage(site, lang, news, T[lang].footSite), privacyPage(site, lang, T[lang].footSite));
     const entries = LESSONS[lang].atlas.entries;
     entries.forEach((e, i) => out.push(atlasPage(site, lang, e, entries[i - 1], entries[i + 1])));
   }

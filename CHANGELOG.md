@@ -4,6 +4,14 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Tematy publiczne 24/7 i strona Prywatność (2026-11-15)
+<!-- co-nowego: grupa=blog | pl=Strona Prywatność: co zostaje na urządzeniu, z kim łączy się przeglądarka, alarmy i tematy 24/7 | en=Privacy page: what stays on your device, who your browser connects to, 24/7 alerts and topics -->
+
+#### Dodane
+- **Usługa `hyperquant-tematy`** (`backend/topics/`): jawny katalog warunków BTC (PDH, PDL, otwarcia Londynu i NY, ruch ≥ 1% w 15 min; kalibracja z 60 dni, przerwa 10 min, najwyżej 8 na dobę na temat) publikowany do tematów naszego serwera ntfy tokenem wydawcy; bez `HQ_TOPICS=1` tylko próba na sucho. Testy katalogu (przecięcia, przerwa, limit, otwarcia zgodne z aplikacją, treść bez kierunku).
+- **Serwer ntfy na VPS** (`backend/deploy/ntfy/`: konfiguracja ntfy i Caddy, `instaluj-ntfy.sh`, autotest `test-ntfy.sh`, `hyperquant-tematy.service`): wszyscy tylko odczyt, publikacja tylko tokenem w tematach `hq-*`, HTTPS przez Caddy, bez dzienników dostępu, wiadomości do 1 h, bez przekazywania do ntfy.sh. Uruchamiany ręcznie po wdrożeniu; opis w `backend/README.md`.
+- **Strona Prywatność** (`prywatnosc/`, `en/privacy/`, `scripts/blog/privacy.mjs`) i link w stopce aplikacji i stron serwisu.
+
 ### Uwięzieni: gdzie weszły pozycje BTC (2026-11-15)
 <!-- co-nowego: grupa=skaner | pl=Nowy panel Uwięzieni na Przed sesją: ceny wejścia otwartych pozycji BTC, ile longów i shortów jest pod wodą i jak daleko do likwidacji | en=New Trapped positions panel in Pre-session: entry prices of open BTC positions, how many longs and shorts are under water and how far liquidation is -->
 
