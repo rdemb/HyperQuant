@@ -1,65 +1,52 @@
 import React, { useId, useState } from 'react';
 import { QuantMathMetrics } from '../types/trading';
-import { Badge, Panel, Stat, DASH, fmtCompact, fmtPrice, fmtSigned, fmtFixed, fmtNum } from '../ui';
+import { Badge, Panel, Stat, DASH, fmtCompact, fmtPrice, fmtSigned, fmtFixed } from '../ui';
 import { hurstSide } from '../utils/noiseBands';
-import { hurstReadText, ouHalfLifeText } from './noiseText';
+import { hurstReadText, kyleParts, ouHalfLifeText, regimeParts, vpinParts } from './noiseText';
 import { tr } from '../i18n';
 
-// Panel metryk mikrostruktury — bez sygnałów transakcyjnych (desk ocenia plan tradera, nie podsuwa wejść).
+// Panel metryk mikrostruktury — opis, bez rekomendacji (desk ocenia plan tradera, nie podsuwa wejść).
 
-
-// Nazwy reżimów z regułowej klasyfikacji silnika: opis ostatnich świec, nie kierunek ani rada
-export const REGIME_TEXT: Record<QuantMathMetrics['regimeClassification'], { label: string; detail: string }> = {
-  'Spot CVD Lead': {
-    label: tr('CVD spot wyprzedzał perp', 'Spot CVD led perp'),
-    detail: tr(
-      'W ostatnich 16 świecach zmiana CVD spot była wyraźnie większa niż zmiana CVD perp, bez przewagi świeżych OB podaży w pobliżu. Opis przeszłości, nie kierunek. Wymaga danych spot (CEX opt-in).',
-      'Over the last 16 candles the spot CVD change was clearly larger than the perp CVD change, with no fresh supply OBs dominating nearby. A description of the past, not a direction. Needs spot data (CEX opt-in).'
-    ),
-  },
-  'Perp CVD Lead': {
-    label: tr('CVD perp wyprzedzał spot', 'Perp CVD led spot'),
-    detail: tr(
-      'W ostatnich 16 świecach zmiana CVD perp była wyraźnie większa niż zmiana CVD spot, bez przewagi świeżych OB popytu w pobliżu. Opis przeszłości, nie kierunek. Wymaga danych spot (CEX opt-in).',
-      'Over the last 16 candles the perp CVD change was clearly larger than the spot CVD change, with no fresh demand OBs dominating nearby. A description of the past, not a direction. Needs spot data (CEX opt-in).'
-    ),
-  },
-  'Momentum Breakout': {
-    label: 'Trend / momentum',
-    detail: tr('Wykładnik Hursta > 0,6 — zwroty ostatnich świec są dodatnio skorelowane.', 'Hurst exponent > 0.6: returns of recent candles are positively correlated.'),
-  },
-  'Mean-Reversion Equilibrium': {
-    label: tr('Równowaga', 'Equilibrium'),
-    detail: tr('Żadna reguła trendu ani absorpcji nie jest spełniona — stan domyślny.', 'No trend or absorption rule is met; the default state.'),
-  },
-};
-
-/** Reżim z reguł silnika: opis ostatnich świec, bez kierunku ceny. */
+/** Reżim zmienności (BOCPD) na zamkniętych świecach: prawdopodobieństwo niedawnej zmiany i σ reżimu, bez kierunku ceny. */
 export const QuantRegimePanel: React.FC<{ quant: QuantMathMetrics }> = ({ quant }) => {
-  const regime = REGIME_TEXT[quant.regimeClassification];
+  const r = regimeParts(quant.regime);
   return (
     <Panel
-      title={tr('Reżim (reguły)', 'Regime (rules)')}
-      eyebrow={tr('Opis ostatnich świec', 'Recent candles')}
+      title={tr('Reżim zmienności (BOCPD)', 'Volatility regime (BOCPD)')}
+      eyebrow={tr('Zamknięte świece wykresu', 'Closed chart candles')}
       actions={
-        <Badge tone="model" title={tr('Klasyfikacja regułowa ostatnich świec, bez prognozy', 'Rule-based classification of recent candles, no forecast')}>
+        <Badge
+          tone="model"
+          title={tr(
+            'BOCPD (Adams i MacKay 2007) na log-zwrotach zamkniętych świec (do 300), prior ze 100 pierwszych, oczekiwana długość reżimu 200 świec — jak wskaźnik „Reżim zmienności” na wykresie',
+            'BOCPD (Adams and MacKay 2007) on log returns of closed candles (up to 300), prior from the first 100, expected regime length 200 candles, as in the chart’s “Volatility regime” indicator'
+          )}
+        >
           MODEL
         </Badge>
       }
       bodyClassName="p-4"
     >
-      <div className="text-xl font-semibold text-ink-1 leading-tight">{regime.label}</div>
-      <p className="text-xs text-ink-3 leading-relaxed mt-1">{regime.detail}</p>
+      <div className="text-xl font-semibold text-ink-1 leading-tight font-mono tabular-nums">{r.value ?? DASH}</div>
+      <p className="text-xs text-ink-3 leading-relaxed mt-1">{r.detail}</p>
+      <p className="text-[11px] text-ink-3 leading-relaxed mt-2">
+        {tr(
+          'Opis zmienności ostatnich świec, nie kierunek ceny. Rytm doby (np. otwarcie Nowego Jorku) też podnosi prawdopodobieństwo zmiany.',
+          'A description of recent volatility, not a price direction. The daily rhythm (e.g. the New York open) also raises the change probability.'
+        )}
+      </p>
     </Panel>
   );
 };
 
-/** Kafle metryk: OU, Hawkes, Hurst, Shannon, VPIN, λ Kyle'a — każda z metodą w znaczniku MODEL. */
+/** Kafle metryk: OU, Hurst, VPIN, λ Kyle'a — każda z metodą w znaczniku MODEL i niepewnością albo pasmem szumu. */
 export const QuantMetricTiles: React.FC<{ quant: QuantMathMetrics; className?: string }> = ({
   quant,
-  className = 'grid-cols-2 md:grid-cols-3 xl:grid-cols-6',
+  className = 'grid-cols-2 md:grid-cols-4',
 }) => {
   const h = quant.hurstExponent;
+  const vpin = vpinParts(quant.vpin);
+  const kyle = kyleParts(quant.kyle);
   const tiles: { key: string; node: React.ReactNode }[] = [
     {
       key: 'ou',
@@ -74,28 +61,6 @@ export const QuantMetricTiles: React.FC<{ quant: QuantMathMetrics; className?: s
           }}
           value={<span>Z {fmtSigned(quant.ouZScore, 2)}σ</span>}
           hint={`${tr('kotwica', 'anchor')} ${fmtPrice(quant.ouEquilibriumPrice, 0)} · ${ouHalfLifeText(quant.ouTheta, quant.ouHalfLifeBars)}`}
-        />
-      ),
-    },
-    {
-      key: 'hawkes',
-      node: (
-        <Stat
-          label="Hawkes"
-          source={{ tone: 'model', label: 'MODEL', title: tr('λ(t) = μ + Σ α·e^(−β(t−tᵢ)) na transakcjach HL; μ, α, β stałe (nieestymowane)', 'λ(t) = μ + Σ α·e^(−β(t−tᵢ)) on HL trades; μ, α, β fixed (not estimated)') }}
-          value={
-            // W wąskim kafelku (1024 px) druga intensywność przechodzi do drugiego wiersza zamiast wielokropka
-            <span className="text-base whitespace-normal">
-              <span className="whitespace-nowrap">
-                <span className="text-buy-ink" aria-hidden="true">▲</span> {fmtFixed(quant.hawkesBuyIntensity, 2)}
-              </span>{' '}
-              <span className="text-ink-3">/</span>{' '}
-              <span className="whitespace-nowrap">
-                <span className="text-sell-ink" aria-hidden="true">▼</span> {fmtFixed(quant.hawkesSellIntensity, 2)}
-              </span>
-            </span>
-          }
-          hint={tr(`kupno / sprzedaż · η = ${quant.hawkesBranchingRatio != null ? fmtNum(quant.hawkesBranchingRatio) : 'b/d'} (wymaga MLE)`, `buy / sell · η = ${quant.hawkesBranchingRatio != null ? fmtNum(quant.hawkesBranchingRatio) : 'n/a'} (needs MLE)`)}
         />
       ),
     },
@@ -119,34 +84,16 @@ export const QuantMetricTiles: React.FC<{ quant: QuantMathMetrics; className?: s
       ),
     },
     {
-      key: 'shannon',
-      node: (
-        <Stat
-          label={tr('Entropia', 'Entropy')}
-          source={{
-            tone: 'model',
-            label: 'MODEL',
-            title: tr(
-              'Entropia rozkładu: kupno/sprzedaż spot i perp ostatniej świecy + strony arkusza; znormalizowana do 0–1',
-              'Entropy of the distribution: spot and perp buy/sell of the last candle + book sides; normalised to 0–1'
-            ),
-          }}
-          value={<span>{fmtFixed(quant.shannonEntropyBits, 3)}</span>}
-          hint={tr('Shannon, 0–1; 1 = masa równo rozłożona między stronami przepływu i arkusza', 'Shannon, 0–1; 1 = mass spread evenly between the flow and book sides')}
-        />
-      ),
-    },
-    {
       key: 'vpin',
       node: (
         <Stat
           label="VPIN"
-          source={{ tone: 'model', card: 'vpin', label: 'MODEL', title: tr('Bulk volume classification, 50 kubełków wolumenowych', 'Bulk volume classification, 50 volume buckets') }}
-          value={quant.vpinToxicity === null ? DASH : <span>{fmtFixed(quant.vpinToxicity * 100, 1)}%</span>}
+          source={{ tone: 'model', card: 'vpin', label: 'MODEL', title: tr('Bulk volume classification, 50 kubełków wolumenowych; przedział 95% ze średnich 10 partii', 'Bulk volume classification, 50 volume buckets; 95% interval from the means of 10 batches') }}
+          value={vpin.value === null ? DASH : <span>{vpin.value}</span>}
           hint={
-            quant.vpinToxicity === null
-              ? tr('brak wolumenu w świecach (żaden pełny kubełek)', 'no candle volume (no full bucket)')
-              : tr('Kontrowersyjny — Andersen & Bondarenko 2014; czytaj względem własnej historii.', 'Controversial (Andersen & Bondarenko 2014); read it against its own history.')
+            vpin.value === null
+              ? vpin.detail
+              : `${vpin.detail}. ${tr('Kontrowersyjny — Andersen & Bondarenko 2014; czytaj względem własnej historii.', 'Controversial (Andersen & Bondarenko 2014); read it against its own history.')}`
           }
         />
       ),
@@ -156,33 +103,35 @@ export const QuantMetricTiles: React.FC<{ quant: QuantMathMetrics; className?: s
       node: (
         <Stat
           label="Kyle"
-          missing={quant.kyleLambdaPer1M === null}
+          missing={quant.kyle === null}
           source={{
             tone: 'model',
             card: 'kyle',
             label: 'MODEL',
-            title: tr('OLS: ΔP na netto przepływie agresora z WebSocket HL; b/d, gdy < 10 świec z realnym przepływem', 'OLS: ΔP on net aggressor flow from the HL WebSocket; n/a with < 10 candles of real flow'),
+            title: tr('OLS: ΔP na netto przepływie agresora z WebSocket HL, przedział t 95%; b/d, gdy < 10 świec z realnym przepływem', 'OLS: ΔP on net aggressor flow from the HL WebSocket, 95% t interval; n/a with < 10 candles of real flow'),
           }}
-          value={
-            <span>
-              {quant.kyleLambdaPer1M !== null ? `$${fmtFixed(quant.kyleLambdaPer1M, 2)}` : tr('b/d', 'n/a')}
-            </span>
-          }
-          hint={
-            quant.kyleLambdaPer1M !== null ? tr('λ: ruch ceny na $1M netto przepływu', 'λ: price move per $1M of net flow') : tr('λ: za mało świec z realnym przepływem WS', 'λ: too few candles with real WS flow')
-          }
+          value={<span className={quant.kyle?.zeroInside ? 'text-ink-3' : undefined}>{kyle.value ?? tr('b/d', 'n/a')}</span>}
+          hint={kyle.detail}
         />
       ),
     },
   ];
 
   return (
-    <div className={`grid gap-3 ${className}`}>
-      {tiles.map((t) => (
-        <Panel key={t.key} bodyClassName="p-3.5">
-          {t.node}
-        </Panel>
-      ))}
+    <div className="flex flex-col gap-2">
+      <div className={`grid gap-3 ${className}`}>
+        {tiles.map((t) => (
+          <Panel key={t.key} bodyClassName="p-3.5">
+            {t.node}
+          </Panel>
+        ))}
+      </div>
+      <p className="text-[11px] text-ink-3 leading-relaxed">
+        {tr(
+          'Endogeniczność taśmy (Hawkes dopasowany metodą największej wiarygodności): w panelu mechaniki arkusza.',
+          'Tape endogeneity (Hawkes fitted by maximum likelihood): in the book mechanics panel.'
+        )}
+      </p>
     </div>
   );
 };

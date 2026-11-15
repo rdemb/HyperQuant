@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
   computeOrderFlowImbalanceHeatmap,
-  computeQuantMathAndNeuralForecast,
+  computeQuantMetrics,
   computeVpinBvc,
   hurstAnisLloyd,
   HURST_TREND_THRESHOLD,
+  kyleEstimate,
   kyleLambdaOls,
+  regimeEstimate,
+  t975,
+  vpinEstimate,
 } from '../quantMathEngine';
 import { buildHyperliquidBar, parseL2Levels, recalculateIndicatorSeries } from '../marketDataFeed';
 import { OHLCVBar, ShaakuniState } from '../../types/trading';
@@ -112,21 +116,116 @@ describe('Lambda Kyle’a (OLS na realnym przepływie)', () => {
   });
 });
 
-describe('computeQuantMathAndNeuralForecast — brak zmyślonych wartości', () => {
+describe('computeQuantMetrics — brak zmyślonych wartości i heurystyk', () => {
   it('OU bez powrotu do średniej: θ = 0, t½ = ∞ (nie 10.7 świec)', () => {
     // Cena ucieka od równowagi: x_{t-1} − EQ > 0 i dx > 0
     const bars = randomWalkBars(60, 4).map((b, i) => ({ ...b, close: 100000 + i * 50 }));
-    const q = computeQuantMathAndNeuralForecast(bars, shaakuniStub({ deq: 99000, weq: 99000 }), [], [], [], []);
+    const q = computeQuantMetrics(bars, shaakuniStub({ deq: 99000, weq: 99000 }));
     expect(q.ouTheta).toBe(0);
     expect(q.ouHalfLifeBars).toBe(Infinity);
   });
-  it('Hawkes η = null, głębokość arkusza bez mnożników', () => {
-    const bars = randomWalkBars(60, 6);
-    const { bids, asks } = parseL2Levels([{ px: '99999', sz: '1', n: 1 }], [{ px: '100001', sz: '2', n: 1 }]);
-    const q = computeQuantMathAndNeuralForecast(bars, shaakuniStub(), [], [], bids, asks);
-    expect(q.hawkesBranchingRatio).toBeNull();
-    expect(q.bookDepthBidUsd).toBe(99999);
-    expect(q.bookDepthAskUsd).toBe(200002);
+  it('wynik bez pól heurystyk (Hawkes ze stałymi, entropia, magnes, trajektoria, reguły reżimu)', () => {
+    const q = computeQuantMetrics(randomWalkBars(60, 6), shaakuniStub());
+    expect(Object.keys(q).sort()).toEqual(
+      ['hurstExponent', 'kyle', 'liquidityProfile', 'ouEquilibriumPrice', 'ouHalfLifeBars', 'ouTheta', 'ouZScore', 'pocPrice', 'regime', 'vahPrice', 'valPrice', 'vpin'].sort()
+    );
+    for (const b of q.liquidityProfile) expect(b).not.toHaveProperty('gravityPotential');
+  });
+});
+
+/** Zwroty o znanym σ (rozkład normalny) jako zamknięcia od 100. */
+function closesFrom(sigmas: number[], seed: number): number[] {
+  const rng = makeRng(seed);
+  const out = [100];
+  for (const s of sigmas) out.push(out[out.length - 1] * Math.exp(s * rng.n()));
+  return out;
+}
+
+/** Losowanie Gamma(k, 1) dla całkowitego k (suma wykładniczych) i Beta(a, b) z dwóch Gamma. */
+function beta(rng: ReturnType<typeof makeRng>, a: number, b: number): number {
+  const g = (k: number) => {
+    let s = 0;
+    for (let i = 0; i < k; i++) s -= Math.log(rng.u() + 1e-12);
+    return s;
+  };
+  const x = g(a);
+  return x / (x + g(b));
+}
+
+describe('przedziały VPIN i λ Kyle’a (plan 59, B4 i B5)', () => {
+  const flowBars = (shares: number[]): OHLCVBar[] =>
+    shares.map((p, i) => ({ ...randomWalkBars(2, 1)[1], time: i * 300_000, vbuy: p * 1000, vsell: (1 - p) * 1000, realFlow: true }));
+
+  it('t₀,₉₇₅: przybliżenie Cornisha–Fishera zgodne z tablicą', () => {
+    expect(t975(9)).toBeCloseTo(2.262, 2);
+    expect(t975(28)).toBeCloseTo(2.048, 2);
+    expect(t975(100)).toBeCloseTo(1.984, 2);
+  });
+
+  it('VPIN: przedział 95% ze średnich partii pokrywa prawdziwą wartość w 92–98% (udział kupna ~ Beta(20, 20))', () => {
+    const rng = makeRng(20261115);
+    // E|2p − 1| dla p ~ Beta(20, 20): duża próba Monte Carlo
+    let truth = 0;
+    const M = 200_000;
+    for (let i = 0; i < M; i++) truth += Math.abs(2 * beta(rng, 20, 20) - 1);
+    truth /= M;
+    let cover = 0;
+    const R = 1000;
+    for (let r = 0; r < R; r++) {
+      // 50 świec o równym wolumenie: każda świeca to jeden kubełek
+      const v = vpinEstimate(flowBars(Array.from({ length: 50 }, () => beta(rng, 20, 20))))!;
+      expect(v.full).toBe(50);
+      if (v.lo <= truth && truth <= v.hi) cover++;
+    }
+    expect(cover / R).toBeGreaterThanOrEqual(0.92);
+    expect(cover / R).toBeLessThanOrEqual(0.98);
+  });
+
+  it('VPIN przy stałym udziale 0,5: 0 i przedział [0, 0]', () => {
+    const v = vpinEstimate(flowBars(Array.from({ length: 50 }, () => 0.5)))!;
+    expect([v.value, v.lo, v.hi]).toEqual([0, 0, 0]);
+  });
+
+  it('λ: przedział t pokrywa znane λ w 93–97% (n = 30); bez zależności „nieodróżnialne od zera” w ≥ 94%', () => {
+    const rng = makeRng(7);
+    const make = (lambda: number) => {
+      const bars: OHLCVBar[] = [];
+      let px = 100_000;
+      for (let i = 0; i <= 30; i++) {
+        const q = rng.n() * 2;
+        px += lambda * q + 5 * rng.n();
+        bars.push({ ...randomWalkBars(2, 1)[1], time: i * 300_000, close: px, vbuy: Math.max(0, q) * 1e6, vsell: Math.max(0, -q) * 1e6, realFlow: true });
+      }
+      return bars;
+    };
+    let cover = 0;
+    let zero = 0;
+    const R = 1000;
+    for (let r = 0; r < R; r++) {
+      const k = kyleEstimate(make(3))!;
+      expect(k.n).toBe(30);
+      if (k.lo <= 3 && 3 <= k.hi) cover++;
+      if (kyleEstimate(make(0))!.zeroInside) zero++;
+    }
+    expect(cover / R).toBeGreaterThanOrEqual(0.93);
+    expect(cover / R).toBeLessThanOrEqual(0.97);
+    expect(zero / R).toBeGreaterThanOrEqual(0.94);
+  });
+});
+
+describe('reżim zmienności BOCPD w Badaniach (plan 59, B1)', () => {
+  it('skok σ z 0,1% do 0,4%: P(zmiana w ostatnich 5 świecach) > 0,5 po 4 świecach nowego reżimu; przy stałym σ < 0,2', () => {
+    const calm = Array.from({ length: 300 }, () => 0.001);
+    const jump = closesFrom([...calm, ...Array.from({ length: 4 }, () => 0.004)], 3);
+    expect(regimeEstimate(jump)!.pRecent5).toBeGreaterThan(0.5);
+    const flat = closesFrom([...calm, ...Array.from({ length: 4 }, () => 0.001)], 3);
+    expect(regimeEstimate(flat)!.pRecent5).toBeLessThan(0.2);
+    expect(regimeEstimate(flat)!.sigma).toBeGreaterThan(0.0007);
+    expect(regimeEstimate(flat)!.sigma).toBeLessThan(0.0014);
+  });
+
+  it('mniej niż 101 zwrotów → null (bez wartości zastępczej)', () => {
+    expect(regimeEstimate(closesFrom(Array.from({ length: 100 }, () => 0.001), 1))).toBeNull();
   });
 });
 

@@ -33,7 +33,6 @@ describe('computeShaakuniIndicator — brak zakodowanych poziomów', () => {
     impMult: 0.7,
     showKeltner: true,
     showLiqHeatmap: true,
-    showNeuralCone: true,
   };
   const bars = recalculateIndicatorSeries(
     Array.from({ length: 40 }, (_, i) => buildHyperliquidBar(100000, 100050, 99950, 100010, 5, 50, i * 300000, 50))
