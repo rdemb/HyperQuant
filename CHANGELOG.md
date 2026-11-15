@@ -4,6 +4,12 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### W sesji: okna ładowane dopiero na prośbę (2026-11-15)
+<!-- co-nowego: ukryj -->
+
+#### Zmienione
+- **Mniej kodu przy starcie wykresu**: klatka zrzutu (`FrameDialog`, także na Przed sesją), menu alarmów i karta linku alarmu (`AlertsMenu`), dialog i ustawienia wskaźników (`IndicatorsDialog`, `IndicatorSettings`) oraz dymek kota (`SchrodiPanel`; nastrój kota w pasku z lekkiego `mood.ts`) ładują się leniwie i są pobierane w wolnej chwili po pierwszym malowaniu. Pokrycie kodu na zimnym wejściu w W sesji (telefon, CPU 4×): JS wczytany do pierwszego malowania wykresu 1697 → 1618 KB, pakiet wykresu 597 → 526 KB.
+
 ### Serwer ntfy: Caddy tylko na publicznym adresie (2026-11-15)
 <!-- co-nowego: ukryj -->
 

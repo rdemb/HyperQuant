@@ -24,6 +24,9 @@ import { type CatTrust, type HourTrust, type OodFeature, TRUST_DESIGN, TRUST_HEA
 import { DIR_BAR, DIR_TONE, dirHiddenNote, dirProven, upBand, upOdds } from './direction';
 import { MOVE_PCT_PROMOTED, type MoveLevel, moodLevel, moveAuc, moveCalNote, levelFreqLine, moveLevelWord, moveView } from './moveLevel';
 import { type Mood, SchrodiCat } from './SchrodiCat';
+import { moodOf, nextMacro } from './mood';
+
+export { moodOf, nextMacro };
 import { HIST_MIN, type HourLive, useHourModel, useTouchModel } from './useSchrodi';
 
 /**
@@ -38,21 +41,6 @@ import { HIST_MIN, type HourLive, useHourModel, useTouchModel } from './useSchro
 const MIN = 60_000;
 const DOC_URL = 'https://github.com/rdemb/HyperQuant/blob/main/docs/SCHRODI.md';
 const pct = (p: number) => `${Math.round(p * 100)}%`;
-
-/** Najbliższe zdarzenie o wysokiej wadze w ciągu doby (albo trwające do 15 min po publikacji). */
-export function nextMacro(now: number): MacroEvent | null {
-  return MACRO_EVENTS.find((e) => e.importance === 'high' && e.timeUtcMs > now - 15 * MIN && e.timeUtcMs - now <= 24 * 60 * MIN) ?? null;
-}
-
-/** Nastrój kota: chowa się bez danych, nerwowy przed makro, czujny przy podwyższonym ruchu, drzemie przy spokojnym. */
-export function moodOf(f: Forecast | null, now: number, stale: boolean, level: MoveLevel | null): Mood {
-  if (!f || stale) return 'hiding';
-  const ev = nextMacro(now);
-  if (ev && Math.abs(ev.timeUtcMs - now) <= 60 * MIN) return 'nervous';
-  if (level === 'elevated') return 'alert';
-  if (level === 'calm') return 'sleep';
-  return 'calm';
-}
 
 /**
  * Jedno zdanie kota: ruch, potem kierunek (tylko gdy kierunek ma dowód w e-procesie). Przed awansem kalibracji ruch
