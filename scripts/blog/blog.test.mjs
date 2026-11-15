@@ -735,7 +735,7 @@ describe('blog: treść z zewnątrz (linki, obrazy, front matter, CSP)', () => {
     for (const f of ['wykres.png', 'wykresy.json', 'x.svg', 'notatki.txt', 'strona.html']) writeFileSync(path.join(content, ID, f), f === 'wykresy.json' ? '{"v":1}' : 'x');
     await buildBlog({ contentDir: content, outDir: out, site: SITE, pages: false, now: Date.parse('2026-10-25T12:00:00Z'), main: 'f'.repeat(40) });
     const blog = path.join(out, 'blog');
-    expect(readdirSync(path.join(blog, ID)).sort()).toEqual(['index.html', 'og.png', 'wykres.png', 'wykresy.json']);
+    expect(readdirSync(path.join(blog, ID)).sort()).toEqual(['cover.svg', 'index.html', 'og.png', 'wykres.png', 'wykresy.json']);
     const js = readFileSync(path.join(blog, 'blog.js'), 'utf8');
     expect(js).toContain("document.querySelectorAll('.share')");
     expect(js).toContain('.replay[data-until]');

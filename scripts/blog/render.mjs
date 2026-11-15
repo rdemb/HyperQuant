@@ -6,6 +6,7 @@ import { IKONY } from './ikony.mjs';
 import { BLOCKS, TIME_ZONE, localDate, placedBlocks } from './posts.mjs';
 
 export const INDEX_LIMIT = 40;
+import { coverAlt } from './cover.mjs';
 export const FEED_LIMIT = 50;
 const LADDER_GAP = 28;
 const LADDER_GAP_NOTES = 44;
@@ -484,6 +485,7 @@ export function layout(
     robots,
     disclaimer = BLOG_DISCLAIMER,
     script = false,
+    wide = false,
   }
 ) {
   const article =
@@ -547,7 +549,7 @@ ${rail(lang, root, current, url, `${rss}${langLink}`.replace(/class="nav-(rss|la
 <a class="brand" href="${root}">${LOGO}HyperQuant<span>${lang === 'en' ? 'BTC &amp; gold' : 'BTC i złoto'} · Hyperliquid</span></a>
 <nav aria-label="${lang === 'en' ? 'Main' : 'Główna'}">${nav}${rss}${langLink}</nav>
 </div></header>
-<main class="wrap">
+<main class="wrap${wide ? ' wrap--wide' : ''}">
 ${main}
 </main>
 <footer class="site-footer"><div class="wrap">
@@ -697,6 +699,7 @@ export function postPage(site, post, { newer, older }) {
 <p class="meta"><time datetime="${esc(post.date)}">${fmtDay(post.ms)}, ${fmtTime(post.ms)}</time> czasu polskiego</p>
 ${shareHtml(url, post.title, { compact: true })}
 </div>
+<figure class="post-cover"><img src="cover.svg" width="1200" height="600" alt="${esc(coverAlt(post))}"></figure>
 <p class="lead">${esc(post.description)}</p>
 ${summary}${facts}${top}
 <div class="prose">
@@ -739,13 +742,30 @@ ${shareHtml(url, post.title)}
   });
 }
 
-/** Element listy: artykuł z zajawką, notka zwięźle. `prefix` = ścieżka do katalogu blog/. */
+/** Rodzina rubryki do filtrów listy: mapy, otwarcia sesji, aktualizacje, rozliczenia, reszta. */
+export function kindOf(section) {
+  const t = section.toLowerCase();
+  if (t.startsWith('mapa')) return 'mapy';
+  if (t.startsWith('otwarcie')) return 'otwarcia';
+  if (t.startsWith('aktualizacja')) return 'aktualizacje';
+  if (/podsumowanie|rozliczenie/.test(t)) return 'rozliczenia';
+  return 'inne';
+}
+const KINDS = [
+  ['mapy', 'Mapy'],
+  ['otwarcia', 'Otwarcia sesji'],
+  ['aktualizacje', 'Aktualizacje 4h'],
+  ['rozliczenia', 'Rozliczenia'],
+];
+
+/** Karta wpisu z okładką z jego danych. `prefix` = ścieżka do katalogu blog/. */
 function entryHtml(post, prefix) {
-  const lead = post.type === 'article' ? `<span class="entry-lead">${esc(post.description)}</span>` : '';
-  return `<li class="entry entry--${post.type}"><a href="${prefix}${post.id}/"><span class="entry-meta"><time datetime="${esc(post.date)}">${fmtTime(post.ms)}</time>${esc(post.section)}</span><span class="entry-title">${esc(post.title)}</span>${lead}</a></li>`;
+  const lead = post.type === 'article' ? `<span class="card-lead">${esc(post.description)}</span>` : '';
+  const price = post.price !== null ? `<span class="card-price">BTC <b>${fmtPrice(post.price)}</b></span>` : '';
+  return `<li class="post-card post-card--${post.type}" data-kind="${kindOf(post.section)}"><a href="${prefix}${post.id}/"><span class="card-cover"><img src="${prefix}${post.id}/cover.svg" width="1200" height="600" alt="" loading="lazy" decoding="async"></span><span class="card-body"><span class="card-meta"><span class="card-section">${esc(post.section)}</span><time datetime="${esc(post.date)}">${fmtTime(post.ms)}</time></span><span class="card-title">${esc(post.title)}</span>${lead}${price}</span></a></li>`;
 }
 
-/** Wpisy pogrupowane po dniach (czas polski), od najnowszego. */
+/** Wpisy pogrupowane po dniach (czas polski), od najnowszego; każdy dzień to siatka kart. */
 function feedHtml(posts, prefix) {
   const days = new Map();
   for (const p of posts) {
@@ -753,8 +773,12 @@ function feedHtml(posts, prefix) {
     if (!days.has(k)) days.set(k, []);
     days.get(k).push(p);
   }
+  const word = (n) => (n === 1 ? 'wpis' : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? 'wpisy' : 'wpisów');
   return [...days.values()]
-    .map((list) => `<section class="day"><h2>${fmtDay(list[0].ms)}</h2><ol>${list.map((p) => entryHtml(p, prefix)).join('')}</ol></section>`)
+    .map(
+      (list) =>
+        `<section class="day"><h2>${fmtDay(list[0].ms)}<span>${list.length} ${word(list.length)}</span></h2><ol class="cards-grid">${list.map((p) => entryHtml(p, prefix)).join('')}</ol></section>`
+    )
     .join('\n');
 }
 
@@ -766,20 +790,54 @@ function archiveNav(months, prefix) {
   return `<nav class="archive" aria-label="Archiwum"><h2>Archiwum</h2><ul>${months.map((m) => `<li><a href="${prefix}archiwum/${m}/">${fmtMonth(m)}</a></li>`).join('')}</ul></nav>`;
 }
 
-/** Lista wpisów: najnowszy artykuł jako bohater, potem wpisy wg dni (do INDEX_LIMIT) i archiwum miesięcy. */
+/** Filtry rubryk bez JS: przyciski radiowe i :has() w CSS ukrywają karty i puste dni. */
+function filtersHtml(posts) {
+  const n = (k) => posts.filter((p) => kindOf(p.section) === k).length;
+  const opts = [['all', 'Wszystkie', posts.length], ...KINDS.map(([k, l]) => [k, l, n(k)]).filter(([, , c]) => c > 0)];
+  return `<fieldset class="filters"><legend class="sr-only">Pokaż rubryki</legend>${opts
+    .map(([k, l, c]) => `<input type="radio" name="rubryka" id="f-${k}" value="${k}" class="sr-only"${k === 'all' ? ' checked' : ''}><label for="f-${k}">${l}<span>${c}</span></label>`)
+    .join('')}</fieldset>`;
+}
+
+/** Rytm publikacji: stałe pory wpisów na osi doby (czas polski) i to, co ukazało się w ostatnim dniu z wpisami. */
+const RHYTHM = [
+  ['08:05', 'Mapa dnia'],
+  ['09:15', 'Otwarcie Londynu'],
+  ['14:50', 'Mapa przed Nowym Jorkiem'],
+  ['15:45', 'Otwarcie Nowego Jorku'],
+  ['22:05', 'Podsumowanie dnia'],
+];
+function rhythmHtml(posts) {
+  const last = localDate(posts[0].ms);
+  const done = new Set(posts.filter((p) => localDate(p.ms) === last).map((p) => p.section));
+  const pos = (hm) => {
+    const [h, m] = hm.split(':').map(Number);
+    return (((h * 60 + m) / 1440) * 100).toFixed(2);
+  };
+  const marks = RHYTHM.map(([hm, label]) => `<i class="rhythm-dot${done.has(label) ? ' is-done' : ''}" style="--x:${pos(hm)}%"></i>`).join('');
+  const dots = RHYTHM.map(([hm, label]) => `<li${done.has(label) ? ' class="is-done"' : ''}><time>${hm}</time><span>${label}</span></li>`).join('');
+  const updates = ['02:00', '06:00', '10:00', '14:00', '18:00'].map((hm) => `<i style="--x:${pos(hm)}%"></i>`).join('');
+  return `<section class="rhythm" aria-label="Rytm publikacji"><p class="rhythm-head"><b>Rytm dnia</b><span>stałe pory wpisów, czas polski; kreski to aktualizacje co 4 h · podświetlone ukazały się w dniu ${esc(fmtDay(posts[0].ms).toLowerCase())}</span></p><div class="rhythm-track" aria-hidden="true">${updates}${marks}</div><ol class="rhythm-list">${dots}</ol></section>`;
+}
+
+/** Lista wpisów: nagłówek z rytmem dnia, najnowszy artykuł z dużą okładką, filtry rubryk, karty wg dni i archiwum. */
 export function indexPage(site, posts) {
   const url = `${site.url}blog/`;
   const hero = posts.find((p) => p.type === 'article');
   const rest = posts.filter((p) => p !== hero).slice(0, INDEX_LIMIT);
   const months = [...new Set(posts.map((p) => monthKey(p.ms)))];
   const heroHtml = hero
-    ? `<a class="hero" href="${hero.id}/"><span class="entry-meta"><time datetime="${esc(hero.date)}">${fmtDay(hero.ms)}, ${fmtTime(hero.ms)}</time>${esc(hero.section)}</span><span class="hero-title">${esc(hero.title)}</span><span class="hero-lead">${esc(hero.description)}</span>${hero.price !== null ? `<span class="hero-price">BTC-PERP <b>${fmtPrice(hero.price)} USD</b></span>` : ''}</a>`
+    ? `<a class="hero" href="${hero.id}/"><span class="hero-cover"><img src="${hero.id}/cover.svg" width="1200" height="600" alt="${esc(coverAlt(hero))}" fetchpriority="high"></span><span class="hero-body"><span class="card-meta"><span class="card-section">${esc(hero.section)}</span><time datetime="${esc(hero.date)}">${fmtDay(hero.ms)}, ${fmtTime(hero.ms)}</time></span><span class="hero-title">${esc(hero.title)}</span><span class="hero-lead">${esc(hero.description)}</span>${hero.price !== null ? `<span class="hero-price">BTC-PERP <b>${fmtPrice(hero.price)} USD</b></span>` : ''}<span class="hero-cta">Czytaj analizę <span aria-hidden="true">→</span></span></span></a>`
     : '';
   const empty = posts.length ? '' : '<p class="empty">Pierwsza analiza pojawi się tutaj wkrótce. Nowe wpisy możesz śledzić przez RSS.</p>';
-  const main = `<header class="intro"><p class="eyebrow"><span>Blog</span></p><h1>Analizy BTC</h1><p>${INTRO}</p></header>
+  const main = `<div class="blog-index">
+<header class="intro intro--blog"><p class="eyebrow"><span>Blog</span></p><h1>Analizy BTC <em>przed faktem</em></h1><p>${INTRO}</p></header>
+${posts.length ? rhythmHtml(posts) : ''}
 ${heroHtml}${empty}
+${rest.length ? filtersHtml(rest) : ''}
 <div class="feed">${feedHtml(rest, '')}</div>
-${archiveNav(months, '')}`;
+${archiveNav(months, '')}
+</div>`;
   return layout(site, {
     title: 'Analizy BTC · Blog HyperQuant',
     description: INTRO,
@@ -789,6 +847,7 @@ ${archiveNav(months, '')}`;
     imageAlt: 'HyperQuant: analizy BTC na Hyperliquid',
     jsonLd: { '@context': 'https://schema.org', '@type': 'Blog', name: 'HyperQuant · Analizy BTC', url, inLanguage: 'pl', description: INTRO, publisher: PUBLISHER(site) },
     main,
+    wide: true,
   });
 }
 
@@ -807,7 +866,8 @@ ${archiveNav(months, '../../')}`;
     image: `${site.url}blog/og.png`,
     imageAlt: 'HyperQuant: analizy BTC na Hyperliquid',
     jsonLd: { '@context': 'https://schema.org', '@type': 'CollectionPage', name: title, url, inLanguage: 'pl', publisher: PUBLISHER(site) },
-    main,
+    main: `<div class="blog-index">${main}</div>`,
+    wide: true,
   });
 }
 

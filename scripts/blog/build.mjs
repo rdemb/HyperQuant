@@ -15,6 +15,7 @@ import { MEDIA_FILE } from './intake.mjs';
 import { loadPostFile, loadPosts } from './posts.mjs';
 import { feedXml, fmtDay, fmtTime, indexPage, monthKey, monthPage, postPage, sitemapXml } from './render.mjs';
 import { ogSvg, renderPng } from './og.mjs';
+import { coverSvg } from './cover.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '../..');
@@ -178,6 +179,7 @@ export async function buildBlog({ contentDir = CONTENT_DIR, outDir, site, drafts
     await writeFile(path.join(dir, 'index.html'), postPage(s, post, { newer: visible[i - 1], older: visible[i + 1] }));
     const card = { section: post.section, title: post.title, dateLine: `${fmtDay(post.ms)}, ${fmtTime(post.ms)}`, price: post.price, levels: post.levels };
     await writeFile(path.join(dir, 'og.png'), renderPng(ogSvg(card)));
+    await writeFile(path.join(dir, 'cover.svg'), coverSvg(post));
   }
 
   await writeFile(path.join(blogDir, 'index.html'), indexPage(s, visible));
