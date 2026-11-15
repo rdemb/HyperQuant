@@ -1,5 +1,6 @@
 import type { Candle, Side } from '../hl/parse';
 import { regimePrior } from '../../../utils/bocpd';
+import { t975 } from '../../../utils/tQuantile';
 import type { BookFrame } from '../core/book';
 import type { MakerSplit } from '../core/makers';
 import { DEFAULT_EFFORT_PARAMS } from '../core/effortZones';
@@ -141,7 +142,8 @@ export interface FlowBar {
  * czas serwera.
  */
 export interface FlowContext {
-  oiAt(t: number): number | null;
+  /** OI w chwili `t` z próbki nie starszej niż `maxAgeMs` (domyślnie i najwyżej 3 min); null — brak. */
+  oiAt(t: number, maxAgeMs?: number): number | null;
   book(): readonly BookFrame[];
   /** Migawki arkusza bez agregacji ceny (rosnąco po czasie): tylko od otwarcia strony. */
   exactBook(): readonly BookFrame[];
@@ -336,7 +338,12 @@ function quantileBins(h: ArrayLike<number>, total: number, q: number): number {
  * Statystyka Kołmogorowa–Smirnowa na przedziałach ze znakiem przesunięcia: dodatnia, gdy zlecenia świecy są większe niż
  * w bazie (jej dystrybuanta leży niżej), ujemna, gdy mniejsze.
  */
-function signedKs(a: ArrayLike<number>, na: number, b: ArrayLike<number>, nb: number): number {
+/** Próg KS dwóch prób na poziomie 1%: 1,628·√((n + m) / (n·m)) dla n zleceń świecy i m zleceń bazy. */
+export function ksFloor(n: number, m: number): number {
+  return 1.628 * Math.sqrt((n + m) / (n * m));
+}
+
+export function signedKs(a: ArrayLike<number>, na: number, b: ArrayLike<number>, nb: number): number {
   let fa = 0;
   let fb = 0;
   let up = 0;
@@ -367,7 +374,14 @@ function sizeStats(orders: readonly { notional: number }[]): SizeStats {
 /** Najdłuższa przerwa między porównywanymi migawkami arkusza (kanał co ~5 s; dłuższa to przerwa w danych). */
 export const OFI_MAX_GAP = 12_000;
 /** Od tego R² podawana jest oczekiwana zmiana ceny; niżej OFI w oknie prawie nie tłumaczy ruchu ceny. */
-export const OFI_MIN_R2 = 0.1;
+/**
+ * Próg R² z hipotezy zerowej (5%, test t nachylenia) dla okna `n` świec: R² = t² / (t² + n − 2), t = t₀,₉₇₅(n − 2).
+ * Okno 30 → 0,130, 20 → 0,197, 100 → 0,039; stały próg 0,1 przepuszczał przy oknie 30 ok. 9% okien czystego szumu.
+ */
+export function ofiMinR2(n: number): number {
+  const t = t975(n - 2);
+  return (t * t) / (t * t + n - 2);
+}
 
 /** Najlepsze kwotowania migawki (kubełki najbliższej agregacji); null bez obu stron. */
 const quoteOf = (f: BookFrame) =>
@@ -463,7 +477,7 @@ export function twapCount(phases: ReadonlyMap<string, number[]>): number {
  * (odwrotność indeksu Herfindahla; NaN bez zleceń po stronie) i największa liczba różnych biorców po jednej stronie
  * w jednym bloku (ta sama milisekunda). Zlecenia bez konta pominięte.
  */
-export function takerBreadth(orders: readonly { time: number; side: Side; notional: number; taker: string }[]): { buy: number; sell: number; race: number } {
+export function takerBreadth(orders: readonly { time: number; side: Side; notional: number; taker: string }[]): { buy: number; sell: number; race: number; evenness: number } {
   const bySide = [new Map<string, number>(), new Map<string, number>()];
   const blocks = new Map<string, Set<string>>();
   let race = 0;
@@ -486,7 +500,11 @@ export function takerBreadth(orders: readonly { time: number; side: Side; notion
     }
     return s2 > 0 ? (s * s) / s2 : Number.NaN;
   };
-  return { buy: neff(bySide[0]), sell: neff(bySide[1]), race: race > 0 ? race : Number.NaN };
+  // Równomierność: n_eff obu stron / liczba kont (1 — po równo, blisko 1/k — jedno konto przeważa); n_eff rośnie z
+  // liczbą kont w świecy, a równomierność od niej nie zależy
+  const k = bySide[0].size + bySide[1].size;
+  const sum = (Number.isNaN(neff(bySide[0])) ? 0 : neff(bySide[0])) + (Number.isNaN(neff(bySide[1])) ? 0 : neff(bySide[1]));
+  return { buy: neff(bySide[0]), sell: neff(bySide[1]), race: race > 0 ? race : Number.NaN, evenness: k > 0 ? sum / k : Number.NaN };
 }
 
 /**
@@ -1354,8 +1372,9 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
       // Delta tylko ze świecy w całości objętej nagraniem — część taśmy dałaby część delty
       const fp = b.complete ? b.fp : null;
       const t = b.candle.t;
-      const a = ctx.oiAt(t);
-      const z = ctx.oiAt(Math.min(t + ms, ctx.now));
+      // Próbki OI młodsze niż długość świecy: bez tego na 1m próbka sprzed 3 min dawała zmianę z sąsiedniej świecy
+      const a = ctx.oiAt(t, ms - 1);
+      const z = ctx.oiAt(Math.min(t + ms, ctx.now), ms - 1);
       const ok = fp && a !== null && z !== null;
       out[0] = ok ? z - a : Number.NaN;
       out[1] = ok ? fp.delta : Number.NaN;
@@ -1424,8 +1443,8 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
     aliases: 'ofi order flow imbalance nierownowaga przeplyw zlecen arkusz book cont kukanov stoikov impact wplyw r2 beta',
     warmup: () => 0,
     convention: tr(
-      'Tego wskaźnika nie ma w TradingView: liczony z migawek arkusza Hyperliquid. OFI jak u Conta, Kukanova i Stoikova (2014): w każdej parze kolejnych migawek wyższy najlepszy bid albo więcej na nim dodaje, niższy albo mniej odejmuje, a po stronie asku odwrotnie; świeca to suma par. Migawki przychodzą co około 5 s, w kubełkach ceny najbliższej agregacji wykresu (dla BTC 10 USD), więc to przybliżenie OFI liczonego z każdej zmiany najlepszych cen: zmiany między migawkami się sumują, a w kubełku są zlecenia kilku cen. Δp to zmiana środka arkusza w tych samych parach. R² pochodzi z regresji Δp na OFI (z wyrazem wolnym) w poprzednich zamkniętych świecach z wartością, a oczekiwana zmiana to nachylenie tej regresji razy OFI świecy, podawana od R² 0,1.',
-      'TradingView has no such indicator: it is computed from Hyperliquid book snapshots. OFI follows Cont, Kukanov and Stoikov (2014): in every pair of consecutive snapshots a higher best bid or more size on it adds, a lower one or less size subtracts, and the ask side works the other way; the candle is the sum over pairs. Snapshots arrive about every 5 s, in price buckets of the chart’s nearest aggregation (10 USD for BTC), so this approximates OFI computed from every change of the best prices: changes between snapshots are summed, and a bucket holds orders at several prices. Δp is the book mid change over the same pairs. R² comes from regressing Δp on OFI (with an intercept) over the previous closed candles with a value, and the expected change is that regression’s slope times the candle’s OFI, shown from R² 0.1.'
+      'Tego wskaźnika nie ma w TradingView: liczony z migawek arkusza Hyperliquid. OFI jak u Conta, Kukanova i Stoikova (2014): w każdej parze kolejnych migawek wyższy najlepszy bid albo więcej na nim dodaje, niższy albo mniej odejmuje, a po stronie asku odwrotnie; świeca to suma par. Migawki przychodzą co około 5 s, w kubełkach ceny najbliższej agregacji wykresu (dla BTC 10 USD), więc to przybliżenie OFI liczonego z każdej zmiany najlepszych cen: zmiany między migawkami się sumują, a w kubełku są zlecenia kilku cen. Δp to zmiana środka arkusza w tych samych parach. R² pochodzi z regresji Δp na OFI (z wyrazem wolnym) w poprzednich zamkniętych świecach z wartością, a oczekiwana zmiana to nachylenie tej regresji razy OFI świecy, podawana dopiero od progu szumu R² dla danego okna (t² / (t² + n − 2), test nachylenia na poziomie 5%: przy 30 świecach 0,13, przy 100 świecach 0,04); próg stoi w legendzie obok R².',
+      'TradingView has no such indicator: it is computed from Hyperliquid book snapshots. OFI follows Cont, Kukanov and Stoikov (2014): in every pair of consecutive snapshots a higher best bid or more size on it adds, a lower one or less size subtracts, and the ask side works the other way; the candle is the sum over pairs. Snapshots arrive about every 5 s, in price buckets of the chart’s nearest aggregation (10 USD for BTC), so this approximates OFI computed from every change of the best prices: changes between snapshots are summed, and a bucket holds orders at several prices. Δp is the book mid change over the same pairs. R² comes from regressing Δp on OFI (with an intercept) over the previous closed candles with a value, and the expected change is that regression’s slope times the candle’s OFI, shown only above the R² noise floor for the window (t² / (t² + n − 2), a 5% slope test: 0.13 at 30 candles, 0.04 at 100 candles); the floor appears in the legend next to R².'
     ),
     memoryNote: tr(
       'OFI świecy zależy tylko od migawek arkusza w niej; świeca nie ma wartości, gdy w danych arkusza jest przerwa dłuższa niż 12 s. R² i oczekiwana zmiana zależą od ostatnich zamkniętych świec z wartością w liczbie „Długość”, bez bieżącej świecy. Arkusz z serwera sięga 12 godzin wstecz, starsze świece nie mają wartości. Brak R², dopóki nie ma tylu świec, i gdy w oknie OFI albo Δp się nie zmienia.',
@@ -1439,18 +1458,21 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
       { hist: true, hidden: true, title: 'Δp' },
       { hidden: true, title: 'R²', format: 'fixed2' },
       { hist: true, hidden: true, title: tr('oczek.', 'exp.') },
+      { hidden: true, title: tr('próg szumu R²', 'R² noise floor'), format: 'fixed2' },
     ],
     levels: [0],
     format: 'volume',
     series: (p) => (bars, ms, ctx, out) => {
-      const [ofi, dp, r2, expected] = out;
+      const [ofi, dp, r2, expected, floor] = out;
+      const minR2 = ofiMinR2(p.length);
       bookFlow(ctx.book(), bars, ms, ctx.now, ofi, dp);
       // Regresja z ostatnich zamkniętych świec z wartością przed świecą: bieżąca nie wchodzi do swojego okna
       const w = new OlsWindow(p.length);
       for (let i = 0; i < bars.length; i++) {
         const f = w.count === p.length && !Number.isNaN(ofi[i]) ? w.fit() : null;
         r2[i] = f ? f.r2 : Number.NaN;
-        expected[i] = f && f.r2 >= OFI_MIN_R2 ? f.beta * ofi[i] : Number.NaN;
+        expected[i] = f && f.r2 >= minR2 ? f.beta * ofi[i] : Number.NaN;
+        floor[i] = f ? minR2 : Number.NaN;
         if (!Number.isNaN(ofi[i]) && bars[i].candle.t + ms <= ctx.now) w.push(ofi[i], dp[i]);
       }
     },
@@ -1513,8 +1535,8 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
     aliases: 'order size wielkosc zlecen agresor aggressor big trades duze zlecenia kwantyl percentyl ks kolmogorov smirnov',
     warmup: () => 0,
     convention: tr(
-      'Tego wskaźnika nie ma w TradingView: liczony z nagranej taśmy Hyperliquid. Wypełnienia jednego zlecenia rynkowego łączą się po adresie biorcy i hashu transakcji (bez hasha, np. TWAP — po biorcy i tej samej milisekundzie), więc kwota to całe zlecenie, a nie pojedyncza transakcja. Percentyle świecy z interpolacją liniową. Baza to zlecenia z poprzednich świec w liczbie „Baza” razem, w przedziałach co 1/20 dekady (ok. 12%), z interpolacją w przedziale; KS to największa różnica dystrybuant świecy i bazy na tych przedziałach, ze znakiem kierunku. Przy małej liczbie zleceń w świecy KS jest głośny: na poziomie 1% znaczący dopiero powyżej około 1,63 / √n.',
-      'TradingView has no such indicator: it is computed from the recorded Hyperliquid tape. Fills of one market order are joined by taker address and transaction hash (without a hash, e.g. TWAP, by taker and the same millisecond), so the size is the whole order, not a single trade. Candle percentiles use linear interpolation. The baseline is all orders from the previous “Baseline” candles, in bins of 1/20 of a decade (about 12%), interpolated within a bin; KS is the largest gap between the candle’s and the baseline’s distribution functions on those bins, signed by direction. With few orders in a candle KS is noisy: at the 1% level it is significant only above about 1.63 / √n.'
+      'Tego wskaźnika nie ma w TradingView: liczony z nagranej taśmy Hyperliquid. Wypełnienia jednego zlecenia rynkowego łączą się po adresie biorcy i hashu transakcji (bez hasha, np. TWAP — po biorcy i tej samej milisekundzie), więc kwota to całe zlecenie, a nie pojedyncza transakcja. Percentyle świecy z interpolacją liniową. Baza to zlecenia z poprzednich świec w liczbie „Baza” razem, w przedziałach co 1/20 dekady (ok. 12%), z interpolacją w przedziale; KS to największa różnica dystrybuant świecy i bazy na tych przedziałach, ze znakiem kierunku. To test dwóch prób (świeca i baza), więc próg istotności na poziomie 1% to 1,628·√((n + m) / (n·m)) dla n zleceń świecy i m zleceń bazy; podajemy go w legendzie obok KS. Niżej różnica mieści się w szumie.',
+      'TradingView has no such indicator: it is computed from the recorded Hyperliquid tape. Fills of one market order are joined by taker address and transaction hash (without a hash, e.g. TWAP, by taker and the same millisecond), so the size is the whole order, not a single trade. Candle percentiles use linear interpolation. The baseline is all orders from the previous “Baseline” candles, in bins of 1/20 of a decade (about 12%), interpolated within a bin; KS is the largest gap between the candle’s and the baseline’s distribution functions on those bins, signed by direction. It is a two-sample test (candle and baseline), so the 1% significance floor is 1.628·√((n + m) / (n·m)) for n candle orders and m baseline orders; the legend shows it next to KS. Below it the difference is within noise.'
     ),
     memoryNote: tr(
       'Percentyle świecy zależą tylko od jej zleceń; baza i KS od poprzednich świec w liczbie „Baza”, w całości objętych nagraniem taśmy. Świece bez pełnego nagrania nie mają wartości. Brak bazy i KS, dopóki nie ma tylu świec z taśmą.',
@@ -1529,6 +1551,7 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
       { color: THIRD, title: 'p99' },
       { color: BASE, dashed: true, title: tr('baza p90', 'base p90') },
       { hist: true, hidden: true, neutral: true, title: 'KS', format: 'fixed2' },
+      { hidden: true, title: tr('próg KS 1%', 'KS 1% floor'), format: 'fixed2' },
     ],
     format: 'usd',
     log: true,
@@ -1554,6 +1577,7 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
           for (let k = 0; k < 3; k++) out[k][i] = stats && stats.n > 0 ? stats.q[k] : Number.NaN;
           out[3][i] = stats && full ? quantileBins(base, total, 0.9) : Number.NaN;
           out[4][i] = stats && stats.n > 0 && full ? signedKs(stats.bins, stats.n, base, total) : Number.NaN;
+          out[5][i] = stats && stats.n > 0 && full ? ksFloor(stats.n, total) : Number.NaN;
           // Baza z zamkniętych świec przed świecą
           if (!stats || t + ms > ctx.now) continue;
           window.push(stats);
@@ -1671,6 +1695,7 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
       { color: BUY_LINE, title: tr('kupujący', 'buyers') },
       { color: SELL_LINE, title: tr('sprzedający', 'sellers') },
       { hidden: true, title: tr('wyścig', 'race'), format: 'count' },
+      { hidden: true, title: tr('równomierność', 'evenness'), format: 'fixed2' },
     ],
     format: 'fixed1',
     log: true,
@@ -1678,7 +1703,7 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
       // Wynik świecy między przeliczeniami: ta sama świeca i ta sama liczba zleceń — bez ponownego liczenia
       const memo = new WeakMap<FlowBar, { count: number; r: ReturnType<typeof takerBreadth> }>();
       return (bars, ms, ctx, out) => {
-        const [buy, sell, race] = out;
+        const [buy, sell, race, even] = out;
         for (let i = 0; i < bars.length; i++) {
           const b = bars[i];
           const t = b.candle.t;
@@ -1692,6 +1717,7 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
           buy[i] = r ? r.buy : Number.NaN;
           sell[i] = r ? r.sell : Number.NaN;
           race[i] = r ? r.race : Number.NaN;
+          even[i] = r ? r.evenness : Number.NaN;
         }
       };
     },

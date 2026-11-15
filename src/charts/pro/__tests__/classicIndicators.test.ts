@@ -13,7 +13,7 @@ import {
   IndicatorInstance,
   MAX_INDICATORS,
   OFI_MAX_GAP,
-  OFI_MIN_R2,
+  ofiMinR2,
   REGIME_PRIOR,
   addIndicator,
   bookFlow,
@@ -1039,9 +1039,9 @@ describe('wskaźniki: OFI z kalibracją', () => {
     for (let i = 0; i < 90; i++) {
       const f = xs.length >= 20 && !Number.isNaN(ofi[i]) ? olsFit(xs.slice(-20), ys.slice(-20)) : null;
       if (f) {
-        some ||= f.r2 < OFI_MIN_R2;
+        some ||= f.r2 < ofiMinR2(20);
         expect(r2[i]).toBeCloseTo(f.r2, 9);
-        if (f.r2 >= OFI_MIN_R2) expect(expected[i]).toBeCloseTo(f.beta * ofi[i], 6);
+        if (f.r2 >= ofiMinR2(20)) expect(expected[i]).toBeCloseTo(f.beta * ofi[i], 6);
         else expect(Number.isNaN(expected[i])).toBe(true);
       } else expect(Number.isNaN(r2[i]) && Number.isNaN(expected[i])).toBe(true);
       if (!Number.isNaN(ofi[i]) && i < 89) {
@@ -1102,6 +1102,7 @@ describe('wskaźniki: OFI z kalibracją', () => {
       [true, true, 'Δp', 'volume'],
       [false, true, 'R²', 'fixed2'],
       [true, true, 'oczek.', 'volume'],
+      [false, true, 'próg szumu R²', 'fixed2'],
     ]);
     expect(def.group).toBe('hyperquant');
     expect(indicatorLabel(inst('ofi'))).toBe('OFI 30');
@@ -1268,7 +1269,7 @@ describe('wskaźniki: wielkość zleceń agresora', () => {
     const def = indicatorDef('ordersize');
     expect(def.log).toBe(true);
     expect(def.format).toBe('usd');
-    expect(def.plots.map((p) => p.title)).toEqual(['p50', 'p90', 'p99', 'baza p90', 'KS']);
+    expect(def.plots.map((p) => p.title)).toEqual(['p50', 'p90', 'p99', 'baza p90', 'KS', 'próg KS 1%']);
     expect(def.plots[4]).toMatchObject({ hist: true, hidden: true, format: 'fixed2' });
     expect(def.group).toBe('hyperquant');
     expect(indicatorLabel(inst('ordersize'))).toBe('Zlecenia 100');
