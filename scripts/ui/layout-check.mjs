@@ -171,7 +171,7 @@ const levelCounts = `(() => {
 /**
  * Zakresy P/b (Nill): Kokpit 5m z zapisem, w którym wskaźnik jest włączony, na danych stałych (wskaźnik działa na żywo,
  * w powtórce jest wyłączony), 1440 i 390. Liczby z wyboru warstwy (`pbSelect`, atrybuty `data-pb-boxes`, `data-pb-lines`,
- * `data-pb-marks`). Limity z projektu: najwyżej 2 pudełka, 4 linie poziomów i 3 znaczniki 👀.
+ * bez miejsc wejścia od planu 59). Limity z projektu: najwyżej 2 pudełka i 4 linie poziomów.
  */
 const PB_STORE = {
   'hq.charts.v1.cockpit': JSON.stringify({
@@ -182,8 +182,8 @@ const PB_STORE = {
     indicators: [{ iid: 'pbrange', id: 'pbrange', params: {}, color: '#7C8CFF', alpha: 1, width: 1, labels: true, visible: true }],
   }),
 };
-const PB_MAX = { boxes: 2, lines: 4, marks: 3 };
-const pbCounts = `(() => { const c = window.__hq.chart(); const host = c && c.root.closest('[data-pb-boxes]'); return host ? { boxes: Number(host.dataset.pbBoxes), lines: Number(host.dataset.pbLines), marks: Number(host.dataset.pbMarks) } : null; })()`;
+const PB_MAX = { boxes: 2, lines: 4 };
+const pbCounts = `(() => { const c = window.__hq.chart(); const host = c && c.root.closest('[data-pb-boxes]'); return host ? { boxes: Number(host.dataset.pbBoxes), lines: Number(host.dataset.pbLines) } : null; })()`;
 const ibCount = `(() => { const c = window.__hq.chart(); const host = c && c.root.closest('[data-ib-objects]'); return host ? Number(host.dataset.ibObjects) : null; })()`;
 /**
  * Profile dób na danych stałych: „Mapa dnia” (komputer: 4h z profilami dób i 30m z TPO; telefon: 30m z TPO) i „Rozliczenie
@@ -1208,7 +1208,7 @@ async function main() {
     LEVEL_VIEWS.every(([name]) => lvOk(r.levels?.[name]?.desktop) && lvOk(r.levels?.[name]?.phone));
   // Szlif 9: linie progów HIP-4 w limitach; fikstura ma 14 płynnych rynków, więc na komputerze co najmniej jedna, na telefonie dokładnie jedna
   const s9 = typeof r.hip4?.desktop === 'number' && typeof r.hip4?.phone === 'number' && r.hip4.desktop >= 1 && r.hip4.desktop <= HIP4_MAX.desktop && r.hip4.phone === HIP4_MAX.phone;
-  const pbOk = (c) => !!c && c.boxes <= PB_MAX.boxes && c.lines <= PB_MAX.lines && c.marks <= PB_MAX.marks;
+  const pbOk = (c) => !!c && c.boxes <= PB_MAX.boxes && c.lines <= PB_MAX.lines;
   const s8 = pbOk(r.pb?.desktop) && pbOk(r.pb?.phone);
   r.summary = { t1, t2, t3, t4, t5, t6, s1, s2, s3, s4, s5, s6, s7, s8, s9 };
   // M1: na każdym rynku i w obu układach bez elementów nad świecami i nachodzących etykiet, bez błędów strony i NaN, właściwy rynek
@@ -1311,7 +1311,7 @@ async function main() {
     `Szlif 3. Ściany i serie (Kokpit 1m, powtórka 24.10 19:30): 1440 ${r.clashes?.desktop ?? '—'} (limit ${CLASH_MAX}) — ${ok(s3)}`,
     `Szlif 4. Bąble zleceń (Kokpit 1m, powtórka 24.10 19:30): 1440 ${r.bubbles?.desktop ?? '—'}, 390 ${r.bubbles?.phone ?? '—'} (1440: ${BUBBLES.min}–${BUBBLES.max}, 390: do ${BUBBLES.phoneMax}) — ${ok(s4)}`,
     `Szlif 5. Zakres początkowy sesji (dane stałe): „Aukcja i otwarcie” 5m 1440 ${r.ib?.auction?.desktop ?? '—'}, 390 ${r.ib?.auction?.phone ?? '—'}; „Rozliczenie doby” 30m 1440 ${r.ib?.review?.desktop ?? '—'}, 390 ${r.ib?.review?.phone ?? '—'} (limit ${IB_MAX}) — ${ok(s5)}`,
-    `Szlif 8. Zakresy P/b (Kokpit 5m, dane stałe; pudełka / linie / 👀): 1440 ${r.pb?.desktop ? `${r.pb.desktop.boxes} / ${r.pb.desktop.lines} / ${r.pb.desktop.marks}` : '—'}, 390 ${r.pb?.phone ? `${r.pb.phone.boxes} / ${r.pb.phone.lines} / ${r.pb.phone.marks}` : '—'} (limit ${PB_MAX.boxes} / ${PB_MAX.lines} / ${PB_MAX.marks}) — ${ok(s8)}`,
+    `Szlif 8. Zakresy P/b (Kokpit 5m, dane stałe; pudełka / linie): 1440 ${r.pb?.desktop ? `${r.pb.desktop.boxes} / ${r.pb.desktop.lines}` : '—'}, 390 ${r.pb?.phone ? `${r.pb.phone.boxes} / ${r.pb.phone.lines}` : '—'} (limit ${PB_MAX.boxes} / ${PB_MAX.lines}) — ${ok(s8)}`,
     `Szlif 6. Profile dób (dane stałe; obiekty / pole %): ${PROFILE_VIEWS.map(([name]) => {
       const v = r.profiles?.[name];
       const f = (c) => (c ? `${c.objects} / ${c.area}%` : '—');
