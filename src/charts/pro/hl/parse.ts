@@ -63,6 +63,8 @@ export interface AssetCtx {
   /** Wolumen 24 h (USD). */
   dayNtlVlm: number;
   prevDayPx: number;
+  /** Ceny impact (kupno, sprzedaż); brak w odpowiedzi → null (spread na rynkach HIP-3, projekt 60 S2) */
+  impactPxs?: [number, number] | null;
 }
 
 export interface FundingPoint {
@@ -206,6 +208,7 @@ export function parseAssetCtx(raw: unknown): AssetCtx | null {
     premium: num(raw.premium),
     dayNtlVlm: num(raw.dayNtlVlm),
     prevDayPx: num(raw.prevDayPx),
+    impactPxs: Array.isArray(raw.impactPxs) && raw.impactPxs.length === 2 && num(raw.impactPxs[0]) > 0 && num(raw.impactPxs[1]) > 0 ? [num(raw.impactPxs[0]), num(raw.impactPxs[1])] : null,
   };
   if (!(ctx.markPx > 0)) return null;
   return ctx;

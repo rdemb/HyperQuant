@@ -66,6 +66,8 @@ export interface InputStore {
   exactBook(): { latest(): BookFrame | null } | null;
   zeroKnown: { covers(from: number, to: number): boolean };
   orders: { range(from: number, to: number): readonly { notional: number; side: Side; zero?: true }[] };
+  /** Kontekst rynku z WebSocket (ceny impact do spreadu Czwórki na rynkach bez skanera) */
+  ctx?: { markPx: number; midPx: number; impactPxs?: [number, number] | null } | null;
 }
 
 /** Migawki skanera z wykresu (ProChart). */

@@ -22,6 +22,13 @@ const vbars = (c: Got<readonly Candle[]> | undefined): Got<readonly VBar[]> | un
  * (BTC) od jej wpisu, jeśli wcześniej; świece 1h od najwcześniejszej próby typowej szerokości godziny (seria doczytuje starsze
  * strony, do tego czasu — undefined); VWAP doby ze świec 1m już wczytanych (jak Kokpit, bez czekania na starsze strony).
  */
+/** Spread impact (pb) z kontekstu rynku; bez cen impact → null. */
+function spreadOf(ctx: InputStore['ctx']): number | null {
+  if (!ctx || !ctx.impactPxs) return null;
+  const mid = ctx.midPx > 0 ? ctx.midPx : ctx.markPx;
+  return mid > 0 ? (Math.abs(ctx.impactPxs[1] - ctx.impactPxs[0]) / mid) * 1e4 : null;
+}
+
 export function readFourInputs(store: InputStore, liq: FourInputs['liq'], maps: BlogMapsState): FourInputs {
   const now = store.serverNow();
   const lp = store.lastPrice();
@@ -40,5 +47,6 @@ export function readFourInputs(store: InputStore, liq: FourInputs['liq'], maps: 
     liq,
     bars1h: vbars(candlesFrom(store, '1h', Math.min(at.hour, ...sessionHourSamples(at)), now)),
     dayVwap: live === undefined || isAbsent(live) ? live : dayVwapOf(live, now),
+    spreadBp: spreadOf(store.ctx ?? null),
   };
 }
