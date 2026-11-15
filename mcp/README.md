@@ -88,6 +88,18 @@ All tools are read-only. Two take an optional argument: `session_review` (`sessi
 | `twaps` | The share of zero-hash fills (TWAP suborders among them) in the value of the tape over the last 15 and 60 minutes of the recording, in total and per aggressor side. | "How much of the tape is TWAP flow?" |
 | `forecast_ledger` | Scores of the verifiable HyperQuant forecast ledger: CRPSS with a day-block bootstrap interval, coverage of the 90%, 60% and ACI intervals with the Kupiec test (MODEL, like the cone row of `session_review`; ACI covers 90% by construction), PIT uniformity, Brier score and BSS for level touches against the distance baseline (`bssDist`, reflection formula with a 30-day hourly σ) and against the level base rate (`bss`) with intervals, the cat's big move BSS against a seasonal baseline, the settlement of the `cat-cal-v1` calibration (`bigMove.calibration`), the move clock (`moveClock`: the next hour as a level from 14-day terciles without a percentage, hours 2–24 as a seasonal base), the `hrel-v1` test (`hourBigMove`: a big move for this hour, scores for leads 0–3 h and the 14-day blocks of its plan, without the latest chances), and a link to verify them yourself. | "How well calibrated are the HyperQuant forecasts?" |
 
+## Prompts
+
+Five ready-made prompts, the recipes of the HyperQuant skill (`integrations/skills/hyperquant/SKILL.md`). A client that supports MCP prompts lists them for the user to pick; the model gets the recipe (which tools to call, in which order, what to report) and the data rules below. The server does not see the model's answer.
+
+| Prompt | Arguments | Tools it calls |
+| --- | --- | --- |
+| `prepare_session` | `session` (optional): `london` or `ny` | `market_brief`, `session_context`, `day_map` |
+| `session_now` | — | `session_context`, `liquidation_tape`, `cohort_flow`, `twaps` |
+| `review_session` | `session` (optional): `london` or `ny` | `session_review` |
+| `check_level` | `level`: a price in USD, such as `100000` | `market_brief`, `liquidation_map`, `day_map` |
+| `market_note` | — | `market_brief`, `session_context` |
+
 ## Data rules
 
 - **Read-only public data.** No keys, accounts, trading, orders or trade signals.

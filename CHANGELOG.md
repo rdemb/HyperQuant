@@ -4,6 +4,13 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Serwer MCP: gotowe polecenia (2026-11-15)
+<!-- co-nowego: ukryj -->
+
+#### Dodane
+- **Prompty MCP** (`mcp/src/prompts.ts`, rejestrowane w `createServer`): `prepare_session`, `session_now`, `review_session`, `check_level`, `market_note` — pięć przepisów skilla HyperQuant w tej samej kolejności, każdy z listą narzędzi, kolejnością wywołań, tym, co podać, i wspólnymi zasadami (liczby tylko z narzędzi, plakietka i czas, „—” z powodem, bez kierunku i porady, stopka). Argumenty walidowane (`session`: `london`/`ny`; `level`: liczba). README paczki: sekcja „Prompts”. W paczce npm dopiero po następnym wydaniu (`npm-publish.yml`, ręcznie).
+- Testy: jedno polecenie na przepis `SKILL.md`, tylko istniejące narzędzia, `prompts/list` i `prompts/get` przez protokół, odrzucenie złych argumentów.
+
 ### Strona nie skacze przy wczytywaniu (2026-11-15)
 <!-- co-nowego: grupa=blog | pl=Na wolnym łączu strona nie skacze przy wczytywaniu: fonty zastępcze o tych samych wymiarach i miejsce zarezerwowane dla widoku | en=On a slow connection the page no longer jumps while loading: fallback fonts with matching metrics and space reserved for the view -->
 
