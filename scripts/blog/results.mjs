@@ -120,7 +120,7 @@ const T = {
     description:
       'Rozliczenie prognoz BTC zapisanych przed faktem: CRPSS, pokrycie przedziałów i test Kupca, Brier i BSS dotknięć, wyniki kota Schrödi, plany ocen i niezależna weryfikacja.',
     card: { title: 'Wyniki prognoz BTC', subtitle: 'Rozliczenie dziennika prognoz zapisanych przed faktem, z niezależną weryfikacją' },
-    cardFoot: 'dziennik prognoz · bez sygnałów',
+    cardFoot: 'dziennik prognoz · zapis przed faktem',
     lead: 'Co 15 minut desk zapisuje prognozy przed faktem w publicznym dzienniku z łańcuchem hashy: rozkład zwrotu BTC na 1 h i 4 h, szanse dotknięcia poziomów w 2 h i szanse kota Schrödi na najbliższą godzinę. Ta strona rozlicza ostatnie 30 dni. Każda liczba stoi obok liczby rozstrzygnięć, z których powstała.',
     asOf: (s) => `Stan na ${s}.`,
     live: 'Liczby na żywo i wykresy kalibracji: Po sesji',
@@ -264,7 +264,7 @@ const T = {
     description:
       'Scores of BTC forecasts recorded before the fact: CRPSS, interval coverage with the Kupiec test, touch Brier and BSS, the Schrödi cat, evaluation plans and independent verification.',
     card: { title: 'BTC forecast results', subtitle: 'The scorecard of forecasts recorded before the fact, with independent verification' },
-    cardFoot: 'forecast ledger · no signals',
+    cardFoot: 'forecast ledger · recorded before the fact',
     lead: 'Every 15 minutes the desk records forecasts before the fact in a public ledger with a hash chain: the distribution of the BTC return over 1 h and 4 h, the chances of touching levels within 2 h and the Schrödi cat’s chances for the next hour. This page scores the last 30 days. Every number stands next to the number of settlements it comes from.',
     asOf: (s) => `As of ${s}.`,
     live: 'Live numbers and calibration charts: Post-session',
