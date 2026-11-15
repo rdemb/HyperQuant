@@ -2081,17 +2081,25 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
 /** Wskaźniki usunięte z rejestru (przybliżenia wolumenu); zapis z którymś z nich uruchamia jednorazową informację. */
 export const REMOVED_INDICATORS: readonly string[] = ['obv', 'cmf', 'mfi', 'netvol'];
 
-/** Wskaźniki „Tylko w HyperQuant” (front) i „Więcej z HyperQuant” (second) w kolejności menu. */
-const FRONT_IDS = ['oiflow', 'absorption', 'breadth', 'repeat', 'makers', 'twap', 'slippage', 'rvol', 'ofi', 'ordersize'] as const satisfies readonly IndicatorId[];
-const SECOND_IDS = ['cone', 'outcomes', 'regime', 'hawkes', 'pbrange', 'effort'] as const satisfies readonly IndicatorId[];
-/** Identyfikator wskaźnika z warstw menu front i second (plakietki źródeł: każdy musi mieć źródło). */
-export type HqIndicatorId = (typeof FRONT_IDS)[number] | (typeof SECOND_IDS)[number];
+/**
+ * Wskaźniki „Tylko w HyperQuant” w grupach według pytań tradera (te same pytania co stacje wykresu; plan 59, G1).
+ * Kolejność grup i wskaźników to kolejność menu.
+ */
+export const MENU_GROUPS = [
+  { id: 'presja', label: tr('Kto naciska i czy cena ustępuje', 'Who is pushing and does price give way'), ids: ['absorption', 'ofi', 'oiflow'] },
+  { id: 'sklad', label: tr('Kto stoi za ruchem', 'Who is behind the move'), ids: ['breadth', 'repeat', 'makers', 'ordersize', 'twap', 'hawkes'] },
+  { id: 'ruch', label: tr('Kiedy ruch i ile kosztuje wejście', 'When the market moves and what entry costs'), ids: ['rvol', 'regime', 'slippage', 'cone'] },
+  { id: 'poziomy', label: tr('Poziomy i rynki prognoz', 'Levels and prediction markets'), ids: ['pbrange', 'effort', 'outcomes'] },
+] as const satisfies readonly { id: string; label: string; ids: readonly IndicatorId[] }[];
+const HQ_IDS: readonly IndicatorId[] = MENU_GROUPS.flatMap((g) => g.ids);
+/** Identyfikator wskaźnika z grup menu (plakietki źródeł: każdy musi mieć źródło). */
+export type HqIndicatorId = (typeof MENU_GROUPS)[number]['ids'][number];
 
-/** Kolejność wskaźników w warstwach menu (poza `search`, który zostaje w kolejności rejestru). */
+/** Kolejność wskaźników w warstwach menu (poza `search`, który zostaje w kolejności rejestru); `vwma` i `keltner` w wyszukiwaniu. */
 const TIER_IDS: Record<Exclude<IndicatorTier, 'search'>, readonly IndicatorId[]> = {
-  front: FRONT_IDS,
-  second: SECOND_IDS,
-  classic: ['ema', 'sma', 'vwma', 'atr', 'bb', 'keltner', 'pivots'],
+  front: HQ_IDS,
+  second: [],
+  classic: ['ema', 'sma', 'atr', 'bb', 'pivots', 'hv'],
 };
 const tierOf = (id: IndicatorId): IndicatorTier => (['front', 'second', 'classic'] as const).find((t) => TIER_IDS[t].includes(id)) ?? 'search';
 

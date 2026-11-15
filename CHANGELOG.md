@@ -10,6 +10,16 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 #### Zmienione
 - **SessionView bez statycznych modułów wykresu** (projekt 58, F2 krok 4): wykres (`ChartsView`), przepływ kohort i taśma likwidacji ładowane leniwie; karta pierwszego kontaktu (element LCP) korzysta tylko z lekkich modułów, a nagranie i powtórka 15 min dociągają się po kliknięciu. Adres powtórki ma rdzeń bez ustawień wykresu (`replay/hashCore.ts`, ten sam zapis co `replayHash`). Lighthouse mobile lokalnie (#charts): LCP 7,1 → 4,8–4,9 s, FCP 4,2 → 3,3 s.
 
+### Okno wskaźników: grupy według pytań i karta każdego wskaźnika (2026-11-15)
+<!-- co-nowego: grupa=wykres | pl=Wskaźniki HyperQuant w oknie są pogrupowane według pytań tradera, mają plakietkę źródła, a po rozwinięciu opisu kartę: co twierdzą i czy to sprawdzono | en=HyperQuant indicators in the dialog are grouped by trader questions, carry a source badge and, when the description is expanded, a card: what they claim and whether it was tested -->
+
+#### Zmienione
+- **Okno wskaźników**: „Tylko w HyperQuant” w czterech grupach pytań (Kto naciska i czy cena ustępuje; Kto stoi za ruchem; Kiedy ruch i ile kosztuje wejście; Poziomy i rynki prognoz) zamiast „Więcej z HyperQuant”; przy każdym plakietka źródła (LIVE albo MODEL).
+- **Klasyczne**: EMA, SMA, ATR, Bollinger, pivoty i HV; VWMA i Keltner w wyszukiwaniu.
+
+#### Dodane
+- **Karta wskaźnika** (`indicators/cards.ts`): twierdzenie PL i EN, status w 4 stanach jak karta modelu (Effort: sprawdzony bez mocy; stożek i HIP-4: zapisywane przed faktem) i pasmo szumu; widoczna po rozwinięciu opisu w oknie wskaźników.
+
 ### Start: rynki teraz, godziny rynku bazowego i jakość danych (2026-11-15)
 <!-- co-nowego: grupa=rynki | pl=Start pokazuje BTC, złoto i S&P 500 naraz: cena, ruch od otwarcia sesji, czy giełda bazowa jest otwarta i jakość danych; Czwórka dla wybranego rynku | en=Start shows BTC, gold and the S&P 500 together: price, move since the session open, whether the underlying exchange is open and data quality; the Four numbers for the chosen market -->
 
