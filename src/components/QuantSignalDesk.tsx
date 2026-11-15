@@ -1,7 +1,8 @@
 import React, { useId, useState } from 'react';
 import { QuantMathMetrics } from '../types/trading';
 import { Badge, Panel, Stat, DASH, fmtCompact, fmtPrice, fmtSigned, fmtFixed, fmtNum } from '../ui';
-import { candlesLabel, horizonDuration } from '../views/micro/horizon';
+import { hurstSide } from '../utils/noiseBands';
+import { hurstReadText, ouHalfLifeText } from './noiseText';
 import { tr } from '../i18n';
 
 // Panel metryk mikrostruktury — bez sygnałów transakcyjnych (desk ocenia plan tradera, nie podsuwa wejść).
@@ -33,98 +34,22 @@ export const REGIME_TEXT: Record<QuantMathMetrics['regimeClassification'], { lab
   },
 };
 
-// Kolejność serii kategorycznych stała (series-1…5), legenda pod paskiem
-const WEIGHT_SERIES: { key: keyof QuantMathMetrics['neuralAttentionWeights']; label: string; color: string }[] = [
-  { key: 'shaakuniOBProximity', label: tr('Bliskość OB', 'OB proximity'), color: 'bg-series-1' },
-  { key: 'spotCvdDelta', label: 'CVD spot/perp', color: 'bg-series-2' },
-  { key: 'perpFundingAndLiq', label: tr('Likwidacje (szac.)', 'Liquidations (est.)'), color: 'bg-series-3' },
-  { key: 'l2BookImbalance', label: tr('Nierównowaga L2', 'L2 imbalance'), color: 'bg-series-4' },
-  { key: 'hawkesCascadeVelocity', label: 'Hawkes', color: 'bg-series-5' },
-];
-
-const fmtHalfLife = (v: number) => (Number.isFinite(v) ? `${fmtFixed(v, 1)} ${tr('świec', 'candles')}` : tr('∞ (brak powrotu)', '∞ (no reversion)'));
-
-/** Reżim (reguły), trajektoria heurystyczna w świecach i wagi cech heurystyki. */
-export const QuantRegimePanel: React.FC<{
-  quant: QuantMathMetrics;
-  currentPrice: number;
-  timeframeSec: number;
-}> = ({ quant, currentPrice, timeframeSec }) => {
+/** Reżim z reguł silnika: opis ostatnich świec, bez kierunku ceny. */
+export const QuantRegimePanel: React.FC<{ quant: QuantMathMetrics }> = ({ quant }) => {
   const regime = REGIME_TEXT[quant.regimeClassification];
-  const weights = quant.neuralAttentionWeights;
-
   return (
     <Panel
-      title={tr('Reżim i trajektoria', 'Regime and trajectory')}
-      eyebrow={tr('Heurystyka', 'Heuristic')}
+      title={tr('Reżim (reguły)', 'Regime (rules)')}
+      eyebrow={tr('Opis ostatnich świec', 'Recent candles')}
       actions={
-        <Badge tone="model" title={tr('Klasyfikacja regułowa i ważona suma cech — bez sieci neuronowej', 'Rule-based classification and a weighted sum of features; no neural network')}>
+        <Badge tone="model" title={tr('Klasyfikacja regułowa ostatnich świec, bez prognozy', 'Rule-based classification of recent candles, no forecast')}>
           MODEL
         </Badge>
       }
-      bodyClassName="p-4 flex flex-col gap-4"
+      bodyClassName="p-4"
     >
-      <div>
-        <div className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium">{tr('Reżim (reguły)', 'Regime (rules)')}</div>
-        <div className="text-xl font-semibold text-ink-1 leading-tight mt-0.5">{regime.label}</div>
-        <p className="text-xs text-ink-3 leading-relaxed mt-1">{regime.detail}</p>
-      </div>
-
-      <div>
-        <div className="flex items-baseline justify-between gap-2">
-          <span className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium">{tr('Trajektoria heurystyczna', 'Heuristic trajectory')}</span>
-          <span className="text-[11px] text-ink-3">{tr('±1σ z ATR', '±1σ from ATR')}</span>
-        </div>
-        <div className="mt-1.5 grid grid-cols-4 gap-1.5">
-          {quant.forecastHorizon.map((fh) => {
-            const diff = fh.predictedPrice - currentPrice;
-            const up = diff >= 0;
-            return (
-              <div key={fh.stepBars} className="bg-page border border-line rounded-lg px-1.5 py-2 text-center min-w-0">
-                <div className="text-[11px] text-ink-2 font-medium leading-tight">{candlesLabel(fh.stepBars)}</div>
-                <div className="text-[10px] text-ink-3">= {horizonDuration(fh.stepBars, timeframeSec)}</div>
-                <div className="mt-1 font-mono tabular-nums text-xs text-ink-1 truncate">{fmtPrice(fh.predictedPrice, 0)}</div>
-                <div className={`font-mono tabular-nums text-[10px] ${up ? 'text-buy-ink' : 'text-sell-ink'}`}>
-                  <span aria-hidden="true">{up ? '▲' : '▼'}</span> {fmtSigned(diff, 0)}
-                </div>
-                <div className="font-mono tabular-nums text-[10px] text-ink-3">±{fmtPrice(fh.upper1Sigma - fh.predictedPrice, 0)}</div>
-              </div>
-            );
-          })}
-        </div>
-        <p className="text-[11px] text-ink-3 leading-relaxed mt-1.5">
-          {tr(
-            `Kalman + OU + ważona suma cech; horyzonty to liczba świec przy bieżącym interwale. Nieskalibrowana — nie jest prognozą ani prawdopodobieństwem. Siła heurystyki: ${quant.neuralConfidence}/100.`,
-            `Kalman + OU + weighted sum of features; horizons are numbers of candles at the current interval. Uncalibrated: not a forecast or a probability. Heuristic strength: ${quant.neuralConfidence}/100.`
-          )}
-        </p>
-      </div>
-
-      <div>
-        <div className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium">{tr('Wagi cech heurystyki', 'Heuristic feature weights')}</div>
-        <div className="mt-1.5 flex h-2.5 w-full overflow-hidden rounded-full bg-page" role="img" aria-label={tr('Udział cech w heurystyce', 'Share of features in the heuristic')}>
-          {WEIGHT_SERIES.map((s) => (
-            <span
-              key={s.key}
-              className={`${s.color} h-full border-r border-surface-1 last:border-r-0`}
-              style={{ width: `${(weights[s.key] * 100).toFixed(1)}%` }}
-              title={`${s.label}: ${fmtFixed(weights[s.key] * 100, 0)}%`}
-            />
-          ))}
-        </div>
-        <ul className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] text-ink-2">
-          {WEIGHT_SERIES.map((s) => (
-            <li key={s.key} className="flex items-center justify-between gap-2 min-w-0">
-              <span className="flex items-center gap-1.5 min-w-0">
-                <span className={`w-2 h-2 rounded-sm shrink-0 ${s.color}`} aria-hidden="true" />
-                <span className="leading-tight">{s.label}</span>
-              </span>
-              <span className="font-mono tabular-nums text-ink-1">{fmtFixed(weights[s.key] * 100, 0)}%</span>
-            </li>
-          ))}
-        </ul>
-      </div>
-
+      <div className="text-xl font-semibold text-ink-1 leading-tight">{regime.label}</div>
+      <p className="text-xs text-ink-3 leading-relaxed mt-1">{regime.detail}</p>
     </Panel>
   );
 };
@@ -135,14 +60,6 @@ export const QuantMetricTiles: React.FC<{ quant: QuantMathMetrics; className?: s
   className = 'grid-cols-2 md:grid-cols-3 xl:grid-cols-6',
 }) => {
   const h = quant.hurstExponent;
-  const hurstRead =
-    h === null
-      ? null
-      : h < 0.45
-        ? tr('antypersystencja (powroty)', 'anti-persistence (reversals)')
-        : h > 0.6
-          ? tr('persystencja (trend)', 'persistence (trend)')
-          : tr('blisko błądzenia losowego', 'close to a random walk');
   const tiles: { key: string; node: React.ReactNode }[] = [
     {
       key: 'ou',
@@ -156,7 +73,7 @@ export const QuantMetricTiles: React.FC<{ quant: QuantMathMetrics; className?: s
             title: tr('Ornstein-Uhlenbeck: regresja ΔP na odchyleniu od 0,65·D-EQ + 0,35·W-EQ (40 świec)', 'Ornstein-Uhlenbeck: regression of ΔP on the deviation from 0.65·D-EQ + 0.35·W-EQ (40 candles)'),
           }}
           value={<span>Z {fmtSigned(quant.ouZScore, 2)}σ</span>}
-          hint={`${tr('powrót do EQ', 'reversion to EQ')} ${fmtPrice(quant.ouEquilibriumPrice, 0)} · t½ ${fmtHalfLife(quant.ouHalfLifeBars)}`}
+          hint={`${tr('kotwica', 'anchor')} ${fmtPrice(quant.ouEquilibriumPrice, 0)} · ${ouHalfLifeText(quant.ouTheta, quant.ouHalfLifeBars)}`}
         />
       ),
     },
@@ -188,13 +105,13 @@ export const QuantMetricTiles: React.FC<{ quant: QuantMathMetrics; className?: s
         <Stat
           label="Hurst"
           source={{ tone: 'model', card: 'hurst', label: 'MODEL', title: tr('R/S z korektą Anis-Lloyd na 45 log-zwrotach', 'R/S with the Anis-Lloyd correction on 45 log returns') }}
-          value={h === null ? DASH : <span>H {fmtFixed(h, 3)}</span>}
+          value={h === null ? DASH : <span className={hurstSide(h) === 'noise' ? 'text-ink-3' : undefined}>H {fmtFixed(h, 3)}</span>}
           hint={
             h === null ? (
               tr('za mało zwrotów (min. 8) albo cena bez zmian', 'too few returns (min. 8) or a flat price')
             ) : (
               <>
-                {hurstRead}. {tr('R/S z korektą Anis-Lloyd; Lo (1991) — test może mylić krótką pamięć z długą.', 'R/S with the Anis-Lloyd correction; Lo (1991): the test can mistake short memory for long.')}
+                {hurstReadText(h)}. {tr('R/S z korektą Anis-Lloyd; Lo (1991) — test może mylić krótką pamięć z długą.', 'R/S with the Anis-Lloyd correction; Lo (1991): the test can mistake short memory for long.')}
               </>
             )
           }
