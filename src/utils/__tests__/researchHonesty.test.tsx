@@ -34,13 +34,13 @@ describe('Badania: paliwo likwidacyjne bez stałych w USD', () => {
   });
 
   it('silnik nie zwraca pól paliwa; panel pokazuje „—” z powodem', async () => {
-    const { computeQuantMathAndNeuralForecast } = await import('../quantMathEngine');
+    const { computeQuantMetrics } = await import('../quantMathEngine');
     const { buildHyperliquidBar, recalculateIndicatorSeries } = await import('../marketDataFeed');
     const bars = recalculateIndicatorSeries(
       Array.from({ length: 60 }, (_, i) => buildHyperliquidBar(100_000 + i, 100_050 + i, 99_950 + i, 100_010 + i, 30, 300, i * 300_000, 50))
     );
     const sh = { pwh: 101_000, pwl: 99_000, weq: 100_000, pwh2: null, pwl2: null, pdh: 100_500, pdl: 99_500, deq: 100_000, pdhStatus: 'Active', pdlStatus: 'Active', nySession: 'No Active Session', nyTimeFormatted: '', atr14: 100, orderBlocks: [] } as const;
-    const q = computeQuantMathAndNeuralForecast(bars, { ...sh, orderBlocks: [] }, [], [], [], []);
+    const q = computeQuantMetrics(bars, { ...sh, orderBlocks: [] });
     expect(q).not.toHaveProperty('shortSqueezeFuelUsd');
     expect(q).not.toHaveProperty('longCascadeFuelUsd');
     expect(q.liquidityProfile.length).toBeGreaterThan(0);
@@ -56,19 +56,34 @@ describe('Badania: paliwo likwidacyjne bez stałych w USD', () => {
   });
 });
 
-describe.each(['pl', 'en'] as const)('Badania: nazwy reżimów opisowe (%s)', (lang) => {
-  it('żaden reżim nie nazywa się „bullish/bearish” ani „wzrostowa/spadkowa”', async () => {
+describe.each(['pl', 'en'] as const)('Badania: reżim zmienności opisowy (%s)', (lang) => {
+  it('panel reżimu bez kierunku ceny, a bez danych „—” z powodem', async () => {
     S.lang = lang;
     vi.resetModules();
-    const { QuantRegimePanel, REGIME_TEXT } = await import('../../components/QuantSignalDesk');
+    const { QuantRegimePanel } = await import('../../components/QuantSignalDesk');
     const { emptyQuantMetrics } = await import('../quantMathEngine');
-    const keys = Object.keys(REGIME_TEXT) as QuantMathMetrics['regimeClassification'][];
-    expect(keys.length).toBeGreaterThanOrEqual(4);
-    for (const k of keys) {
-      expect(k).not.toMatch(/bullish|bearish/i);
-      const html = renderToStaticMarkup(<QuantRegimePanel quant={{ ...emptyQuantMetrics(), regimeClassification: k }} />);
-      expect(html, k).not.toMatch(/bullish|bearish|wzrostow|spadkow|popytow|podażow/i);
+    for (const regime of [null, { pRecent5: 0.62, sigma: 0.0021, n: 300 }]) {
+      const html = renderToStaticMarkup(<QuantRegimePanel quant={{ ...emptyQuantMetrics(), regime }} />);
+      expect(html).not.toMatch(/bullish|bearish|wzrostow|spadkow|popytow|podażow|▲|▼/i);
+      if (regime === null) expect(html).toContain('—');
+      else expect(html).toContain('62%');
     }
+  });
+
+  it('Laboratorium i kafle bez heurystyk: magnes, U(p), przyciąganie, stały Hawkes, entropia', async () => {
+    S.lang = lang;
+    vi.resetModules();
+    const { QuantMetricTiles } = await import('../../components/QuantSignalDesk');
+    const { LiquidityMicrostructureLab, MicrostructureMethods } = await import('../../components/LiquidityMicrostructureLab');
+    const { emptyQuantMetrics } = await import('../quantMathEngine');
+    const sh = { pwh: 101_000, pwl: 99_000, weq: 100_000, pwh2: null, pwl2: null, pdh: 100_500, pdl: 99_500, deq: 100_000, pdhStatus: 'Active', pdlStatus: 'Active', nySession: 'No Active Session', nyTimeFormatted: '', atr14: 100, orderBlocks: [] } as const;
+    const q = emptyQuantMetrics();
+    const html = [
+      renderToStaticMarkup(<QuantMetricTiles quant={q} />),
+      renderToStaticMarkup(<LiquidityMicrostructureLab quant={q} shaakuni={{ ...sh, orderBlocks: [] }} currentPrice={100_000} book={{ bids: [], asks: [] }} />),
+      renderToStaticMarkup(<MicrostructureMethods quant={q} shaakuni={{ ...sh, orderBlocks: [] }} currentPrice={100_000} book={{ bids: [], asks: [] }} />),
+    ].join(' ');
+    expect(html).not.toMatch(/Magnes|Magnet|U\(p\)|przyciąg|attraction|Entropia|Entropy|μ, α, β stałe|fixed \(not estimated\)/);
   });
 });
 
@@ -78,7 +93,7 @@ describe('Badania: bez przewidywanej ceny i z pasmem szumu', () => {
     vi.resetModules();
     const { QuantRegimePanel } = await import('../../components/QuantSignalDesk');
     const { emptyQuantMetrics } = await import('../quantMathEngine');
-    const q = { ...emptyQuantMetrics(), forecastHorizon: [{ stepBars: 4, predictedPrice: 101_000, upper1Sigma: 101_500, lower1Sigma: 100_500 }] } as QuantMathMetrics;
+    const q = emptyQuantMetrics();
     const html = renderToStaticMarkup(<QuantRegimePanel quant={q} />);
     expect(html).not.toMatch(/▲|▼|101[\s ]?000|Trajektoria|Wagi cech/);
   });
@@ -106,7 +121,9 @@ describe('Badania: brak danych to „—”, nie wartość zastępcza', () => {
     expect(computeVpinBvc(flat.map((b) => ({ ...b, vbuy: 0, vsell: 0 })))).toBeNull();
     expect(hurstAnisLloyd([0.001, -0.002, 0.001])).toBeNull();
     expect(hurstAnisLloyd(Array.from({ length: 45 }, () => 0))).toBeNull();
-    expect(emptyQuantMetrics().vpinToxicity).toBeNull();
+    expect(emptyQuantMetrics().vpin).toBeNull();
+    expect(emptyQuantMetrics().kyle).toBeNull();
+    expect(emptyQuantMetrics().regime).toBeNull();
     expect(emptyQuantMetrics().hurstExponent).toBeNull();
   });
 
