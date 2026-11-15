@@ -4,6 +4,13 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Blog jak magazyn: okładki z danych wpisu, filtry i karty (2026-11-15)
+<!-- co-nowego: grupa=blog | pl=Nowy blog: każdy wpis ma okładkę narysowaną z jego własnych danych (cena, poziomy, skupiska likwidacji, rozkład scenariuszy i tarcza doby), do tego wyróżniona analiza, rytm dnia i filtry rubryk | en=New blog: every post has a cover drawn from its own data (price, levels, liquidation clusters, scenario distribution and a day dial), plus a featured analysis, the daily rhythm and section filters -->
+
+#### Zmienione
+- **Lista wpisów** (`blog/`, archiwa miesięcy): szeroki układ, nagłówek „Analizy BTC przed faktem”, pasek „Rytm dnia” ze stałymi porami wpisów (podświetlone te, które ukazały się w ostatnim dniu), najnowszy artykuł jako duża karta, filtry rubryk bez JS (radio i `:has`), karty z okładkami w siatce wg dni.
+- **Okładka wpisu** (`scripts/blog/cover.mjs`, `blog/<wpis>/cover.svg`): krajobraz poziomów z danych wpisu: linia ceny, poziomy struktury, skupiska likwidacji jako paski proporcjonalne do kwoty (strona wymuszonego zlecenia), rozkład scenariuszy bez kierunku (wyróżniony najbardziej prawdopodobny) i tarcza doby z sesjami i godziną publikacji. Także na stronie wpisu, z opisem alternatywnym.
+
 ### Przed sesją płynniej na telefonie (2026-11-15)
 <!-- co-nowego: grupa=wykres | pl=Przed sesją na telefonie nie przycina się już przy żywych danych: wykres nie przegląda pustych minut taśmy przy każdej klatce | en=Pre-session on phones no longer stutters with live data: the chart no longer scans empty tape minutes on every frame -->
 
