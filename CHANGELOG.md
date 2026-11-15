@@ -10,6 +10,12 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 #### Zmienione
 - **SessionView bez statycznych modułów wykresu** (projekt 58, F2 krok 4): wykres (`ChartsView`), przepływ kohort i taśma likwidacji ładowane leniwie; karta pierwszego kontaktu (element LCP) korzysta tylko z lekkich modułów, a nagranie i powtórka 15 min dociągają się po kliknięciu. Adres powtórki ma rdzeń bez ustawień wykresu (`replay/hashCore.ts`, ten sam zapis co `replayHash`). Lighthouse mobile lokalnie (#charts): LCP 7,1 → 4,8–4,9 s, FCP 4,2 → 3,3 s.
 
+### Karta wskaźnika z legendy wykresu (2026-11-15)
+<!-- co-nowego: grupa=wykres | pl=Kliknij nazwę wskaźnika w legendzie: okno ustawień mówi, co liczba twierdzi, czy to sprawdzono i jakie jest pasmo szumu | en=Click an indicator name in the legend: the settings window says what the number claims, whether it was tested and what the noise band is -->
+
+#### Dodane
+- **Karta wskaźnika w oknie ustawień** (plan 59, F2): nazwa wskaźnika w legendzie otwiera ustawienia, a na ich górze jest karta z `indicators/cards.ts`: co twierdzi, status sprawdzenia (zapis przed faktem, test planowany, sprawdzony bez mocy, opis) i pasmo szumu, jeśli jest. Działa też na telefonie, bez osobnego przycisku.
+
 ### Wyniki: stopka karty bez słowa zakazanego (2026-11-15)
 <!-- co-nowego: ukryj -->
 
