@@ -232,6 +232,7 @@ describe('Scanner — cykl skanu i publikacji', () => {
     expect(calls.filter((c) => c.includes('r2.cloudflarestorage.com'))).toEqual([
       'https://a.r2.cloudflarestorage.com/b/liq-map/BTC.json',
       'https://a.r2.cloudflarestorage.com/b/liq-tape/BTC.json',
+      'https://a.r2.cloudflarestorage.com/b/entry-map/BTC.json',
       'https://a.r2.cloudflarestorage.com/b/status.json',
     ]);
   });

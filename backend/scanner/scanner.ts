@@ -1,6 +1,7 @@
 import { chmodSync, mkdirSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { buildLiqMap } from '../../src/utils/liqMap.ts';
+import { buildEntryMap } from '../../src/utils/entryMap.ts';
 import { buildLiqTape } from '../../src/utils/liqTape.ts';
 import type { AddressBook } from './addressBook.ts';
 import type { CohortEngine } from './cohortEngine.ts';
@@ -154,6 +155,13 @@ export class Scanner {
     if (!c || !(c.markPx > 0) || !(c.oiBtc >= 0) || asOf - this.ctxAt > CTX_MAX_AGE_MS) return false;
     const positions = this.d.book.positions();
     const map = buildLiqMap(positions, { coin: this.d.coin, markPx: c.markPx, oiBtc: c.oiBtc, asOf, addresses: this.d.book.size, ctxAt: this.ctxAt });
+    // Mapa uwięzionych pozycji z tych samych odczytów (ceny wejścia); błąd budowy nie wstrzymuje mapy likwidacji
+    let entryJson: string | null = null;
+    try {
+      entryJson = JSON.stringify(buildEntryMap(positions, { coin: this.d.coin, markPx: c.markPx, oiBtc: c.oiBtc, asOf, addresses: this.d.book.size }));
+    } catch (e) {
+      console.error(`[skaner] błąd budowy mapy wejść: ${String(e)}`);
+    }
     this.confirmer.prune(asOf);
     const tape = buildLiqTape(this.confirmer.events(), { coin: this.d.coin, asOf, since: this.since, checks: this.confirmer.checks(asOf), backlog: this.confirmer.backlog() });
     const status = {
@@ -198,6 +206,7 @@ export class Scanner {
       [`liq-map/${this.d.coin}.json`, JSON.stringify(map)],
       [`liq-tape/${this.d.coin}.json`, JSON.stringify(tape)],
       ...(cohortsJson ? ([[`cohorts/${this.d.coin}.json`, cohortsJson]] as [string, string][]) : []),
+      ...(entryJson ? ([[`entry-map/${this.d.coin}.json`, entryJson]] as [string, string][]) : []),
       ['status.json', JSON.stringify(status)],
     ];
     for (const [key, body] of files) writeAtomic(join(this.d.outDir, key), body);
