@@ -10,6 +10,12 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 #### Dodane
 - **Karta wskaźnika w oknie ustawień** (plan 59, F2): nazwa wskaźnika w legendzie otwiera ustawienia, a na ich górze jest karta z `indicators/cards.ts`: co twierdzi, status sprawdzenia (zapis przed faktem, test planowany, sprawdzony bez mocy, opis) i pasmo szumu, jeśli jest. Działa też na telefonie, bez osobnego przycisku.
 
+### Wyniki: stopka karty bez słowa zakazanego (2026-11-15)
+<!-- co-nowego: ukryj -->
+
+#### Zmienione
+- Stopka obrazka strony Wyniki: „dziennik prognoz · zapis przed faktem” (EN „recorded before the fact”); test `bezSygnalow` obejmuje już `results.mjs`.
+
 ### Złoto i S&P 500 na wykresie: cena platformy zacieniona, warstwy bez danych zwinięte (2026-11-15)
 <!-- co-nowego: grupa=wykres | pl=Na wykresie złota i S&P 500 zacienione są godziny, gdy giełda bazowa nie notuje (cena platformy), a warstwy bez danych pokazuje jedna plakietka zamiast kilku kresek | en=On gold and S&P 500 charts the hours when the underlying exchange is closed are shaded (platform price), and layers without data show as one badge instead of several dashes -->
 
