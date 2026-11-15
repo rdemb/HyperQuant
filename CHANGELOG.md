@@ -4,6 +4,12 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Serwer ntfy: Caddy tylko na publicznym adresie (2026-11-15)
+<!-- co-nowego: ukryj -->
+
+#### Naprawione
+- **`instaluj-ntfy.sh` i Caddyfile**: Caddy przypięty (`default_bind`) do publicznego adresu z rekordu A domeny, sprawdzonego wobec adresów serwera; port 443 na innych adresach (Tailscale na 100.x) zostaje dla innych programów. Wcześniej Caddy nie startował przy zajętym 443 na adresie Tailscale (`bind: address already in use`).
+
 ### Boczne menu także na blogu i stronach serwisu (2026-11-15)
 <!-- co-nowego: grupa=blog | pl=Blog, Wyniki, Co nowego, Lekcje, Wykresy i Prywatność mają na komputerze to samo boczne menu co aplikacja | en=Blog, Results, What's new, Lessons, Charts and Privacy now have the same side menu as the app on desktop -->
 
