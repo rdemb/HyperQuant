@@ -545,14 +545,14 @@ export function layout(
 <div class="shell">
 ${rail(lang, root, current, url, `${rss}${langLink}`.replace(/class="nav-(rss|lang)"/g, 'class="rail__extra"'))}
 <div class="shell__main">
-<header class="site-header"><div class="wrap">
+<header class="site-header"><div class="wrap${wide ? ' wrap--wide' : ''}">
 <a class="brand" href="${root}">${LOGO}HyperQuant<span>${lang === 'en' ? 'BTC &amp; gold' : 'BTC i złoto'} · Hyperliquid</span></a>
 <nav aria-label="${lang === 'en' ? 'Main' : 'Główna'}">${nav}${rss}${langLink}</nav>
 </div></header>
 <main class="wrap${wide ? ' wrap--wide' : ''}">
 ${main}
 </main>
-<footer class="site-footer"><div class="wrap">
+<footer class="site-footer"><div class="wrap${wide ? ' wrap--wide' : ''}">
 <p>${esc(disclaimer)}</p>
 <p>${FOOTER[lang](root, site)}</p>
 </div></footer>
