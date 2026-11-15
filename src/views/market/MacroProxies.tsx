@@ -96,7 +96,7 @@ export const MacroProxies: React.FC = () => {
           <h3 id="macro-share-title" className="text-[13px] font-semibold text-ink-1 font-sans">
             {tr('Udział makro w ruchu BTC (R²)', 'Macro share of the BTC move (R²)')}
           </h3>
-          <Badge tone="model" title={tr('OLS na log-zwrotach 5m z ostatnich 24 h, wyrównanych po czasie; zwroty przez lukę pominięte', 'OLS on 5m log returns from the last 24 h, aligned in time; returns across a gap skipped')}>
+          <Badge tone="model" card="macro" title={tr('OLS na log-zwrotach 5m z ostatnich 24 h, wyrównanych po czasie; zwroty przez lukę pominięte', 'OLS on 5m log returns from the last 24 h, aligned in time; returns across a gap skipped')}>
             MODEL
           </Badge>
         </div>

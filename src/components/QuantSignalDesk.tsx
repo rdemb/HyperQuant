@@ -151,6 +151,7 @@ export const QuantMetricTiles: React.FC<{ quant: QuantMathMetrics; className?: s
           label="OU"
           source={{
             tone: 'model',
+            card: 'ou',
             label: 'MODEL',
             title: tr('Ornstein-Uhlenbeck: regresja ΔP na odchyleniu od 0,65·D-EQ + 0,35·W-EQ (40 świec)', 'Ornstein-Uhlenbeck: regression of ΔP on the deviation from 0.65·D-EQ + 0.35·W-EQ (40 candles)'),
           }}
@@ -186,7 +187,7 @@ export const QuantMetricTiles: React.FC<{ quant: QuantMathMetrics; className?: s
       node: (
         <Stat
           label="Hurst"
-          source={{ tone: 'model', label: 'MODEL', title: tr('R/S z korektą Anis-Lloyd na 45 log-zwrotach', 'R/S with the Anis-Lloyd correction on 45 log returns') }}
+          source={{ tone: 'model', card: 'hurst', label: 'MODEL', title: tr('R/S z korektą Anis-Lloyd na 45 log-zwrotach', 'R/S with the Anis-Lloyd correction on 45 log returns') }}
           value={h === null ? DASH : <span>H {fmtFixed(h, 3)}</span>}
           hint={
             h === null ? (
@@ -223,7 +224,7 @@ export const QuantMetricTiles: React.FC<{ quant: QuantMathMetrics; className?: s
       node: (
         <Stat
           label="VPIN"
-          source={{ tone: 'model', label: 'MODEL', title: tr('Bulk volume classification, 50 kubełków wolumenowych', 'Bulk volume classification, 50 volume buckets') }}
+          source={{ tone: 'model', card: 'vpin', label: 'MODEL', title: tr('Bulk volume classification, 50 kubełków wolumenowych', 'Bulk volume classification, 50 volume buckets') }}
           value={quant.vpinToxicity === null ? DASH : <span>{fmtFixed(quant.vpinToxicity * 100, 1)}%</span>}
           hint={
             quant.vpinToxicity === null
@@ -241,6 +242,7 @@ export const QuantMetricTiles: React.FC<{ quant: QuantMathMetrics; className?: s
           missing={quant.kyleLambdaPer1M === null}
           source={{
             tone: 'model',
+            card: 'kyle',
             label: 'MODEL',
             title: tr('OLS: ΔP na netto przepływie agresora z WebSocket HL; b/d, gdy < 10 świec z realnym przepływem', 'OLS: ΔP on net aggressor flow from the HL WebSocket; n/a with < 10 candles of real flow'),
           }}

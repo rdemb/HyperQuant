@@ -308,6 +308,36 @@ const NOWY_PROBE = `(() => {
   };
 })()`;
 
+// ───────────────────────── karta modelu ─────────────────────────
+const KARTA_VIEWPORTS = [
+  ['1440', 1440, 900, false],
+  ['390', 390, 844, true],
+];
+/** Widoki z plakietkami MODEL z kartą (pierwszy, w którym jest widoczna plakietka). */
+const KARTA_WIDOKI = ['#research', '#before', '#after', '#start'];
+const KARTA_KLIK = `(() => {
+  const b = [...document.querySelectorAll('[data-model-card]')].find((e) => { const r = e.getBoundingClientRect(); return r.width > 0 && getComputedStyle(e).visibility !== 'hidden'; });
+  if (!b) return null;
+  b.scrollIntoView({ block: 'center' });
+  b.click();
+  return b.getAttribute('data-model-card');
+})()`;
+const KARTA_PROBE = `(() => {
+  const k = document.querySelector('[data-karta-modelu]');
+  const r = k?.getBoundingClientRect();
+  const nav = document.querySelector('[data-app-nav]');
+  const nr = nav && getComputedStyle(nav).display !== 'none' ? nav.getBoundingClientRect() : null;
+  const tresc = k?.querySelector('.overflow-y-auto');
+  return {
+    otwarta: !!k,
+    wEkranie: r ? r.left >= 0 && r.top >= 0 && r.right <= innerWidth + 0.5 && r.bottom <= innerHeight + 0.5 : false,
+    nadPaskiem: r && nr ? r.bottom <= nr.top + 0.5 : true,
+    wBok: tresc ? tresc.scrollWidth - tresc.clientWidth : null,
+    metoda: !!k && /Metoda|Method/.test(k.textContent || ''),
+    wynik: !!k && /Wynik poza próbą|Out-of-sample score/.test(k.textContent || ''),
+  };
+})()`;
+
 // ───────────────────────── wyspa ─────────────────────────
 const WYSPA_VIEWPORTS = [
   ['1440', 1440, 900, false],
@@ -1020,6 +1050,36 @@ async function main() {
     }
     await page.viewport(1440, 900, false);
 
+    // Karta modelu: plakietka MODEL z kartą otwiera kartę w ekranie (nad dolnym paskiem na telefonie) z metodą i wynikiem
+    // poza próbą; Escape zamyka i oddaje fokus plakietce
+    report.karta = {};
+    for (const [key, w, h, mobile] of KARTA_VIEWPORTS) {
+      await page.viewport(w, h, mobile);
+      const [e0, c0] = [page.errors.length, page.consoleErrors.length];
+      let id = null;
+      let widok = null;
+      for (const hash of KARTA_WIDOKI) {
+        await page.go(`${BASE}robots.txt`, 300);
+        await page.ev(`(() => { localStorage.clear(); const s = ${JSON.stringify(RETURNING)}; for (const k in s) localStorage.setItem(k, s[k]); return true; })()`);
+        await page.go(`${BASE}${hash}`, 500);
+        await sleep(5000);
+        id = await page.ev(KARTA_KLIK);
+        if (id) {
+          widok = hash;
+          break;
+        }
+      }
+      await page.waitFor(`!!document.querySelector('[data-karta-modelu]')`, 8000).catch(() => undefined);
+      await sleep(600);
+      const x = await page.ev(KARTA_PROBE);
+      await shot(page, `${w}-karta-modelu`);
+      await page.key('Escape');
+      await sleep(400);
+      const zamknieta = await page.ev(`!document.querySelector('[data-karta-modelu]') && !!document.activeElement?.hasAttribute('data-model-card')`);
+      report.karta[key] = { id, widok, ...x, zamknieta, errors: page.errors.slice(e0), consoleErrors: page.consoleErrors.slice(c0) };
+    }
+    await page.viewport(1440, 900, false);
+
     // Start: pierwsza strona od 360 do 1440 px (teren z mapy likwidacji z danych stałych)
     report.start = {};
     serveLiq = true;
@@ -1195,6 +1255,12 @@ async function main() {
     );
   };
   r.summary.nowy = NOWY_VIEWPORTS.every(([key]) => nowyOk(key));
+  // Karta modelu: otwarta z plakietki, w ekranie i nad dolnym paskiem, z metodą i wynikiem poza próbą, Escape zamyka z powrotem fokusu
+  const kartaOk = (key) => {
+    const x = r.karta?.[key];
+    return !!x && !!x.id && x.otwarta && x.wEkranie && x.nadPaskiem && (x.wBok ?? 1) <= 0 && x.metoda && x.wynik && x.zamknieta && x.errors.length === 0 && x.consoleErrors.length === 0;
+  };
+  r.summary.karta = KARTA_VIEWPORTS.every(([key]) => kartaOk(key));
   // Wyspa: otwarta właściwą drogą dla ekranu, w całości w ekranie i nad dolnym paskiem, gotowy strażnik dodany i zapisany, Escape zamyka
   const wyspaOk = (key) => {
     const x = r.wyspa?.[key];
@@ -1287,6 +1353,14 @@ async function main() {
       if (!x) return `${key}: —`;
       const errs = [...x.errors, ...x.consoleErrors].map((e) => e.split('\n')[0]);
       return `${key}: otwarcie ${x.przycisk ?? 'BRAK'}, panel ${x.otwarta ? (x.wEkranie ? 'w ekranie' : 'POZA EKRANEM') : 'NIE'}${x.nadPaskiem ? '' : ' i POD PASKIEM'}, w bok ${x.wBok ?? '—'} px, gotowy strażnik ${x.dodany && x.zapisany ? 'dodany i zapisany' : 'NIE'}, licznik ${x.licznik || '—'}, Escape ${x.zamknieta ? 'zamyka' : 'NIE'}, błędy ${errs.length}${errs.length ? ` (${errs.join(' | ')})` : ''}, NaN ${x.nan?.length ?? '—'} — ${ok(wyspaOk(key))}`;
+    }).join('; ')}`);
+  }
+  if (r.karta) {
+    lines.push(`Karta modelu: ${KARTA_VIEWPORTS.map(([key]) => {
+      const x = r.karta[key];
+      if (!x) return `${key}: —`;
+      const errs = [...x.errors, ...x.consoleErrors].map((e) => e.split('\n')[0]);
+      return `${key}: ${x.id ? `${x.id} w ${x.widok}` : 'BRAK PLAKIETKI'}, karta ${x.otwarta ? (x.wEkranie ? 'w ekranie' : 'POZA EKRANEM') : 'NIE'}${x.nadPaskiem ? '' : ' i POD PASKIEM'}, w bok ${x.wBok ?? '—'} px, metoda ${x.metoda ? 'tak' : 'NIE'}, wynik poza próbą ${x.wynik ? 'tak' : 'NIE'}, Escape ${x.zamknieta ? 'zamyka, fokus na plakietce' : 'NIE'}, błędy ${errs.length}${errs.length ? ` (${errs.join(' | ')})` : ''} — ${ok(kartaOk(key))}`;
     }).join('; ')}`);
   }
   if (r.start) {

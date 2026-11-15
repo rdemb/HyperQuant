@@ -37,7 +37,7 @@ export const CascadeSimSection: React.FC<{ map: LiqMap }> = ({ map }) => {
         <div className="text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium">
           {tr('Kaskada 2.0: zmierzony arkusz, cena mark, odbudowa, niepewność', 'Cascade 2.0: measured book, mark price, refill, uncertainty')}
         </div>
-        <Badge tone="model" title={tr('Monte Carlo: 400 ścieżek, krok 30 s, horyzont 60 min', 'Monte Carlo: 400 paths, 30 s step, 60 min horizon')}>
+        <Badge tone="model" card="cascade" title={tr('Monte Carlo: 400 ścieżek, krok 30 s, horyzont 60 min', 'Monte Carlo: 400 paths, 30 s step, 60 min horizon')}>
           MODEL
         </Badge>
       </div>

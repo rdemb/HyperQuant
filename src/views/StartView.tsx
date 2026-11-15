@@ -296,7 +296,9 @@ const StartView: React.FC = () => {
                   <dt className="text-[11px] font-bold tracking-[0.1em] text-ink-2 uppercase">{k}</dt>
                   <dd className="font-mono tabular-nums text-[32px] leading-none tracking-[-0.02em]">{v}</dd>
                   <dd className="flex flex-wrap items-center gap-2 text-[11px] text-ink-3">
-                    <Badge tone={tone}>{tone === 'live' ? 'LIVE' : 'MODEL'}</Badge>
+                    <Badge tone={tone} card={tone === 'model' ? 'ledger' : undefined}>
+                      {tone === 'live' ? 'LIVE' : 'MODEL'}
+                    </Badge>
                     {meta}
                   </dd>
                 </div>

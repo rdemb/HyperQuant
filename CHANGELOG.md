@@ -14,6 +14,14 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 - **Agenci AI w wyspie**: polecenie serwera MCP do skopiowania, pięć przepisów (pytanie do skopiowania i narzędzia, z `views/agents/catalog`), link do pełnej instrukcji.
 - `ui:check` „Wyspa” (1440, 390, 360): otwarcie właściwą drogą, panel w ekranie i nad dolnym paskiem, bez przewijania w bok, gotowy strażnik dodany i zapisany, licznik w nagłówku, Escape zamyka. Kontrola granic pakietu: panel wyspy poza pierwszym pakietem.
 
+### Karta modelu przy plakietkach MODEL (2026-11-15)
+<!-- co-nowego: grupa=prognozy | pl=Kliknij plakietkę MODEL: metoda, dane, znane słabości i wynik poza próbą z rejestru prognoz | en=Click a MODEL badge: method, data, known weaknesses and the out-of-sample score from the forecast ledger -->
+
+#### Dodane
+- **Karta modelu** (`shell/KartaModelu`, ładowana leniwie przy pierwszym otwarciu): plakietka MODEL z kartą jest przyciskiem. Karta pokazuje metodę, dane, odświeżanie i znane słabości z tabeli pochodzenia w Źródłach (jedno źródło opisu, wiersze z polem `card`), a dla modeli zapisywanych przed faktem — wynik poza próbą z weryfikowalnego rejestru: liczba rozliczeń, CRPSS, pokrycie przedziałów 90% i 60% z testem Kupca dla rozkładu zwrotu 1 h i 4 h, Brier i BSS dotknięć PDH, D-EQ i PDL (BSS zawsze parą: wobec częstości poziomu i wobec odległości), Brier modelu i rynku przy porównaniu z HIP-4; data stanu rejestru. Modele bez zapisu mówią to wprost.
+- Karty przy plakietkach: dziennik na Starcie, Monte Carlo 2 h, VPIN, λ Kyle’a, Hurst, OU, kaskada likwidacji (mapa i symulacja), przepływ kohort, Schrödi, proxy makro, model vs rynek, mechanika arkusza. Odnośnik z karty do wiersza w tabeli pochodzenia i do strony Wyniki.
+- `ui:check` „Karta modelu” (1440, 390): karta w ekranie i nad dolnym paskiem, z metodą i wynikiem poza próbą, Escape zamyka i oddaje fokus plakietce. Kontrola granic pakietu: karta poza pierwszym pakietem.
+
 ### Szybszy pierwszy ekran: fonty w HTML (2026-11-14)
 <!-- co-nowego: ukryj -->
 
