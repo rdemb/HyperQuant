@@ -2,7 +2,7 @@
 # Serwer ntfy HyperQuant na VPS: ntfy (oficjalne repozytorium apt), Caddy (HTTPS, Let's Encrypt), wydawca z tokenem,
 # usługa hyperquant-tematy (z HQ_TOPICS=0 — próba na sucho, nic nie publikuje). Na końcu autotest.
 #
-# Użycie (root, po wdrożeniu kodu podpisanym tagiem i po rekordzie DNS A domeny na adres VPS):
+# Użycie (root, po wdrożeniu kodu podpisanym tagiem i po rekordzie DNS A domeny na adres VPS, bez rekordu AAAA):
 #   bash /opt/hyperquant/app/backend/deploy/ntfy/instaluj-ntfy.sh ntfy.hyperquant.tech
 # Ponowne uruchomienie jest bezpieczne: istniejący token zostaje, pliki konfiguracji są nadpisywane wzorcem z repo.
 # Cofnięcie: HQ_TOPICS=0 w /etc/hyperquant/topics.env, `systemctl disable --now hyperquant-tematy ntfy caddy`.
@@ -33,6 +33,13 @@ apt-get install -y -qq ntfy caddy >/dev/null
 BIND="$(getent ahostsv4 "$DOMENA" | awk '{print $1; exit}')"
 if [ -z "$BIND" ] || ! ip -4 -o addr show | grep -q " $BIND/"; then
   echo "Rekord A domeny $DOMENA (${BIND:-brak}) nie wskazuje na adres tego serwera — popraw DNS i uruchom ponownie" >&2
+  exit 1
+fi
+# Tylko rekord A: Caddy nie słucha na IPv6, a klienci IPv6 i walidacja Let's Encrypt (woli IPv6) poszliby na AAAA
+# (adresy ::ffff:… to IPv4 zmapowane przez resolver, nie rekord AAAA)
+V6="$(getent ahostsv6 "$DOMENA" | awk '$1 !~ /^::ffff:/ {print $1; exit}')"
+if [ -n "$V6" ]; then
+  echo "Domena $DOMENA ma rekord AAAA ($V6), a Caddy słucha tylko na IPv4 $BIND — usuń AAAA w DNS i uruchom ponownie" >&2
   exit 1
 fi
 echo "3/6 konfiguracja (domena $DOMENA, adres $BIND)"
