@@ -98,6 +98,23 @@ function fmt(lang) {
 const T = {
   pl: {
     title: 'Wyniki prognoz BTC: rozliczenie dziennika · HyperQuant',
+    kpi: {
+      h2: 'W skrócie',
+      crpss: (h) => `Rozkład zwrotu, ${h}: CRPSS`,
+      better: 'lepsza od bazy (przedział 95% powyżej zera)',
+      notSure: 'nieodróżnialna od bazy (przedział obejmuje zero)',
+      worse: 'gorsza od bazy (przedział 95% poniżej zera)',
+      cov: 'Pokrycie przedziału 90%, 1 h',
+      covRef: 'cel: 90% z konstrukcji',
+      touch: 'Dotknięcia poziomów w 2 h: BSS',
+      auc: 'Kot: duży ruch w 1 h, AUC',
+      aucRef: '0,5 to losowe zgadywanie, 1 to ranking bezbłędny',
+      verify: 'Niezależna weryfikacja dziennika',
+      verifyRef: 'przelicza dziennik od pierwszej linii',
+      n: (n) => `n = ${n}`,
+      pairs: (n) => `${n} par`,
+      note: 'Wyróżnione są tylko wyniki lepsze od bazy z przedziałem 95% powyżej zera oraz zgodna weryfikacja. Każda liczba ma rozwinięcie w tabelach niżej.',
+    },
     h1: 'Wyniki prognoz',
     eyebrow: 'Dziennik prognoz',
     description:
@@ -225,6 +242,23 @@ const T = {
   },
   en: {
     title: 'BTC forecast results: the ledger scorecard · HyperQuant',
+    kpi: {
+      h2: 'At a glance',
+      crpss: (h) => `Return distribution, ${h}: CRPSS`,
+      better: 'better than the baseline (95% interval above zero)',
+      notSure: 'not distinguishable from the baseline (interval includes zero)',
+      worse: 'worse than the baseline (95% interval below zero)',
+      cov: 'Coverage of the 90% interval, 1 h',
+      covRef: 'target: 90% by construction',
+      touch: 'Level touches in 2 h: BSS',
+      auc: 'Cat: big move in 1 h, AUC',
+      aucRef: '0.5 is random guessing, 1 is a perfect ranking',
+      verify: 'Independent ledger verification',
+      verifyRef: 'recomputes the ledger from the first line',
+      n: (n) => `n = ${n}`,
+      pairs: (n) => `${n} pairs`,
+      note: 'Only results better than the baseline with a 95% interval above zero, and a passing verification, are highlighted. Each number is expanded in the tables below.',
+    },
     h1: 'Forecast results',
     eyebrow: 'Forecast ledger',
     description:
@@ -392,6 +426,13 @@ export function resultsPage(site, lang, results = {}) {
     return `[${f.num(c.lo, d)}; ${f.num(c.hi, d)}], ${f.days(c.days)}`;
   };
 
+  // 6. Weryfikacja
+  const Vt = t.verify;
+  const v = V.ok ? V.value : null;
+  const state = !v ? null : !v.ok ? 'bad' : verifyStale(v.at, now) ? 'stale' : 'ok';
+  const lines = Array.isArray(v?.lines) ? v.lines.filter((l) => typeof l === 'string') : [];
+  const passed = lines.filter((l) => l.startsWith('✓')).length;
+
   // 1. Wstęp
   const intro = `<section class="block" id="intro">
 <p class="lead">${esc(t.lead)}</p>
@@ -533,12 +574,6 @@ ${table(t.cat.head, catRows)}
 ${planRows.length ? table(P.head, planRows) : `<p>${na(s ? w.noPlan : S.why)}</p>`}
 </section>`;
 
-  // 6. Weryfikacja
-  const Vt = t.verify;
-  const v = V.ok ? V.value : null;
-  const state = !v ? null : !v.ok ? 'bad' : verifyStale(v.at, now) ? 'stale' : 'ok';
-  const lines = Array.isArray(v?.lines) ? v.lines.filter((l) => typeof l === 'string') : [];
-  const passed = lines.filter((l) => l.startsWith('✓')).length;
   const runLink = v && typeof v.run === 'string' && RUN_URL.test(v.run) ? `<a href="${esc(v.run)}">${esc(Vt.run)}</a>` : na(w.noRun);
   const cmd = [`git clone -b ledger https://github.com/rdemb/hyperquant-data ledger`, `git clone ${site.repo}`, `cd ${site.repo.split('/').pop()}`, 'node scripts/verify-ledger.mjs --dir ../ledger'];
   const verify = `<section class="block" id="verify">
@@ -589,10 +624,40 @@ ${refutedItems === null ? `<p>${na(L.why)}</p>` : refutedItems.length ? `<ul cla
 ${study}
 </section>`;
 
+  const K = t.kpi;
+  const tile = (label, value, ref, n, tone) => `<li class="kpi${tone ? ` kpi--${tone}` : ''}"><span class="kpi-l">${esc(label)}</span><span class="kpi-v">${value}</span><span class="kpi-r">${esc(ref)}</span>${n ? `<span class="kpi-n">${esc(n)}</span>` : ''}</li>`;
+  const skill = (c) => (c && ok(c.lo) && ok(c.hi) ? (c.lo > 0 ? 'good' : c.hi < 0 ? 'bad' : null) : null);
+  const verdict = (tone) => (tone === 'good' ? K.better : tone === 'bad' ? K.worse : K.notSure);
+  const kpis = (() => {
+    if (!s) return '';
+    const out = [];
+    for (const h of [60, 240]) {
+      const sc = s.scores.ret[String(h)];
+      if (!sc || sc.n < LEDGER_MIN_N) continue;
+      const v = sc.crpssCi && ok(sc.crpssCi.value) ? sc.crpssCi.value : sc.crpss;
+      if (!ok(v)) continue;
+      const tone = skill(sc.crpssCi, v);
+      out.push(tile(K.crpss(t.returns.horizon(h)), f.num(v, 3), verdict(tone), K.n(f.int(sc.n)), tone));
+    }
+    const sc1 = s.scores.ret['60'];
+    if (sc1 && sc1.n >= LEDGER_MIN_N && sc1.cov90 && ok(sc1.cov90.rate)) out.push(tile(K.cov, f.pct(sc1.cov90.rate), K.covRef, K.n(f.int(sc1.cov90.n)), null));
+    const x = s.scores.touch;
+    if (x && x.n >= LEDGER_MIN_N && ok(x.bssDist)) {
+      const v = x.bssDistCi && ok(x.bssDistCi.value) ? x.bssDistCi.value : x.bssDist;
+      const tone = skill(x.bssDistCi, v);
+      out.push(tile(K.touch, f.num(v, 3), verdict(tone), K.pairs(f.int(x.pairsDist ?? x.pairs)), tone));
+    }
+    const c = s?.cat?.scores;
+    if (c && ok(c.n) && c.n >= LEDGER_MIN_N && c.big && ok(c.big.auc)) out.push(tile(K.auc, f.num(c.big.auc, 3), K.aucRef, K.n(f.int(c.n)), null));
+    if (state) out.push(tile(K.verify, esc(Vt.status[state]), lines.length ? Vt.checks(f.int(passed), f.int(lines.length)) : K.verifyRef, null, state === 'ok' ? 'good' : state === 'bad' ? 'bad' : null));
+    return out.length ? `<section class="block kpis-block" aria-labelledby="kpi-h"><h2 id="kpi-h">${esc(K.h2)}</h2><ul class="kpis">${out.join('')}</ul><p class="kpi-note">${esc(K.note)}</p></section>` : '';
+  })();
+
   const main = `<article class="page page--results">
 <p class="eyebrow"><span>${esc(t.eyebrow)}</span></p>
 <h1>${esc(t.h1)}</h1>
 ${intro}
+${kpis}
 ${returns}
 ${touch}
 ${cat}
@@ -651,6 +716,7 @@ ${refuted}
       lang,
       current: 'results',
       alternates,
+      wide: true,
       disclaimer: lang === 'pl' ? 'Rozliczenie zapisanych prognoz, nie porada inwestycyjna ani wezwanie do transakcji. Handel kontraktami z dźwignią wiąże się z wysokim ryzykiem utraty środków.' : 'A scorecard of recorded forecasts, not investment advice nor a call to trade. Trading leveraged contracts carries a high risk of losing money.',
     }),
   };
