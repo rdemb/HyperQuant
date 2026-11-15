@@ -151,7 +151,10 @@ const PANE_ITEMS: ToggleItem[] = [
   {
     key: 'showCvd',
     label: 'CVD',
-    hint: tr('Skumulowana delta od zerowania (sesja, dzień albo tydzień)', 'Cumulative delta since the reset (session, day or week)'),
+    hint: tr(
+      'Skumulowana delta od zerowania (sesja, dzień albo tydzień). Po luce w taśmie liczona od nowa: znacznik ↺ nad świecą, bo poziom po luce nie jest porównywalny z poziomem sprzed niej.',
+      'Cumulative delta since the reset (session, day or week). After a gap in the tape it restarts: a ↺ mark above the candle, because the level after the gap is not comparable with the level before it.'
+    ),
     aliases: 'cumulative volume delta skumulowana',
   },
   { key: 'showVenueCvd', label: tr('CVD giełd: Hyperliquid, Binance, Bybit', 'Exchange CVD: Hyperliquid, Binance, Bybit'), hint: tr('Dane Binance i Bybit z Twojej przeglądarki', 'Binance and Bybit data from your browser') },
@@ -1873,8 +1876,8 @@ function flowLayers(s: ChartSettings, intervalMs: number, liq: LiqMapState, whal
       key: 'showTpo',
       label: tr('Profil doby: wolumen, agresja, czas (TPO)', 'Day profile: volume, aggression, time (TPO)'),
       hint: tr(
-        `Profil wolumenu każdej doby UTC; kolor wiersza to strona agresywna z taśmy (niebieski kupno, czerwony sprzedaż, szary bez przewagi albo bez taśmy; starsze doby z nagrania serwera, 7 dób), cienki obrys to czas (ile okresów 30 min dotknęło ceny). POC i value area z wolumenu, zakres pierwszej godziny doby UTC (pasek liliowy; to nie initial balance sesji), pojedyncze wydruki i ogony, delta doby pod profilem; liczby wiersza pod krzyżem; zastępuje profile sesji. Pełny profil dla bieżącej i poprzedniej doby, starsze — POC i pasek value area; najdłuższy słupek do 35% doby i 30% wykresu; nagie POC: ${NAKED_POC_SHOWN} najbliższe cenie. ${PROFILE_EVIDENCE.pl}`,
-        `A volume profile of every UTC day; the row colour is the aggressive side from the tape (blue buy, red sell, grey no edge or no tape; older days from the server recording, 7 days), the thin outline is time (how many 30-minute periods touched the price). POC and value area from volume, the range of the first hour of the UTC day (lilac bar; not the session initial balance), single prints and tails, the day delta under the profile; row numbers under the crosshair; replaces session profiles. A full profile for the current and previous day, older ones only the POC and the value area bar; the longest bar up to 35% of the day and 30% of the chart; naked POCs: the ${NAKED_POC_SHOWN} nearest to price. ${PROFILE_EVIDENCE.en}`
+        `Profil wolumenu każdej doby UTC; kolor wiersza to strona agresywna z taśmy (niebieski kupno, czerwony sprzedaż, szary bez przewagi albo bez taśmy; starsze doby z nagrania serwera, 7 dób), cienki obrys to czas (ile okresów 30 min dotknęło ceny). POC i value area z wolumenu, IB doby UTC: zakres pierwszej godziny doby UTC (zielony pasek jak warstwa IB, ale to nie initial balance sesji; przy włączonej warstwie IB ukryty), pojedyncze wydruki i ogony, delta doby pod profilem; liczby wiersza pod krzyżem; zastępuje profile sesji. Pełny profil dla bieżącej i poprzedniej doby, starsze — POC i pasek value area; najdłuższy słupek do 35% doby i 30% wykresu; nagie POC: ${NAKED_POC_SHOWN} najbliższe cenie. ${PROFILE_EVIDENCE.pl}`,
+        `A volume profile of every UTC day; the row colour is the aggressive side from the tape (blue buy, red sell, grey no edge or no tape; older days from the server recording, 7 days), the thin outline is time (how many 30-minute periods touched the price). POC and value area from volume, the UTC-day IB: the range of the first hour of the UTC day (a green bar like the IB layer, but not the session initial balance; hidden when the IB layer is on), single prints and tails, the day delta under the profile; row numbers under the crosshair; replaces session profiles. A full profile for the current and previous day, older ones only the POC and the value area bar; the longest bar up to 35% of the day and 30% of the chart; naked POCs: the ${NAKED_POC_SHOWN} nearest to price. ${PROFILE_EVIDENCE.en}`
       ),
       swatch: 'bg-of-svwap',
       off: tpoInterval(intervalMs) ? undefined : tr('Na interwałach do 30m', 'On timeframes up to 30m'),

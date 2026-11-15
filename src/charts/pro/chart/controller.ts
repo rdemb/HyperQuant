@@ -1,4 +1,4 @@
-import { CandlestickSeries, HistogramSeries, LineSeries, LineStyle, LineType, MismatchDirection, PriceScaleMode, createChart } from 'lightweight-charts';
+import { CandlestickSeries, HistogramSeries, type ISeriesMarkersPluginApi, LineSeries, LineStyle, LineType, MismatchDirection, PriceScaleMode, createChart, createSeriesMarkers } from 'lightweight-charts';
 import type {
   AutoscaleInfo,
   CandlestickData,
@@ -20,7 +20,7 @@ import type {
 import { fmtVol } from '../../orderflow/footprint';
 import { fmtSignedVol } from '../../orderflow/renderer';
 import { DEFAULT_THRESHOLD_USD, autoThreshold } from '../core/clashes';
-import { Ohlc, cvdCandles, cvdLine, flipsEmpty, oiChangeLine } from '../core/flow';
+import { Ohlc, cvdCandles, cvdLine, cvdRestarts, flipsEmpty, oiChangeLine } from '../core/flow';
 import { deltaPoint, flowLegend, hlDelta } from './flowPoints';
 import { BarStat, VENUE_GROUPS, barStat } from '../core/stats';
 import { rowAt } from '../core/footprintBar';
@@ -271,6 +271,9 @@ export class ProChartController {
   private volume: ISeriesApi<'Histogram'> | null = null;
   private delta: ISeriesApi<'Candlestick'> | null = null;
   private cvd: ISeriesApi<'Candlestick'> | null = null;
+  /** Znaczniki „↺” na świecach, od których CVD liczy od nowa po luce w taśmie (plan 59, E7). */
+  private cvdMarks: ISeriesMarkersPluginApi<Time> | null = null;
+  private cvdMarksKey = '';
   /** Panel tabeli statystyk: niewidoczna seria (tylko oś czasu) z tabelą jako prymitywem. */
   private statsSeries: ISeriesApi<'Line'> | null = null;
   private readonly statsTable = new StatsTable();
@@ -478,6 +481,7 @@ export class ProChartController {
     };
     this.main.attachPrimitive(this.zones);
     this.tpo = new TpoLayer(settings.showTpo, settings.showTpoOi);
+    this.tpo.setOn(settings.showTpo, settings.showTpoOi, settings.showIb);
     this.tpo.onCounts = (c) => {
       container.dataset.tpoObjects = String(c.objects);
       container.dataset.tpoArea = pct(c.area);
@@ -582,7 +586,7 @@ export class ProChartController {
       stackedMin: s.stackedMin,
     });
     this.overlay.setToggles(toggles(s, this.series.interval.ms, this.levelsInstead));
-    this.tpo.setOn(s.showTpo, s.showTpoOi);
+    this.tpo.setOn(s.showTpo, s.showTpoOi, s.showIb);
     if (tpoShown(s, this.series.interval.ms) && this.bars.length > 0) requestDayProfiles(this.store, this.bars[0].t);
     this.needs = needsOf(s);
     this.stripAt = 0;
@@ -690,6 +694,8 @@ export class ProChartController {
     const venueSeries = [...Object.values(this.venueCvd ?? {}), ...Object.values(this.venueOi ?? {})];
     for (const sr of [this.volume, this.delta, this.cvd, this.statsSeries, ...venueSeries, ...this.indSeries.flat()]) if (sr) this.chart.removeSeries(sr);
     this.volume = this.delta = this.cvd = this.statsSeries = null;
+    this.cvdMarks = null;
+    this.cvdMarksKey = '';
     this.venueCvd = this.venueOi = null;
     let pane = 1;
     // Wolumen we własnym panelu — nie zasłania komórek footprintu; na telefonie na dole wykresu ceny (więcej miejsca na cenę)
@@ -1612,6 +1618,14 @@ export class ProChartController {
     if (!this.cvd) return;
     const bars = this.bars;
     const next = cvdCandles(bars, this.settings.cvdReset);
+    const restarts = cvdRestarts(bars, this.settings.cvdReset);
+    const key = restarts.join(',');
+    if (key !== this.cvdMarksKey) {
+      this.cvdMarksKey = key;
+      const marks = restarts.map((t) => ({ time: sec(t), position: 'aboveBar' as const, shape: 'circle' as const, color: PRO.ink3, size: 0.6, text: '↺' }));
+      if (this.cvdMarks) this.cvdMarks.setMarkers(marks);
+      else if (marks.length) this.cvdMarks = createSeriesMarkers(this.cvd, marks);
+    }
     const prev = this.cvdData;
     this.cvdData = next;
     if (full || prev.length === 0 || prev.length > next.length) {

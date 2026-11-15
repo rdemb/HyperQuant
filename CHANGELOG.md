@@ -4,6 +4,13 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### TPO: IB doby UTC w kolorze IB; CVD: znacznik po luce w taśmie (2026-11-15)
+<!-- co-nowego: grupa=wykres | pl=Pierwsza godzina doby w profilu TPO ma kolor warstwy IB i znika, gdy IB sesji jest włączone, a CVD po luce w taśmie ma znacznik ↺ | en=The first hour of the day in the TPO profile uses the IB layer colour and hides when the session IB is on, and CVD gets a ↺ mark after a gap in the tape -->
+
+#### Zmienione
+- **IB doby UTC w TPO** (plan 59, E4): pasek pierwszej godziny doby UTC w kolorze warstwy IB (zamiast liliowego), opis „IB doby UTC… to nie initial balance sesji”; przy włączonej warstwie IB sesji nie jest rysowany (dwa różne IB naraz).
+- **CVD po luce** (E7): przy pierwszej świecy po luce w taśmie znacznik „↺” (CVD liczy od nowa, poziom po luce nie jest porównywalny z poziomem sprzed niej) i zdanie w opisie warstwy; `flow.cvdRestarts`.
+
 ### Legenda: źródło footprintu, Delty i CVD; wieloryby przygaszone przy starej migawce (2026-11-15)
 <!-- co-nowego: grupa=wykres | pl=Legenda wykresu pokazuje źródło LIVE także przy footprincie, Delcie i CVD, a linie wielorybów bledną, gdy dane skanera mają ponad 2 minuty | en=The chart legend now shows the LIVE source for the footprint, Delta and CVD too, and whale lines fade when the scanner data is over 2 minutes old -->
 
