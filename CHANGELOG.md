@@ -4,6 +4,12 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Wyniki: stopka karty bez słowa zakazanego (2026-11-15)
+<!-- co-nowego: ukryj -->
+
+#### Zmienione
+- Stopka obrazka strony Wyniki: „dziennik prognoz · zapis przed faktem” (EN „recorded before the fact”); test `bezSygnalow` obejmuje już `results.mjs`.
+
 ### Złoto i S&P 500 na wykresie: cena platformy zacieniona, warstwy bez danych zwinięte (2026-11-15)
 <!-- co-nowego: grupa=wykres | pl=Na wykresie złota i S&P 500 zacienione są godziny, gdy giełda bazowa nie notuje (cena platformy), a warstwy bez danych pokazuje jedna plakietka zamiast kilku kresek | en=On gold and S&P 500 charts the hours when the underlying exchange is closed are shaded (platform price), and layers without data show as one badge instead of several dashes -->
 

@@ -531,10 +531,10 @@ describe('strony serwisu: Wykresy, Lekcje, atlas, 404', () => {
     const long = clip('słowo '.repeat(60));
     expect(long.length).toBeLessThanOrEqual(160);
     expect(long.endsWith('słowo…')).toBe(true);
-    const svg = ogSvg({ section: 'Wykresy', title: 'Tytuł', subtitle: 'Podtytuł', shot: { href: 'data:image/jpeg;base64,AA', w: 1440, h: 700, crop: [0, 0, 720, 557] }, foot: ['adres', 'bez sygnałów'] });
+    const svg = ogSvg({ section: 'Wykresy', title: 'Tytuł', subtitle: 'Podtytuł', shot: { href: 'data:image/jpeg;base64,AA', w: 1440, h: 700, crop: [0, 0, 720, 557] }, foot: ['adres', 'zapis przed faktem'] });
     expect(svg).toContain('<clipPath id="shot">');
     expect(svg).toContain('href="data:image/jpeg;base64,AA"');
-    expect(svg).toContain('>bez sygnałów</text>');
+    expect(svg).toContain('>zapis przed faktem</text>');
     expect(ogSvg({ section: 'Blog', title: 'T' })).toContain('>opis rynku, nie porada inwestycyjna</text>');
   });
 
