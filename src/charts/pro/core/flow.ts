@@ -124,3 +124,30 @@ export function deltaFromExtremes(fp: FootprintBar): { fromHigh: number; fromLow
 export function flipsEmpty(changed: readonly number[], prevLen: number, emptyBefore: (i: number) => boolean, emptyNow: (i: number) => boolean): boolean {
   return changed.some((i) => i < prevLen - 1 && emptyBefore(i) !== emptyNow(i));
 }
+
+/**
+ * Świece, od których CVD liczy od nowa po luce w taśmie (nie po początku okresu ani na początku wczytanych danych):
+ * pierwsza pełna świeca po świecy bez taśmy w tym samym okresie. Wykres stawia przy nich znacznik „↺” (plan 59, E7),
+ * bo poziom CVD po luce nie jest porównywalny z poziomem sprzed niej.
+ */
+export function cvdRestarts(bars: readonly FlowInput[], mode: ResetMode): number[] {
+  const out: number[] = [];
+  let period = Number.NaN;
+  let seen = false;
+  let gap = false;
+  for (const b of bars) {
+    const p = periodStart(b.t, mode);
+    if (p !== period) {
+      period = p;
+      gap = false;
+    }
+    if (!b.fp || b.complete === false) {
+      if (seen) gap = true;
+      continue;
+    }
+    if (gap) out.push(b.t);
+    gap = false;
+    seen = true;
+  }
+  return out;
+}
