@@ -43,6 +43,25 @@ describe('Tape', () => {
     expect(tape.signature(60_000, 120_000)).toBe('0:0');
   });
 
+  it('szeroki zakres daje to samo co zakres samej taśmy (pętla przycięta do jej zasięgu)', () => {
+    const DAY = 86_400_000;
+    const tape = new Tape();
+    expect(tape.signature(0, 30 * DAY)).toBe('0:0');
+    expect(tape.hasAny(0, 30 * DAY)).toBe(false);
+    tape.insert([row(5 * DAY + 61_000, 2, 1, 1, 1), row(5 * DAY + 61_500, 3, 1, 1, 2), row(5 * DAY + 180_000, 4, 1, 1, 3)]);
+    const wide = tape.signature(0, 30 * DAY);
+    expect(wide).toBe(tape.signature(5 * DAY, 6 * DAY));
+    expect(wide.endsWith(':3')).toBe(true);
+    // Granice: transakcja dokładnie w `lastTime` jest w zakresie, `to` równe jej czasowi — już nie
+    expect(tape.signature(0, 5 * DAY + 180_000).endsWith(':2')).toBe(true);
+    expect(tape.signature(0, 5 * DAY + 180_001).endsWith(':3')).toBe(true);
+    const px: number[] = [];
+    tape.forEach(5 * DAY + 61_200, 30 * DAY, (_t, p) => px.push(p));
+    expect(px).toEqual([3, 4]);
+    expect(tape.hasAny(6 * DAY, 30 * DAY)).toBe(false);
+    expect(tape.signature(0, 5 * DAY)).toBe('0:0');
+  });
+
   it('prune usuwa stare minuty i przelicza licznik', () => {
     const tape = new Tape();
     tape.insert([row(1000, 1, 1, 1, 1), row(61_000, 1, 1, 1, 2), row(125_000, 1, 1, 1, 3)]);

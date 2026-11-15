@@ -8,6 +8,7 @@ import { LAST_VIEW_KEY, followHash, landingView } from './route';
 import { ViewId } from './types';
 import { needsVolModel } from './viewNeeds';
 import { startOnboarding } from '../utils/firstVisit';
+import { count, timed } from '../utils/deskPerf';
 
 const CEX_KEY = 'hq.cexEnabled';
 
@@ -115,13 +116,15 @@ function useDeskState() {
     setAudioEnabledState(v);
   }, []);
 
+  // Pomiar F0 (projekt 58): każde odświeżenie dostawcy to nowy obiekt kontekstu dla wszystkich odbiorców useDesk()
+  count('desk:provider');
   const shaakuni = useMemo(
-    () => computeShaakuniIndicator(feed.bars, shaakuniConfig, feed.timeframeSec, feed.realHtfLevels),
+    () => timed('desk:shaakuni', () => computeShaakuniIndicator(feed.bars, shaakuniConfig, feed.timeframeSec, feed.realHtfLevels)),
     [feed.bars, shaakuniConfig, feed.timeframeSec, feed.realHtfLevels]
   );
-  const heatmap = useMemo(() => computeAggrLiquidationHeatmap(feed.bars), [feed.bars]);
+  const heatmap = useMemo(() => timed('desk:heatmap', () => computeAggrLiquidationHeatmap(feed.bars)), [feed.bars]);
   const quant = useMemo(
-    () => computeQuantMathAndNeuralForecast(feed.bars, shaakuni, heatmap, feed.hlTrades, feed.bids, feed.asks),
+    () => timed('desk:quant', () => computeQuantMathAndNeuralForecast(feed.bars, shaakuni, heatmap, feed.hlTrades, feed.bids, feed.asks)),
     [feed.bars, shaakuni, heatmap, feed.hlTrades, feed.bids, feed.asks]
   );
   // OFI tylko z transakcji z ostatnich 60 s — w spokojnym rynku stare transakcje nie mogą „wykrywać” wyczerpania
@@ -130,7 +133,7 @@ function useDeskState() {
     return feed.hlTrades.filter((t) => t.timestamp >= Math.max(newest, Date.now()) - 60_000);
   }, [feed.hlTrades, feed.nowTick]);
   const ofi = useMemo(
-    () => computeOrderFlowImbalanceHeatmap(feed.bids, feed.asks, recentHlTrades, feed.bars, feed.currentPrice),
+    () => timed('desk:ofi', () => computeOrderFlowImbalanceHeatmap(feed.bids, feed.asks, recentHlTrades, feed.bars, feed.currentPrice)),
     [feed.bids, feed.asks, recentHlTrades, feed.bars, feed.currentPrice]
   );
 
@@ -163,6 +166,7 @@ export const DeskProvider: React.FC<{ children: React.ReactNode }> = ({ children
 /** Dostęp do stanu desku w widokach i komponentach. */
 export function useDesk(): DeskState {
   const v = useContext(Ctx);
+  count('desk:consumer');
   if (!v) throw new Error('useDesk musi być użyte wewnątrz <DeskProvider>');
   return v;
 }
