@@ -13,6 +13,7 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 - **Jakość danych HIP-3** (`utils/marketQuality.ts`, plakietka `QualityChip`): rozjazd ceny mark od wyroczni i spread impact z tego samego odczytu co strona Rynki; poza godzinami rynku bazowego „cena platformy” zamiast oceny. Progi wstępne z konfiguracji rynków.
 - Grupa **„Tylko BTC”** nad rozdziałami ze skanera, przepływu i dziennika oraz wiersz o rynkach HIP-3 w części o pochodzeniu liczb.
 
+
 ### S&P 500 w desku, rynki z jednej konfiguracji (2026-11-15)
 <!-- co-nowego: grupa=rynki | pl=S&P 500 dołącza do BTC i złota: karta na stronie Rynki, wykres w W sesji i wybór na Starcie | en=The S&P 500 joins BTC and gold: a card on the Markets page, a chart In session and a pick on Start -->
 
@@ -20,6 +21,17 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 - **S&P 500** (`xyz:SP500`, giełda HIP-3 trade.xyz) jako trzeci rynek aplikacji: karta na stronie Rynki, wykres w W sesji (wybór rynku, skrót `M`, paleta ⌘K) i karta na Starcie. Parametry z API Hyperliquid (dokładność rozmiaru 3, dźwignia do 50×).
 - **Konfiguracja rynków desku** (`src/config/deskMarkets.ts`): jedna lista z nazwami PL i EN, klasą, rynkiem bazowym i jego kalendarzem, katalogiem historii i progami jakości; Brent jako wpis wyłączony. Z niej rynki aplikacji (`APP_MARKETS`), podpis marki w aplikacji i na blogu, teksty Rynków i Startu.
 - **`scripts/markets/sync.mjs`**: opisy w `index.html` (tytuł, meta, Open Graph, X, JSON-LD, noscript), nazwa i opis manifestu oraz tabela rynków w README z konfiguracji; `--check` w CI. Test `marketNames.test.ts` pilnuje, żeby nazw rynków nie wpisywać na sztywno w interfejsie (jawne wyjątki z powodem).
+
+
+### Wskaźniki: progi z hipotezy zerowej i uczciwsze opisy (2026-11-15)
+<!-- co-nowego: grupa=wykres | pl=OFI pokazuje oczekiwaną zmianę dopiero powyżej progu szumu dla danego okna, wielkość zleceń podaje próg istotności KS, a szerokość agresji ma nową miarę równomierności | en=OFI shows the expected change only above the noise floor for the window, order size gives the KS significance floor, and aggression breadth gets a new evenness measure -->
+
+#### Zmienione
+- **OFI**: próg R² dla oczekiwanej zmiany zależy od okna (t² / (t² + n − 2), test nachylenia 5%: 30 świec → 0,13, 100 → 0,04) zamiast stałego 0,1, który przy oknie 30 przepuszczał ok. 9% okien szumu; próg w legendzie obok R².
+- **Wielkość zleceń**: KS opisany i liczony jako test dwóch prób, próg 1% = 1,628·√((n + m)/(n·m)) w legendzie obok KS.
+- **Zmiana OI i delta**: próbka OI musi być młodsza niż świeca (na 1m próbka sprzed 3 min dawała zmianę z sąsiedniej świecy).
+- **Szerokość agresji**: nowa „równomierność” (n_eff / liczba kont, 0–1), niezależna od liczby kont w świecy.
+- **Mapa ciepła i klastry likwidacji**: podpowiedź plakietki opisuje względną skalę widoku (p60–p99,5) i progi klastrów (3 przedziały ~0,25% z każdej strony, od 1 mln USD).
 
 ### Badania: reżim zmienności z BOCPD, VPIN i λ z przedziałem, bez heurystyk (2026-11-15)
 <!-- co-nowego: grupa=prognozy | pl=Badania pokazują reżim zmienności z bayesowskiego wykrywania zmian, a VPIN i λ Kyle’a mają przedział 95%; zniknęły liczby z ręcznie dobranych wag | en=Research now shows the volatility regime from Bayesian change detection, and VPIN and Kyle’s λ come with a 95% interval; numbers built from hand-picked weights are gone -->
