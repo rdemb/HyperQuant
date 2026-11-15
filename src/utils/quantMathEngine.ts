@@ -14,6 +14,7 @@ import {
 import { tr } from '../i18n';
 import { fmtNum, fmtPrice } from '../ui/format';
 import { Bocpd, regimePrior } from './bocpd';
+import { t975 } from './tQuantile';
 
 /**
  * Metryki opisowe przepływu i mikrostruktury (Badania, Przed sesją) — same estymatory z metodą i niepewnością:
@@ -30,13 +31,7 @@ import { Bocpd, regimePrior } from './bocpd';
 /** Próg reżimu trendowego dla skorygowanego H: ≈ 96. percentyl rozkładu pod szumem (n = 45, symulacja). */
 export const HURST_TREND_THRESHOLD = 0.6;
 
-/** Kwantyl 0,975 rozkładu t-Studenta z `df` stopniami swobody (rozwinięcie Cornisha–Fishera; przy df ≥ 8 błąd < 0,002). */
-export function t975(df: number): number {
-  const z = 1.959963985;
-  const z3 = z ** 3;
-  const z5 = z ** 5;
-  return z + (z3 + z) / (4 * df) + (5 * z5 + 16 * z3 + 3 * z) / (96 * df * df);
-}
+export { t975 };
 
 /** Wartość oczekiwana R/S dla szumu iid (Anis-Lloyd 1976 z korektą Petersa (n − ½)/n). */
 function expectedRescaledRange(n: number): number {
