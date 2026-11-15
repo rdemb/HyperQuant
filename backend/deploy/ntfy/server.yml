@@ -1,0 +1,29 @@
+# Serwer ntfy HyperQuant: tematy publiczne 24/7 (instalacja: backend/deploy/ntfy/instaluj-ntfy.sh, który wstawia domenę).
+# Wszyscy tylko czytają; publikuje wyłącznie użytkownik usługi hyperquant-tematy tokenem (tematy hq-*).
+base-url: "https://__DOMENA__"
+listen-http: "127.0.0.1:2586"
+
+# Za Caddy: adres klienta z nagłówka ustawianego przez Caddy, tylko do limitów zapytań w pamięci (nie zapisywany)
+behind-proxy: true
+proxy-forwarded-header: "X-Real-IP"
+
+# Dostęp: domyślnie tylko odczyt; bez rejestracji, logowania i rezerwacji tematów
+auth-file: "/var/lib/ntfy/user.db"
+auth-default-access: "read-only"
+enable-signup: false
+enable-login: false
+enable-reservations: false
+
+# Krótka pamięć wiadomości (powiadomienia przegapione przez telefon bez sieci), bez załączników
+cache-file: "/var/cache/ntfy/cache.db"
+cache-duration: "1h"
+
+# Limity na adres klienta (w pamięci serwera)
+visitor-subscription-limit: 30
+visitor-request-limit-burst: 60
+visitor-request-limit-replenish: "5s"
+
+# Dziennik tylko błędów: bez wpisów o zapytaniach i adresach klientów
+log-level: error
+
+# Bez upstream-base-url: nic nie trafia do ntfy.sh; na iOS powiadomienia z naszego serwera przychodzą z opóźnieniem
