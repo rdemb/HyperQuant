@@ -338,6 +338,44 @@ const KARTA_PROBE = `(() => {
   };
 })()`;
 
+// ───────────────────────── wyspa ─────────────────────────
+const WYSPA_VIEWPORTS = [
+  ['1440', 1440, 900, false],
+  ['390', 390, 844, true],
+  ['360', 360, 780, true],
+];
+/** Otwarcie wyspy: przycisk w nagłówku, a gdy go nie widać (najwęższy telefon) — pozycja menu „Więcej”. */
+const WYSPA_OPEN = `(async () => {
+  const vis = (e) => !!e && e.getBoundingClientRect().width > 0 && getComputedStyle(e).display !== 'none';
+  const b = document.querySelector('[data-wyspa-btn]');
+  if (vis(b)) { b.click(); return 'nagłówek'; }
+  const more = [...document.querySelectorAll('[data-app-nav] button[aria-expanded]')].find(vis);
+  more?.click();
+  await new Promise((r) => setTimeout(r, 400));
+  const m = document.querySelector('[data-more-wyspa]');
+  if (!m) return null;
+  m.click();
+  return 'menu';
+})()`;
+const WYSPA_PROBE = `(() => {
+  const p = document.querySelector('[data-wyspa]');
+  const r = p?.getBoundingClientRect();
+  const nav = document.querySelector('[data-app-nav]');
+  const nr = nav && getComputedStyle(nav).display !== 'none' ? nav.getBoundingClientRect() : null;
+  const tresc = p?.querySelector('.overflow-y-auto');
+  let zapisane = 0;
+  try { zapisane = JSON.parse(localStorage.getItem('hq.wyspa.straznicy.v1') || '[]').length; } catch {}
+  return {
+    otwarta: !!p,
+    wEkranie: r ? r.left >= 0 && r.top >= 0 && r.right <= innerWidth + 0.5 && r.bottom <= innerHeight + 0.5 : false,
+    nadPaskiem: r && nr ? r.bottom <= nr.top + 0.5 : true,
+    wBok: tresc ? tresc.scrollWidth - tresc.clientWidth : null,
+    straznicy: p ? p.querySelectorAll('[data-straznik]').length : 0,
+    zapisane,
+    licznik: (document.querySelector('[data-wyspa-btn]')?.getAttribute('aria-label') || '').replace(/[^0-9]/g, ''),
+  };
+})()`;
+
 // ───────────────────────── Start ─────────────────────────
 /**
  * Start (#start) od 360 do 1440 px z mapą likwidacji z danych stałych: bez przewijania w bok, teren płynności
@@ -986,6 +1024,32 @@ async function main() {
     }
     await page.viewport(1440, 900, false);
 
+    // Wyspa: otwarcie z nagłówka (od 380 px) albo z menu „Więcej” (360 px), panel w całości w ekranie i nad dolnym
+    // paskiem, bez przewijania w bok, gotowy strażnik dodany jednym dotknięciem i zapisany, licznik w nagłówku, Escape zamyka
+    report.wyspa = {};
+    for (const [key, w, h, mobile] of WYSPA_VIEWPORTS) {
+      await page.viewport(w, h, mobile);
+      const [e0, c0] = [page.errors.length, page.consoleErrors.length];
+      await page.go(`${BASE}robots.txt`, 300);
+      await page.ev(`(() => { localStorage.clear(); const s = ${JSON.stringify(RETURNING)}; for (const k in s) localStorage.setItem(k, s[k]); return true; })()`);
+      await page.go(`${BASE}#charts`, 500);
+      await page.waitFor(`!!document.querySelector('[data-app-shell]') && !!document.querySelector('.tv-lightweight-charts canvas')`, 30000);
+      await sleep(2000);
+      const przycisk = await page.ev(WYSPA_OPEN);
+      await page.waitFor(`!!document.querySelector('[data-wyspa]')`, 8000).catch(() => undefined);
+      await sleep(600);
+      const przed = await page.ev(WYSPA_PROBE);
+      await page.ev(`(() => { const b = document.querySelector('[data-wyspa] section[aria-label] button'); b?.click(); return !!b; })()`);
+      await sleep(400);
+      const po = await page.ev(WYSPA_PROBE);
+      await shot(page, `${w}-wyspa`);
+      await page.key('Escape');
+      await sleep(500);
+      const zamknieta = await page.ev(`!document.querySelector('[data-wyspa]')`);
+      report.wyspa[key] = { przycisk, ...przed, dodany: po.straznicy === przed.straznicy + 1, zapisany: po.zapisane === przed.zapisane + 1, licznik: po.licznik, zamknieta, nan: await probe(page, nanText), errors: page.errors.slice(e0), consoleErrors: page.consoleErrors.slice(c0) };
+    }
+    await page.viewport(1440, 900, false);
+
     // Karta modelu: plakietka MODEL z kartą otwiera kartę w ekranie (nad dolnym paskiem na telefonie) z metodą i wynikiem
     // poza próbą; Escape zamyka i oddaje fokus plakietce
     report.karta = {};
@@ -1197,6 +1261,26 @@ async function main() {
     return !!x && !!x.id && x.otwarta && x.wEkranie && x.nadPaskiem && (x.wBok ?? 1) <= 0 && x.metoda && x.wynik && x.zamknieta && x.errors.length === 0 && x.consoleErrors.length === 0;
   };
   r.summary.karta = KARTA_VIEWPORTS.every(([key]) => kartaOk(key));
+  // Wyspa: otwarta właściwą drogą dla ekranu, w całości w ekranie i nad dolnym paskiem, gotowy strażnik dodany i zapisany, Escape zamyka
+  const wyspaOk = (key) => {
+    const x = r.wyspa?.[key];
+    return (
+      !!x &&
+      x.przycisk === (key === '360' ? 'menu' : 'nagłówek') &&
+      x.otwarta === true &&
+      x.wEkranie === true &&
+      x.nadPaskiem === true &&
+      (x.wBok ?? 1) <= 0 &&
+      x.dodany === true &&
+      x.zapisany === true &&
+      (key === '360' || x.licznik === '1') &&
+      x.zamknieta === true &&
+      x.nan?.length === 0 &&
+      x.errors.length === 0 &&
+      x.consoleErrors.length === 0
+    );
+  };
+  r.summary.wyspa = WYSPA_VIEWPORTS.every(([key]) => wyspaOk(key));
   // Start: bez przewijania w bok, teren narysowany, etykiety i podziałka bez nakładania, ryciny w ekranie, bez błędów i NaN
   const startOk = (key) => {
     const x = r.start?.[key];
@@ -1262,6 +1346,14 @@ async function main() {
       return `${key}: pasek dnia ${x.pasekDnia ? 'tak' : 'NIE'}, nawigacje ${x.nawigacje} (${x.szyna ? 'szyna' : 'dolny pasek'}), w bok strona ${x.overflowX} px / nagłówek ${x.naglowekX} px, cena ${x.cena ? 'w całości' : 'UCIĘTA'}${x.cenaOdkryta ? '' : ' i ZASŁONIĘTA'}, nakładanie ${x.nakladanie?.length ? x.nakladanie.join(' | ') : 'brak'}, font marki ${x.font}, font mono widoku ${x.fontWidoku}, paleta ⌘K ${x.paleta ? 'tak' : 'NIE'}, panel ceny ${x.panel != null ? `${(x.panel * 100).toFixed(1)}%` : '—'}, błędy ${errs.length}${errs.length ? ` (${errs.join(' | ')})` : ''}, NaN ${x.nan?.length ?? '—'} — ${ok(nowyOk(key))}`;
     };
     lines.push(`Powłoka: ${NOWY_VIEWPORTS.map(([key]) => one(key)).join('; ')}`);
+  }
+  if (r.wyspa) {
+    lines.push(`Wyspa: ${WYSPA_VIEWPORTS.map(([key]) => {
+      const x = r.wyspa[key];
+      if (!x) return `${key}: —`;
+      const errs = [...x.errors, ...x.consoleErrors].map((e) => e.split('\n')[0]);
+      return `${key}: otwarcie ${x.przycisk ?? 'BRAK'}, panel ${x.otwarta ? (x.wEkranie ? 'w ekranie' : 'POZA EKRANEM') : 'NIE'}${x.nadPaskiem ? '' : ' i POD PASKIEM'}, w bok ${x.wBok ?? '—'} px, gotowy strażnik ${x.dodany && x.zapisany ? 'dodany i zapisany' : 'NIE'}, licznik ${x.licznik || '—'}, Escape ${x.zamknieta ? 'zamyka' : 'NIE'}, błędy ${errs.length}${errs.length ? ` (${errs.join(' | ')})` : ''}, NaN ${x.nan?.length ?? '—'} — ${ok(wyspaOk(key))}`;
+    }).join('; ')}`);
   }
   if (r.karta) {
     lines.push(`Karta modelu: ${KARTA_VIEWPORTS.map(([key]) => {
