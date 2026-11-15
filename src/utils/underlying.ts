@@ -84,3 +84,46 @@ export function etToday(now: number, minuteET: number): number {
 export function baseOpens(now: number): { nyse: number; cme: number } {
   return { nyse: etToday(now, 9 * 60 + 30), cme: etToday(now, 18 * 60) };
 }
+
+export interface ClosedSpan {
+  from: number;
+  to: number;
+  kind: 'closed' | 'break' | 'holiday';
+}
+
+const DAY_MS = 86_400_000;
+const spanCache = new Map<string, ClosedSpan[]>();
+
+/**
+ * Przedziały, w których rynek bazowy nie notuje (cena platformy), przecinające [from, to): weekend od piątku 17:00 ET
+ * do niedzieli 18:00 ET, przerwy 17:00–18:00 ET od poniedziałku do czwartku i (S&P 500) dni wolne NYSE. Liczone po
+ * dniach nowojorskich (bez próbkowania co minutę), z pamięcią dla tego samego zakresu dób; rynek całodobowy — pusto.
+ * Na wykresie: zacienienie okresów „cena platformy” (projekt 60, Q2).
+ */
+export function closedSpans(m: Pick<DeskMarket, 'underlying' | 'slug'>, from: number, to: number, cal: NyseCalendar | null = NYSE_CALENDAR): ClosedSpan[] {
+  if (m.underlying.calendar === 'crypto' || !(to > from)) return [];
+  const d0 = Math.floor(from / DAY_MS) - 2;
+  const d1 = Math.floor(to / DAY_MS) + 2;
+  const key = `${m.slug}:${d0}:${d1}`;
+  let all = spanCache.get(key);
+  if (!all) {
+    all = [];
+    for (let d = d0; d <= d1; d++) {
+      const noon = d * DAY_MS + 17 * 3_600_000; // ok. południe w Nowym Jorku
+      const { weekday } = nyClock(noon);
+      const at17 = etToday(noon, CLOSE_MIN);
+      const at18 = etToday(noon, OPEN_MIN);
+      if (weekday >= 1 && weekday <= 4) all.push({ from: at17, to: at18, kind: 'break' });
+      // Piątek 17:00 → niedziela 18:00 (dwa dni później)
+      if (weekday === 5) all.push({ from: at17, to: etToday(noon + 2 * DAY_MS, OPEN_MIN), kind: 'closed' });
+      if (m.underlying.calendar === 'nyse+cme') {
+        const ws = wallStreetAt(noon, cal);
+        if (ws.state === 'closed' && ws.why === 'holiday') all.push({ from: etToday(noon, 0), to: etToday(noon, 0) + DAY_MS, kind: 'holiday' });
+      }
+    }
+    all.sort((a, b) => a.from - b.from);
+    if (spanCache.size > 50) spanCache.clear();
+    spanCache.set(key, all);
+  }
+  return all.filter((s) => s.to > from && s.from < to);
+}

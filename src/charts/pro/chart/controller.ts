@@ -1449,6 +1449,7 @@ export class ProChartController {
       if (deltaReset) this.delta?.setData(next.map(deltaPoint));
     }
     const ms = this.series.interval.ms;
+    this.overlay.setMarket(this.store.coin);
     this.overlay.setBars(next, ms, this.store.vwapCandles(this.series.interval), this.store.serverNow());
     this.overlay.setDaily(this.store.daily);
     this.drawLayer.setBars(next, ms);
