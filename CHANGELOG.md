@@ -4,6 +4,12 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Kolory wskaźników według znaczenia (2026-11-15)
+<!-- co-nowego: grupa=wykres | pl=Wskaźniki mają kolor według tego, co mierzą: zmienność fiolet, skład przepływu turkus, koszt szarość, poziomy bursztyn | en=Indicators are coloured by what they measure: volatility violet, flow composition teal, cost grey, levels amber -->
+
+#### Zmienione
+- **Kolory rodzin** (plan 59, G2): nowo dodany wskaźnik z grup HyperQuant dostaje kolor swojej rodziny zamiast kolejnego wolnego z palety — zmienność i zakres (RVOL, reżim, Hawkes, stożek) fiolet strefy, skład przepływu (powracający, wielkość zleceń) turkus, koszt zlecenia ask jasny i bid ciemniejszy szary, poziomy (zakresy P/b, strefy Effort) bursztyn. Presja zostaje w kolorach znaku, klasyczne przy palecie; zapisane wskaźniki użytkowników bez zmian.
+
 ### Karta wskaźnika z legendy wykresu (2026-11-15)
 <!-- co-nowego: grupa=wykres | pl=Kliknij nazwę wskaźnika w legendzie: okno ustawień mówi, co liczba twierdzi, czy to sprawdzono i jakie jest pasmo szumu | en=Click an indicator name in the legend: the settings window says what the number claims, whether it was tested and what the noise band is -->
 
