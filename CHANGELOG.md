@@ -36,6 +36,14 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 - **Strefy Effort**: „strefa pod ceną” i „strefa nad ceną” zamiast nazw stron rynku, w kolorach poziomów (dwa odcienie bursztynu); pudełka zostają w kolorach strony agresora. Opis z wynikiem sprawdzianu: 52% utrzymań po pierwszym dotknięciu, tak jak losowy poziom (BTC 5m, n 9 281).
 - **Teksty**: zamiast „sygnał” piszemy „rekomendacja” albo „wskazanie wejścia” w całej aplikacji, lekcjach i stronach serwisu; linia MACD nazywa się „EMA MACD”. Nowy test sprawdza wszystkie napisy w `src` i na stronach bloga.
 
+### Co nowego i Wyniki w nowym układzie (2026-11-15)
+<!-- co-nowego: grupa=blog | pl=Co nowego z liczbami, kartami najświeższych zmian i osią wersji; Wyniki z kaflami najważniejszych liczb na górze i tabelami bez ucinania | en=What's new with key numbers, cards for the latest changes and a version timeline; Results with tiles for the key numbers on top and tables that are no longer cut off -->
+
+#### Zmienione
+- **Co nowego** (`co-nowego/`, `en/whats-new/`): szeroki układ, liczby (wersje, zmiany, od kiedy, ostatnia zmiana), karty „Najświeższe” z ikonami grup, pasek udziału grup we wszystkich zmianach i oś wersji z węzłami (okresy dalej jako `<details>`, najnowszy rozwinięty, chipy grup w nagłówku okresu).
+- **Wyniki** (`wyniki/`, `en/results/`): kafle „W skrócie” (CRPSS 1 h i 4 h, pokrycie 90%, BSS dotknięć wobec bazy odległości, AUC kota, weryfikacja dziennika); wyróżnione tylko wyniki z przedziałem 95% powyżej zera i zgodna weryfikacja. Szeroki układ, więc tabele mieszczą się bez przewijania w bok.
+- Nagłówek i stopka stron w szerokim układzie mają tę samą szerokość co treść.
+
 ### Blog jak magazyn: okładki z danych wpisu, filtry i karty (2026-11-15)
 <!-- co-nowego: grupa=blog | pl=Nowy blog: każdy wpis ma okładkę narysowaną z jego własnych danych (cena, poziomy, skupiska likwidacji, rozkład scenariuszy i tarcza doby), do tego wyróżniona analiza, rytm dnia i filtry rubryk | en=New blog: every post has a cover drawn from its own data (price, levels, liquidation clusters, scenario distribution and a day dial), plus a featured analysis, the daily rhythm and section filters -->
 
