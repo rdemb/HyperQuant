@@ -11,6 +11,7 @@ import { useVolModel } from '../../state/useVolModel';
 import { usePublished } from '../../state/usePublished';
 import { type BlogMapsState, pickMap, useBlogMaps } from '../../state/useBlogMaps';
 import { WHALES_STALE_MS, type WhaleLayer, isWhaleLayer } from '../../utils/whaleLayer';
+import { SCANNER_FRESH_MS } from '../../utils/scanState';
 import { DAY, INTERVALS, fmtDayTime, fmtHm, fmtSince, fromDaily, intervalById } from './core/time';
 import { DEFAULT_THRESHOLD_USD, classify } from './core/clashes';
 import { indicatorScope, liqLevels } from './core/indicators';
@@ -355,6 +356,8 @@ export const ProChart: React.FC<{
   const whalePub = usePublished('whales.json', isWhaleLayer);
   // Wieloryby i mapa likwidacji to stan na teraz — w powtórce ich nie ma
   const whales = !inReplay && whalePub.value && Date.now() - whalePub.value.asOf < WHALES_STALE_MS ? whalePub.value : null;
+  // Po 2 min (jak wiek w plakietce legendy) warstwa przygaszona, po WHALES_STALE_MS ukryta
+  const whalesOld = whales !== null && Date.now() - whales.asOf > SCANNER_FRESH_MS;
   // Mapy z bloga (plik bloga z tej samej domeny) tylko z włączoną warstwą na BTC albo dla liczby „Mapa: dotknięte” w nagłówku
   // Rozliczenia; rozliczenie poziomów w układzie Rozliczenie
   const blogSettle = station.id === 'review';
@@ -591,8 +594,8 @@ export const ProChart: React.FC<{
 
   // Wieloryby tylko z aktualnego pliku skanera (starszy niż WHALES_STALE_MS jest ukryty, jak nieaktualna mapa likwidacji)
   useEffect(() => {
-    ctrlRef.current?.setWhales(whales?.markets[store.coin] ?? null);
-  }, [whales, store]);
+    ctrlRef.current?.setWhales(whales?.markets[store.coin] ?? null, whalesOld);
+  }, [whales, store, whalesOld]);
 
   // Klastry likwidacji tylko z aktualnej mapy skanera (jak w Przed sesją: nieaktualna mapa nie jest pokazywana) i tylko na
   // rynku ze skanerem (mapa `liq-map` opisuje jeden rynek skanera)

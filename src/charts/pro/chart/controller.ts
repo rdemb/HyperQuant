@@ -965,8 +965,8 @@ export class ProChartController {
   }
 
   /** Pozycje i zlecenia największych kont na tym rynku (null = brak aktualnej warstwy). */
-  setWhales(w: WhaleView | null): void {
-    this.overlay.setWhales(w);
+  setWhales(w: WhaleView | null, old = false): void {
+    this.overlay.setWhales(w, old);
   }
 
   /** Najsilniejsze klastry likwidacji ze skanera (pusta lista = brak aktualnej mapy). */
