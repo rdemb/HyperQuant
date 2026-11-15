@@ -30,6 +30,10 @@ export interface MarketCtx {
   openInterest: number | null;
   /** Stawka finansowania za godzinę (ułamek) */
   funding: number | null;
+  /** Cena wyroczni, mid arkusza i ceny impact (kupno, sprzedaż) — do oceny jakości rynków HIP-3 (projekt 60, Q3) */
+  oraclePx?: number | null;
+  midPx?: number | null;
+  impactPxs?: [number, number] | null;
 }
 
 /** Stan jednej giełdy: ostatni udany odczyt (`at`, ms) i czas ostatniej nieudanej próby. */
@@ -44,6 +48,8 @@ const num = (v: unknown): number | null => {
   const x = typeof v === 'number' ? v : typeof v === 'string' && v.trim() !== '' ? Number(v) : Number.NaN;
   return Number.isFinite(x) ? x : null;
 };
+
+const pos = (x: number | null): number | null => (x !== null && x > 0 ? x : null);
 
 /** Giełdy rynków z listy: główna (`""`) pierwsza, potem w kolejności listy, bez powtórzeń. */
 export function registryDexes(markets: readonly ChartMarket[]): string[] {
@@ -76,6 +82,9 @@ export function parseDexCtxs(raw: unknown, dex: string): Map<string, MarketCtx> 
       dayNtlVlm: vlm !== null && vlm >= 0 ? vlm : null,
       openInterest: oi !== null && oi >= 0 ? oi : null,
       funding: num(c.funding),
+      oraclePx: pos(num(c.oraclePx)),
+      midPx: pos(num(c.midPx)),
+      impactPxs: Array.isArray(c.impactPxs) && c.impactPxs.length === 2 && pos(num(c.impactPxs[0])) !== null && pos(num(c.impactPxs[1])) !== null ? [Number(c.impactPxs[0]), Number(c.impactPxs[1])] : null,
     });
   }
   return out;
@@ -200,6 +209,9 @@ export interface MarketRowModel {
   scanner: { text: string; why: string | null };
   /** Etykieta Wall Street giełdy bazowej (`utils/wallStreet.wallStreetCell`) */
   wallStreet: WallStreetCellModel;
+  /** Surowy odczyt (null przy „—”): ruch i jakość na Starcie liczone z tych samych liczb */
+  ctx: MarketCtx | null;
+  szDecimals: number;
 }
 
 export interface RowModelDeps {
@@ -217,6 +229,8 @@ export function rowModel(r: MarketRow, { fmtTime, scannerWhy, wallStreet, inRegi
   return {
     coin: m.coin,
     name: r.name,
+    ctx: r.why === null ? c : null,
+    szDecimals: m.szDecimals,
     exchange: m.dex === '' ? 'Hyperliquid' : m.dex,
     exchangeTitle: dexLabel(m.dex),
     price: c ? fmtMarketPrice(c.markPx, m.szDecimals) : DASH,
