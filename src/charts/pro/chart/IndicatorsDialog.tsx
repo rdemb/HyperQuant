@@ -1,7 +1,10 @@
 import React, { useId, useMemo, useState } from 'react';
 import { ChevronDown, Copy, Eye, EyeOff, Plus, Search, Settings, Star, Trash2, X } from 'lucide-react';
 import type { ChartSettings } from './settings';
-import { INDICATORS, IndicatorInstance, IndicatorTier, MAX_INDICATORS, addIndicator, copyIndicator, indicatorDef, indicatorLabel, menuEntries, swatchColor } from '../indicators/registry';
+import { INDICATORS, IndicatorInstance, IndicatorTier, MAX_INDICATORS, MENU_GROUPS, addIndicator, copyIndicator, indicatorDef, indicatorLabel, menuEntries, swatchColor } from '../indicators/registry';
+import { Badge, type BadgeTone } from '../../../ui';
+import { LAYER_SOURCE } from './layerSources';
+import { type IndicatorCard, STATUS_LABEL, indicatorCard } from '../indicators/cards';
 import { tr } from '../../../i18n';
 import { visibleEntries } from './menuSelection';
 
@@ -38,11 +41,25 @@ interface Entry {
   label: string;
   hint: string;
   badge?: string;
+  /** Plakietka źródła wskaźnika HyperQuant (LIVE, MODEL) widoczna przed dodaniem (plan 59, G3). */
+  source?: { tone: BadgeTone; text: string; hint: string };
+  /** Karta wskaźnika (twierdzenie, status, pasmo szumu) pokazywana po rozwinięciu opisu (plan 59, F1 i F3). */
+  card?: IndicatorCard;
   swatch?: string;
   off?: string;
   words: string;
   on?: boolean;
   run: () => void;
+}
+
+/** Plakietka źródła w wierszu menu: ten sam ton co w legendzie, bez stanu rynku (tylko rodzaj danych). */
+function sourceBadge(src: string): Entry['source'] {
+  const tone: BadgeTone = src === 'MODEL' ? 'model' : src === 'SIM' ? 'sim' : 'live';
+  const hint =
+    src === 'MODEL'
+      ? tr('MODEL: wynik modelu na danych Hyperliquid, nie odczyt', 'MODEL: a model output on Hyperliquid data, not a reading')
+      : tr('LIVE: dane Hyperliquid (taśma, arkusz, OI), bez modelu', 'LIVE: Hyperliquid data (tape, book, OI), no model');
+  return { tone, text: src, hint };
 }
 
 const FAV_KEY = 'hq.charts.indicators.fav.v1';
@@ -132,6 +149,8 @@ export const IndicatorsDialog: React.FC<{
           hint: d.hint,
           // Długi skrót (Supertrend, Stoch RSI) nie mieści się w kolumnie skrótów; jest też w nazwie
           badge: d.short.length > 5 ? undefined : d.short,
+          source: d.tier === 'front' && LAYER_SOURCE[d.id] ? sourceBadge(LAYER_SOURCE[d.id]) : undefined,
+          card: indicatorCard(d.id),
           words: norm(`${d.short} ${d.name} ${d.aliases}`),
           run: () => onChange({ indicators: addIndicator(s.indicators, d.id) }),
         })
@@ -190,10 +209,30 @@ export const IndicatorsDialog: React.FC<{
             <span className="flex items-center gap-2 text-ink-1">
               {e.swatch && <span className={`inline-block w-3.5 h-[3px] rounded-full shrink-0 ${e.swatch}`} aria-hidden="true" />}
               {e.label}
+              {e.source && (
+                <span data-source={e.source.text} title={e.source.hint} className="shrink-0">
+                  <Badge tone={e.source.tone}>{e.source.text}</Badge>
+                </span>
+              )}
               {q && <span className="ml-auto pl-2 text-[10px] text-ink-3 whitespace-nowrap">{SECTION_NAME[e.section]}</span>}
             </span>
             <span id={hintId} title={open.has(e.key) ? undefined : e.hint} className={`text-[11px] leading-snug text-ink-3 ${open.has(e.key) ? '' : 'truncate'}`}>
               {e.hint}
+              {open.has(e.key) && e.card && (
+                <span data-indicator-card className="mt-1.5 block rounded-md border border-line bg-surface-2 px-2 py-1.5 text-ink-2">
+                  <span className="block text-[10px] uppercase tracking-[0.08em] text-ink-3">{tr('Co twierdzi', 'What it claims')}</span>
+                  <span className="block text-ink-1">{e.card.claim}</span>
+                  <span data-walidacja={e.card.status} className="mt-1 inline-block rounded-full border border-line-strong px-1.5 text-[10px]">
+                    {STATUS_LABEL[e.card.status]}
+                  </span>
+                  {e.card.noise && (
+                    <span className="mt-1 block">
+                      <span className="font-medium text-ink-1">{tr('Pasmo szumu. ', 'Noise band. ')}</span>
+                      {e.card.noise}
+                    </span>
+                  )}
+                </span>
+              )}
             </span>
           </span>
           {add && <Plus className="mt-0.5 w-4 h-4 shrink-0 text-ink-3" aria-hidden="true" />}
@@ -221,7 +260,6 @@ export const IndicatorsDialog: React.FC<{
   };
 
   const ownShown = list.filter((x) => x.visible && indicatorDef(x.id).pane === 'own').length;
-  const frontN = menuEntries('front').length;
   const flowAll = layers.every((i) => s[i.key]);
   const counts: Partial<Record<IndicatorsSection, number>> = {
     fav: favs.length,
@@ -342,11 +380,22 @@ export const IndicatorsDialog: React.FC<{
                 </div>
               )}
               {section === 'hl' ? (
-                <>
-                  <ul className="flex flex-col gap-0.5">{shown.slice(0, frontN).map(row)}</ul>
-                  <div className="px-2 pt-2 pb-0.5 text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium">{tr('Więcej z HyperQuant', 'More from HyperQuant')}</div>
-                  <ul className="flex flex-col gap-0.5">{shown.slice(frontN).map((e, i) => row(e, frontN + i))}</ul>
-                </>
+                q ? (
+                  <ul className="flex flex-col gap-0.5">{shown.map(row)}</ul>
+                ) : (
+                  // Bez wyszukiwania: nagłówki pytań tradera (grupy menu), wiersze w kolejności grup
+                  MENU_GROUPS.map((g) => {
+                    const ids = g.ids as readonly string[];
+                    const items = shown.map((e, i) => [e, i] as const).filter(([e]) => ids.includes(e.key));
+                    if (!items.length) return null;
+                    return (
+                      <div key={g.id} data-menu-group={g.id}>
+                        <div className="px-2 pt-2 pb-0.5 text-[11px] uppercase tracking-[0.08em] text-ink-3 font-medium">{g.label}</div>
+                        <ul className="flex flex-col gap-0.5">{items.map(([e, i]) => row(e, i))}</ul>
+                      </div>
+                    );
+                  })
+                )
               ) : (
                 <ul className="flex flex-col gap-0.5">{shown.map(row)}</ul>
               )}
