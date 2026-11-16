@@ -4,6 +4,14 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Fabio: pasek „Rama dnia” — przyjęcie poza wartością i kontekst IVB (2026-11-16)
+<!-- co-nowego: grupa=wykres | pl=Przy Strefach Effort albo IVB pod paskiem wykresu pojawia się pasek „Rama dnia”: gdzie dziś leży wartość wobec wczorajszej, czy cena przyjęła się poza nią (z tym, jak często ten stan bywa o tej porze), status IVB i szerokość otwarcia wobec 20 sesji | en=With the Effort zones or the IVB on, a “Day frame” bar appears below the chart bar: where today's value sits against yesterday's, whether price has been accepted outside it (with how often this state occurs at this time), the IVB status and the opening width against 20 sessions -->
+
+#### Dodane
+- **Rama dnia, F-A1: przyjęcie poza wartością** (Fabio runda 2, krok 1; pojęcie akceptacji Daltona, progi HyperQuant zamrożone przed oceną): wobec wczorajszej VA (te same liczby co poziomy doby P/b, `dayLevels`) w dobie UTC liczymy kolejne zamknięcia 30m poza VA, udział wolumenu doby poza VA i minuty poza VA. Stany: w wartości, próba wyjścia nad albo pod, przyjęcie nad albo pod (≥ 2 kolejne zamknięcia 30m i ≥ 30% wolumenu po tej samej stronie), powrót do wartości, „niesklasyfikowane” (przyjęcie po obu stronach albo przejście przez całą VA w pół godziny). Obok częstość tego stanu o tej samej porze w 60 poprzednich dobach (świece 30m, plakietka MODEL); przy krótszej historii „krótka historia (n dób)” bez liczby.
+- **Rama dnia, F-A2: kontekst IVB**: status wobec IVB z `ivbAt` (w budowie, w środku, wybicie nad albo pod z minutami od wybicia, powrót do środka; LIVE) i szerokość IVB w ATR doby z percentylem wobec 20 poprzednich sesji NY tego samego typu (MODEL; mniej sesji — „krótka historia (n sesji)”). Rynek bez sesji regularnej NYSE w kalendarzu desku albo spoza listy desku na giełdzie HIP-3: „—” z powodem; rynek z sesją NYSE w dni bez sesji też „—”.
+- **Pasek nad wykresem**: jedna linia z czterema liczbami i plakietkami (wartość, aukcja, IVB, szerokość IVB), przewijana w bok na wąskim ekranie; dotknięcie rozwija źródła, zamrożone reguły i rozkład stanów o tej porze. Widoczny, gdy na wykresie są Strefy Effort albo IVB (poza powtórką). Karta IVB opisuje pasek. Logika w `core/dayFrame.ts`, teksty w `chart/dayFrameText.ts`, testy `dayFrame.test.ts` i `dayFrameText.test.ts`.
+
 ### Fabio: Effort tylko z taśmy, profil swingu z taśmy, IVB 30/60 min i czas dostępności stref (2026-11-16)
 <!-- co-nowego: grupa=wykres | pl=Strefy i pudełka Effort liczą deltę tylko z nagranej taśmy, a pod kursorem widać, od kiedy strefa była znana; nowy wskaźnik IVB z zakresem pierwszych 30 albo 60 minut od otwarcia Nowego Jorku | en=Effort zones and boxes take delta only from the recorded tape, and under the cursor you can see since when a zone was known; a new IVB indicator shows the range of the first 30 or 60 minutes after the New York open -->
 
