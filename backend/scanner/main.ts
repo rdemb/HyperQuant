@@ -23,6 +23,7 @@ import { Scanner } from './scanner.ts';
 import { fetchLeaderboardAccounts } from './seed.ts';
 import { publishToGit } from './gitPublish.ts';
 import { HISTORY_README, MarketRecorder, historyIndex, pruneHistory } from './history.ts';
+import { recorderStreams } from './recorderStreams.ts';
 import { prepareHistoryRepo, publishHistory, startWhenReady } from './historyGit.ts';
 import { WHALE_MARKETS, WhaleWatcher } from './whales.ts';
 import { MAX_DEX_QUERIES, MarketRegistryRunner } from './marketRegistryRunner.ts';
@@ -255,31 +256,19 @@ function shadowGateTick(): void {
 }
 
 /**
- * Rejestrator historii (gałąź `history` repo danych, rynki z HQ_HISTORY_MARKETS): na rynek osobne połączenie WebSocket
- * (taśma, kontekst, arkusz bliski i daleki jak na stronie, dla BTC także dokładny). Części 5-minutowe i pliki godzinowe
- * w katalogu repo gałęzi, commit po każdym zapisie; po zamknięciu doby jej profil (kupno, sprzedaż i zmiana OI na cenach);
- * raz na dobę (po 00:15 UTC) usunięcie dni spoza okna i spłaszczenie gałęzi do jednego commita.
+ * Rejestrator historii (gałąź `history` repo danych, rynki z HQ_HISTORY_MARKETS): taśma, kontekst, arkusz bliski i daleki
+ * jak na stronie, dla rynków z `caps.exactBook` także dokładny. BTC (i inny rynek giełdy głównej) na osobnym połączeniu
+ * WebSocket, wszystkie rynki HIP-3 (`xyz:GOLD`, `xyz:SP500`) na jednym wspólnym (projekt 60, R3). Części 5-minutowe i pliki
+ * godzinowe w katalogu repo gałęzi (`historyDir`: `xyz-GOLD/…`), commit po każdym zapisie; po zamknięciu doby jej profil
+ * (kupno, sprzedaż i zmiana OI na cenach); raz na dobę (po 00:15 UTC) usunięcie dni spoza okna we wszystkich katalogach
+ * gałęzi i spłaszczenie gałęzi do jednego commita.
  */
 const DAY_MS = 86_400_000;
 const historyRepo = cfg.git && cfg.history ? { remote: cfg.git.remote, dir: join(cfg.stateDir, 'git', 'history'), sshKey: cfg.git.sshKey, branch: 'history' } : null;
 const historyDir = historyRepo ? historyRepo.dir : join(cfg.stateDir, 'history');
 if (cfg.history) mkdirSync(historyDir, { recursive: true });
-const recorders = (cfg.history?.markets ?? []).map((coin) => {
-  const rec = new MarketRecorder(coin, historyDir);
-  const s: HlStream = new HlStream(
-    coin,
-    (t) => rec.onTrades(t),
-    (c) => {
-      rec.onCtx(c, Date.now());
-      const aggs = rec.aggs();
-      if (aggs) s.setBookAggs(aggs, rec.exactBook());
-    },
-    WebSocket,
-    (t, levels) => rec.onBook(t, levels),
-    (up, at) => rec.onState(up, at)
-  );
-  return { rec, stream: s };
-});
+const recorders = (cfg.history?.markets ?? []).map((coin) => new MarketRecorder(coin, historyDir));
+const recorderLinks = recorderStreams(recorders, WebSocket);
 /** Repo gałęzi przygotowane (bez repo — od razu): dopiero wtedy rejestratory słuchają, a takt historii zapisuje i wypycha */
 let historyReady = historyRepo === null;
 let historyBusy = false;
@@ -293,9 +282,9 @@ async function historyTick(): Promise<void> {
   try {
     const now = Date.now();
     let written = 0;
-    for (const { rec } of recorders) written += rec.flush(now);
+    for (const rec of recorders) written += rec.flush(now);
     // Profile zamkniętych dób (po połączeniu ostatniej godziny doby; po wdrożeniu — po jednej dobie wstecz na takt)
-    for (const { rec } of recorders) written += rec.profiles(now);
+    for (const rec of recorders) written += rec.profiles(now);
     const day = Math.floor(now / DAY_MS);
     const daily = day !== historyDay && now - day * DAY_MS >= 15 * 60_000;
     // Wszystkie katalogi gałęzi, także rynków zdjętych z listy (projekt 60, R5)
@@ -658,7 +647,7 @@ function shutdown(): void {
   stopping = true;
   for (const t of timers) clearInterval(t);
   stream.stop();
-  for (const r of recorders) r.stream.stop();
+  for (const s of recorderLinks) s.stop();
   shadowStream?.stop();
   try {
     if (shadowStream) flowFile.append(flow.flush(Date.now()));
@@ -667,7 +656,7 @@ function shutdown(): void {
   }
   try {
     // Bieżąca część taśmy do chwili zatrzymania (aktualizacja restartuje skaner — bez tego luka do 5 min)
-    for (const { rec } of recorders) rec.flush(Date.now(), true);
+    for (const rec of recorders) rec.flush(Date.now(), true);
   } catch (e) {
     console.error(`[skaner] zapis historii przy zatrzymaniu nieudany: ${String(e)}`);
   }
@@ -689,7 +678,9 @@ if (runMinutes > 0) setTimeout(shutdown, runMinutes * 60_000);
 log(
   `start: rynek ${cfg.coin}, budżety wag/min: pozycje ${cfg.weightPerMin}, likwidacje ${cfg.liqWeightPerMin}, prognozy ${cfg.forecastWeightPerMin}, publikacja co ${cfg.publishEveryS} s ${cfg.r2 ? 'do R2' : 'lokalnie'}` +
     (cfg.git ? `, repo danych co ${cfg.git.everyS} s` : '') +
-    (cfg.history ? `, historia ${cfg.history.markets.join('/')} (${cfg.history.keepDays} dni${historyRepo ? '' : ', lokalnie'})` : '') +
+    (cfg.history
+      ? `, historia ${cfg.history.markets.join('/')} (${cfg.history.keepDays} dni${historyRepo ? '' : ', lokalnie'}; połączenia rejestratora: ${recorderLinks.length} — ${recorderLinks.map((s) => s.coins.join('+')).join(', ')})`
+      : '') +
     (whales ? `, wieloryby: ${whaleCfg?.top} kont, ${whaleCfg?.weightPerMin} wag/min` : '')
 );
 // Agregacja arkusza dobrana do ceny przed pierwszym połączeniem (z ostatniej zapisanej minuty), potem co 10 min
@@ -700,7 +691,7 @@ shadowGateTick();
 // Rejestratory historii z repo gałęzi dopiero po jego przygotowaniu: na świeżym klonie numeracja doby musi widzieć pliki
 // doby odtworzone z gałęzi (inaczej numery od 0 powtórzyłyby numery innych kont); reszta skanera startuje od razu
 const startRecorders = () => {
-  for (const r of recorders) r.stream.start();
+  for (const s of recorderLinks) s.start();
 };
 if (historyRepo)
   void startWhenReady(
