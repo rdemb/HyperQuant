@@ -237,7 +237,7 @@ const SMC_STORE = {
     indicators: [{ iid: 'smc', id: 'smc', params: {}, color: '#E9548D', alpha: 1, width: 1, labels: true, visible: true }],
   }),
 };
-const SMC_MAX = { desktop: 25, phone: 11 };
+const SMC_MAX = { desktop: 25, phone: 10 };
 const smcCount = `(() => { const c = window.__hq.chart(); const host = c && c.root.closest('[data-smc-objects]'); return host ? Number(host.dataset.smcObjects) : null; })()`;
 
 // ───────────────────────── inne rynki (M1: HYPE i rynek HIP-3) ─────────────────────────

@@ -41,6 +41,8 @@ export const SMC_LIMITS = { fvg: 5, eq: 2, labels: 6, breaks: 3, sweeps: 2, ob: 
 export const SMC_PHONE_LIMITS = { fvg: 1, eq: 0, labels: 6, breaks: 3, sweeps: 0, ob: 1 } as const;
 /** Łączny limit obiektów rysunku (projekt Pioniera: „najwyżej ok. 25”). */
 export const SMC_OBJECTS_MAX = 25;
+/** Łączny limit obiektów na telefonie (6 etykiet, 3 linie, 1 luka; pilnuje go też pomiar układu `ui:check`). */
+export const SMC_PHONE_OBJECTS_MAX = 10;
 /** Okno trybu „historia” oraz zdarzeń (przełamania, sweepy) w trybie „bieżące”. */
 export const SMC_WINDOW_MS = 24 * 3_600_000;
 /** Okno w świecach dla wyższych interwałów: 24 h to na 4H tylko 6 świec, więc okno rośnie do 24 świec interwału. */
@@ -244,7 +246,7 @@ export function selectSmc(r: SmcResult, bars: readonly SBar[], asOf: number, o: 
       const p = DEFAULT_SMC_PARAMS;
       const zone = pct > p.equilibriumHi ? 'premium' : pct < p.equilibriumLo ? 'discount' : 'equilibrium';
       const known = Math.max(hi.known, lo.known);
-      out.pd = { hi: hi.price, lo: lo.price, eqLo: lo.price + p.equilibriumLo * w, eqHi: lo.price + p.equilibriumHi * w, pct, zone, known, t: known - ms };
+      out.pd = { hi: hi.price, lo: lo.price, eqLo: lo.price + p.equilibriumLo * w, eqHi: lo.price + p.equilibriumHi * w, pct, zone, known, t: known };
     }
   }
 
@@ -283,5 +285,19 @@ export function selectSmc(r: SmcResult, bars: readonly SBar[], asOf: number, o: 
       endAt: end ? end.at : null,
       endIdx: end ? end.idx : null,
     }));
+  trimSmc(out, o.phone ? SMC_PHONE_OBJECTS_MAX : SMC_OBJECTS_MAX);
   return out;
+}
+
+/** Wspólny budżet: najpierw pomijamy etykiety swingów, zachowując najbliższy OB. */
+export function trimSmc(sel: SmcSelection, cap: number): void {
+  while (smcObjects(sel) > cap) {
+    if (sel.labels.length) sel.labels.pop();
+    else if (sel.sweeps.length) sel.sweeps.pop();
+    else if (sel.eqs.length) sel.eqs.pop();
+    else if (sel.breaks.length) sel.breaks.pop();
+    else if (sel.fvgs.length) sel.fvgs.pop();
+    else if (sel.obs.length) sel.obs.pop();
+    else sel.pd = null;
+  }
 }

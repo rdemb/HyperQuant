@@ -1,5 +1,5 @@
 import { type DayProfile, DayProfileBuilder } from '../../../utils/dayProfile';
-import { valueArea } from '../../orderflow/footprint';
+import { type TpoLevels, tpoValue } from './tpoValue';
 import { rowIndex } from './footprintBar';
 import { type IndicatorBar, addCandle } from './indicators';
 import type { OiLog } from './stats';
@@ -13,7 +13,7 @@ import { DAY } from './time';
  * - agresja: agresywne kupno i sprzedaż z taśmy (wolumen spoza taśmy jest bez podziału na strony);
  * - czas (TPO): doba dzielona na 30-minutowe okresy, wiersz dostaje każdy okres, którego zakres H–L go dotknął.
  * - pozycje: zmiana OI minut przypisana cenom (src/utils/dayProfile.ts), w czterech częściach.
- * POC i value area 70% z wolumenu. Liczone ze świec wykresu (interwał dzielący 30 minut), więc profil jest widoczny
+ * POC i value area 70% z liczby okresów TPO (czas). Liczone ze świec wykresu (interwał dzielący 30 minut), więc profil jest widoczny
  * od pierwszej sekundy, a agresja wszędzie tam, gdzie jest taśma. Doba zamknięta z profilem serwera bierze kupno, sprzedaż
  * i OI z jego pliku (7 dób nagrania), pozostałe — z taśmy w pamięci strony (ostatnia doba).
  */
@@ -25,6 +25,9 @@ export const TPO_IB_PERIODS = 2;
 const MAX_ROWS = 4000;
 
 export interface TpoProfile {
+  /** Dokładne poziomy na stałej siatce wartości; null oznacza brak danych wybranego źródła. */
+  value?: TpoLevels | null;
+  valueKind?: string;
   /** Początek doby UTC. */
   day: number;
   step: number;
@@ -47,7 +50,7 @@ export interface TpoProfile {
   total: number;
   /** Największy wolumen wiersza. */
   max: number;
-  /** POC i value area 70% z wolumenu. */
+  /** POC i value area 70% z liczby okresów TPO (czas). */
   poc: number;
   vaLo: number;
   vaHi: number;
@@ -75,6 +78,8 @@ export interface TpoSources {
   flow?: DayProfile | null;
   /** Interwał świec (minuty świecy w pliku). */
   ms?: number;
+  /** POC poprzedniej doby w cenie, do rozstrzygania remisów par wierszy. */
+  previousPoc?: number | null;
 }
 
 /** Profil doby z taśmy w pamięci i odczytów OI (stan na koniec minuty: ostatni odczyt nie starszy niż minuta). */
@@ -195,12 +200,9 @@ export function tpoDay(bars: readonly IndicatorBar[], from: number, to: number, 
     total += vol[k];
     if (vol[k] > max) max = vol[k];
   }
-  // Doba bez wolumenu (same zera z API): POC i value area z czasu
-  const va = valueArea(vol, n) ??
-    valueArea(
-      rows.map((r) => r.length),
-      n
-    ) ?? { poc: 0, lo: 0, hi: 0 };
+  // POC i VA zawsze z czasu; wolumen pozostaje osobną miarą wiersza.
+  const previous = src.previousPoc == null ? null : src.previousPoc / step - lo - 0.5;
+  const va = tpoValue(rows.map((r) => r.length), previous);
   const ibP = periods.filter((p) => p < TPO_IB_PERIODS);
   const ib =
     ibP.length > 0
@@ -222,7 +224,7 @@ export function tpoProfiles(bars: readonly IndicatorBar[], step: number): TpoPro
 }
 
 /** Cena środka wiersza POC. */
-export const tpoPocPx = (p: TpoProfile): number => (p.lo + p.poc + 0.5) * p.step;
+export const tpoPocPx = (p: TpoProfile): number => p.value === null ? NaN : p.value?.poc ?? (p.lo + p.poc + 0.5) * p.step;
 
 /**
  * Pojedyncze wydruki: wiersze z jednym okresem wewnątrz profilu (nie na skraju) — cena przeszła tamtędy raz,

@@ -215,13 +215,15 @@ describe('wpis SMC w rejestrze', () => {
       ['internal', 3, [3, 5, 10, 20, 50]],
       ['swing', 10, [3, 5, 10, 20, 50]],
       ['mitigation', 0, [0, 1]],
+      ['higher', 0, [0, -1, 15, 30, 60, 240, 1440, 10080]],
+      ['periods', 0, [0, 1, 2, 4, 6, 7]],
     ]);
     expect(tfAllowed(def)).toBe(false);
     expect(usesInstanceColor(def)).toBe(false);
     const [x] = indicatorsFromLink('smc()');
-    expect(indicatorLabel(x)).toBe('SMC+HL 3 10 zamknięciem');
-    expect(indicatorsFromLink('smc(5,50)')[0].params).toEqual({ internal: 5, swing: 50, mitigation: 0 });
-    expect(indicatorLabel(indicatorsFromLink('smc(5,50,1)')[0])).toBe('SMC+HL 5 50 knotem');
+    expect(indicatorLabel(x)).toBe('SMC+HL 3 10 zamknięciem auto bez poziomów');
+    expect(indicatorsFromLink('smc(5,50)')[0].params).toEqual({ internal: 5, swing: 50, mitigation: 0, higher: 0, periods: 0 });
+    expect(indicatorLabel(indicatorsFromLink('smc(5,50,1)')[0])).toBe('SMC+HL 5 50 knotem auto bez poziomów');
     expect(indicatorsFromLink('smc(3,10,2)')[0].params.mitigation).toBe(0);
     expect(indicatorsFromLink('smc(4,10)')[0].params.internal).toBe(3);
     expect(swatchColor(x)).not.toContain(PRO.buy);

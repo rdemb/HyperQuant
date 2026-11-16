@@ -17,6 +17,8 @@ import { profileTick, type DayProfile } from '../../../utils/dayProfile';
 import { baseTick } from '../core/footprintBar';
 import { nakedPocs } from '../core/indicators';
 import { DAY } from '../core/time';
+import { tpoTimeLevels } from '../core/tpoValue';
+import { type ValueRef, valueBadge, valueNote } from '../core/valueReference';
 import { TpoProfile, tapeDayProfile, tpoDay, tpoDays, tpoInterval, tpoPocPx, tpoSingles } from '../core/tpo';
 import { dayProfileOf } from '../store/dayProfiles';
 import type { ProBar, ProStore } from '../store/proStore';
@@ -33,7 +35,7 @@ import { numLang } from '../../../ui/format';
  * sprzedaż, im mocniejszy, tym większa przewaga; szary = bez przewagi albo bez taśmy). Cienki obrys to czas (TPO: ile
  * 30-minutowych okresów doby dotknęło wiersza), przeskalowany do tego samego pola co wolumen doby: słupek dłuższy niż obrys
  * znaczy, że na tej cenie obrót był szybszy niż średnio w dobie, obrys dłuższy niż słupek — cena tam stała przy małym
- * obrocie. POC wolumenu linią przez dobę, nagi POC do prawej krawędzi, z lewej pasek value area i zakresu pierwszej
+ * obrocie. POC czasu linią przez dobę, nagi POC do prawej krawędzi, z lewej pasek value area i zakresu pierwszej
  * godziny doby, przy wierszu znacznik pojedynczych wydruków i ogonów, pod profilem delta doby, pod krzyżem liczby wiersza.
  * Pełny profil tylko dla bieżącej i poprzedniej doby, starsze — linia POC i pasek value area; najdłuższy słupek, nietknięte
  * POC i liczba obiektów z `profileSelect.ts`.
@@ -115,7 +117,8 @@ const taped = (p: TpoProfile, r: number) => p.vol[r] > 0 && (p.buy[r] + p.sell[r
 
 /** Kolor wiersza: strona agresywna z taśmy; szary bez przewagi strony albo bez taśmy (liczby pod krzyżem mówią które). */
 function rowColor(p: TpoProfile, r: number): string {
-  const va = r >= p.vaLo && r <= p.vaHi;
+  const px = (p.lo + r + 0.5) * p.step;
+  const va = p.value === undefined ? r >= p.vaLo && r <= p.vaHi : p.value !== null && px >= p.value.val && px <= p.value.vah;
   const b = p.buy[r];
   const s = p.sell[r];
   const k = taped(p, r) ? deltaLevel(b, s) : 0;
@@ -144,7 +147,8 @@ export function posOf(p: TpoProfile, r: number): { kind: PosKind; level: number;
 
 /** Kolory wiersza w trybie pozycji: wypełnienie i obrys (zamykanie). */
 function posColor(p: TpoProfile, r: number): { fill: string; stroke?: string } {
-  const va = r >= p.vaLo && r <= p.vaHi;
+  const px = (p.lo + r + 0.5) * p.step;
+  const va = p.value === undefined ? r >= p.vaLo && r <= p.vaHi : p.value !== null && px >= p.value.val && px <= p.value.vah;
   const { kind, level } = posOf(p, r);
   if (kind === 0) return { fill: va ? T.grayVa : T.grayOut };
   const buy = kind === 1 || kind === 3;
@@ -196,6 +200,7 @@ export function rowTip(p: TpoProfile, r: number): string[] {
     tr(`Wolumen ${fmtVol(v)} · ${pct1(p.total > 0 ? v / p.total : 0)} doby`, `Volume ${fmtVol(v)} · ${pct1(p.total > 0 ? v / p.total : 0)} of the day`),
     side,
     tr(`Czas: ${n} × 30 min`, `Time: ${n} × 30 min`),
+    p.valueKind ?? tr('POC TPO (czas) · VA TPO (czas), 70%, pary wierszy', 'POC TPO (time) · VA TPO (time), 70%, pairs of rows'),
   ];
 }
 
@@ -240,6 +245,7 @@ interface Tip {
 
 interface DayCache {
   step: number;
+  previousPoc: number | null;
   refs: readonly ProBar[];
   file: DayProfile | null;
   flow: DayProfile | null;
@@ -401,7 +407,8 @@ export class TpoLayer implements ISeriesPrimitive<Time> {
   }
 
   /** `ibLayer` — warstwa IB sesji włączona: IB doby UTC z TPO nie jest rysowane (dwa różne IB naraz myliłyby). */
-  setOn(on: boolean, positions: boolean, ibLayer = false): void {
+  setOn(on: boolean, positions: boolean, ibLayer = false, volumeValue = false): void {
+    this.volumeValue = volumeValue;
     this.on = on;
     this.positions = positions;
     this.ibLayer = ibLayer;
@@ -438,6 +445,9 @@ export class TpoLayer implements ISeriesPrimitive<Time> {
    * Profile dób na siatce `step`; doba liczona od nowa tylko wtedy, gdy zmieniła się któraś jej świeca, krok albo źródło
    * (plik serwera, profil z taśmy).
    */
+  valueOf: ((day: number) => ValueRef | null) | null = null;
+  private volumeValue = false;
+
   private profiles(bars: readonly ProBar[], step: number): TpoProfile[] {
     const next = new Map<number, DayCache>();
     const out: TpoProfile[] = [];
@@ -451,13 +461,22 @@ export class TpoLayer implements ISeriesPrimitive<Time> {
       const flow = store && !file && this.positions ? this.flowFor(store, day, now, bars[d.from].candle.o) : null;
       const f = this.flows.get(day);
       if (f) flows.set(day, f);
+      const lastPoc = out.length && out[out.length - 1].day === day - DAY ? tpoPocPx(out[out.length - 1]) : NaN;
+      const previousPoc = Number.isFinite(lastPoc) ? lastPoc : null;
       const hit = this.cache.get(key);
       const entry =
-        hit && hit.step === step && hit.file === file && hit.flow === flow && sameRefs(hit.refs, bars, d.from, d.to) && hit.p?.complete === d.complete
+        hit && hit.previousPoc === previousPoc && hit.step === step && hit.file === file && hit.flow === flow && sameRefs(hit.refs, bars, d.from, d.to) && hit.p?.complete === d.complete
           ? hit
-          : { step, refs: bars.slice(d.from, d.to + 1), file, flow, p: tpoDay(bars, d.from, d.to, step, d.complete, { file, flow, ms: this.ms }) };
+          : { step, previousPoc, refs: bars.slice(d.from, d.to + 1), file, flow, p: tpoDay(bars, d.from, d.to, step, d.complete, { file, flow, ms: this.ms, previousPoc }) };
       next.set(key, entry);
-      if (entry.p) out.push(entry.p);
+      if (entry.p) {
+        const volume = this.volumeValue ? this.valueOf?.(day) ?? null : null;
+        const value = this.volumeValue ? volume : tpoTimeLevels(bars.slice(d.from, d.to + 1), previousPoc);
+        const kind = this.volumeValue
+          ? volume ? tr(`POC / VA (wolumen) ${valueBadge(volume)} · ${valueNote(volume)}`, `POC / VA (volume) ${valueBadge(volume)} · ${valueNote(volume)}`) : tr('POC / VA (wolumen): —, brak pełnego źródła 5m', 'POC / VA (volume): —, incomplete 5m source')
+          : tr('POC TPO (czas) · VA TPO (czas), 70%, pary wierszy · 5 pb · LIVE', 'POC TPO (time) · VA TPO (time), 70%, pairs of rows · 5 bp · LIVE');
+        out.push({ ...entry.p, value, valueKind: kind });
+      }
     }
     this.cache = next;
     this.flows = flows;
@@ -493,7 +512,7 @@ export class TpoLayer implements ISeriesPrimitive<Time> {
     const sp = xb - xa;
     const right = chart.paneSize(0).width - this.rightInset;
     const ref = bars[bars.length - 1].candle.c;
-    const y = (p: number) => series.priceToCoordinate(p);
+    const y = (p: number) => Number.isFinite(p) ? series.priceToCoordinate(p) : null;
     const ya = y(ref);
     const yb = y(ref + 100);
     if (ya === null || yb === null) return;
@@ -536,8 +555,8 @@ export class TpoLayer implements ISeriesPrimitive<Time> {
           this.objects++;
           this.lines.push({ x0, x1, y: yPoc, color: T.poc, dash: false });
         }
-        const yh = y((p.lo + p.vaHi + 1) * p.step);
-        const yl = y((p.lo + p.vaLo) * p.step);
+        const yh = y(p.value === null ? NaN : p.value?.vah ?? (p.lo + p.vaHi + 1) * p.step);
+        const yl = y(p.value === null ? NaN : p.value?.val ?? (p.lo + p.vaLo) * p.step);
         if (yh !== null && yl !== null) {
           this.objects++;
           this.marks.push({ x: x0 - 3, y0: yh, y1: yl, color: T.va, w: 2 });
@@ -586,8 +605,8 @@ export class TpoLayer implements ISeriesPrimitive<Time> {
         this.lines.push({ x0, x1, y: yPoc, color: T.poc, dash: false });
       }
       // Pasek value area i pierwszej godziny doby z lewej strony profilu
-      const yVah = y((p.lo + p.vaHi + 1) * p.step);
-      const yVal = y((p.lo + p.vaLo) * p.step);
+      const yVah = y(p.value === null ? NaN : p.value?.vah ?? (p.lo + p.vaHi + 1) * p.step);
+      const yVal = y(p.value === null ? NaN : p.value?.val ?? (p.lo + p.vaLo) * p.step);
       if (yVah !== null && yVal !== null) {
         this.objects++;
         this.marks.push({ x: xa - 3, y0: yVah, y1: yVal, color: T.va, w: 2 });
