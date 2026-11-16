@@ -10,6 +10,11 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 #### Zmienione
 - **SMC na każdym interwale** (zgłoszenie Rafała: „nie działa na wyższych interwałach, np. 4H”): warstwa miała limit do 1 h, a okna elementów były w czasie (24 h to na 4H tylko 6 świec). Teraz bez limitu interwału; okno BOS, CHoCH, sweepów i trybu historii = max(24 h, 24 świece) (do 1 h bez zmian, 4H — 4 doby, 1D — 24 doby), a luka FVG żyje max(24 h, 100 świec) (Pionier, `smc-hl.md` §7.1). Pivot i filtr 1 ATR bez zmian, na interwale wykresu. Testy: okna dla 5m, 1h, 4H i 1D; życie luki na 4H (100 świec) i 5m (24 h); legenda na 4H.
 
+### Blog: filtry rubryk bez przewijania strony w bok na telefonie (2026-11-16)
+<!-- co-nowego: ukryj -->
+
+#### Naprawione
+- **Filtry rubryk na liście wpisów** (przegląd Audytora 16.11): rząd filtrów to `fieldset`, który domyślnie ma `min-inline-size: min-content`, więc przy 360 i 390 px rozpychał stronę do ok. 653 px i cała strona przewijała się w bok. Teraz `min-inline-size: 0`: filtry przewijają się tylko w swoim rzędzie. `ui:check` buduje blog z wpisów w repo i przy 360, 390 i 720 px sprawdza, że strona ma szerokość okna (porównanie z zadaną szerokością, bo w trybie telefonu okno układu rośnie razem z treścią) i że rząd filtrów mieści się w oknie (przed poprawką: 653 px przy 360 i 390).
 ### Jedno źródło wartości doby i sesji; liczniki Ramy dnia od otwarcia sesji (2026-11-16)
 <!-- co-nowego: grupa=wykres | pl=Wczorajsze VAH, VAL i POC są teraz te same w pasku Rama dnia, panelu Najbliższe poziomy, nagłówku Mapy dnia i na Profilach okresów; z taśmy LIVE, ze świec MODEL, a liczniki przyjęcia liczą od otwarcia sesji | en=Yesterday's VAH, VAL and POC are now the same in the Day frame bar, the Nearest levels panel, the Day map header and Period profiles; LIVE from the tape, MODEL from candles, and the acceptance counters run from the session open -->
 
