@@ -1,7 +1,8 @@
 import type { IChartApiBase, IPrimitivePaneRenderer, IPrimitivePaneView, ISeriesApi, ISeriesPrimitive, Logical, SeriesAttachedParameter, SeriesType, Time } from 'lightweight-charts';
 import { tr } from '../../../i18n';
 import { numLang } from '../../../ui/format';
-import { DEFAULT_EFFORT_PARAMS, type EffortResult, type Side, type SwingProfile, type VBar, effortZones } from '../core/effortZones';
+import { DEFAULT_EFFORT_PARAMS, type EffortResult, type Side, type SwingProfile, type VBar, effortZones, swingLvnConfidence } from '../core/effortZones';
+import { LVN_MIN_CONFIDENCE } from '../core/lvnConfidence';
 import type { FootprintBar } from '../core/footprintBar';
 import { fmtDayTime } from '../core/time';
 import { fmtDuration } from '../draw/model';
@@ -128,9 +129,30 @@ function candlesAgo(t: number, asOf: number, ms: number): string {
   return ago === 0 ? tr('ostatnia świeca', 'the last candle') : tr(`${ago} ${pl(ago, 'świeca', 'świece', 'świec')} temu`, `${ago} ${ago === 1 ? 'candle' : 'candles'} ago`);
 }
 
-/** Profil swingu strefy D: POC, VA, LVN i plakietka źródła (z taśmy albo przybliżenie ze świec). */
-function profileText(p: SwingProfile, fmt: (p: number) => string): string {
-  const lvn = p.lvn.length > 0 ? `, LVN ${p.lvn.map(fmt).join(', ')}` : '';
+/** Pewność LVN profilu swingu (w kolejności `p.lvn`); null — nieznana. */
+export type LvnConfidenceOf = (p: SwingProfile) => readonly number[] | null;
+
+const pct = (c: number) => numLang(String(Math.round(c * 100)));
+
+/**
+ * LVN profilu swingu z pewnością bootstrapową: tylko z pewnością ≥ 70% (najtrwalsze pierwsze), poniżej progu sama
+ * liczba odrzuconych (hipoteza zerowa: szum profilu); bez pewności „—” z powodem.
+ */
+export function lvnText(p: SwingProfile, conf: readonly number[] | null, fmt: (p: number) => string): string {
+  if (p.lvn.length === 0) return '';
+  if (!conf) return tr(', LVN: —, pewność nieznana', ', LVN: —, confidence unknown');
+  const kept = p.lvn.map((l, i) => ({ px: l.px, c: conf[i] ?? 0 })).filter((l) => l.c >= LVN_MIN_CONFIDENCE);
+  const cut = p.lvn.length - kept.length;
+  const min = pct(LVN_MIN_CONFIDENCE);
+  if (kept.length === 0) return tr(`, LVN: —, pewność < ${min}% (${cut})`, `, LVN: —, confidence < ${min}% (${cut})`);
+  const pl = kept.map((l) => `${fmt(l.px)} · pewność ${pct(l.c)}%`).join('; ');
+  const en = kept.map((l) => `${fmt(l.px)} · confidence ${pct(l.c)}%`).join('; ');
+  return tr(`, LVN ${pl}${cut > 0 ? `; ${cut} poniżej ${min}%` : ''}`, `, LVN ${en}${cut > 0 ? `; ${cut} below ${min}%` : ''}`);
+}
+
+/** Profil swingu strefy D: POC, VA, LVN z pewnością i plakietka źródła (z taśmy albo przybliżenie ze świec). */
+function profileText(p: SwingProfile, fmt: (p: number) => string, conf: readonly number[] | null): string {
+  const lvn = lvnText(p, conf, fmt);
   const src =
     p.tapeShare >= 1
       ? tr('z taśmy', 'from the tape')
@@ -144,14 +166,14 @@ function profileText(p: SwingProfile, fmt: (p: number) => string): string {
  * Czas dostępności strefy: od kiedy była znana (zamknięcie świecy powstania) i ile po zamknięciu świecy krańca, żeby
  * pasma rysowanego od krańca nie brać za wiedzę z chwili krańca; F powstaje na zamknięciu przebicia.
  */
-function knownText(k: ZoneKnown, mark: string, asOf: number, fmt: (p: number) => string): LegendPart[] {
+function knownText(k: ZoneKnown, mark: string, asOf: number, fmt: (p: number) => string, conf: LvnConfidenceOf): LegendPart[] {
   const at = fmtDayTime(k.at, asOf);
   const text =
     k.kind === 'flip'
       ? tr(`· strefa ${mark} znana od ${at}, na zamknięciu przebicia`, `· zone ${mark} known from ${at}, at the close of the break`)
       : tr(`· strefa ${mark} znana od ${at}, ${fmtDuration(k.lag)} po krańcu`, `· zone ${mark} known from ${at}, ${fmtDuration(k.lag)} after the extreme`);
   const out: LegendPart[] = [{ text, color: PRO.ink2 }];
-  if (k.profile) out.push({ text: profileText(k.profile, fmt), color: PRO.ink2 });
+  if (k.profile) out.push({ text: profileText(k.profile, fmt, conf(k.profile)), color: PRO.ink2 });
   return out;
 }
 
@@ -168,20 +190,21 @@ function bandAt(sel: EffortSelection, hover: { t: number; p: number }, ms: numbe
 /**
  * Opis w legendzie z wyboru: pasma po stronach z liczbą dalszych, krańce bez oceny strefy A, ostatnia seria pudełek
  * (albo nowsza świeca bez taśmy) i świece z taśmą wśród 32 ostatnich; w trybie „Historia” liczby obrysów. Krzyż nad
- * pasmem dopisuje czas dostępności jego stref (i profil swingu D). Powyżej 1 h powód braku, bez zamkniętych świec —
- * czekanie.
+ * pasmem dopisuje czas dostępności jego stref (i profil swingu D z pewnością LVN z `lvnConf`). Powyżej 1 h powód braku,
+ * bez zamkniętych świec — czekanie.
  */
 export function effortLegend(
   sel: EffortSelection | null,
   ms: number,
   asOf: number,
   hover: { t: number; p: number } | null = null,
-  fmt: (p: number) => string = (p) => numLang(String(p))
+  fmt: (p: number) => string = (p) => numLang(String(p)),
+  lvnConf: LvnConfidenceOf = () => null
 ): LegendPart[] {
   if (ms > MAX_TF) return [{ text: tr('—, interwał do 1 h', '—, intervals up to 1 h'), color: PRO.ink3 }];
   if (!sel) return [{ text: tr('czekam na świece…', 'waiting for candles…'), color: PRO.ink3 }];
   const hovered = hover ? bandAt(sel, hover, ms) : null;
-  const known = hovered ? hovered.known.flatMap((k) => knownText(k, KIND_MARK[k.kind], asOf, fmt)) : [];
+  const known = hovered ? hovered.known.flatMap((k) => knownText(k, KIND_MARK[k.kind], asOf, fmt, lvnConf)) : [];
   // Taśma na ostatnich 32 świecach: pudełko wymaga taśmy na swojej świecy i 19 przed nią
   const tape = { text: tr(`· taśma ${numLang(String(sel.tapeRecent))} z ${TAPE_SPAN}`, `· tape ${sel.tapeRecent} of ${TAPE_SPAN}`), color: PRO.ink2 };
   if (sel.history) {
@@ -234,6 +257,16 @@ export class EffortLayer implements ISeriesPrimitive<Time> {
   private srcMs = 0;
   private vbars: VBar[] = [];
   private result: EffortResult | null = null;
+  /** Pewność LVN profili swingu liczona leniwie pod kursorem, raz na profil (nowy wynik — nowe profile). */
+  private lvnConf = new WeakMap<SwingProfile, readonly number[]>();
+  private readonly lvnConfOf: LvnConfidenceOf = (p) => {
+    let c = this.lvnConf.get(p);
+    if (!c) {
+      c = swingLvnConfidence(this.vbars, p);
+      this.lvnConf.set(p, c);
+    }
+    return c;
+  };
   /** Wybór do rysowania na ostatniej zamkniętej świecy i jego klucz (wynik, telefon, tryb). */
   private sel: EffortSelection | null = null;
   private selKey: readonly unknown[] = [];
@@ -431,7 +464,7 @@ export class EffortLayer implements ISeriesPrimitive<Time> {
   /** Opis w legendzie (z ostatniego wyboru); krzyż nad pasmem (`hover`) dopisuje czas dostępności jego stref. */
   legend(hover: { t: number; p: number } | null, fmt: (p: number) => string): { text: string; color: string }[] {
     const last = this.vbars[this.vbars.length - 1];
-    return effortLegend(this.sel, this.ms, last ? last.t : this.now, hover, fmt);
+    return effortLegend(this.sel, this.ms, last ? last.t : this.now, hover, fmt, this.lvnConfOf);
   }
 
   /** Wybór na ostatniej zamkniętej świecy (legenda, testy). */

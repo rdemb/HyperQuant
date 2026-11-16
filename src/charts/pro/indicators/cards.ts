@@ -176,7 +176,10 @@ export const INDICATOR_CARD: Partial<Record<IndicatorId, IndicatorCard>> = {
       'Consolidation zones after an impulse and the previous week’s and day’s profile levels; a description of structure, without entry places.'
     ),
     status: 'opis',
-    noise: tr('Dawne miejsca wejścia sprawdzone na 2026 r.: bez przewagi (A 52%, B 48%, C 53%).', 'Former entry places checked on 2026: no edge (A 52%, B 48%, C 53%).'),
+    noise: tr(
+      'Dawne miejsca wejścia sprawdzone na 2026 r.: bez przewagi (A 52%, B 48%, C 53%). LVN tygodnia tylko z pewnością bootstrapową ≥ 70% (200 replik); poniżej to szum profilu.',
+      'Former entry places checked on 2026: no edge (A 52%, B 48%, C 53%). Weekly LVN only with bootstrap confidence ≥ 70% (200 replicas); below that it is profile noise.'
+    ),
   },
   ivb: {
     claim: tr(

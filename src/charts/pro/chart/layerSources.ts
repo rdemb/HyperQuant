@@ -126,12 +126,12 @@ const METHOD_HINT: Record<ModelKey, string> = {
   regime: tr('MODEL · BOCPD: bayesowskie wykrywanie punktów zmiany na zwrotach świec', 'MODEL · BOCPD: Bayesian change-point detection on candle returns'),
   hawkes: tr('MODEL · Hawkes: proces z jądrem wykładniczym dopasowany metodą największej wiarygodności', 'MODEL · Hawkes: a process with an exponential kernel fitted by maximum likelihood'),
   pbrange: tr(
-    'MODEL · reguły metody Nilla na świecach 5m: strefy P/b i poziomy profilu tygodnia i doby; opis struktury, bez miejsc wejścia',
-    "MODEL · Nill's method rules on 5m candles: P/b zones and weekly and daily profile levels; a description of structure, without entry places"
+    'MODEL · reguły metody Nilla na świecach 5m: strefy P/b i poziomy profilu tygodnia i doby, LVN tylko z pewnością bootstrapową ≥ 70%; opis struktury, bez miejsc wejścia',
+    "MODEL · Nill's method rules on 5m candles: P/b zones and weekly and daily profile levels, LVN only with bootstrap confidence ≥ 70%; a description of structure, without entry places"
   ),
   effort: tr(
-    'MODEL · reguły modelu intraday Valentiniego: strefy absorpcji i pudełka Effort tylko z delty taśmy (bez taśmy brak wartości z powodem), strefy dyskonta z profilu swingu z taśmy (ze świec tylko jako przybliżenie); to nie wskazania wejścia',
-    "MODEL · Valentini's intraday model rules: absorption zones and effort boxes from the tape delta only (no value with a reason without the tape), swing discount zones from the swing profile of the tape (from candles only as an approximation); not entry cues"
+    'MODEL · reguły modelu intraday Valentiniego: strefy absorpcji i pudełka Effort tylko z delty taśmy (bez taśmy brak wartości z powodem), strefy dyskonta z profilu swingu z taśmy (ze świec tylko jako przybliżenie), LVN swingu z pewnością bootstrapową; to nie wskazania wejścia',
+    "MODEL · Valentini's intraday model rules: absorption zones and effort boxes from the tape delta only (no value with a reason without the tape), swing discount zones from the swing profile of the tape (from candles only as an approximation), swing LVN with bootstrap confidence; not entry cues"
   ),
 };
 
