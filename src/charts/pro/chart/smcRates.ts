@@ -269,8 +269,12 @@ const LINE: readonly (readonly [SmcRateElement, string])[] = [
   ['EQH_EQL', 'sweep_lub_przelamanie_72'],
 ];
 
-/** Linia legendy z częstościami bazowymi interwału wykresu (albo powód braku). */
-export function smcRatesLine(ms: number, s: SmcRates | null = smcRatesNow()): LegendPart[] {
+/** Rynek, na którego historii policzono częstości; na innych rynkach ich nie pokazujemy. */
+export const SMC_RATES_COIN = 'BTC';
+
+/** Linia legendy z częstościami bazowymi interwału wykresu (albo powód braku: inny rynek, interwał, wczytywanie). */
+export function smcRatesLine(ms: number, coin: string, s: SmcRates | null = smcRatesNow()): LegendPart[] {
+  if (coin !== SMC_RATES_COIN) return [{ text: tr('· częstości bazowe: —: policzone tylko dla BTC', '· base rates: —: computed for BTC only'), color: PRO.ink3 }];
   const tf = smcRateTf(ms);
   if (!tf) return [{ text: tr('· częstości bazowe: —: brak częstości dla tego interwału', '· base rates: —: no base rates for this interval'), color: PRO.ink3 }];
   if (!s) return [{ text: failed ? tr('· częstości bazowe: —: nie udało się wczytać', '· base rates: —: failed to load') : tr('· częstości bazowe: wczytuję…', '· base rates: loading…'), color: PRO.ink3 }];
@@ -282,10 +286,10 @@ export function smcRatesLine(ms: number, s: SmcRates | null = smcRatesNow()): Le
   return [{ text: head, color: PRO.ink3 }, ...items.map((x, i) => ({ text: `${i ? '· ' : ''}${x.text}`, color: x.quiet ? PRO.ink3 : PRO.ink2 }))];
 }
 
-/** Opis pod krzyżem nad elementem: wszystkie miary jego typu dla interwału wykresu (pusty bez pliku albo interwału). */
-export function smcRatesHover(ms: number, el: SmcRateElement, s: SmcRates | null = smcRatesNow()): LegendPart[] {
+/** Opis pod krzyżem nad elementem: wszystkie miary jego typu dla interwału wykresu (pusty poza BTC, bez pliku albo interwału). */
+export function smcRatesHover(ms: number, coin: string, el: SmcRateElement, s: SmcRates | null = smcRatesNow()): LegendPart[] {
   const tf = smcRateTf(ms);
-  if (!tf || !s) return [];
+  if (coin !== SMC_RATES_COIN || !tf || !s) return [];
   return SMC_RATE_MEASURES[el].map(([m]) => ({ text: `· ${smcRateText(s, tf, el, m)}`, color: PRO.ink2 }));
 }
 

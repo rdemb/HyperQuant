@@ -23,7 +23,7 @@ const NB = ' ';
 const MIN = 60_000;
 const MS = { '5m': 5 * MIN, '15m': 15 * MIN, '1h': 60 * MIN, '4h': 240 * MIN, '1d': 1440 * MIN } as const;
 const line = (ms: number, s: SmcRates | null) =>
-  smcRatesLine(ms, s)
+  smcRatesLine(ms, 'BTC', s)
     .map((p) => p.text)
     .join(' ');
 
@@ -87,6 +87,14 @@ describe('linia legendy (smc-hl.md §8)', () => {
     expect(line(MS['5m'], null)).toBe('· częstości bazowe: wczytuję…');
   });
 
+  it('tylko BTC: na innym rynku powód braku w legendzie i nic pod krzyżem, na każdym interwale', () => {
+    for (const coin of ['ETH', 'SOL', 'HYPE'])
+      for (const tf of SMC_RATE_TFS) {
+        expect(smcRatesLine(MS[tf], coin, rates).map((p) => p.text)).toEqual(['· częstości bazowe: —: policzone tylko dla BTC']);
+        for (const el of SMC_RATE_ELEMENTS) expect(smcRatesHover(MS[tf], coin, el, rates)).toEqual([]);
+      }
+  });
+
   it('5m: BOS swing. +0,25 ATR, sweep −1,9 pp, FVG CE +1,7 pp, EQ rzadziej; zawsze z n', () => {
     expect(line(MS['5m'], rates)).toBe(
       `· częstości bazowe (BTC 5m, 2024–2026, wobec losowej kontroli, BOS i sweep przy tej samej zmienności): BOS swing.: dalszy ruch większy, +0,25 ATR [0,10; 0,42] (n = 2${NB}452) · sweep: rzadziej ponownie za poziomem, −1,9 pp [−2,4; −1,5] (n = 25${NB}331) · FVG: środek luki dotykany częściej, +1,7 pp [1,2; 2,2] (n = 59${NB}403) · EQ: zebrane albo przełamane rzadziej, −1,8 pp [−3,1; −0,4] (n = 6${NB}000)`
@@ -120,7 +128,7 @@ describe('linia legendy (smc-hl.md §8)', () => {
 
 describe('opis pod krzyżem (smc-hl.md §3)', () => {
   it('BOS na skali swingowej, 1h: wynik, kontrola dopasowana, różnica z przedziałem, n bez niejednoznacznych', () => {
-    expect(smcRatesHover(MS['1h'], 'BOS_swing', rates).map((p) => p.text)).toEqual([
+    expect(smcRatesHover(MS['1h'], 'BTC', 'BOS_swing', rates).map((p) => p.text)).toEqual([
       '· BOS, skala swingowa (BTC 1h, 2024–2026, n = 281 bez 10% niejednoznacznych na 1m): dalszy ruch do pierwszego powrotu 2,73 ATR · losowy poziom przy tej samej zmienności i pędzie 2,41 ATR · różnica +0,32 ATR [−0,09; 0,75] · bez wyraźnej różnicy',
       '· BOS, skala swingowa (BTC 1h, 2024–2026, n = 314): powrót za poziom w 24 świecach 82,8% · losowy poziom przy tej samej zmienności i pędzie 84,7% · różnica −1,9 pp [−5,9; 2,2] · bez wyraźnej różnicy',
     ]);
@@ -135,14 +143,14 @@ describe('opis pod krzyżem (smc-hl.md §3)', () => {
     );
     expect(smcRateText(rates, '5m', 'CHoCH_internal', 'dalszy_ruch_ATR')).toMatch(/· bez wyraźnej różnicy$/);
     expect(smcRateText(rates, '1d', 'BOS_swing', 'powrot_24')).toBe('BOS, skala swingowa (BTC 1D, 2024–2026): powrót za poziom w 24 świecach: —: za mało przypadków (n = 11)');
-    expect(smcRatesHover(MIN, 'FVG', rates)).toEqual([]);
-    expect(smcRatesHover(MS['5m'], 'FVG', null)).toEqual([]);
+    expect(smcRatesHover(MIN, 'BTC', 'FVG', rates)).toEqual([]);
+    expect(smcRatesHover(MS['5m'], 'BTC', 'FVG', null)).toEqual([]);
   });
 
   it('żaden tekst nie jest zaleceniem ani prognozą', () => {
     for (const tf of SMC_RATE_TFS) {
       expect(line(MS[tf], rates)).not.toMatch(BANNED);
-      for (const el of SMC_RATE_ELEMENTS) for (const p of smcRatesHover(MS[tf], el, rates)) expect(p.text).not.toMatch(BANNED);
+      for (const el of SMC_RATE_ELEMENTS) for (const p of smcRatesHover(MS[tf], 'BTC', el, rates)) expect(p.text).not.toMatch(BANNED);
     }
     expect(SMC_RATES_SUMMARY).not.toMatch(BANNED);
   });

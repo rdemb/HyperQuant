@@ -40,7 +40,7 @@ const bars = mk(rows);
 const asOf = bars[bars.length - 1].t + MS;
 const sel = selectSmc(smcStructure(bars, MS), bars, asOf, { phone: false, history: false });
 const text = (h: { t: number; p: number } | null = null, s = sel) =>
-  smcLegend(s, MS, h, fmt)
+  smcLegend(s, MS, 'BTC', h, fmt)
     .map((p) => p.text)
     .join(' ');
 
@@ -56,7 +56,7 @@ describe('legenda SMC', () => {
 
   it('krzyż nad luką: wypełnienie, dotknięcie środka luki (CE), chwila „znana od” i częstości bazowe FVG', () => {
     const f = sel.fvgs[0].f;
-    const parts = smcLegend(sel, MS, { t: f.t + 2 * MS, p: 100.75 }, fmt).map((p) => p.text);
+    const parts = smcLegend(sel, MS, 'BTC', { t: f.t + 2 * MS, p: 100.75 }, fmt).map((p) => p.text);
     const at = parts.findIndex((p) => p.startsWith('· FVG ('));
     expect(parts[at]).toBe(`· FVG (luka po ruchu w górę) 100.5–100.8: wypełnienie 50%, dotknięcie środka luki (CE), znana od ${fmtDayTime(f.known, asOf)}`);
     expect(parts[at + 1]).toBe('· FVG (BTC 5m, 2024–2026, n = 59 403): środek luki (CE) dotknięty w 24 świecach 80,4% · losowa luka 78,7% · różnica +1,7 pp [1,2; 2,2] · częściej niż przy losowej luce');
@@ -67,11 +67,23 @@ describe('legenda SMC', () => {
   });
 
   it('każdy interwał (także 4H); częstości tylko dla 5m, 15m, 1h, 4H i 1D; powód braku świec', () => {
-    const h4 = smcLegend(sel, 4 * 3_600_000).map((p) => p.text);
+    const h4 = smcLegend(sel, 4 * 3_600_000, 'BTC').map((p) => p.text);
     expect(h4[0]).toBe('eksperymentalny');
     expect(h4.join(' ')).toContain('BOS swing.: —: za mało przypadków (n = 81)');
-    expect(smcLegend(sel, 30 * 60_000).map((p) => p.text)).toContain('· częstości bazowe: —: brak częstości dla tego interwału');
-    expect(smcLegend(null, MS).map((p) => p.text)).toEqual(['czekam na świece…']);
+    expect(smcLegend(sel, 30 * 60_000, 'BTC').map((p) => p.text)).toContain('· częstości bazowe: —: brak częstości dla tego interwału');
+    expect(smcLegend(null, MS, 'BTC').map((p) => p.text)).toEqual(['czekam na świece…']);
+  });
+
+  it('inny rynek niż BTC: częstości z powodem braku w legendzie, krzyż nad elementem bez częstości', () => {
+    const f = sel.fvgs[0].f;
+    for (const coin of ['ETH', 'SOL', 'HYPE']) {
+      const parts = smcLegend(sel, MS, coin, { t: f.t + 2 * MS, p: 100.75 }, fmt).map((p) => p.text);
+      expect(parts).toContain('· częstości bazowe: —: policzone tylko dla BTC');
+      expect(parts.filter((p) => p.includes('2024–2026'))).toEqual([]);
+      const at = parts.findIndex((p) => p.startsWith('· FVG ('));
+      expect(parts[at]).toContain('wypełnienie 50%');
+      expect(parts).toHaveLength(at + 1);
+    }
   });
 
   it('kolory według rodzaju elementu, nie strony transakcji', () => {

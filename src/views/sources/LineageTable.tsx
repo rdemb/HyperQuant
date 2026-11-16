@@ -121,8 +121,8 @@ export const GROUPS: { title: string; rows: Row[] }[] = [
         kinds: ['MODEL'],
         refresh: tr('raz, z badania (16.11.2026); nowa wersja tylko z nowym plikiem', 'once, from the study (16 Nov 2026); a new version only with a new file'),
         caveat: tr(
-          'Historia BTC z Binance, nie taśma Hyperliquid, i ta sama tabela na każdym rynku. Wynik: elementy prawie nie różnią się od kontroli; po BOS na skali swingowej dalszy ruch ok. 0,3 ATR większy (5m i 15m), po sweepie ok. 2 pp rzadziej ponownie za poziomem, na 1D za mało przypadków. Wiele miar naraz, więc pojedyncza różnica tuż przy zerze może być przypadkiem. Opis przeszłości, nie prognoza.',
-          'BTC history from Binance, not the Hyperliquid tape, and the same table on every market. Result: the elements barely differ from the control; after a swing-scale BOS the further move is about 0.3 ATR larger (5m and 15m), after a sweep about 2 pp less often beyond the level again, too few cases on 1D. Many measures at once, so a single difference right next to zero may be chance. A description of the past, not a forecast.'
+          'Historia BTC z Binance, nie taśma Hyperliquid; pokazywane tylko na wykresie BTC (na innych rynkach „—: policzone tylko dla BTC”). Wynik: elementy prawie nie różnią się od kontroli; po BOS na skali swingowej dalszy ruch ok. 0,3 ATR większy (5m i 15m), po sweepie ok. 2 pp rzadziej ponownie za poziomem, na 1D za mało przypadków. Wiele miar naraz, więc pojedyncza różnica tuż przy zerze może być przypadkiem. Opis przeszłości, nie prognoza.',
+          'BTC history from Binance, not the Hyperliquid tape; shown only on the BTC chart (other markets: “—: computed for BTC only”). Result: the elements barely differ from the control; after a swing-scale BOS the further move is about 0.3 ATR larger (5m and 15m), after a sweep about 2 pp less often beyond the level again, too few cases on 1D. Many measures at once, so a single difference right next to zero may be chance. A description of the past, not a forecast.'
         ),
       },
       {
