@@ -11,7 +11,6 @@ import {
   layoutNumbers,
   liqNearestOf,
   nakedPocOf,
-  prevDayOf,
   profileStep,
   rvolOf,
   sessionNowOf,
@@ -20,7 +19,7 @@ import {
   whaleBalanceOf,
   costUsd,
 } from '../chart/layoutNumbers';
-import { profile } from '../../../utils/auction';
+import { type ValueBar, type ValueRef, valueReference } from '../core/valueReference';
 import { vwapNum as vwapNumUtil } from '../../../utils/dayVwap';
 import { currentTradeSession, previousSameSession } from '../../../utils/sessionDay';
 import { twapShareOf as twapShareUtil } from '../../../utils/twapShare';
@@ -35,6 +34,20 @@ const NOW = at(2026, 11, 3, 16, 20);
 const NY = currentTradeSession(NOW)!;
 
 const c = (t: number, o: number, h: number, l: number, cl: number, v = 1): Candle => ({ t, o, h, l, c: cl, v, n: 1 });
+/** Wartość wczorajszej doby z jednego źródła (taśma albo świece) do liczb nagłówka. */
+const ref = (from: number, vah: number, val: number, source: 'tape' | 'candles' = 'tape', poc = (vah + val) / 2): ValueRef => ({
+  kind: 'day',
+  from,
+  to: from + DAY,
+  poc,
+  vah,
+  val,
+  source,
+  tapeShare: source === 'tape' ? 0.98 : 0.3,
+  bars: 288,
+  through: from + DAY,
+  complete: true,
+});
 
 const cockpit = (patch: Partial<LayoutInputs> = {}): LayoutInputs => ({
   coin: 'BTC',
@@ -181,19 +194,26 @@ describe('nagłówek układu: trzy liczby', () => {
     expect(n[1].hint).toMatch(/^MODEL · Hawkes/);
   });
 
-  it('Mapa dnia: odległość do VAH i VAL wczoraj, najbliższy nagi POC', () => {
+  it('Mapa dnia: odległość do VAH i VAL wczoraj, najbliższy nagi POC; z taśmy LIVE, ze świec MODEL „przybliżenie ze świec”', () => {
     const d = at(2026, 11, 2, 0);
-    const n = layoutNumbers('day-map', { coin: 'BTC', now: NOW, price: 105_000, prevDay: { day: d, vah: 105_420, val: 104_160 }, nakedPoc: { day: d - DAY, px: 110_000 } });
+    const prevDay = ref(d, 105_420, 104_160);
+    const nakedPoc = { day: d - DAY, px: 110_000, ref: ref(d - DAY, 110_500, 109_500, 'candles', 110_000) };
+    const n = layoutNumbers('day-map', { coin: 'BTC', now: NOW, price: 105_000, prevDay, nakedPoc });
     expect(n.map((x) => [x.label, x.value, x.badge])).toEqual([
       ['VAH wczoraj', '+0,40%', 'LIVE'],
       ['VAL wczoraj', '−0,80%', 'LIVE'],
-      ['Nagi POC', '+4,76%', 'LIVE'],
+      ['Nagi POC', '+4,76%', 'MODEL'],
     ]);
+    expect(n[0].hint).toContain('Profil wolumenu z taśmy Hyperliquid (98% wolumenu okresu nagrane');
+    expect(n[2].hint).toMatch(/^MODEL · przybliżenie ze świec \(przybliżenie, taśma 30%\): /);
+    const fromCandles = layoutNumbers('day-map', { coin: 'BTC', now: NOW, price: 105_000, prevDay: ref(d, 105_420, 104_160, 'candles') });
+    expect(fromCandles[0]).toMatchObject({ value: '+0,40%', badge: 'MODEL' });
+    expect(fromCandles[0].hint).toMatch(/^MODEL · przybliżenie ze świec/);
   });
 
   it('ceny w podpowiedziach z dokładnością osi rynku (szDecimals): BTC bez zmian, kPEPE przy 0,0045 — 6 miejsc jak na osi', () => {
     const d = at(2026, 11, 2, 0);
-    const btcHint = () => layoutNumbers('day-map', { coin: 'BTC', now: NOW, price: 105_000, prevDay: { day: d, vah: 105_420, val: 104_160 } })[0].hint;
+    const btcHint = () => layoutNumbers('day-map', { coin: 'BTC', now: NOW, price: 105_000, prevDay: ref(d, 105_420, 104_160) })[0].hint;
     const before = btcHint();
     expect(before).toContain(`${fmtPx(105_420)}, 0,40% nad ceną ${fmtPx(105_000)}`);
     publishMarkets({
@@ -206,7 +226,7 @@ describe('nagłówek układu: trzy liczby', () => {
     });
     try {
       expect(btcHint()).toBe(before);
-      const pepe = layoutNumbers('day-map', { coin: 'kPEPE', now: NOW, price: 0.0045, prevDay: { day: d, vah: 0.004512, val: 0.00448 } })[0].hint;
+      const pepe = layoutNumbers('day-map', { coin: 'kPEPE', now: NOW, price: 0.0045, prevDay: ref(d, 0.004512, 0.00448) })[0].hint;
       // Oś kPEPE: 6 miejsc (krok ceny 1e-6), nie 7 z samej reguły 5 cyfr znaczących
       expect(priceDigits(0.004512, 0)).toBe(6);
       expect(pepe).toContain(`${fmtPx(0.004512, 0)}, `);
@@ -240,10 +260,12 @@ describe('nagłówek układu: trzy liczby', () => {
     const n = layoutNumbers('review', { coin: 'BTC', now: NOW, review, mapHits });
     expect(n.map((x) => [x.label, x.value, x.badge, x.note ?? null])).toEqual([
       ['Typ dnia · NY w toku', 'trendowy', 'MODEL', null],
-      ['Migracja VA', 'wyżej', 'LIVE', null],
+      ['Migracja VA', 'wyżej', 'MODEL', null],
       ['Mapa: dotknięte', '3/9', 'LIVE', null],
     ]);
     expect(n[0].hint).toMatch(/^MODEL · Dalton/);
+    // Value area Rozliczenia ze świec 1m (bez taśmy): reguła plakietki wartości — MODEL „przybliżenie ze świec”
+    expect(n[1].hint).toMatch(/^MODEL · przybliżenie ze świec: Value area 70% sesji NY/);
     expect(n[2].hint).toMatch(/^Poziomy dotknięte 3\/9: Mapa dnia .*, sesja NY 03\.11, od wpisu do teraz/);
     // Telefon: krótsze podpisy, „w toku” zostaje
     expect(n.map((x) => x.short)).toEqual(['NY w toku', 'VA', 'Mapa']);
@@ -316,28 +338,27 @@ describe('liczby nagłówka ze świec i migawek', () => {
     expect(profileStep(150)).toBe(0.02);
   });
 
-  /** Doba świec 1h: 23 świece w szerokim zakresie i jedna z dużym wolumenem przy `poc`. */
-  const day = (d: number, lo: number, hi: number, poc?: number): Candle[] =>
-    Array.from({ length: 24 }, (_, k) => (poc !== undefined && k === 12 ? c(d + k * H, poc, poc + 4, poc - 4, poc, 500) : c(d + k * H, lo, hi, lo, hi)));
+  /** Doba świec 5m: 287 świec w szerokim zakresie i jedna z dużym wolumenem przy `poc`. */
+  const day5 = (d: number, lo: number, hi: number, poc: number): ValueBar[] =>
+    Array.from({ length: 288 }, (_, k) => (k === 144 ? { t: d + k * 5 * MIN, l: poc - 4, h: poc + 4, v: 5000 } : { t: d + k * 5 * MIN, l: lo, h: hi, v: 1 }));
 
-  it('prevDayOf i nakedPocOf: VA wczorajszej doby UTC i najbliższy cenie nietknięty POC zamkniętej doby (świece 1h)', () => {
+  it('nakedPocOf: najbliższy cenie nietknięty POC zamkniętej doby z jednego źródła wartości (świece 5m)', () => {
     const today = at(2026, 11, 3, 0);
-    const yesterday = day(today - DAY, 104_900, 105_100, 105_000);
-    const h1 = [
-      ...day(today - 3 * DAY, 97_900, 98_100, 98_000),
-      ...day(today - 2 * DAY, 109_900, 110_100, 110_000),
-      ...yesterday,
-      ...Array.from({ length: 16 }, (_, k) => c(today + k * H, 104_950, 105_050, 104_950, 105_000)),
+    const bars = [
+      ...day5(today - 3 * DAY, 97_900, 98_100, 98_000),
+      ...day5(today - 2 * DAY, 109_900, 110_100, 110_000),
+      ...day5(today - DAY, 104_900, 105_100, 105_000),
+      ...Array.from({ length: 16 * 12 }, (_, k) => ({ t: today + k * 5 * MIN, l: 104_950, h: 105_050, v: 1 })),
     ];
-    const va = profile(yesterday.map((b) => ({ time: b.t, open: b.o, high: b.h, low: b.l, close: b.c, volume: b.v })), 10)!;
-    expect(prevDayOf(h1, NOW, 10)).toEqual({ day: today - DAY, vah: va.vah, val: va.val });
+    const src = { bars, ms: 5 * MIN };
     // POC wczoraj (~105 000) dotknięty dziś, POC 98 000 i 110 000 nagie; bliżej ceny 105 000 jest 110 000
-    const naked = nakedPocOf(h1, NOW, 105_000, 10);
+    const naked = nakedPocOf(src, NOW, 105_000);
     if ('why' in naked) throw new Error(naked.why);
     expect(naked.day).toBe(today - 2 * DAY);
-    expect(Math.abs(naked.px - 110_000)).toBeLessThanOrEqual(10);
-    // Niepełna wczorajsza doba (brak świecy) — powód zamiast VA
-    expect(prevDayOf(h1.filter((b) => b.t !== today - DAY + 5 * H), NOW, 10)).toMatchObject({ why: expect.any(String) });
+    expect(naked.ref).toEqual(valueReference('day', today - 2 * DAY, src, NOW));
+    expect(naked.px).toBe(naked.ref.poc);
+    expect(Math.abs(naked.px - 110_000)).toBeLessThanOrEqual(110_000 * 5e-4);
+    expect(nakedPocOf({ bars: [], ms: 5 * MIN }, NOW, 105_000)).toMatchObject({ why: expect.any(String) });
   });
 
   it('liqNearestOf, twapShareOf, whaleBalanceOf', () => {

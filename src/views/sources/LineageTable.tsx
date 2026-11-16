@@ -110,10 +110,13 @@ export const GROUPS: { title: string; rows: Row[] }[] = [
           'Pasek „Rama dnia” (W sesji, przy Strefach Effort albo IVB): wartość dziś wobec wczoraj, stan aukcji, status i szerokość IVB',
           'The “Day frame” bar (In session, with the Effort zones or the IVB): today’s value against yesterday’s, auction state, IVB status and width'
         ),
-        source: tr('Hyperliquid API: candleSnapshot (świece 5m od wczoraj i 30m z 76 dób)', 'Hyperliquid API: candleSnapshot (5m candles since yesterday and 30m candles over 76 days)'),
+        source: tr(
+          'Hyperliquid API: candleSnapshot (świece 5m od wczoraj i 30m z 76 dób); taśma transakcji Hyperliquid (strumień i profile dób rejestratora)',
+          'Hyperliquid API: candleSnapshot (5m candles since yesterday and 30m candles over 76 days); the Hyperliquid trade tape (stream and the recorder’s day profiles)'
+        ),
         method: tr(
-          'VA wczoraj jak poziomy doby P/b (profil świec 5m, 70%, koszyki 5 pb); przyjęcie poza wartością według Daltona z progami HyperQuant (≥ 2 zamknięcia 30m i ≥ 30% wolumenu doby po tej samej stronie) i częstość stanu o tej porze w 60 dobach; IVB z okna od otwarcia NY, szerokość w ATR doby z percentylem wobec 20 sesji NY tego samego typu.',
-          'Yesterday’s VA as the P/b day levels (5m candle profile, 70%, 5 bp bins); acceptance outside value after Dalton with HyperQuant thresholds (≥ 2 30m closes and ≥ 30% of the day’s volume on the same side) and the state frequency at this time over 60 days; IVB from the window after the NY open, width in daily ATR with a percentile against 20 NY sessions of the same type.'
+          'VA wczoraj z jednego źródła wartości, jak panel „Najbliższe poziomy”, nagłówek Mapy dnia, poziomy doby P/b i Profile okresów: profil z taśmy przy ≥ 90% wolumenu doby (LIVE), inaczej ze świec 5m (MODEL „przybliżenie ze świec”), 70%, koszyki 5 pb; przyjęcie poza wartością według Daltona z progami HyperQuant (≥ 2 zamknięcia 30m i ≥ 30% wolumenu od otwarcia po tej samej stronie), liczniki od otwarcia sesji Londynu albo NY (poza sesjami od 00:00 UTC), częstość stanu w tej samej minucie od otwarcia w 60 dobach; IVB z okna od otwarcia NY, szerokość w ATR doby z percentylem wobec 20 sesji NY tego samego typu.',
+          'Yesterday’s VA from the single value source shared with the “Nearest levels” panel, the Day map header, the P/b day levels and Period profiles: a profile from the tape at ≥ 90% of the day’s volume (LIVE), otherwise from 5m candles (MODEL “approximation from candles”), 70%, 5 bp bins; acceptance outside value after Dalton with HyperQuant thresholds (≥ 2 30m closes and ≥ 30% of the volume since the open on the same side), counters from the London or NY session open (outside the sessions from 00:00 UTC), the state frequency at the same minute after the open over 60 days; IVB from the window after the NY open, width in daily ATR with a percentile against 20 NY sessions of the same type.'
         ),
         kinds: ['LIVE', 'MODEL'],
         refresh: tr('co 5 s', 'every 5 s'),
@@ -890,12 +893,12 @@ export const GROUPS: { title: string; rows: Row[] }[] = [
       {
         metric: tr('Najbliższe poziomy (W sesji, Przed sesją)', 'Nearest levels (In session, Pre-session)'),
         source: tr(
-          'Świece Hyperliquid rynku wykresu (1d, 1h, 5m, 1m), mapa likwidacji i mapa wejść skanera, dziennik prognoz',
-          'Hyperliquid candles of the chart market (1d, 1h, 5m, 1m), the scanner liquidation and entry maps, the forecast ledger'
+          'Świece Hyperliquid rynku wykresu (1d, 5m, 1m) i taśma transakcji, mapa likwidacji i mapa wejść skanera, dziennik prognoz',
+          'Hyperliquid candles of the chart market (1d, 5m, 1m) and the trade tape, the scanner liquidation and entry maps, the forecast ledger'
         ),
         method: tr(
-          'Poziomy z tych samych funkcji co linie wykresu: PDH i PDL, VWAP doby z pasmami ±1σ i ±2σ, IB bieżącej sesji, największy klaster likwidacji po każdej stronie, granice przedziału 90% stożka 1 h; value area wczoraj ze świec 1h jak nagłówek Mapy dnia; zakres sesji azjatyckiej ze świec 1m; mediana cen wejścia Uwięzionych ważona wartością. Odległość w % od ceny i w ATR(14) zamkniętych świec 5m; paliwo: USD kubełków mapy likwidacji między ceną a poziomem',
-          'Levels from the same functions as the chart lines: PDH and PDL, day VWAP with ±1σ and ±2σ bands, current-session IB, the largest liquidation cluster on each side, 90% bounds of the 1 h cone; yesterday’s value area from 1h candles like the Day map header; the Asian session range from 1m candles; the value-weighted median entry price of trapped positions. Distance in % of the price and in ATR(14) of closed 5m candles; fuel: USD of liquidation-map buckets between the price and the level'
+          'Poziomy z tych samych funkcji co linie wykresu: PDH i PDL, VWAP doby z pasmami ±1σ i ±2σ, IB bieżącej sesji, największy klaster likwidacji po każdej stronie, granice przedziału 90% stożka 1 h; value area wczoraj z jednego źródła wartości jak pasek „Rama dnia” i nagłówek Mapy dnia (taśma przy ≥ 90% wolumenu doby — LIVE, inaczej świece 5m — MODEL „przybliżenie ze świec”); zakres sesji azjatyckiej ze świec 1m; mediana cen wejścia Uwięzionych ważona wartością. Odległość w % od ceny i w ATR(14) zamkniętych świec 5m; paliwo: USD kubełków mapy likwidacji między ceną a poziomem',
+          'Levels from the same functions as the chart lines: PDH and PDL, day VWAP with ±1σ and ±2σ bands, current-session IB, the largest liquidation cluster on each side, 90% bounds of the 1 h cone; yesterday’s value area from the single value source like the “Day frame” bar and the Day map header (the tape at ≥ 90% of the day’s volume — LIVE, otherwise 5m candles — MODEL “approximation from candles”); the Asian session range from 1m candles; the value-weighted median entry price of trapped positions. Distance in % of the price and in ATR(14) of closed 5m candles; fuel: USD of liquidation-map buckets between the price and the level'
         ),
         kinds: ['LIVE', 'MODEL'],
         refresh: tr('co 2 s przy zmianach świec, migawki skanera co 2 min', 'every 2 s on candle changes, scanner snapshots every 2 min'),

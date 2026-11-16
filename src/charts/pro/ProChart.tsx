@@ -810,6 +810,8 @@ export const ProChart: React.FC<{
           showWhales: whalesScan(whales, store.coin, whalePub.configured),
           showBlogMap: blogMapScan(blogMaps, pickMap(blogMaps.maps, store.serverNow(), settings.blogMapId)),
         },
+        // Profile okresów: plakietka ze źródła wartości ostatniego zamkniętego okresu (taśma LIVE, świece MODEL)
+        value: { showPeriodProfiles: ctrlRef.current?.periodValue() ?? null },
       });
   // Lista „Warstwy”: włączone warstwy i ukryte okiem w tej sesji; w powtórce plakietka „nagranie” zamiast źródła na żywo
   const menuChips: LayerChip[] = [
@@ -1867,8 +1869,8 @@ function flowLayers(s: ChartSettings, intervalMs: number, liq: LiqMapState, whal
       key: 'showPeriodProfiles',
       label: scope.periodProfile === 'day' ? tr('Profile dób i nagie POC', 'Day profiles and naked POCs') : tr('Profile sesji i nagie POC', 'Session profiles and naked POCs'),
       hint: tr(
-        `Pełny profil ${scope.periodProfile === 'day' ? 'bieżącej i poprzedniej doby UTC' : 'bieżącej i poprzedniej sesji'} od jej początku, starsze — POC i pasek value area; POC, którego cena potem nie dotknęła, ciągnie się do prawej krawędzi (najwyżej ${NAKED_POC_SHOWN} najbliższe cenie). ${PROFILE_EVIDENCE.pl}`,
-        `A full profile of the ${scope.periodProfile === 'day' ? 'current and previous UTC day' : 'current and previous session'} from its start, older ones only the POC and the value area bar; a POC that price has not touched since extends to the right edge (at most ${NAKED_POC_SHOWN} nearest to price). ${PROFILE_EVIDENCE.en}`
+        `Pełny profil ${scope.periodProfile === 'day' ? 'bieżącej i poprzedniej doby UTC' : 'bieżącej i poprzedniej sesji'} od jej początku, starsze — POC i pasek value area; POC, którego cena potem nie dotknęła, ciągnie się do prawej krawędzi (najwyżej ${NAKED_POC_SHOWN} najbliższe cenie). POC i value area z jednego źródła wartości, jak pasek „Rama dnia”: z taśmy przy co najmniej 90% wolumenu okresu, inaczej przybliżenie ze świec 5m (koszyki 5 pb). ${PROFILE_EVIDENCE.pl}`,
+        `A full profile of the ${scope.periodProfile === 'day' ? 'current and previous UTC day' : 'current and previous session'} from its start, older ones only the POC and the value area bar; a POC that price has not touched since extends to the right edge (at most ${NAKED_POC_SHOWN} nearest to price). The POC and value area come from the single value source, like the “Day frame” bar: from the tape when it covers at least 90% of the period volume, otherwise an approximation from 5m candles (5 bp bins). ${PROFILE_EVIDENCE.en}`
       ),
       swatch: 'bg-of-vol',
       off: scope.periodProfile ? undefined : tr('Na interwałach do 4h', 'On timeframes up to 4h'),

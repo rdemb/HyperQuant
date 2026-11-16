@@ -3,9 +3,11 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { createElement } from 'react';
 import type { Candle } from '../hl/parse';
 import { type DayFrame, STATE_DAYS, STATE_KEYS, type StateHistory, type StateKey } from '../core/dayFrame';
-import type { Levels } from '../core/pbRanges';
+import type { ValueRef } from '../core/valueReference';
 import { FRAME_RULES, type FrameInput, frameChips, stateDistribution } from '../chart/dayFrameText';
-import { FRAME_HISTORY_DAYS, type InputSeries, type InputStore, frameInputOf } from '../chart/layoutInputs';
+import { FRAME_HISTORY_DAYS, type InputSeries, type InputStore, frameInputOf, readInputs } from '../chart/layoutInputs';
+import { readLevelInputs } from '../../../views/desk/nearestInputs';
+import { nearestLevels } from '../../../utils/nearestLevels';
 import { DayFrameBar } from '../chart/DayFrameBar';
 import type { ProStore } from '../store/proStore';
 import { indicatorDef } from '../indicators/registry';
@@ -17,15 +19,19 @@ const DAY = 86_400_000;
 const D = Date.UTC(2026, 10, 16);
 const OPEN = tradeSessionOn(D, 'ny').start;
 const NOW = OPEN + 75 * MIN;
-const PREV: Levels = { poc: 105, vah: 110, val: 100, lvn: [] };
+/** Wczorajsza VA z taśmy (LIVE) i dzisiejsza dotąd. */
+const PREV: ValueRef = { kind: 'day', from: D - DAY, to: D, poc: 105, vah: 110, val: 100, source: 'tape', tapeShare: 0.97, bars: 288, through: D, complete: true };
+const TODAY: ValueRef = { ...PREV, from: D, to: D + DAY, val: 104, vah: 114, poc: 109, tapeShare: 0.99, bars: 200, through: NOW, complete: false };
 
 const counts = (o: Partial<Record<StateKey, number>>) => Object.fromEntries(STATE_KEYS.map((k) => [k, o[k] ?? 0])) as Record<StateKey, number>;
 const hist = (n: number, o: Partial<Record<StateKey, number>> = {}): StateHistory => ({ n, counts: counts(o), early: false });
 
 const frame = (over: Partial<DayFrame> = {}): DayFrame => ({
   day: D,
+  ref: 'day',
   prev: PREV,
-  value: { today: { val: 104, vah: 114 }, migration: 'overlap-higher', overlap: 0.6 },
+  value: { today: TODAY, migration: 'overlap-higher', overlap: 0.6 },
+  anchor: { from: OPEN, session: 'ny' },
   acceptance: { state: { kind: 'accepted', side: 1 }, run: 3, runSide: 1, above: 0.42, below: 0, minutesOutside: 95, periods: 30, close: 113, closeAt: NOW },
   history: hist(STATE_DAYS, { 'accepted-up': 11, inside: 49 }),
   ivb: {
@@ -44,12 +50,30 @@ describe('Pasek „Rama dnia”: liczby i plakietki', () => {
     const c = byId(frame());
     expect(chips(frame()).map((x) => x.id)).toEqual(['value', 'auction', 'ivb', 'ivbWidth']);
     expect(c.value).toMatchObject({ badge: 'LIVE', value: 'częściowo wyżej · 60%' });
+    expect(c.value.hint).toContain('dziś taśma 99%, wczoraj taśma 97%');
     expect(c.auction).toMatchObject({ badge: 'MODEL', value: 'przyjęcie nad · 18% dób' });
     expect(c.auction.hint).toMatch(/^MODEL · przyjęcie poza wartością \(Dalton\)/);
     expect(c.auction.hint).toContain('w 11 z 60 poprzednich dób');
+    expect(c.auction.hint).toContain(`Liczniki od otwarcia sesji NY o`);
+    expect(c.auction.hint).toContain('75 min od otwarcia sesji NY');
     expect(c.ivb).toMatchObject({ badge: 'LIVE', value: 'wybicie nad · 25 min', label: 'IVB 30' });
     expect(c.ivbWidth).toMatchObject({ badge: 'MODEL', value: '0,31 ATR · p35' });
     expect(c.ivbWidth.hint).toMatch(/^MODEL · szerokość IVB w ATR doby, percentyl 20 sesji/);
+  });
+
+  it('wartość ze świec (dziś albo wczoraj bez 90% taśmy): MODEL „przybliżenie ze świec” z udziałem taśmy', () => {
+    const c = byId(frame({ prev: { ...PREV, source: 'candles', tapeShare: 0.42 } }));
+    expect(c.value).toMatchObject({ badge: 'MODEL', value: 'częściowo wyżej · 60%' });
+    expect(c.value.hint).toMatch(/^MODEL · przybliżenie ze świec: /);
+    expect(c.value.hint).toContain('wczoraj przybliżenie, taśma 42%');
+    const t = byId(frame({ value: { today: { ...TODAY, source: 'candles', tapeShare: 0.1 }, migration: 'overlap-higher', overlap: 0.6 } }));
+    expect(t.value.badge).toBe('MODEL');
+  });
+
+  it('poza sesją: liczniki od 00:00 UTC z dopiskiem „poza sesją”', () => {
+    const c = byId(frame({ anchor: { from: D, session: null } }));
+    expect(c.auction.value).toBe('przyjęcie nad · poza sesją · 18% dób');
+    expect(c.auction.hint).toContain('Poza sesją: liczniki od 00:00 UTC');
   });
 
   it('krótka historia: stan i szerokość bez częstości i percentyla, z liczbą dób albo sesji', () => {
@@ -178,4 +202,48 @@ describe('Pasek „Rama dnia”: wejście z magazynu', () => {
     expect(x.historyWhy).toBeNull();
     expect(f.ivb.kind).toBe('ok');
   });
+});
+
+describe('Jedno źródło wartości: pasek, panel i nagłówek Mapy dnia', () => {
+  /** Świece 5m z falującą ceną i taśmą (footprint całej świecy na zamknięciu) od `tapeFrom`. */
+  const wave = (from: number, to: number, tapeFrom: number) => {
+    const list: Candle[] = [];
+    const fps: { t: number; fp: { tick: number; lo: number; buy: number[]; sell: number[] } | null; complete: boolean }[] = [];
+    for (let t = from, i = 0; t < to; t += 5 * MIN, i++) {
+      const c = 100_000 + 400 * Math.sin(i / 25) + 50 * Math.sin(i / 3);
+      const v = 1 + (i % 9);
+      list.push({ t, o: c, h: c + 40, l: c - 40, c, v, n: 1 });
+      fps.push({ t, fp: t >= tapeFrom ? { tick: 1, lo: Math.round(c), buy: [v / 2], sell: [v / 2] } : null, complete: t >= tapeFrom });
+    }
+    return { list, fps };
+  };
+  const store = (tapeFrom: number) => {
+    const { list, fps } = wave(D - 15 * DAY, NOW, tapeFrom);
+    const st = fakeStore(NOW, { '5m': { list }, '30m': { list: candles(D - FRAME_HISTORY_DAYS * DAY, NOW, 30 * MIN) }, '1m': { list: candles(D, NOW, MIN) } });
+    st.lastPrice = () => 100_000;
+    const s5 = st.series('5m');
+    s5.bars = () => fps;
+    return st;
+  };
+  const scan = { liq: { status: 'loading', map: null }, entry: { status: 'loading', map: null }, ledger: { status: 'loading', summary: null } };
+  const blank = { liq: { status: 'loading', map: null }, whales: null, whalesConfigured: false, blog: { state: { status: 'loading' } as never, map: null } };
+
+  for (const [name, tapeFrom, source] of [
+    ['z taśmy (cała wczorajsza doba nagrana): LIVE', D - DAY, 'tape'],
+    ['ze świec (taśma tylko od dziś): MODEL', D, 'candles'],
+  ] as const) {
+    it(`te same VAH, VAL i POC wczoraj w pasku, panelu „Najbliższe poziomy” i nagłówku Mapy dnia — ${name}`, () => {
+      const st = store(tapeFrom);
+      const f = frameInputOf(st, 30).frame as DayFrame;
+      expect(f.prev).toMatchObject({ kind: 'day', from: D - DAY, source });
+      const lv = nearestLevels(readLevelInputs({ ...st, daily: [] }, scan));
+      const at = (id: string) => [...lv.above, ...lv.below].find((l) => l.id === id)!;
+      expect(at('vah').px).toBe(f.prev!.vah);
+      expect(at('val').px).toBe(f.prev!.val);
+      expect(at('poc').px).toBe(f.prev!.poc);
+      expect(at('vah').badge).toBe(source === 'tape' ? 'LIVE' : 'MODEL');
+      const head = readInputs('day-map', st, blank);
+      expect(head.prevDay).toEqual(f.prev);
+    });
+  }
 });

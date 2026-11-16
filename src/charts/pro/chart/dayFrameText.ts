@@ -14,6 +14,8 @@ import {
   stateKey,
 } from '../core/dayFrame';
 import { fmtHm } from '../core/time';
+import { CANDLE_METHOD, type ValueRef, valueBadge, valueNote, valuePeriodName } from '../core/valueReference';
+import { TRADE_SESSION_NAME } from '../../../utils/sessionNames';
 import { fmtPx } from './layout';
 import { DASH, fmtFixed, plForm } from '../../../ui/format';
 import type { Sourced } from '../../../ui/sourceTag';
@@ -21,10 +23,11 @@ import { type Got, VA_MIGRATION_LABEL, WAIT_TEXT, isAbsent, pctOf } from '../../
 import { tr } from '../../../i18n';
 
 /**
- * Teksty paska „Rama dnia” (core/dayFrame.ts): cztery liczby z plakietkami. Wartość dziś wobec wczoraj i status IVB to
- * fakty (LIVE), stan aukcji i szerokość IVB wobec sesji to wynik reguły (MODEL z nazwą reguły w podpowiedzi). Brak danych
- * to „—” z powodem; przy zbyt krótkiej historii liczba bez częstości albo percentyla z dopiskiem „krótka historia”.
- * Opis, bez słowa o dalszym kierunku.
+ * Teksty paska „Rama dnia” (core/dayFrame.ts): cztery liczby z plakietkami. Wartość dziś wobec wczoraj z taśmy (obie VA
+ * z jednego źródła z taśmy) i status IVB to fakty (LIVE); wartość ze świec to MODEL „przybliżenie ze świec”, a stan
+ * aukcji z częstością i szerokość IVB wobec sesji to wynik reguły (MODEL z nazwą reguły w podpowiedzi). Brak danych to „—”
+ * z powodem; przy zbyt krótkiej historii liczba bez częstości albo percentyla z dopiskiem „krótka historia”. Opis, bez
+ * słowa o dalszym kierunku.
  */
 
 export type FrameChipId = 'value' | 'auction' | 'ivb' | 'ivbWidth';
@@ -62,7 +65,7 @@ export const STATE_LABEL: Record<StateKey, string> = {
 };
 
 const UNCLASSIFIED_WHY: Record<Extract<AuctionState, { kind: 'unclassified' }>['why'], string> = {
-  'both-sides': tr('przyjęcie po obu stronach wczorajszej VA tej samej doby', "acceptance on both sides of yesterday's VA on the same day"),
+  'both-sides': tr('przyjęcie po obu stronach wczorajszej VA od początku liczników', "acceptance on both sides of yesterday's VA since the counters started"),
   whipsaw: tr('ostatnie zamknięcie 5m po drugiej stronie VA niż ostatnie zamknięcie 30m', 'the last 5m close is on the other side of the VA than the last 30m close'),
 };
 
@@ -72,9 +75,23 @@ export const shortHistory = (what: string) => tr(`krótka historia (${what})`, `
 
 /** Zamrożone reguły paska (karta i rozwinięcie). */
 export const FRAME_RULES = tr(
-  `Reguły zamrożone 16.11.2026, przed oceną na danych. Wczorajsza wartość: value area 70% poprzedniej doby UTC z profilu wolumenu świec 5m (koszyki 5 pb), ta sama co poziomy doby wskaźnika Zakresy P/b. Doba UTC od 00:00, tylko zamknięte świece; wolumen świecy rozłożony równo na jej zakres. Przyjęcie nad (pod): co najmniej ${ACCEPT_CLOSES} kolejne zamknięcia 30m nad VAH (pod VAL) i co najmniej ${pctOf(ACCEPT_SHARE)} wolumenu doby dotąd nad VAH (pod VAL). Próba wyjścia: ostatnie zamknięcie 5m poza VA bez spełnionego progu. Powrót do wartości: ostatnie zamknięcie w VA po co najmniej jednym zamknięciu 30m poza VA tej doby. W wartości: żadnego zamknięcia 30m poza VA. Niesklasyfikowane: przyjęcie po obu stronach VA tej samej doby albo ostatnie zamknięcie 5m po drugiej stronie VA niż ostatnie zamknięcie 30m. Częstość stanu: ten sam stan o tej samej porze doby UTC w ${STATE_DAYS} poprzednich dobach, ze świec 30m (VA doby poprzedniej też ze świec 30m, więc to przybliżenie); przy mniej niż ${STATE_DAYS} dobach bez częstości. IVB: okno od otwarcia giełdy w Nowym Jorku według kalendarza, jak wskaźnik IVB; status to fakt z zamknięć 5m po oknie (w środku, wybicie nad albo pod od zamknięcia pierwszej świecy poza zakresem, powrót do środka). Szerokość IVB w ATR doby (średni prawdziwy zakres ${ATR_DAYS} dób UTC przed dobą ze świec 30m) i jej percentyl wobec ${IVB_SESSIONS} poprzednich sesji NY tego samego typu (dni robocze albo weekend; rynek z sesją NYSE: dni sesji NYSE); przy mniej niż ${IVB_SESSIONS} sesjach bez percentyla. Akceptacja poza wartością to pojęcie Daltona (Mind Over Markets); progi są propozycją HyperQuant, nie Fabio Valentiniego. Pasek opisuje to, co już się stało, i nie mówi, co będzie dalej.`,
-  `Rules frozen on 16.11.2026, before any evaluation on data. Yesterday's value: the 70% value area of the previous UTC day from the volume profile of 5m candles (5 bp bins), the same as the day levels of the P/b ranges indicator. The UTC day from 00:00, closed candles only; candle volume spread evenly over its range. Accepted above (below): at least ${ACCEPT_CLOSES} consecutive 30m closes above the VAH (below the VAL) and at least ${pctOf(ACCEPT_SHARE)} of the day's volume so far above the VAH (below the VAL). Probing: the last 5m close outside the VA without the threshold met. Back in value: the last close inside the VA after at least one 30m close outside it on the same day. Inside value: no 30m close outside the VA. Unclassified: acceptance on both sides of the VA on the same day, or the last 5m close on the other side of the VA than the last 30m close. State frequency: the same state at the same UTC time of day over the previous ${STATE_DAYS} days, from 30m candles (the previous day's VA from 30m candles too, so an approximation); with fewer than ${STATE_DAYS} days no frequency. IVB: the window from the New York stock exchange open by the calendar, like the IVB indicator; the status is a fact from 5m closes after the window (inside, broke above or below since the close of the first candle outside the range, back inside). IVB width in daily ATR (the mean true range of the ${ATR_DAYS} UTC days before the day, from 30m candles) and its percentile against the previous ${IVB_SESSIONS} NY sessions of the same type (weekdays or weekend; a market with an NYSE session: NYSE session days); with fewer than ${IVB_SESSIONS} sessions no percentile. Acceptance outside value is Dalton's concept (Mind Over Markets); the thresholds are HyperQuant's proposal, not Fabio Valentini's. The bar describes what has already happened and says nothing about what comes next.`
+  `Reguły zamrożone 16.11.2026, przed oceną na danych; początek liczników i źródło wartości zmienione 16.11.2026 (decyzja Pioniera). Wczorajsza wartość: value area 70% poprzedniej doby UTC z jednego źródła wartości, tego samego co panel „Najbliższe poziomy”, nagłówek Mapy dnia, poziomy doby P/b i Profile okresów: profil z taśmy, gdy nagranie obejmuje co najmniej 90% wolumenu doby (LIVE), inaczej ze świec 5m z wolumenem rozłożonym równo na zakres świecy (MODEL „przybliżenie ze świec”); koszyki 5 pb. Liczniki (minuty poza VA, udział wolumenu, kolejne zamknięcia 30m) od otwarcia bieżącej sesji z kalendarza sesji (Londyn 8:00 czasu Londynu, Nowy Jork 9:30 czasu Nowego Jorku, z czasem letnim) i od nowa na każdym otwarciu; poza sesjami od 00:00 UTC („poza sesją”); tylko zamknięte świece. Przyjęcie nad (pod): co najmniej ${ACCEPT_CLOSES} kolejne zamknięcia 30m nad VAH (pod VAL) i co najmniej ${pctOf(ACCEPT_SHARE)} wolumenu od otwarcia nad VAH (pod VAL). Próba wyjścia: ostatnie zamknięcie 5m poza VA bez spełnionego progu. Powrót do wartości: ostatnie zamknięcie w VA po co najmniej jednym zamknięciu 30m poza VA od otwarcia. W wartości: żadnego zamknięcia 30m poza VA od otwarcia. Niesklasyfikowane: przyjęcie po obu stronach VA od otwarcia albo ostatnie zamknięcie 5m po drugiej stronie VA niż ostatnie zamknięcie 30m. Częstość stanu: ten sam stan w tej samej minucie od otwarcia tej samej sesji (poza sesją: o tej samej porze od 00:00 UTC) w ${STATE_DAYS} poprzednich dobach, ze świec 30m (VA doby poprzedniej też ze świec 30m, więc to przybliżenie); przy mniej niż ${STATE_DAYS} dobach bez częstości. IVB: okno od otwarcia giełdy w Nowym Jorku według kalendarza, jak wskaźnik IVB; status to fakt z zamknięć 5m po oknie (w środku, wybicie nad albo pod od zamknięcia pierwszej świecy poza zakresem, powrót do środka). Szerokość IVB w ATR doby (średni prawdziwy zakres ${ATR_DAYS} dób UTC przed dobą ze świec 30m) i jej percentyl wobec ${IVB_SESSIONS} poprzednich sesji NY tego samego typu (dni robocze albo weekend; rynek z sesją NYSE: dni sesji NYSE); przy mniej niż ${IVB_SESSIONS} sesjach bez percentyla. Akceptacja poza wartością to pojęcie Daltona (Mind Over Markets); progi są propozycją HyperQuant, nie Fabio Valentiniego. Pasek opisuje to, co już się stało, i nie mówi, co będzie dalej.`,
+  `Rules frozen on 16.11.2026, before any evaluation on data; the counter start and the value source changed on 16.11.2026 (Pionier's decision). Yesterday's value: the 70% value area of the previous UTC day from the single value source shared with the “Nearest levels” panel, the Day map header, the P/b day levels and Period profiles: a profile from the tape when the recording covers at least 90% of the day's volume (LIVE), otherwise from 5m candles with candle volume spread evenly over its range (MODEL “approximation from candles”); 5 bp bins. The counters (minutes outside the VA, volume share, consecutive 30m closes) run from the open of the current session by the session calendar (London 8:00 London time, New York 9:30 New York time, with daylight saving) and restart at every open; outside the sessions from 00:00 UTC (“outside session”); closed candles only. Accepted above (below): at least ${ACCEPT_CLOSES} consecutive 30m closes above the VAH (below the VAL) and at least ${pctOf(ACCEPT_SHARE)} of the volume since the open above the VAH (below the VAL). Probing: the last 5m close outside the VA without the threshold met. Back in value: the last close inside the VA after at least one 30m close outside it since the open. Inside value: no 30m close outside the VA since the open. Unclassified: acceptance on both sides of the VA since the open, or the last 5m close on the other side of the VA than the last 30m close. State frequency: the same state at the same minute after the open of the same session (outside the sessions: at the same time after 00:00 UTC) over the previous ${STATE_DAYS} days, from 30m candles (the previous day's VA from 30m candles too, so an approximation); with fewer than ${STATE_DAYS} days no frequency. IVB: the window from the New York stock exchange open by the calendar, like the IVB indicator; the status is a fact from 5m closes after the window (inside, broke above or below since the close of the first candle outside the range, back inside). IVB width in daily ATR (the mean true range of the ${ATR_DAYS} UTC days before the day, from 30m candles) and its percentile against the previous ${IVB_SESSIONS} NY sessions of the same type (weekdays or weekend; a market with an NYSE session: NYSE session days); with fewer than ${IVB_SESSIONS} sessions no percentile. Acceptance outside value is Dalton's concept (Mind Over Markets); the thresholds are HyperQuant's proposal, not Fabio Valentini's. The bar describes what has already happened and says nothing about what comes next.`
 );
+
+/** Początek liczników do opisu: „od otwarcia sesji Londyn o 09:00” albo „poza sesją: od 00:00 UTC”. */
+export function anchorText(f: Pick<DayFrame, 'anchor'>): string {
+  const a = f.anchor;
+  if (!a.session) return tr('poza sesją: liczniki od 00:00 UTC', 'outside session: counters from 00:00 UTC');
+  const name = TRADE_SESSION_NAME[a.session];
+  return tr(`liczniki od otwarcia sesji ${name} o ${fmtHm(a.from)}`, `counters from the ${name} session open at ${fmtHm(a.from)}`);
+}
+
+/** Dopisek przy liczbie poza sesją. */
+export const OUTSIDE_SESSION = tr('poza sesją', 'outside session');
+
+/** Nazwa odniesienia: „wczorajsza VA (doba UTC 15.11)” albo „VA sesji Nowy Jork 15.11”. */
+const refName = (p: ValueRef) => (p.kind === 'day' ? tr(`wczorajsza VA (${valuePeriodName(p)})`, `yesterday's VA (${valuePeriodName(p)})`) : tr(`VA (${valuePeriodName(p)})`, `VA (${valuePeriodName(p)})`));
 
 const val = <T>(v: Got<T> | undefined): T | null => (v === undefined || isAbsent(v) ? null : v);
 const why = (v: Got<unknown> | undefined): string => (v !== undefined && isAbsent(v) ? v.why : WAIT_TEXT);
@@ -95,15 +112,21 @@ function valueChip(x: FrameInput): FrameChip {
   if (!f.value) return { ...base, value: DASH, hint: tr('Za mało świec dzisiejszej doby UTC (mniej niż 30 min)', "Too few candles of today's UTC day (under 30 min)") };
   const px = (p: number) => fmtPx(p, x.szDecimals);
   const v = f.value;
+  const p = f.prev;
   const m = v.migration;
   const lab = VA_MIGRATION_LABEL[m];
   const share = m === 'higher' || m === 'lower' || m === 'inside' ? '' : ` · ${pctOf(v.overlap)}`;
+  // Dziś wobec wczoraj: LIVE tylko, gdy obie value area są z taśmy; inaczej przybliżenie ze świec
+  const badge = valueBadge(v.today, p);
+  const method = badge === 'MODEL' ? `MODEL · ${CANDLE_METHOD}: ` : '';
+  const today = p.kind === 'day' ? tr('doby UTC dotąd', 'of the UTC day so far') : tr('bieżącej sesji dotąd', 'of the current session so far');
   return {
     ...base,
+    badge,
     value: `${lab}${share}`,
     hint: tr(
-      `Value area 70% doby UTC dotąd ${px(v.today.val)}–${px(v.today.vah)} wobec wczorajszej ${px(f.prev.val)}–${px(f.prev.vah)} (POC ${px(f.prev.poc)}): ${lab}; ${pctOf(v.overlap)} dzisiejszej VA leży we wczorajszej. Profil wolumenu świec 5m, koszyki 5 pb, jak poziomy doby P/b.`,
-      `The 70% value area of the UTC day so far ${px(v.today.val)}–${px(v.today.vah)} against yesterday's ${px(f.prev.val)}–${px(f.prev.vah)} (POC ${px(f.prev.poc)}): ${lab}; ${pctOf(v.overlap)} of today's VA lies within yesterday's. Volume profile of 5m candles, 5 bp bins, like the P/b day levels.`
+      `${method}Value area 70% ${today} ${px(v.today.val)}–${px(v.today.vah)} wobec ${refName(p)} ${px(p.val)}–${px(p.vah)} (POC ${px(p.poc)}): ${lab}; ${pctOf(v.overlap)} dzisiejszej VA leży we wczorajszej. Jedno źródło wartości (koszyki 5 pb, jak panel „Najbliższe poziomy” i nagłówek Mapy dnia): dziś ${valueNote(v.today)}, wczoraj ${valueNote(p)}.`,
+      `${method}The 70% value area ${today} ${px(v.today.val)}–${px(v.today.vah)} against ${refName(p)} ${px(p.val)}–${px(p.vah)} (POC ${px(p.poc)}): ${lab}; ${pctOf(v.overlap)} of today's VA lies within yesterday's. The single value source (5 bp bins, like the “Nearest levels” panel and the Day map header): today ${valueNote(v.today)}, yesterday ${valueNote(p)}.`
     ),
   };
 }
@@ -115,10 +138,14 @@ function auctionChip(x: FrameInput): FrameChip {
   if (!f) return { ...base, value: DASH, hint: `${m}: ${why(x.frame)}` };
   if (!f.prev) return { ...base, value: DASH, hint: `${m}: ${tr('brak wczorajszej VA (świece 5m nie obejmują 90% doby)', "no value area for yesterday (the 5m candles do not cover 90% of the day)")}` };
   const a = f.acceptance;
-  if (!a) return { ...base, value: DASH, hint: `${m}: ${tr('dzisiejsza doba UTC nie ma jeszcze zamkniętej świecy 5m', "today's UTC day has no closed 5m candle yet")}` };
+  const start = anchorText(f);
+  if (!a) return { ...base, value: DASH, hint: `${m}: ${tr(`${start}; żadna świeca 5m jeszcze się nie zamknęła`, `${start}; no 5m candle has closed yet`)}` };
   const k = stateKey(a.state);
   const label = STATE_LABEL[k];
-  const at = fmtHm(x.now);
+  const since = Math.max(0, Math.floor((x.now - f.anchor.from) / 60_000));
+  const at = f.anchor.session
+    ? tr(`${since} min od otwarcia sesji ${TRADE_SESSION_NAME[f.anchor.session]}`, `${since} min after the ${TRADE_SESSION_NAME[f.anchor.session]} session open`)
+    : tr(`${fmtHm(x.now)}, ${since} min od 00:00 UTC`, `${fmtHm(x.now)}, ${since} min after 00:00 UTC`);
   const h = f.history;
   let ctx: string;
   let ctxHint: string;
@@ -127,7 +154,7 @@ function auctionChip(x: FrameInput): FrameChip {
     ctxHint = tr(`Częstości o tej porze brak: ${x.historyWhy}.`, `No frequency at this time: ${x.historyWhy}.`);
   } else if (h.early) {
     ctx = '';
-    ctxHint = tr('Częstości brak w pierwszym pół godziny doby UTC (żadne zamknięcie 30m do porównania).', 'No frequency in the first half hour of the UTC day (no 30m close to compare).');
+    ctxHint = tr('Częstości brak w pierwszym pół godziny od otwarcia (żadne zamknięcie 30m do porównania).', 'No frequency in the first half hour after the open (no 30m close to compare).');
   } else if (h.n < STATE_DAYS) {
     ctx = ` · ${shortHistory(days(h.n))}`;
     ctxHint = tr(`Częstości brak: historia świec 30m ma ${days(h.n)} z ${STATE_DAYS} potrzebnych.`, `No frequency: the 30m candle history has ${days(h.n)} of the ${STATE_DAYS} needed.`);
@@ -135,19 +162,21 @@ function auctionChip(x: FrameInput): FrameChip {
     const s = h.counts[k] / h.n;
     ctx = ` · ${tr(`${pctOf(s)} dób`, `${pctOf(s)} of days`)}`;
     ctxHint = tr(
-      `O tej porze (${at}) ten stan w ${h.counts[k]} z ${h.n} poprzednich dób (${pctOf(s)}); historia ze świec 30m, VA dób też ze świec 30m (przybliżenie).`,
-      `At this time (${at}) this state occurred on ${h.counts[k]} of the previous ${h.n} days (${pctOf(s)}); history from 30m candles, the days' VA from 30m candles too (an approximation).`
+      `O tej porze (${at}) ten stan w ${h.counts[k]} z ${h.n} poprzednich dób (${pctOf(s)}); historia ze świec 30m od otwarcia tej samej sesji w każdej dobie, VA dób też ze świec 30m (przybliżenie).`,
+      `At this time (${at}) this state occurred on ${h.counts[k]} of the previous ${h.n} days (${pctOf(s)}); history from 30m candles from the open of the same session on each day, the days' VA from 30m candles too (an approximation).`
     );
   }
+  const outside = f.anchor.session ? '' : ` · ${OUTSIDE_SESSION}`;
   const side = a.runSide > 0 ? tr('nad VAH', 'above the VAH') : tr('pod VAL', 'below the VAL');
   const run = a.runSide === 0 ? tr('ostatnie zamknięcie 30m w VA', 'last 30m close inside the VA') : tr(`kolejne zamknięcia 30m ${side}: ${a.run}`, `consecutive 30m closes ${side}: ${a.run}`);
   const unc = a.state.kind === 'unclassified' ? ` ${tr('Powód', 'Reason')}: ${UNCLASSIFIED_WHY[a.state.why]}.` : '';
+  const p = f.prev;
   return {
     ...base,
-    value: `${label}${ctx}`,
+    value: `${label}${outside}${ctx}`,
     hint: tr(
-      `${m} (progi HyperQuant: ≥ ${ACCEPT_CLOSES} zamknięcia 30m i ≥ ${pctOf(ACCEPT_SHARE)} wolumenu doby poza VA po tej samej stronie): ${label}.${unc} Wobec wczorajszej VA: ${run}; wolumen doby nad VAH ${pctOf(a.above)}, pod VAL ${pctOf(a.below)}; ${fmtFixed(a.minutesOutside, 0)} min świec zamkniętych poza VA. ${ctxHint} Opis, nie prognoza.`,
-      `${m} (HyperQuant thresholds: ≥ ${ACCEPT_CLOSES} 30m closes and ≥ ${pctOf(ACCEPT_SHARE)} of the day's volume outside the VA on the same side): ${label}.${unc} Against yesterday's VA: ${run}; day volume above the VAH ${pctOf(a.above)}, below the VAL ${pctOf(a.below)}; ${fmtFixed(a.minutesOutside, 0)} min of candles closed outside the VA. ${ctxHint} A description, not a forecast.`
+      `${m} (progi HyperQuant: ≥ ${ACCEPT_CLOSES} zamknięcia 30m i ≥ ${pctOf(ACCEPT_SHARE)} wolumenu od otwarcia poza VA po tej samej stronie): ${label}.${unc} ${start[0].toUpperCase()}${start.slice(1)}. Wobec ${refName(p)} (${valueNote(p)}): ${run}; wolumen od otwarcia nad VAH ${pctOf(a.above)}, pod VAL ${pctOf(a.below)}; ${fmtFixed(a.minutesOutside, 0)} min świec zamkniętych poza VA. ${ctxHint} Opis, nie prognoza.`,
+      `${m} (HyperQuant thresholds: ≥ ${ACCEPT_CLOSES} 30m closes and ≥ ${pctOf(ACCEPT_SHARE)} of the volume since the open outside the VA on the same side): ${label}.${unc} ${start[0].toUpperCase()}${start.slice(1)}. Against ${refName(p)} (${valueNote(p)}): ${run}; volume since the open above the VAH ${pctOf(a.above)}, below the VAL ${pctOf(a.below)}; ${fmtFixed(a.minutesOutside, 0)} min of candles closed outside the VA. ${ctxHint} A description, not a forecast.`
     ),
   };
 }

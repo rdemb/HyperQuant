@@ -2,9 +2,12 @@ import type { IChartApiBase, IPrimitivePaneRenderer, IPrimitivePaneView, ISeries
 import { tr } from '../../../i18n';
 import { numLang } from '../../../ui/format';
 import { LVN_MIN_CONFIDENCE, confidentLvn } from '../core/lvnConfidence';
-import { type Bar5, LIFE, type Levels, type Range, TF_MS, atr, dayLevels, ranges, typicalHourBp, weekLevels } from '../core/pbRanges';
+import { type Bar5, LIFE, type Levels, type Range, TF_MS, atr, ranges, typicalHourBp, weekLevels } from '../core/pbRanges';
 import { utcDayStart, utcWeekStart } from '../core/sessions';
+import { valueReference } from '../core/valueReference';
+import { dayProfileOf } from '../store/dayProfiles';
 import type { ProBar, ProStore } from '../store/proStore';
+import { valueSourceFrom } from './layoutInputs';
 import { fmtPx } from './layout';
 import { logicalOfTime } from './overlay';
 import { MONO, PRO, rgba } from './theme';
@@ -12,8 +15,8 @@ import { PB_TOUCHES, boxSpan, formingNote, nearestLevels, selectRanges } from '.
 
 /**
  * Warstwa wskaźnika „Zakresy P/b (Nill)” na wykresie ceny (interwały do 1 h, na żywo): zakresy P/b ze świec 5m z
- * dotknięciami i impulsem, poziomy profilu poprzedniego tygodnia i doby oraz opis w legendzie: stan strefy i typowa
- * godzina. Opis struktury, bez miejsc wejścia. Strefa aktywna daje alarmy z menu wykresu. Co rysujemy (zakres aktywny
+ * dotknięciami i impulsem, poziomy profilu poprzedniego tygodnia i doby (doba z jednego źródła wartości `valueReference`,
+ * jak pasek Rama dnia) oraz opis w legendzie: stan strefy i typowa godzina. Opis struktury, bez miejsc wejścia. Strefa aktywna daje alarmy z menu wykresu. Co rysujemy (zakres aktywny
  * i ostatni zakończony, 2 + 2 najbliższe poziomy, bez zakresu w budowie) wybiera `pbSelect.ts`.
  */
 
@@ -243,16 +246,18 @@ export class PbRangeLayer implements ISeriesPrimitive<Time> {
     const c5 = store.indicatorCandles('5m', utcWeekStart(now) - FROM_BEFORE_WEEK);
     let n = c5.length;
     while (n > 0 && c5[n - 1].t + TF_MS > now) n--;
-    const key = `${store.coin}|${n}|${n > 0 ? c5[n - 1].t : 0}|${c5[0]?.t ?? 0}`;
+    // Plik taśmy wczorajszej doby dochodzi z serwera później: jego pojawienie się też przelicza poziomy doby
+    const file = dayProfileOf(store, utcDayStart(now) - DAY) ? 1 : 0;
+    const key = `${store.coin}|${n}|${n > 0 ? c5[n - 1].t : 0}|${c5[0]?.t ?? 0}|${file}`;
     if (key !== this.key) {
       this.key = key;
       this.b5 = c5.slice(0, n).map((c) => ({ t: c.t, o: c.o, h: c.h, l: c.l, c: c.c, v: c.v * c.c }));
-      this.recalc(store);
+      this.recalc(store, c5);
     }
     this.requestUpdate?.();
   }
 
-  private recalc(store: ProStore): void {
+  private recalc(store: ProStore, c5: readonly ProBar['candle'][]): void {
     const b = this.b5;
     if (b.length < MIN_BARS) {
       this.view = null;
@@ -283,9 +288,16 @@ export class PbRangeLayer implements ISeriesPrimitive<Time> {
       ranges: rs,
       level,
       week: weekOf(this.now),
-      day: dayLevels(b, this.now),
+      day: this.dayOf(store, c5),
       hourBp: typicalHourBp(b, this.now),
     };
+  }
+
+  /** Poziomy wczorajszej doby UTC z jednego źródła wartości (te same VAH, VAL i POC co pasek Rama dnia). */
+  private dayOf(store: ProStore, c5: readonly ProBar['candle'][]): Levels | null {
+    const from = utcDayStart(this.now) - DAY;
+    const r = valueReference('day', from, valueSourceFrom(store, c5, from), this.now);
+    return r ? { poc: r.poc, vah: r.vah, val: r.val, lvn: [] } : null;
   }
 
   updateAllViews(): void {
