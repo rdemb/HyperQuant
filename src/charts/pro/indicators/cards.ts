@@ -71,6 +71,17 @@ export const INDICATOR_CARD: Partial<Record<IndicatorId, IndicatorCard>> = {
     claim: tr('Jaka część wartości transakcji to podzlecenia TWAP i ile TWAP-ów działało w świecy.', 'What share of trade value comes from TWAP suborders and how many TWAPs ran within the candle.'),
     status: 'opis',
   },
+  premium: {
+    claim: tr(
+      'O ile arkusz kontraktu na Hyperliquid (ceny wpływu kwoty referencyjnej) stoi nad albo pod ceną spot z oracle, w punktach bazowych; opis wyceny, bez prognozy.',
+      'How far the Hyperliquid contract book (impact prices of the reference amount) sits above or below the oracle spot price, in basis points; a description of pricing, no forecast.'
+    ),
+    status: 'opis',
+    noise: tr(
+      'Krok ceny daje szum odczytu ok. 0,15 pb dla BTC. Zmiana premii nie większa niż p90 zmian minutowych w spokojniejszej połowie godzin (nie mniej niż krok ceny) to „bez zmian”; pasmo z ostatnich godzin miesza pory dnia.',
+      'The price step gives a read noise of about 0.15 bp for BTC. A premium change no larger than the p90 of minute changes in the calmer half of the hours (at least one price step) counts as “no change”; a band from recent hours mixes times of day.'
+    ),
+  },
   slippage: {
     claim: tr(
       'Ile kosztowałoby teraz zlecenie rynkowe o zadanej kwocie według widocznego arkusza (bez ukrytych zleceń i bez opłaty).',
