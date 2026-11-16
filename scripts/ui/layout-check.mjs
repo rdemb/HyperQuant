@@ -404,6 +404,18 @@ const UWIEZIENI_PROBE = `(() => {
   return { svg: true, width: Math.round(b.width), texts: texts.length, cut };
 })()`;
 
+/** Kokpit: okno opisu liczb układu (z „+N” albo z liczby) w całości na ekranie przy 720 i 1024 px. */
+const OPIS_LICZB_VIEWPORTS = [
+  ['720', 720, 900, false],
+  ['1024', 1024, 768, false],
+];
+const OPIS_LICZB_PROBE = `(() => {
+  const el = document.querySelector('[data-liczby-opis]');
+  if (!el) return { okno: false };
+  const r = el.getBoundingClientRect();
+  return { okno: true, left: Math.round(r.left), right: Math.round(r.right), vw: document.documentElement.clientWidth, w: Math.round(r.width) };
+})()`;
+
 const START_PROBE = `(() => {
   const W = innerWidth;
   const over = (a, b) => a.width > 0 && b.width > 0 && a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1;
@@ -1143,6 +1155,25 @@ async function main() {
     serveEntry = false;
     await page.viewport(1440, 900, false);
 
+    // Kokpit: okno opisu liczb układu w granicach ekranu (przy 720 px wychodziło za lewą krawędź)
+    report.opisLiczb = {};
+    for (const [key, w, h, mobile] of OPIS_LICZB_VIEWPORTS) {
+      await page.viewport(w, h, mobile);
+      const [e0, c0] = [page.errors.length, page.consoleErrors.length];
+      await page.go(`${BASE}robots.txt`, 300);
+      await page.ev(`(() => { localStorage.clear(); const s = ${JSON.stringify(RETURNING)}; for (const k in s) localStorage.setItem(k, s[k]); return true; })()`);
+      await page.go(`${BASE}#charts`, 500);
+      await page.waitFor(`!!document.querySelector('[data-liczba]')`, 15000).catch(() => undefined);
+      await sleep(2500);
+      const klik = await page.ev(`(() => { const plus = [...document.querySelectorAll('button[aria-label]')].find((b) => /^Pozostałe liczby układu|^Other layout numbers/.test(b.getAttribute('aria-label'))); const b = plus || document.querySelector('button[data-liczba]'); if (!b) return null; b.click(); return plus ? 'plus' : 'liczba'; })()`);
+      await sleep(800);
+      const x = await page.ev(OPIS_LICZB_PROBE);
+      await shot(page, `${w}-kokpit-opis-liczb`);
+      await page.key('Escape');
+      report.opisLiczb[key] = { klik, ...x, errors: page.errors.slice(e0), consoleErrors: page.consoleErrors.slice(c0) };
+    }
+    await page.viewport(1440, 900, false);
+
     // Pusty stan: każdy widok nowego wyglądu (src/nowy/widoki.ts) bez API giełdy, danych skanera, strumienia i danych
     // z tej samej strony (lekcje, powtórki) pokazuje „—” z powodem: żadnej cyfry poza elementami [data-etykieta]
     report.pustyStan = {};
@@ -1328,6 +1359,7 @@ async function main() {
     return !!x && x.overflowX <= 0 && x.teren === true && x.nakladanie === 0 && x.rycinyPoza === 0 && x.nan?.length === 0 && x.errors.length === 0 && x.consoleErrors.length === 0;
   };
   r.summary.start = START_VIEWPORTS.every(([key]) => startOk(key));
+  r.summary.opisLiczb = OPIS_LICZB_VIEWPORTS.every(([key]) => { const x = r.opisLiczb?.[key]; return !!x?.okno && x.left >= 0 && x.right <= x.vw && x.errors.length === 0; });
   r.summary.uwiezieni = UWIEZIENI_VIEWPORTS.every(([key]) => { const x = r.uwiezieni?.[key]; return !!x?.svg && x.texts > 0 && x.cut.length === 0 && x.errors.length === 0; });
   r.summary.pustyStan = Object.values(r.pustyStan ?? {}).every((x) => x.dlugosc > 0 && x.liczby.length === 0 && x.paski.length === 0);
   const prz = r.przeladowanie;
@@ -1431,6 +1463,13 @@ async function main() {
       if (!x) return `${key} —`;
       return `${key}: ${x.svg ? `${x.texts} podpisów, ucięte ${x.cut.length ? x.cut.join(' | ') : 'brak'}` : 'BRAK RYSUNKU'}${x.errors.length ? `, błędy ${x.errors.length}` : ''}`;
     }).join('; ')} — ${ok(r.summary.uwiezieni)}`);
+  }
+  if (r.opisLiczb) {
+    lines.push(`Kokpit, okno opisu liczb układu: ${OPIS_LICZB_VIEWPORTS.map(([key]) => {
+      const x = r.opisLiczb[key];
+      if (!x) return `${key} —`;
+      return x.okno ? `${key} (${x.klik}): ${x.left}–${x.right} px z ${x.vw}` : `${key}: BRAK OKNA (${x.klik ?? 'bez przycisku'})`;
+    }).join('; ')} — ${ok(r.summary.opisLiczb)}`);
   }
   const metrics = metricsOf(r);
   let baseDiff = [];
