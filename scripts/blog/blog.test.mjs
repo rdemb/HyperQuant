@@ -358,7 +358,7 @@ describe('blog: budowanie', () => {
     for (const f of ['wykresy/index.html', 'en/charts/og.png', 'lekcje/atlas/cvd/index.html', '404.html', 'og.png', 'site/charts-pl.jpg']) expect(existsSync(path.join(out, f)), f).toBe(true);
     expect(readFileSync(path.join(out, 'sitemap.xml'), 'utf8')).toContain('<loc>https://example.org/HQ/wykresy/</loc><xhtml:link rel="alternate" hreflang="pl"');
     // Pełny build bloga ze stronami serwisu i obrazkami trwa ponad 5 s przy równoległych testach (CI: npm test bez flagi)
-  }, 20_000);
+  }, 120_000);
 
   it('błędny wpis zatrzymuje build z nazwą pliku; --check zwraca ten sam problem', async () => {
     const content = mkdtempSync(path.join(tmpdir(), 'hq-blog-'));
@@ -613,7 +613,7 @@ describe('blog: maps.json', () => {
       url: `blog/${ID}/`,
     });
     // Pełny build bloga (jak wyżej) trwa ponad 5 s przy równoległych testach
-  }, 20_000);
+  }, 120_000);
   it('mapKind rozpoznaje rubryki i tytuły', () => {
     expect(mapKind('Mapa dnia', 'x')).toBe('dzien');
     expect(mapKind('Mapa przed Nowym Jorkiem', 'x')).toBe('ny');
@@ -759,7 +759,7 @@ describe('blog: treść z zewnątrz (linki, obrazy, front matter, CSP)', () => {
       rewritten: false,
       skipped: [],
     });
-  }, 20_000);
+  }, 120_000);
 });
 
 describe('blog: notki „aktualizacja” poza indeksem wyszukiwarek', () => {

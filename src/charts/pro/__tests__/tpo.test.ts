@@ -13,7 +13,7 @@ const P = TPO_PERIOD_MS;
 const bar = (t: number, l: number, h: number) => ({ t, candle: { t, o: l, h, l, c: h, v: 1, n: 1 } as Candle });
 
 describe('profil aukcji doby (TPO + wolumen + agresja)', () => {
-  it('okresy w wierszach (czas), POC i value area z wolumenu, initial balance z dwóch pierwszych okresów', () => {
+  it('okresy w wierszach (czas), POC i value area z czasu, initial balance z dwóch pierwszych okresów', () => {
     const bars = [
       // A: 100–103, B: 101–102 (dwie świece 15m), C: 102–102,4, D: 99–100
       bar(D0, 100, 103),
@@ -36,9 +36,9 @@ describe('profil aukcji doby (TPO + wolumen + agresja)', () => {
     expect(p.total).toBeCloseTo(5);
     expect(p.max).toBeCloseTo(7 / 3);
     // POC wolumenu w wierszu 101 (inny niż POC czasu), VA 70%: 101 i 102
-    expect(p.poc).toBe(2);
-    expect(tpoPocPx(p)).toBe(101.5);
-    expect([p.vaLo, p.vaHi]).toEqual([2, 3]);
+    expect(p.poc).toBe(3);
+    expect(tpoPocPx(p)).toBe(102.5);
+    expect([p.vaLo, p.vaHi]).toEqual([1, 3]);
     // Bez taśmy: brak podziału na strony
     expect([...p.buy, ...p.sell].every((v) => v === 0)).toBe(true);
     expect(p.ib).toEqual({ lo: 100, hi: 103 });
@@ -107,7 +107,7 @@ describe('profil aukcji doby (TPO + wolumen + agresja)', () => {
     fp.add(D0 + 1, 100.6, 1, -1);
     const [p] = tpoProfiles([{ ...bar(D0, 100, 101), fp: fp.build(), complete: true }, bar(D0 + P, 100, 100.5)], 1);
     // Wiersz 100: taśma 3 z 4 (druga świeca bez taśmy)
-    expect(rowTip(p, 0).slice(1)).toEqual(['Wolumen 4,00 · 100,0% doby', 'Kupno 67% · sprzedaż 33% (taśma 75%)', 'Czas: 2 × 30 min']);
+    expect(rowTip(p, 0).slice(1, 4)).toEqual(['Wolumen 4,00 · 100,0% doby', 'Kupno 67% · sprzedaż 33% (taśma 75%)', 'Czas: 2 × 30 min']);
     const [q] = tpoProfiles([bar(D0, 100, 100.5)], 1);
     expect(rowTip(q, 0)[2]).toBe('Bez taśmy: wolumen ze świec');
   });

@@ -3,13 +3,30 @@ import { tr } from '../../../i18n';
 import { numLang } from '../../../ui/format';
 import { fmtSignedVol } from '../../orderflow/renderer';
 import { DEFAULT_SMC_PARAMS, SMC_OB_LIFE_CANDLES, type SBar, type Scale, type SmcParams, type SmcResult, type StructureState, fvgMid, smcStructure } from '../core/smcStructure';
+import { type HtfPick, type SmcMtf, htfLabel, pickHtf, smcMtf } from '../core/smcMtf';
 import { fmtDayTime } from '../core/time';
+import { PREV_NAMES, prevHighLow, prevPeriodsOf } from '../core/prevPeriods';
 import type { Candle } from '../hl/parse';
 import { effortResult } from '../indicators/registry';
 import { logicalOfTime } from './overlay';
 import { type SmcRateElement, loadSmcRates, smcRatesHover, smcRatesLine } from './smcRates';
-import { type ObMitigation, type SmcObView, type SmcSelection, selectSmc, smcObjects, smcWindowText } from './smcSelect';
+import { SMC_OBJECTS_MAX, SMC_PHONE_OBJECTS_MAX, type ObMitigation, type SmcObView, type SmcSelection, selectSmc, trimSmc, smcObjects, smcWindowText } from './smcSelect';
+import { type SmcMtfSelection, selectSmcMtf, smcMtfObjects } from './smcMtfSelect';
 import { MONO, PRO, rgba } from './theme';
+import { type ValueRef, valueBadge } from '../core/valueReference';
+
+/** Wartość doby względem potwierdzonego zakresu swingowego. */
+export function smcValueContext(pd: NonNullable<SmcSelection['pd']>, ref: ValueRef | null): string {
+  if (!ref) return tr('VA / POC dnia: —, brak pełnego źródła 5m', 'Day VA / POC: —, incomplete 5m source');
+  const zone = (lo: number, hi: number): string => {
+    if (lo < pd.lo || hi > pd.hi) return tr('poza zakresem swingu', 'outside the swing range');
+    if (hi < pd.eqLo) return 'discount';
+    if (lo > pd.eqHi) return 'premium';
+    if (lo >= pd.eqLo && hi <= pd.eqHi) return tr('równowaga', 'equilibrium');
+    return tr('przecina strefy', 'crosses zones');
+  };
+  return `VA (${tr('wolumen', 'volume')}): ${zone(ref.val, ref.vah)} · POC: ${zone(ref.poc, ref.poc)} · ${valueBadge(ref)}`;
+}
 
 /**
  * Warstwa wskaźnika „Struktura i płynność (SMC+HL)” na wykresie ceny (każdy interwał, na żywo i w powtórce). Model
@@ -29,6 +46,24 @@ export interface SmcStyle {
   internalLen: number;
   swingLen: number;
   mitigation?: ObMitigation;
+  /** Parametr „Wyższy interwał” (`SMC_HTF_OPTIONS`: 0 automatycznie, −1 wyłączony, inaczej minuty). */
+  higher?: number;
+  periods?: number;
+}
+
+/** Świece wyższego interwału `ms` z magazynu: lista (może kończyć się świecą w toku), powód braku albo undefined (w drodze). */
+export interface SmcHigherFeed {
+  ms: number;
+  candles: readonly SBar[] | { why: string } | undefined;
+}
+
+const isHigherAbsent = (c: readonly SBar[] | { why: string }): c is { why: string } => 'why' in c;
+
+/** Wyższy interwał w legendzie: wybór, wybór elementów albo powód braku świec (null — są albo niepotrzebne). */
+export interface SmcHigherView {
+  pick: HtfPick;
+  sel: SmcMtfSelection | null;
+  why: string | null;
 }
 
 /** Świeca wykresu (ProBar): czas, świeca i taśma (delta agresorów; `complete` — świeca w całości nagrana). */
@@ -206,6 +241,52 @@ function hoverText(sel: SmcSelection, hover: { t: number; p: number }, ms: numbe
   return [];
 }
 
+/** Wiersz wyższego interwału: interwał i stan struktury obu skal z liczbą otwartych FVG albo „—” z powodem. */
+function higherText(h: SmcHigherView, ms: number): LegendPart {
+  const p = h.pick;
+  const dash = (why: [string, string]): LegendPart => ({ text: tr(`· wyższy interwał: —, ${why[0]}`, `· higher timeframe: —, ${why[1]}`), color: PRO.ink3 });
+  if (p.kind === 'off') return dash(['wyłączony w parametrach', 'turned off in the inputs']);
+  if (p.kind === 'none') return dash([`brak wyższego interwału dla ${htfLabel(ms)}`, `no higher timeframe for ${htfLabel(ms)}`]);
+  if (p.kind === 'notHigher') return dash([`${p.label} nie jest wyższy od interwału wykresu ${htfLabel(ms)}`, `${p.label} is not above the chart timeframe ${htfLabel(ms)}`]);
+  const head = p.auto ? tr(`· wyższy interwał ${p.label} (auto)`, `· higher timeframe ${p.label} (auto)`) : tr(`· wyższy interwał ${p.label}`, `· higher timeframe ${p.label}`);
+  if (h.why !== null) return { text: `${head}: —, ${h.why}`, color: PRO.ink3 };
+  const s = h.sel;
+  if (!s) return { text: tr(`${head}: czekam na świece ${p.label}…`, `${head}: waiting for ${p.label} candles…`), color: PRO.ink3 };
+  const count = ` · FVG ${numLang(String(s.active.fvg))}${s.active.ob > 0 ? ` · OB ${numLang(String(s.active.ob))}` : ''}`;
+  if (!s.enough) {
+    const few = tr(`za mało zamkniętych świec ${p.label} do struktury (${s.closed} z ${s.need})`, `too few closed ${p.label} candles for the structure (${s.closed} of ${s.need})`);
+    return { text: `${head}: —, ${few}${count}`, color: PRO.ink3 };
+  }
+  return {
+    text: tr(`${head}: wewn. ${stateText(s.state.internal)} · swing. ${stateText(s.state.swing)}${count}`, `${head}: internal ${stateText(s.state.internal)} · swing ${stateText(s.state.swing)}${count}`),
+    color: PRO.ink2,
+  };
+}
+
+/** Element wyższego interwału pod krzyżem (od chwili `known`): przełamanie, OB, FVG. */
+function higherHover(s: SmcMtfSelection, atr: number, hover: { t: number; p: number }, fmt: (p: number) => string): LegendPart[] {
+  const at = (t: number) => fmtDayTime(t, s.asOf);
+  const ink = PRO.ink2;
+  const L = s.label;
+  for (const b of s.breaks) {
+    if (hover.t < b.known || Math.abs(hover.p - b.level) > 0.15 * atr) continue;
+    const where = b.dir === 1 ? tr('nad szczytem', 'above the high') : tr('pod dołkiem', 'below the low');
+    return [{ text: tr(`· ${L} ${b.kind} (${scaleText(b.scale)}): zamknięcie świecy ${L} ${where} ${fmt(b.level)}, znany od ${at(b.known)}`, `· ${L} ${b.kind} (${scaleText(b.scale)}): ${L} candle close ${where} ${fmt(b.level)}, known from ${at(b.known)}`), color: ink }];
+  }
+  for (const z of s.obs) {
+    if (hover.t < z.known || hover.p < z.lo || hover.p > z.hi) continue;
+    return [{ text: tr(`· ${L} OB ${fmt(z.lo)}–${fmt(z.hi)}, znany od ${at(z.known)}`, `· ${L} OB ${fmt(z.lo)}–${fmt(z.hi)}, known from ${at(z.known)}`), color: ink }];
+  }
+  for (const v of s.fvgs) {
+    const f = v.f;
+    if (hover.t < f.known || hover.p < f.lo || hover.p > f.hi) continue;
+    const kind = f.dir === 1 ? tr('luka po ruchu w górę', 'gap after a move up') : tr('luka po ruchu w dół', 'gap after a move down');
+    const ce = v.ce ? tr('dotknięcie środka luki (CE)', 'gap midpoint touched (CE)') : tr('bez dotknięcia środka luki (CE)', 'gap midpoint not touched (CE)');
+    return [{ text: tr(`· ${L} FVG (${kind}) ${fmt(f.lo)}–${fmt(f.hi)}: wypełnienie ${pct(v.fill)}% na zamkniętych świecach ${L}, ${ce}, znana od ${at(f.known)}`, `· ${L} FVG (${kind}) ${fmt(f.lo)}–${fmt(f.hi)}: ${pct(v.fill)}% filled on closed ${L} candles, ${ce}, known from ${at(f.known)}`), color: ink }];
+  }
+  return [];
+}
+
 /**
  * Opis w legendzie: etykieta „eksperymentalny”, stan struktury obu skal, liczby aktywnych FVG, EQH, EQL i OB, położenie
  * ceny w połowach zakresu swingowego i częstości bazowe interwału wykresu (`smcRates`); krzyż nad elementem dopisuje,
@@ -218,7 +299,8 @@ export function smcLegend(
   coin: string,
   hover: { t: number; p: number } | null = null,
   fmt: (p: number) => string = (p) => numLang(String(p)),
-  tape: (idx: number) => SmcCandleTape = NO_TAPE
+  tape: (idx: number) => SmcCandleTape = NO_TAPE,
+  higher: SmcHigherView | null = null
 ): LegendPart[] {
   if (ms > SMC_MAX_TF) return [{ text: tr('—, interwał do 1 h', '—, intervals up to 1 h'), color: PRO.ink3 }];
   if (!sel || !Number.isFinite(sel.close)) return [{ text: tr('czekam na świece…', 'waiting for candles…'), color: PRO.ink3 }];
@@ -236,8 +318,13 @@ export function smcLegend(
   } else {
     out.push({ text: tr('· zakres swingowy: —, brak szczytu i dołka skali swingowej', '· swing range: —, no swing-scale high and low yet'), color: PRO.ink3 });
   }
+  if (higher) out.push(higherText(higher, ms));
   out.push(...smcRatesLine(ms, coin));
-  if (hover) out.push(...hoverText(sel, hover, ms, fmt, coin, tape));
+  if (hover) {
+    const own = hoverText(sel, hover, ms, fmt, coin, tape);
+    const atr = Number.isFinite(sel.atr) && sel.atr > 0 ? sel.atr : 0;
+    out.push(...(own.length > 0 || !higher?.sel ? own : higherHover(higher.sel, atr, hover, fmt)));
+  }
   return out;
 }
 
@@ -256,10 +343,13 @@ interface Scene {
   breaks: { x0: number; x1: number; y: number; text: string; dashed: boolean }[];
   sweeps: { x0: number; x1: number; y: number }[];
   labels: { x: number; y: number; text: string; above: boolean; bold: boolean }[];
-  pd: Rect | null;
+  pd: { zones: (Rect & { text: string })[] } | null;
+  /** Wyższy interwał: strefy (FVG, OB) obrysem przerywanym i linia ostatniego przełamania. */
+  higher: { zones: (Rect & { text: string; ink: string; mid: number | null })[]; breaks: { x0: number; x1: number; y: number; text: string }[] };
 }
 
-const EMPTY: Scene = { fvgs: [], obs: [], eqs: [], breaks: [], sweeps: [], labels: [], pd: null };
+const emptyScene = (): Scene => ({ fvgs: [], obs: [], eqs: [], breaks: [], sweeps: [], labels: [], pd: null, higher: { zones: [], breaks: [] } });
+const EMPTY: Scene = emptyScene();
 
 /** Liczba zamkniętych świec (koniec ≤ `now`). */
 function closedCount(bars: readonly SmcSourceBar[], ms: number, now: number): number {
@@ -287,6 +377,12 @@ export class SmcLayer implements ISeriesPrimitive<Time> {
   private sbars: SBar[] = [];
   private result: SmcResult | null = null;
   private sel: SmcSelection | null = null;
+  /** Wyższy interwał: świece z magazynu, wybór, model (przeliczany tylko po zmianie zamkniętych świec) i wybór elementów. */
+  private feed: SmcHigherFeed | null = null;
+  private pick: HtfPick | null = null;
+  private mtf: SmcMtf | null = null;
+  private mtfKey = '';
+  private hsel: SmcMtfSelection | null = null;
   private selKey: readonly unknown[] = [];
   private scene: Scene = EMPTY;
   private readonly views: readonly IPrimitivePaneView[];
@@ -313,8 +409,13 @@ export class SmcLayer implements ISeriesPrimitive<Time> {
           }
           const pd = this.scene.pd;
           if (pd) {
-            ctx.fillStyle = rgba(SMC_INK.structure, 0.12 * st.alpha);
-            ctx.fillRect(pd.x0, pd.y0, pd.x1 - pd.x0, pd.y1 - pd.y0);
+            for (const zone of pd.zones) {
+              ctx.fillStyle = rgba(SMC_INK.structure, (zone.text === 'EQ' ? 0.16 : 0.07) * st.alpha);
+              ctx.fillRect(zone.x0, zone.y0, zone.x1 - zone.x0, zone.y1 - zone.y0);
+              ctx.fillStyle = rgba(SMC_INK.structure, 0.85 * st.alpha);
+              ctx.font = `10px ${MONO}`;
+              ctx.fillText(zone.text, zone.x0 + 4, (zone.y0 + zone.y1) / 2);
+            }
           }
         }),
     };
@@ -402,6 +503,38 @@ export class SmcLayer implements ISeriesPrimitive<Time> {
             ctx.fillText(l.text, l.x, l.above ? l.y - 3 : l.y + 3);
           }
           ctx.textAlign = 'left';
+          // Wyższy interwał: przygaszony obrys przerywany i podpis interwału, bez wypełnienia
+          const h = this.scene.higher;
+          ctx.font = `600 9px ${MONO}`;
+          for (const z of h.zones) {
+            const c = rgba(z.ink, 0.6 * a);
+            ctx.strokeStyle = c;
+            ctx.lineWidth = 1;
+            ctx.setLineDash([5, 3]);
+            ctx.strokeRect(crisp(z.x0, 1), crisp(z.y0, 1), Math.round(z.x1 - z.x0), Math.round(z.y1 - z.y0));
+            if (z.mid !== null) {
+              ctx.setLineDash([2, 4]);
+              hline(z.x0, z.x1, z.mid, 1);
+            }
+            ctx.setLineDash([]);
+            if (z.x1 - Math.max(z.x0, 0) > 52) {
+              ctx.fillStyle = c;
+              ctx.textBaseline = 'bottom';
+              ctx.fillText(z.text, Math.max(z.x0, 0) + 3, z.y1 - 2);
+            }
+          }
+          const hg = rgba(SMC_INK.structure, 0.6 * a);
+          ctx.strokeStyle = hg;
+          ctx.fillStyle = hg;
+          for (const b of h.breaks) {
+            ctx.setLineDash([6, 4]);
+            hline(b.x0, b.x1, b.y, Math.max(1, st.width - 1));
+            ctx.setLineDash([]);
+            ctx.textBaseline = 'top';
+            ctx.textAlign = 'right';
+            if (b.x1 - Math.max(b.x0, 0) > 40) ctx.fillText(b.text, b.x1 - 3, b.y + 2);
+            ctx.textAlign = 'left';
+          }
         }),
     };
     this.views = [
@@ -444,12 +577,21 @@ export class SmcLayer implements ISeriesPrimitive<Time> {
     this.requestUpdate?.();
   }
 
-  /** Świece wykresu; przeliczenie modelu tylko po zmianie zamkniętych świec albo okien pivota. */
-  setData(bars: readonly SmcSourceBar[], ms: number, now: number): void {
+  /**
+   * Świece wykresu i świece wyższego interwału z magazynu (`higher`, null — niepotrzebne: ukryty, wyłączony albo brak
+   * wyższego); przeliczenie modeli tylko po zmianie zamkniętych świec albo okien pivota.
+   */
+  private daily: readonly Candle[] = [];
+
+  setData(bars: readonly SmcSourceBar[], ms: number, now: number, higher: SmcHigherFeed | null = null, daily: readonly Candle[] = []): void {
+    this.daily = daily;
     this.bars = bars;
     this.ms = ms;
     this.now = now;
-    this.recompute(this.styleOf());
+    this.feed = higher;
+    const st = this.styleOf();
+    this.recompute(st);
+    this.recomputeHigher(st);
     this.reselect();
     this.requestUpdate?.();
   }
@@ -475,26 +617,59 @@ export class SmcLayer implements ISeriesPrimitive<Time> {
     this.result = n > 0 ? smcStructure(this.sbars, this.ms, params) : null;
   }
 
-  /** Wybór na ostatniej zamkniętej świecy — tylko po zmianie wyniku, telefonu albo trybu „historia”. */
+  /** Model wyższego interwału — tylko po zmianie interwału, okien pivota albo zamkniętych świec wyższego interwału. */
+  private recomputeHigher(st: SmcStyle | null): void {
+    this.pick = st ? pickHtf(this.ms, st.higher ?? 0) : null;
+    const p = this.pick;
+    // Świece innego interwału (parametr zmieniony przed kolejnym wczytaniem) nie wchodzą do modelu
+    const got = p?.kind === 'on' && this.feed?.ms === p.ms ? this.feed.candles : undefined;
+    if (!st || p?.kind !== 'on' || got === undefined || isHigherAbsent(got)) {
+      this.mtf = null;
+      this.mtfKey = '';
+      return;
+    }
+    const bars = got;
+    let n = 0;
+    while (n < bars.length && bars[n].t + p.ms <= this.now) n++;
+    const lastBar = bars[n - 1];
+    const key = [p.ms, st.internalLen, st.swingLen, n, bars[0]?.t, lastBar ? [lastBar.t, lastBar.o, lastBar.h, lastBar.l, lastBar.c].join(',') : ''].join('|');
+    if (key === this.mtfKey && this.mtf) return;
+    this.mtfKey = key;
+    this.mtf = smcMtf(bars.slice(0, n), p.ms, this.now, { ...DEFAULT_SMC_PARAMS, internalLen: st.internalLen, swingLen: st.swingLen });
+  }
+
+  /** Wybór na ostatniej zamkniętej świecy — tylko po zmianie wyników, telefonu albo trybu „historia”. */
   private reselect(): void {
     const st = this.styleOf();
     const history = st?.history === true;
     const mitigation: ObMitigation = st?.mitigation ?? 'close';
-    const key = [this.result, this.phone, history, mitigation];
+    const key = [this.result, this.mtf, this.phone, history, mitigation, st?.periods];
     if (key.every((v, i) => Object.is(v, this.selKey[i]))) return;
     this.selKey = key;
     const r = this.result;
     const last = this.sbars[this.sbars.length - 1];
-    this.sel = r && last ? selectSmc(r, this.sbars, last.t + this.srcMs, { phone: this.phone, history, mitigation }) : null;
-    this.onObjects?.(this.sel ? smcObjects(this.sel) : 0);
+    const asOf = last ? last.t + this.srcMs : 0;
+    this.sel = r && last ? selectSmc(r, this.sbars, asOf, { phone: this.phone, history, mitigation }) : null;
+    const reserved = prevPeriodsOf(st?.periods ?? 0, this.ms).length * 2;
+    const cap = (this.phone ? SMC_PHONE_OBJECTS_MAX : SMC_OBJECTS_MAX) - reserved;
+    if (this.sel) trimSmc(this.sel, cap);
+    if (this.phone && this.mtf && this.sel) {
+      const candidate = selectSmcMtf(this.mtf, asOf, this.sel.close, { phone: true, room: 1 });
+      if (candidate.fvgs.length) trimSmc(this.sel, cap - 1);
+    }
+    const base = this.sel ? smcObjects(this.sel) : 0;
+    // Wyższy interwał w tej samej chwili, w tym, co zostaje z łącznego limitu obiektów
+    this.hsel = this.mtf && this.sel ? selectSmcMtf(this.mtf, asOf, this.sel.close, { phone: this.phone, room: cap - base }) : null;
+    this.onObjects?.(base + (this.hsel ? smcMtfObjects(this.hsel) : 0));
   }
 
   updateAllViews(): void {
-    this.scene = { fvgs: [], obs: [], eqs: [], breaks: [], sweeps: [], labels: [], pd: null };
+    this.scene = emptyScene();
     const st = this.styleOf();
     this.style = st;
     const lens = st ? `${st.internalLen}|${st.swingLen}` : '';
     if (st && lens !== this.srcLens) this.recompute(st);
+    this.recomputeHigher(st);
     this.reselect();
     const sel = this.sel;
     const chart = this.chart;
@@ -566,17 +741,73 @@ export class SmcLayer implements ISeriesPrimitive<Time> {
       if (yl === null || xc < 0 || xc >= right) continue;
       sc.labels.push({ x: xc, y: yl, text: s.label ?? '', above: s.dir === 1, bold: s.scale === 'swing' });
     }
-    if (sel.pd) sc.pd = rect(x(sel.pd.t), right, sel.pd.eqHi, sel.pd.eqLo);
+    const available = Math.max(0, (this.phone ? SMC_PHONE_OBJECTS_MAX : SMC_OBJECTS_MAX) - smcObjects(sel) - (this.hsel ? smcMtfObjects(this.hsel) : 0));
+    let extra = 0;
+    for (const period of prevPeriodsOf(st.periods ?? 0, ms)) {
+      const level = prevHighLow(this.daily, period, sel.asOf);
+      if ('why' in level || extra + 2 > available) continue;
+      const names = PREV_NAMES[period];
+      for (const [price, text] of [[level.hi, names[0]], [level.lo, names[1]]] as const) {
+        const yp = y(price);
+        if (yp !== null) sc.breaks.push({ x0: x(level.to), x1: right, y: yp, text, dashed: true });
+      }
+      extra += 2;
+    }
+    this.onObjects?.(smcObjects(sel) + (this.hsel ? smcMtfObjects(this.hsel) : 0) + extra);
+    if (sel.pd) {
+      const pd = sel.pd;
+      const zones: (Rect & { text: string })[] = [];
+      for (const [hi, lo, text] of [[pd.hi, pd.eqHi, 'Premium'], [pd.eqHi, pd.eqLo, 'EQ'], [pd.eqLo, pd.lo, 'Discount']] as const) {
+        const r = rect(x(pd.known), right, hi, lo);
+        if (r) zones.push({ ...r, text });
+      }
+      sc.pd = { zones };
+    }
+    // Wyższy interwał: od zamknięcia świecy wyższego interwału, która element potwierdza (`known`), nigdy wcześniej
+    const hs = this.hsel;
+    if (!hs) return;
+    for (const z of hs.obs) {
+      const r = rect(x(z.known), right, z.hi, z.lo);
+      if (r) sc.higher.zones.push({ ...r, ink: SMC_INK.fvg, mid: null, text: `${hs.label} OB` });
+    }
+    for (const v of hs.fvgs) {
+      const f = v.f;
+      const r = rect(x(f.known), right, f.hi, f.lo);
+      if (r) sc.higher.zones.push({ ...r, ink: SMC_INK.fvg, mid: y(fvgMid(f)), text: `${hs.label} FVG ${pct(v.fill)}%${v.ce ? ' · CE' : ''}` });
+    }
+    for (const b of hs.breaks) {
+      const yb = y(b.level);
+      const x0 = x(b.known);
+      if (yb === null || x0 >= right) continue;
+      sc.higher.breaks.push({ x0, x1: right, y: yb, text: `${hs.label} ${b.kind}` });
+    }
+  }
+
+  /** Wyższy interwał w legendzie: wybór interwału, elementy albo powód braku (null — wskaźnik ukryty). */
+  higher(): SmcHigherView | null {
+    const p = this.pick;
+    if (!p) return null;
+    const c = p.kind === 'on' && this.feed?.ms === p.ms ? this.feed.candles : undefined;
+    return { pick: p, sel: this.hsel, why: c !== undefined && isHigherAbsent(c) ? c.why : null };
   }
 
   /** Opis w legendzie (z ostatniego wyboru); krzyż nad elementem dopisuje, od kiedy był znany. */
   legend(hover: { t: number; p: number } | null, fmt: (p: number) => string, coin: string): LegendPart[] {
     const src = this.src;
-    return smcLegend(this.sel, this.ms, coin, hover, fmt, (idx) => candleTape(src, idx));
+    const out = smcLegend(this.sel, this.ms, coin, hover, fmt, (idx) => candleTape(src, idx), this.higher());
+    if (this.sel?.pd) out.push({ text: `· ${smcValueContext(this.sel.pd, this.valueOf?.(this.sel.asOf - 1) ?? null)}`, color: PRO.ink2 });
+    if (this.sel) for (const period of prevPeriodsOf(this.styleOf()?.periods ?? 0, this.ms)) {
+      const level = prevHighLow(this.daily, period, this.sel.asOf);
+      const names = PREV_NAMES[period].join('/');
+      out.push({ text: 'why' in level ? tr(`· ${names}: —, niepełna historia dzienna`, `· ${names}: —, incomplete daily history`) : `· ${names}: ${fmt(level.hi)} / ${fmt(level.lo)} LIVE`, color: PRO.ink2 });
+    }
+    return out;
   }
 
   /** Wybór na ostatniej zamkniętej świecy (legenda, testy). */
   selection(): SmcSelection | null {
     return this.sel;
   }
+
+  valueOf: ((at: number) => ValueRef | null) | null = null;
 }

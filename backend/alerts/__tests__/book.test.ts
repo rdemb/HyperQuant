@@ -174,7 +174,8 @@ describe('serwer powiadomień ↔ skrzynka', () => {
     expect(a.signPublic).toBe(b.signPublic);
     expect(a.vapid.publicKey).toBe(b.vapid.publicKey);
     expect(Buffer.from(a.vapid.publicKey, 'base64url')).toHaveLength(65);
-    expect(statSync(join(dir, 'alerts-keys.json')).mode & 0o777).toBe(0o600);
+    // Windows nie odwzorowuje uprawnień POSIX; zawartość i trwałość kluczy sprawdzamy na obu systemach.
+    if (process.platform !== 'win32') expect(statSync(join(dir, 'alerts-keys.json')).mode & 0o777).toBe(0o600);
     expect(Object.keys(JSON.parse(readFileSync(join(dir, 'alerts-keys.json'), 'utf8')))).toEqual(['vapid', 'sign']);
   });
 

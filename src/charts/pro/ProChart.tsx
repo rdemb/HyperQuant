@@ -1417,7 +1417,7 @@ const PanesTab: React.FC<{ s: ChartSettings; grid4: boolean; narrow: boolean; on
       ) : (
         <>
           {PANE_ITEMS.map((i) => (
-            <Check key={i.key} label={i.label} checked={s[i.key]} onChange={(v) => onChange({ [i.key]: v })} />
+            <Check key={i.key} label={i.label} checked={s[i.key] === true} onChange={(v) => onChange({ [i.key]: v })} />
           ))}
           {s.showStats && <StatGroupPicker className="pl-6.5" value={s.statGroups} onChange={(g) => onChange({ statGroups: g })} />}
           {grid4 && s.showStats && <p className="text-[11px] leading-snug text-ink-3">{tr('W układzie 2 × 2 tablica jest ukryta — panel jest za niski.', 'In the 2 × 2 layout the table is hidden — the pane is too short.')}</p>}
@@ -1889,11 +1889,18 @@ function flowLayers(s: ChartSettings, intervalMs: number, liq: LiqMapState, whal
       key: 'showTpo',
       label: tr('Profil doby: wolumen, agresja, czas (TPO)', 'Day profile: volume, aggression, time (TPO)'),
       hint: tr(
-        `Profil wolumenu każdej doby UTC; kolor wiersza to strona agresywna z taśmy (niebieski kupno, czerwony sprzedaż, szary bez przewagi albo bez taśmy; starsze doby z nagrania serwera, 7 dób), cienki obrys to czas (ile okresów 30 min dotknęło ceny). POC i value area z wolumenu, IB doby UTC: zakres pierwszej godziny doby UTC (zielony pasek jak warstwa IB, ale to nie initial balance sesji; przy włączonej warstwie IB ukryty), pojedyncze wydruki i ogony, delta doby pod profilem; liczby wiersza pod krzyżem; zastępuje profile sesji. Pełny profil dla bieżącej i poprzedniej doby, starsze — POC i pasek value area; najdłuższy słupek do 35% doby i 30% wykresu; nagie POC: ${NAKED_POC_SHOWN} najbliższe cenie. ${PROFILE_EVIDENCE.pl}`,
-        `A volume profile of every UTC day; the row colour is the aggressive side from the tape (blue buy, red sell, grey no edge or no tape; older days from the server recording, 7 days), the thin outline is time (how many 30-minute periods touched the price). POC and value area from volume, the UTC-day IB: the range of the first hour of the UTC day (a green bar like the IB layer, but not the session initial balance; hidden when the IB layer is on), single prints and tails, the day delta under the profile; row numbers under the crosshair; replaces session profiles. A full profile for the current and previous day, older ones only the POC and the value area bar; the longest bar up to 35% of the day and 30% of the chart; naked POCs: the ${NAKED_POC_SHOWN} nearest to price. ${PROFILE_EVIDENCE.en}`
+        `Profil wolumenu każdej doby UTC; kolor wiersza to strona agresywna z taśmy (niebieski kupno, czerwony sprzedaż, szary bez przewagi albo bez taśmy; starsze doby z nagrania serwera, 7 dób), cienki obrys to czas (ile okresów 30 min dotknęło ceny). POC TPO (czas) i VA TPO (czas): 70% okresów, rozszerzanie parami wierszy, remisy do poprzedniego POC (bez niego w górę), IB doby UTC: zakres pierwszej godziny doby UTC (zielony pasek jak warstwa IB, ale to nie initial balance sesji; przy włączonej warstwie IB ukryty), pojedyncze wydruki i ogony, delta doby pod profilem; liczby wiersza pod krzyżem; zastępuje profile sesji. Pełny profil dla bieżącej i poprzedniej doby, starsze — POC i pasek value area; najdłuższy słupek do 35% doby i 30% wykresu; nagie POC: ${NAKED_POC_SHOWN} najbliższe cenie. ${PROFILE_EVIDENCE.pl}`,
+        `A volume profile of every UTC day; the row colour is the aggressive side from the tape (blue buy, red sell, grey no edge or no tape; older days from the server recording, 7 days), the thin outline is time (how many 30-minute periods touched the price). POC TPO (time) and VA TPO (time): 70% of periods, expanded in pairs of rows, ties towards the previous POC (up without one), the UTC-day IB: the range of the first hour of the UTC day (a green bar like the IB layer, but not the session initial balance; hidden when the IB layer is on), single prints and tails, the day delta under the profile; row numbers under the crosshair; replaces session profiles. A full profile for the current and previous day, older ones only the POC and the value area bar; the longest bar up to 35% of the day and 30% of the chart; naked POCs: the ${NAKED_POC_SHOWN} nearest to price. ${PROFILE_EVIDENCE.en}`
       ),
       swatch: 'bg-of-svwap',
       off: tpoInterval(intervalMs) ? undefined : tr('Na interwałach do 30m', 'On timeframes up to 30m'),
+    },
+    {
+      key: 'tpoVolumeValue',
+      label: tr('TPO: VA z wolumenu (valueReference)', 'TPO: volume VA (valueReference)'),
+      hint: tr('Zamiast wartości czasu pokazuje POC i VA z wolumenu: to samo źródło co Rama dnia. Brak danych 5m oznacza brak poziomów.', 'Replaces time value with volume POC and VA from the same source as the day frame. No 5m data means no levels.'),
+      swatch: 'bg-of-poc',
+      off: s.showTpo ? undefined : tr('Po włączeniu profilu doby', 'With the day profile on'),
     },
     {
       key: 'showTpoOi',
