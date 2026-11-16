@@ -4,11 +4,18 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Struktura i płynność (SMC+HL): luki i przełamanie z wyższego interwału (2026-11-16)
+<!-- co-nowego: grupa=wykres | pl=Struktura i płynność (SMC+HL) pokazuje też luki FVG i ostatnie przełamanie z wyższego interwału (automatycznie 4H albo 1D), obrysem przerywanym, dopiero od zamknięcia jego świecy | en=Structure & Liquidity (SMC+HL) also shows FVG gaps and the last break from a higher timeframe (automatically 4H or 1D), as a dashed outline, only from the close of its candle -->
+
+#### Dodane
+- **SMC z wyższego interwału** (Pionier, `smc-hl.md` §7.2): nowy moduł `core/smcMtf.ts` liczy ten sam model tylko na zamkniętych świecach wyższego interwału (seria świec z magazynu, jak wskaźniki z parametrem interwału), więc `known` elementu to zamknięcie świecy wyższego interwału, a świeca w toku niczego nie tworzy. Parametr „Wyższy interwał”: auto (4H do 30m, 1D dla 1h–4h, od 1D brak), wyłączony albo 15m, 30m, 1H, 4H, 1D, 1W. Wybór `chart/smcMtfSelect.ts`: 3 otwarte FVG najbliższe cenie, 1 linia ostatniego BOS albo CHoCH, wejście gotowe na 2 OB na typ (etap S1), w ramach łącznie 25 obiektów; na telefonie najwyżej najbliższa luka, gdy rysunek wykresu zostawia miejsce w limicie 10 obiektów telefonu (pilnuje go `ui:check`). Rysunek przygaszonym obrysem przerywanym z podpisem („4H FVG”, „4H BOS”) od `known`; legenda ze stanem struktury wyższego interwału albo „—” z powodem (wyłączony, brak wyższego dla 1D, nie wyższy od wykresu, czekam na świece, błąd pobrania, za mało świec). Testy: tabela wyboru, bez zaglądania w przyszłość (luka 4H dokładnie przy zamknięciu świecy 4H, nie świecę 15m wcześniej), bez przemalowań (odtwarzanie świeca po świecy z bieżącą świecą 4H daje ten sam wybór co liczenie na całości), limity, powody w legendzie.
+
 ### Struktura i płynność (SMC+HL) także na 4H i wyższych interwałach (2026-11-16)
 <!-- co-nowego: grupa=wykres | pl=Struktura i płynność (SMC+HL) działa teraz na każdym interwale, także 4H i 1D, z oknami liczonymi w świecach | en=Structure & Liquidity (SMC+HL) now works on every interval, including 4H and 1D, with windows counted in candles -->
 
 #### Zmienione
 - **SMC na każdym interwale** (zgłoszenie Rafała: „nie działa na wyższych interwałach, np. 4H”): warstwa miała limit do 1 h, a okna elementów były w czasie (24 h to na 4H tylko 6 świec). Teraz bez limitu interwału; okno BOS, CHoCH, sweepów i trybu historii = max(24 h, 24 świece) (do 1 h bez zmian, 4H — 4 doby, 1D — 24 doby), a luka FVG żyje max(24 h, 100 świec) (Pionier, `smc-hl.md` §7.1). Pivot i filtr 1 ATR bez zmian, na interwale wykresu. Testy: okna dla 5m, 1h, 4H i 1D; życie luki na 4H (100 świec) i 5m (24 h); legenda na 4H.
+
 ### Fabio: LVN v2: głębokość i test szumu pomiaru, bloki 15 min, obszary LVA i profile okresów (2026-11-16)
 <!-- co-nowego: grupa=wykres | pl=LVN pokazują głębokość doliny i wartość p wobec szumu pomiaru (symulacja dopasowana do profilu), szerokie doliny są rysowane jako pasma LVA, a LVN widać też na profilach sesji i dób | en=LVN show the valley depth and a p-value against measurement noise (a simulation matched to the profile), wide valleys are drawn as LVA bands, and LVN also appear on session and day profiles -->
 
@@ -27,6 +34,7 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 #### Naprawione
 - **Filtry rubryk na liście wpisów** (przegląd Audytora 16.11): rząd filtrów to `fieldset`, który domyślnie ma `min-inline-size: min-content`, więc przy 360 i 390 px rozpychał stronę do ok. 653 px i cała strona przewijała się w bok. Teraz `min-inline-size: 0`: filtry przewijają się tylko w swoim rzędzie. `ui:check` buduje blog z wpisów w repo i przy 360, 390 i 720 px sprawdza, że strona ma szerokość okna (porównanie z zadaną szerokością, bo w trybie telefonu okno układu rośnie razem z treścią) i że rząd filtrów mieści się w oknie (przed poprawką: 653 px przy 360 i 390).
+
 ### Jedno źródło wartości doby i sesji; liczniki Ramy dnia od otwarcia sesji (2026-11-16)
 <!-- co-nowego: grupa=wykres | pl=Wczorajsze VAH, VAL i POC są teraz te same w pasku Rama dnia, panelu Najbliższe poziomy, nagłówku Mapy dnia i na Profilach okresów; z taśmy LIVE, ze świec MODEL, a liczniki przyjęcia liczą od otwarcia sesji | en=Yesterday's VAH, VAL and POC are now the same in the Day frame bar, the Nearest levels panel, the Day map header and Period profiles; LIVE from the tape, MODEL from candles, and the acceptance counters run from the session open -->
 

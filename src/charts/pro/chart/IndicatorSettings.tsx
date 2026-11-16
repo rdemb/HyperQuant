@@ -54,7 +54,7 @@ const ParamInput: React.FC<{ p: ParamDef; value: number; onChange: (v: number) =
       <select aria-label={p.label} value={value} onChange={(e) => onChange(Number(e.target.value))} className={`${FIELD} w-24`}>
         {p.options.map((o) => (
           <option key={o} value={o}>
-            {numLang(String(o))}
+            {p.optionLabel ? p.optionLabel(o) : numLang(String(o))}
           </option>
         ))}
       </select>
