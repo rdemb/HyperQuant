@@ -1151,7 +1151,7 @@ export class ProChartController {
   /** Styl pierwszego widocznego wskaźnika SMC: krycie, grubość, tryb historia 24 h i okna pivota (null — żaden). */
   private smcStyle(): SmcStyle | null {
     const x = this.indShown.find((y) => indicatorDef(y.id).smc);
-    return x ? { alpha: x.alpha, width: x.width, history: x.history === true, internalLen: x.params.internal, swingLen: x.params.swing } : null;
+    return x ? { alpha: x.alpha, width: x.width, history: x.history === true, internalLen: x.params.internal, swingLen: x.params.swing, mitigation: x.params.mitigation === 1 ? 'wick' : 'close' } : null;
   }
 
   /** Aktywna strefa P/b do alarmów z menu wykresu (null — wskaźnik ukryty albo brak ważnej strefy). */
@@ -1941,7 +1941,7 @@ export class ProChartController {
               : def.ivb
                 ? this.ivb.legend()
                 : def.smc
-                ? this.smc.legend(this.hoverTime !== null && this.hoverPrice !== null ? { t: this.hoverTime, p: this.hoverPrice } : null, this.indFormat('price'))
+                ? this.smc.legend(this.hoverTime !== null && this.hoverPrice !== null ? { t: this.hoverTime, p: this.hoverPrice } : null, this.indFormat('price'), this.store.coin)
                 : short
                 ? [{ text: `—, ${short}`, color: PRO.ink3 }]
                 : vs.flatMap((v, p) => {

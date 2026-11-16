@@ -1,41 +1,104 @@
 import type { IChartApiBase, IPrimitivePaneRenderer, IPrimitivePaneView, ISeriesApi, ISeriesPrimitive, Logical, SeriesAttachedParameter, SeriesType, Time } from 'lightweight-charts';
 import { tr } from '../../../i18n';
 import { numLang } from '../../../ui/format';
-import { DEFAULT_SMC_PARAMS, type SBar, type Scale, type SmcParams, type SmcResult, type StructureState, fvgMid, smcStructure } from '../core/smcStructure';
+import { fmtSignedVol } from '../../orderflow/renderer';
+import { DEFAULT_SMC_PARAMS, SMC_OB_LIFE_CANDLES, type SBar, type Scale, type SmcParams, type SmcResult, type StructureState, fvgMid, smcStructure } from '../core/smcStructure';
 import { fmtDayTime } from '../core/time';
 import type { Candle } from '../hl/parse';
+import { effortResult } from '../indicators/registry';
 import { logicalOfTime } from './overlay';
-import { type SmcSelection, selectSmc, smcObjects, smcWindowText } from './smcSelect';
+import { type SmcRateElement, loadSmcRates, smcRatesHover, smcRatesLine } from './smcRates';
+import { type ObMitigation, type SmcObView, type SmcSelection, selectSmc, smcObjects, smcWindowText } from './smcSelect';
 import { MONO, PRO, rgba } from './theme';
 
 /**
  * Warstwa wskaźnika „Struktura i płynność (SMC+HL)” na wykresie ceny (każdy interwał, na żywo i w powtórce). Model
  * (`smcStructure`) liczy elementy na zamkniętych świecach, rysowany jest wybór `selectSmc` na ostatniej zamkniętej
  * świecy. Kolory neutralne według rodzaju elementu, nie strony transakcji: struktura (etykiety swingów, linie BOS
- * i CHoCH, sweepy, pas równowagi) szara, FVG w bursztynie poziomów, EQH i EQL w jego jaśniejszym odcieniu. Nic nie
- * zaczyna się przed chwilą, od której było znane: FVG od świecy luki, EQ od potwierdzenia drugiego pivota, linia
- * przełamania od chwili, w której swing był znany; etykieta i kreska sweepu stoją na świecy krańca albo knota jako znacznik.
+ * i CHoCH, sweepy, pas równowagi) szara, FVG w bursztynie poziomów, EQH i EQL w jego jaśniejszym odcieniu, OB w złocie
+ * kategorii. Nic nie zaczyna się przed chwilą, od której było znane: FVG od świecy luki, EQ od potwierdzenia drugiego
+ * pivota, linia przełamania od chwili, w której swing był znany, strefa OB od świecy przełamania; etykieta i kreska sweepu
+ * stoją na świecy krańca albo knota, a przerywany obrys świecy OB na niej samej — jako znaczniki.
  */
 
-/** Styl widocznego wskaźnika: krycie, grubość linii, tryb „historia 24 h” i okna pivota obu skal. */
+/** Styl widocznego wskaźnika: krycie, grubość linii, tryb „historia 24 h”, okna pivota obu skal i mitygacja OB. */
 export interface SmcStyle {
   alpha: number;
   width: number;
   history?: boolean;
   internalLen: number;
   swingLen: number;
+  mitigation?: ObMitigation;
 }
 
-/** Świeca wykresu (ProBar): czas i świeca. */
+/** Świeca wykresu (ProBar): czas, świeca i taśma (delta agresorów; `complete` — świeca w całości nagrana). */
 export interface SmcSourceBar {
   t: number;
   candle: Candle;
+  fp?: { delta: number } | null;
+  complete?: boolean;
 }
+
+/** Okno F-C1 (wysiłek a wynik): tyle wcześniejszych świec z pełną taśmą, co domyślna „Długość” wskaźnika W/W. */
+export const SMC_FC1_LEN = 60;
+/** Percentyl wolumenu świecy wobec tylu poprzednich świec (od 20). */
+export const SMC_VOL_LEN = 100;
+
+/** Taśma świecy: delta (LIVE), wynik wobec wysiłku F-C1 (MODEL) z powodem braku i percentyl wolumenu (MODEL). */
+export interface SmcCandleTape {
+  delta: number | null;
+  fc1: number | null;
+  /** Powód braku F-C1 przy delcie: za mało świec z taśmą albo wpływ nieodróżnialny od szumu. */
+  fc1Why: 'few' | 'noise' | null;
+  volPct: number | null;
+}
+
+/** Punkt F-C1 świecy (jak wskaźnik W/W): x — delta razy zamknięcie w mln USD, y — zwrot w pb; tylko świeca w całości nagrana. */
+function fc1Point(b: SmcSourceBar): [number, number] | null {
+  const fp = b.complete ? b.fp : null;
+  if (!fp || !(b.candle.o > 0)) return null;
+  return [(fp.delta * b.candle.c) / 1e6, ((b.candle.c - b.candle.o) / b.candle.o) * 1e4];
+}
+
+/**
+ * Taśma świecy `idx` z zamkniętych świec `bars`: delta tylko przy świecy w całości nagranej; F-C1 jak wskaźnik W/W —
+ * prosta z ostatnich `SMC_FC1_LEN` wcześniejszych świec z pełną taśmą (świece z luką pomijane); percentyl wolumenu
+ * (udział wcześniejszych świec z mniejszym wolumenem) wobec `SMC_VOL_LEN` poprzednich, od 20 świec.
+ */
+export function candleTape(bars: readonly SmcSourceBar[], idx: number): SmcCandleTape {
+  const out: SmcCandleTape = { delta: null, fc1: null, fc1Why: null, volPct: null };
+  const b = bars[idx];
+  if (!b) return out;
+  const prev = bars.slice(Math.max(0, idx - SMC_VOL_LEN), idx).filter((x) => Number.isFinite(x.candle.v));
+  if (prev.length >= 20 && Number.isFinite(b.candle.v)) out.volPct = prev.filter((x) => x.candle.v < b.candle.v).length / prev.length;
+  const pt = fc1Point(b);
+  if (!pt || !b.fp) return out;
+  out.delta = b.fp.delta;
+  const xs = new Float64Array(SMC_FC1_LEN);
+  const ys = new Float64Array(SMC_FC1_LEN);
+  let k = 0;
+  for (let j = idx - 1; j >= 0 && k < SMC_FC1_LEN; j--) {
+    const q = fc1Point(bars[j]);
+    if (!q) continue;
+    xs[k] = q[0];
+    ys[k++] = q[1];
+  }
+  if (k < SMC_FC1_LEN) {
+    out.fc1Why = 'few';
+    return out;
+  }
+  const f = effortResult(pt[0], pt[1], xs, ys, SMC_FC1_LEN);
+  if (f) out.fc1 = f.z;
+  else out.fc1Why = 'noise';
+  return out;
+}
+
+const NO_TAPE = (): SmcCandleTape => ({ delta: null, fc1: null, fc1Why: null, volPct: null });
 
 /** Bez górnej granicy interwału: okna liczone są w max(24 h, 24 świece) (`smcWindowMs`). */
 export const SMC_MAX_TF = Number.POSITIVE_INFINITY;
 /** Kolory rodzajów elementów (bez kolorów kupna i sprzedaży). */
-export const SMC_INK = { structure: PRO.nakedPoc, fvg: PRO.level, eq: PRO.levelSoft } as const;
+export const SMC_INK = { structure: PRO.nakedPoc, fvg: PRO.level, eq: PRO.levelSoft, ob: PRO.indSecond } as const;
 
 type LegendPart = { text: string; color: string };
 
@@ -48,9 +111,57 @@ function stateText(s: StructureState): string {
 }
 
 const scaleText = (s: Scale) => (s === 'internal' ? tr('skala wewn.', 'internal scale') : tr('skala swing.', 'swing scale'));
+const sigma = (z: number) => `${z > 0 ? '+' : z < 0 ? '−' : ''}${numLang(Math.abs(z).toFixed(1))} σ`;
+const mitigationText = (m: ObMitigation): string => (m === 'wick' ? tr('knotem', 'by wick') : tr('zamknięciem', 'by close'));
 
-/** Element pod krzyżem: opis z chwilą „znany od”. Kolejność: etykieta, sweep, przełamanie, EQ, FVG. */
-function hoverText(sel: SmcSelection, hover: { t: number; p: number }, ms: number, fmt: (p: number) => string): LegendPart[] {
+/** Taśma świecy w opisie: (wolumen MODEL), delta LIVE i F-C1 MODEL; bez taśmy „—” z powodem. */
+function tapeText(x: SmcCandleTape, withVol: boolean): string {
+  const vol =
+    withVol && x.volPct !== null ? tr(`wolumen p${pct(x.volPct)} wobec ${SMC_VOL_LEN} poprzednich świec MODEL, `, `volume p${pct(x.volPct)} against the previous ${SMC_VOL_LEN} candles MODEL, `) : '';
+  if (x.delta === null) return `${vol}${tr('taśma —: brak taśmy', 'tape —: no tape')}`;
+  const fc1 =
+    x.fc1 !== null
+      ? tr(`wynik wobec wysiłku (F-C1) ${sigma(x.fc1)} MODEL`, `effort vs result (F-C1) ${sigma(x.fc1)} MODEL`)
+      : x.fc1Why === 'few'
+        ? tr(`wynik wobec wysiłku (F-C1) —: mniej niż ${SMC_FC1_LEN} świec z taśmą`, `effort vs result (F-C1) —: fewer than ${SMC_FC1_LEN} candles with tape`)
+        : tr('wynik wobec wysiłku (F-C1) —: brak mierzalnego wpływu', 'effort vs result (F-C1) —: no measurable impact');
+  return `${vol}delta ${fmtSignedVol(x.delta)} LIVE, ${fc1}`;
+}
+
+/** Opis OB pod krzyżem: kształt, strefa, „znany od”, stan, tryb mitygacji, taśma świecy OB (i świecy mitygacji). */
+function obText(v: SmcObView, mode: ObMitigation, at: (t: number) => string, fmt: (p: number) => string, tape: (idx: number) => SmcCandleTape): LegendPart[] {
+  const o = v.o;
+  const what =
+    o.dir === 1 ? tr(`ostatnia świeca spadkowa przed ${o.kind} w górę`, `the last down candle before a ${o.kind} up`) : tr(`ostatnia świeca wzrostowa przed ${o.kind} w dół`, `the last up candle before a ${o.kind} down`);
+  const impulse = numLang(o.impulse.toFixed(1));
+  const state =
+    v.state === 'active'
+      ? tr('aktywny', 'active')
+      : v.state === 'touched'
+        ? tr(`dotknięty od ${at(o.touchedAt as number)}`, `touched since ${at(o.touchedAt as number)}`)
+        : v.state === 'mitigated'
+          ? tr(`zmitygowany ${at(v.endAt as number)}`, `mitigated ${at(v.endAt as number)}`)
+          : tr(`wygasł po ${SMC_OB_LIFE_CANDLES} świecach`, `expired after ${SMC_OB_LIFE_CANDLES} candles`);
+  const ink = PRO.ink2;
+  const out: LegendPart[] = [
+    {
+      text: tr(
+        `· OB (${what}, ${scaleText(o.scale)}): strefa ${fmt(o.lo)}–${fmt(o.hi)}, impuls ${impulse} ATR, znany od ${at(o.known)}, stan: ${state}, mitygacja: ${mitigationText(mode)}`,
+        `· OB (${what}, ${scaleText(o.scale)}): zone ${fmt(o.lo)}–${fmt(o.hi)}, impulse ${impulse} ATR, known from ${at(o.known)}, state: ${state}, mitigation: ${mitigationText(mode)}`
+      ),
+      color: ink,
+    },
+    { text: tr(`· świeca OB: ${tapeText(tape(o.idx), false)}`, `· OB candle: ${tapeText(tape(o.idx), false)}`), color: ink },
+  ];
+  if (v.state === 'mitigated' && v.endIdx !== null) {
+    out.push({ text: tr(`· świeca mitygacji: ${tapeText(tape(v.endIdx), true)}`, `· mitigation candle: ${tapeText(tape(v.endIdx), true)}`), color: ink });
+  }
+  return out;
+}
+
+/** Element pod krzyżem: opis z chwilą „znany od”. Kolejność: etykieta, sweep, przełamanie, EQ, OB, FVG. */
+function hoverText(sel: SmcSelection, hover: { t: number; p: number }, ms: number, fmt: (p: number) => string, coin: string, tape: (idx: number) => SmcCandleTape): LegendPart[] {
+  const rates = (el: SmcRateElement) => smcRatesHover(ms, coin, el);
   const atr = Number.isFinite(sel.atr) && sel.atr > 0 ? sel.atr : 0;
   const near = (p: number, k: number) => Math.abs(hover.p - p) <= k * atr;
   const at = (t: number) => fmtDayTime(t, sel.asOf);
@@ -65,34 +176,50 @@ function hoverText(sel: SmcSelection, hover: { t: number; p: number }, ms: numbe
     if (hover.t < s.t || hover.t >= s.returnT + ms || !near(s.level, 0.3)) continue;
     const n = s.returnIdx - s.idx;
     const where = s.dir === 1 ? tr('nad poziomem', 'above the level') : tr('pod poziomem', 'below the level');
-    return [{ text: tr(`· sweep: knot ${where} ${fmt(s.level)}, powrót zamknięciem po ${n} świecach, znany od ${at(s.known)}`, `· sweep: wick ${where} ${fmt(s.level)}, close back after ${n} candles, known from ${at(s.known)}`), color: ink }];
+    return [{ text: tr(`· sweep: knot ${where} ${fmt(s.level)}, powrót zamknięciem po ${n} świecach, znany od ${at(s.known)}`, `· sweep: wick ${where} ${fmt(s.level)}, close back after ${n} candles, known from ${at(s.known)}`), color: ink }, ...rates('sweep')];
   }
   for (const b of sel.breaks) {
     if (hover.t < b.swingKnown - ms || hover.t >= b.t + ms || !near(b.level, 0.15)) continue;
     const where = b.dir === 1 ? tr('nad szczytem', 'above the high') : tr('pod dołkiem', 'below the low');
-    return [{ text: tr(`· ${b.kind} (${scaleText(b.scale)}): zamknięcie ${where} ${fmt(b.level)}, znany od ${at(b.known)}`, `· ${b.kind} (${scaleText(b.scale)}): close ${where} ${fmt(b.level)}, known from ${at(b.known)}`), color: ink }];
+    return [{ text: tr(`· ${b.kind} (${scaleText(b.scale)}): zamknięcie ${where} ${fmt(b.level)}, znany od ${at(b.known)}`, `· ${b.kind} (${scaleText(b.scale)}): close ${where} ${fmt(b.level)}, known from ${at(b.known)}`), color: ink }, ...rates(`${b.kind}_${b.scale}`)];
   }
   for (const { e } of sel.eqs) {
     if (hover.t < e.t || (e.endAt !== null && hover.t >= e.endAt) || !near(e.level, 0.15)) continue;
     const name = e.dir === 1 ? 'EQH' : 'EQL';
     const gap = e.b.idx - e.a.idx;
-    return [{ text: tr(`· ${name} ${fmt(e.level)}: dwa pivoty z różnicą ${fmt(Math.abs(e.b.price - e.a.price))}, ${gap} świec od siebie, znany od ${at(e.known)}`, `· ${name} ${fmt(e.level)}: two pivots ${fmt(Math.abs(e.b.price - e.a.price))} apart, ${gap} candles apart, known from ${at(e.known)}`), color: ink }];
+    return [{ text: tr(`· ${name} ${fmt(e.level)}: dwa pivoty z różnicą ${fmt(Math.abs(e.b.price - e.a.price))}, ${gap} świec od siebie, znany od ${at(e.known)}`, `· ${name} ${fmt(e.level)}: two pivots ${fmt(Math.abs(e.b.price - e.a.price))} apart, ${gap} candles apart, known from ${at(e.known)}`), color: ink }, ...rates('EQH_EQL')];
+  }
+  for (const v of sel.obs) {
+    const o = v.o;
+    if (hover.t < o.t || (v.endAt !== null && hover.t >= v.endAt) || hover.p < o.lo || hover.p > o.hi) continue;
+    // Świeca OB (znacznik) albo strefa od świecy przełamania
+    if (hover.t >= o.t + ms && hover.t < o.breakT) continue;
+    return obText(v, sel.mitigation, at, fmt, tape);
   }
   for (const v of sel.fvgs) {
     const f = v.f;
     if (hover.t < f.t || (v.endAt !== null && hover.t >= v.endAt) || hover.p < f.lo || hover.p > f.hi) continue;
     const kind = f.dir === 1 ? tr('luka po ruchu w górę', 'gap after a move up') : tr('luka po ruchu w dół', 'gap after a move down');
     const ce = v.ce ? tr('dotknięcie środka luki (CE)', 'gap midpoint touched (CE)') : tr('bez dotknięcia środka luki (CE)', 'gap midpoint not touched (CE)');
-    return [{ text: tr(`· FVG (${kind}) ${fmt(f.lo)}–${fmt(f.hi)}: wypełnienie ${pct(v.fill)}%, ${ce}, znana od ${at(f.known)}`, `· FVG (${kind}) ${fmt(f.lo)}–${fmt(f.hi)}: ${pct(v.fill)}% filled, ${ce}, known from ${at(f.known)}`), color: ink }];
+    return [{ text: tr(`· FVG (${kind}) ${fmt(f.lo)}–${fmt(f.hi)}: wypełnienie ${pct(v.fill)}%, ${ce}, znana od ${at(f.known)}`, `· FVG (${kind}) ${fmt(f.lo)}–${fmt(f.hi)}: ${pct(v.fill)}% filled, ${ce}, known from ${at(f.known)}`), color: ink }, ...rates('FVG')];
   }
   return [];
 }
 
 /**
- * Opis w legendzie: etykieta „eksperymentalny”, stan struktury obu skal, liczby aktywnych FVG, EQH i EQL, położenie
- * ceny w połowach zakresu swingowego i brak częstości bazowych z powodem; krzyż nad elementem dopisuje, od kiedy był znany.
+ * Opis w legendzie: etykieta „eksperymentalny”, stan struktury obu skal, liczby aktywnych FVG, EQH, EQL i OB, położenie
+ * ceny w połowach zakresu swingowego i częstości bazowe interwału wykresu (`smcRates`); krzyż nad elementem dopisuje,
+ * od kiedy był znany, i częstości bazowe jego typu (przy OB taśmę świecy OB z `tape`; bez niej „brak taśmy”).
+ * Częstości są z historii BTC, więc na innym rynku legenda podaje tylko powód braku, a krzyż ich nie dopisuje.
  */
-export function smcLegend(sel: SmcSelection | null, ms: number, hover: { t: number; p: number } | null = null, fmt: (p: number) => string = (p) => numLang(String(p))): LegendPart[] {
+export function smcLegend(
+  sel: SmcSelection | null,
+  ms: number,
+  coin: string,
+  hover: { t: number; p: number } | null = null,
+  fmt: (p: number) => string = (p) => numLang(String(p)),
+  tape: (idx: number) => SmcCandleTape = NO_TAPE
+): LegendPart[] {
   if (ms > SMC_MAX_TF) return [{ text: tr('—, interwał do 1 h', '—, intervals up to 1 h'), color: PRO.ink3 }];
   if (!sel || !Number.isFinite(sel.close)) return [{ text: tr('czekam na świece…', 'waiting for candles…'), color: PRO.ink3 }];
   const out: LegendPart[] = [{ text: tr('eksperymentalny', 'experimental'), color: PRO.ink3 }];
@@ -101,7 +228,7 @@ export function smcLegend(sel: SmcSelection | null, ms: number, hover: { t: numb
     text: tr(`· struktura: wewn. ${stateText(sel.state.internal)} · swing. ${stateText(sel.state.swing)}`, `· structure: internal ${stateText(sel.state.internal)} · swing ${stateText(sel.state.swing)}`),
     color: PRO.ink1,
   });
-  out.push({ text: `· FVG ${numLang(String(sel.active.fvg))} · EQH ${numLang(String(sel.active.eqh))} · EQL ${numLang(String(sel.active.eql))}`, color: PRO.ink2 });
+  out.push({ text: `· FVG ${numLang(String(sel.active.fvg))} · EQH ${numLang(String(sel.active.eqh))} · EQL ${numLang(String(sel.active.eql))} · OB ${numLang(String(sel.active.ob))}`, color: PRO.ink2 });
   const pd = sel.pd;
   if (pd) {
     const zone = pd.zone === 'premium' ? 'premium' : pd.zone === 'discount' ? 'discount' : tr('równowaga', 'equilibrium');
@@ -109,8 +236,8 @@ export function smcLegend(sel: SmcSelection | null, ms: number, hover: { t: numb
   } else {
     out.push({ text: tr('· zakres swingowy: —, brak szczytu i dołka skali swingowej', '· swing range: —, no swing-scale high and low yet'), color: PRO.ink3 });
   }
-  out.push({ text: tr('· częstości bazowe wobec losowych poziomów: —, jeszcze nie policzone', '· base rates against random levels: —, not computed yet'), color: PRO.ink3 });
-  if (hover) out.push(...hoverText(sel, hover, ms, fmt));
+  out.push(...smcRatesLine(ms, coin));
+  if (hover) out.push(...hoverText(sel, hover, ms, fmt, coin, tape));
   return out;
 }
 
@@ -123,6 +250,8 @@ interface Rect {
 
 interface Scene {
   fvgs: (Rect & { text: string; dim: boolean; mid: number })[];
+  /** Strefa OB od świecy przełamania i obrys samej świecy OB (znacznik). */
+  obs: (Rect & { text: string; dim: boolean; mark: Rect | null })[];
   eqs: { x0: number; x1: number; y: number; text: string; dim: boolean; ticks: { x0: number; x1: number; y: number }[] }[];
   breaks: { x0: number; x1: number; y: number; text: string; dashed: boolean }[];
   sweeps: { x0: number; x1: number; y: number }[];
@@ -130,7 +259,7 @@ interface Scene {
   pd: Rect | null;
 }
 
-const EMPTY: Scene = { fvgs: [], eqs: [], breaks: [], sweeps: [], labels: [], pd: null };
+const EMPTY: Scene = { fvgs: [], obs: [], eqs: [], breaks: [], sweeps: [], labels: [], pd: null };
 
 /** Liczba zamkniętych świec (koniec ≤ `now`). */
 function closedCount(bars: readonly SmcSourceBar[], ms: number, now: number): number {
@@ -177,6 +306,11 @@ export class SmcLayer implements ISeriesPrimitive<Time> {
             ctx.fillStyle = rgba(SMC_INK.fvg, 0.12 * st.alpha);
             ctx.fillRect(f.x0, f.y0, f.x1 - f.x0, f.y1 - f.y0);
           }
+          for (const o of this.scene.obs) {
+            if (o.dim) continue;
+            ctx.fillStyle = rgba(SMC_INK.ob, 0.14 * st.alpha);
+            ctx.fillRect(o.x0, o.y0, o.x1 - o.x0, o.y1 - o.y0);
+          }
           const pd = this.scene.pd;
           if (pd) {
             ctx.fillStyle = rgba(SMC_INK.structure, 0.12 * st.alpha);
@@ -213,6 +347,22 @@ export class SmcLayer implements ISeriesPrimitive<Time> {
               ctx.fillStyle = c;
               ctx.textBaseline = 'top';
               ctx.fillText(f.text, Math.max(f.x0, 0) + 3, f.y0 + 2);
+            }
+          }
+          for (const o of this.scene.obs) {
+            const c = ink(SMC_INK.ob, o.dim);
+            ctx.strokeStyle = c;
+            ctx.lineWidth = 1;
+            ctx.strokeRect(crisp(o.x0, 1), crisp(o.y0, 1), Math.round(o.x1 - o.x0), Math.round(o.y1 - o.y0));
+            if (o.mark) {
+              ctx.setLineDash([2, 2]);
+              ctx.strokeRect(crisp(o.mark.x0, 1), crisp(o.mark.y0, 1), Math.round(o.mark.x1 - o.mark.x0), Math.round(o.mark.y1 - o.mark.y0));
+              ctx.setLineDash([]);
+            }
+            if (o.x1 - Math.max(o.x0, 0) > 40) {
+              ctx.fillStyle = c;
+              ctx.textBaseline = 'top';
+              ctx.fillText(o.text, Math.max(o.x0, 0) + 3, o.y0 + 2);
             }
           }
           for (const e of this.scene.eqs) {
@@ -258,6 +408,11 @@ export class SmcLayer implements ISeriesPrimitive<Time> {
       { zOrder: () => 'bottom', renderer: () => back },
       { zOrder: () => 'top', renderer: () => front },
     ];
+    // Częstości bazowe (osobny kawałek paczki): po wczytaniu odświeżenie, żeby legenda je pokazała
+    loadSmcRates().then(
+      () => this.requestUpdate?.(),
+      () => this.requestUpdate?.()
+    );
   }
 
   attached(p: SeriesAttachedParameter<Time>): void {
@@ -322,18 +477,20 @@ export class SmcLayer implements ISeriesPrimitive<Time> {
 
   /** Wybór na ostatniej zamkniętej świecy — tylko po zmianie wyniku, telefonu albo trybu „historia”. */
   private reselect(): void {
-    const history = this.styleOf()?.history === true;
-    const key = [this.result, this.phone, history];
+    const st = this.styleOf();
+    const history = st?.history === true;
+    const mitigation: ObMitigation = st?.mitigation ?? 'close';
+    const key = [this.result, this.phone, history, mitigation];
     if (key.every((v, i) => Object.is(v, this.selKey[i]))) return;
     this.selKey = key;
     const r = this.result;
     const last = this.sbars[this.sbars.length - 1];
-    this.sel = r && last ? selectSmc(r, this.sbars, last.t + this.srcMs, { phone: this.phone, history }) : null;
+    this.sel = r && last ? selectSmc(r, this.sbars, last.t + this.srcMs, { phone: this.phone, history, mitigation }) : null;
     this.onObjects?.(this.sel ? smcObjects(this.sel) : 0);
   }
 
   updateAllViews(): void {
-    this.scene = { fvgs: [], eqs: [], breaks: [], sweeps: [], labels: [], pd: null };
+    this.scene = { fvgs: [], obs: [], eqs: [], breaks: [], sweeps: [], labels: [], pd: null };
     const st = this.styleOf();
     this.style = st;
     const lens = st ? `${st.internalLen}|${st.swingLen}` : '';
@@ -366,6 +523,15 @@ export class SmcLayer implements ISeriesPrimitive<Time> {
       const ym = y(fvgMid(f));
       if (!r || ym === null) continue;
       sc.fvgs.push({ ...r, mid: ym, dim: v.ended !== null, text: `FVG ${pct(v.fill)}%${v.ce ? ' · CE' : ''}` });
+    }
+    for (const v of sel.obs) {
+      const o = v.o;
+      // Strefa od świecy przełamania (od niej OB jest znany), obrys samej świecy OB jako znacznik
+      const r = rect(x(o.breakT), v.endAt === null ? right : x(v.endAt), o.hi, o.lo);
+      if (!r) continue;
+      const scale = o.scale === 'swing' ? tr('swing.', 'swing') : tr('wewn.', 'int.');
+      const state = v.state === 'touched' ? tr(' · dotknięty', ' · touched') : v.state === 'mitigated' ? tr(' · zmitygowany', ' · mitigated') : v.state === 'expired' ? tr(' · wygasł', ' · expired') : '';
+      sc.obs.push({ ...r, dim: v.ended, mark: rect(x(o.t), x(o.t + ms), o.hi, o.lo), text: `OB ${scale}${state}` });
     }
     for (const v of sel.eqs) {
       const e = v.e;
@@ -404,8 +570,9 @@ export class SmcLayer implements ISeriesPrimitive<Time> {
   }
 
   /** Opis w legendzie (z ostatniego wyboru); krzyż nad elementem dopisuje, od kiedy był znany. */
-  legend(hover: { t: number; p: number } | null, fmt: (p: number) => string): LegendPart[] {
-    return smcLegend(this.sel, this.ms, hover, fmt);
+  legend(hover: { t: number; p: number } | null, fmt: (p: number) => string, coin: string): LegendPart[] {
+    const src = this.src;
+    return smcLegend(this.sel, this.ms, coin, hover, fmt, (idx) => candleTape(src, idx));
   }
 
   /** Wybór na ostatniej zamkniętej świecy (legenda, testy). */
