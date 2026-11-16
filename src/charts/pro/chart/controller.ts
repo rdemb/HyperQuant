@@ -1,4 +1,5 @@
 import { CandlestickSeries, HistogramSeries, type ISeriesMarkersPluginApi, LineSeries, LineStyle, LineType, MismatchDirection, PriceScaleMode, createChart, createSeriesMarkers } from 'lightweight-charts';
+import { USUAL_BAND_MIN, type UsualBand, usualBand } from '../indicators/primitives';
 import type {
   AutoscaleInfo,
   CandlestickData,
@@ -315,6 +316,11 @@ export class ProChartController {
   /** Po zmianie listy wskaźników: przy najbliższym wysłaniu dopasować odstęp świec do chmury w przód. */
   private indFit = false;
   private indLegends: (PaneLegend | null)[] = [];
+  /**
+   * Pasmo zwykłości instancji (plan 59, H1): kropkowane linie p10 i p90 w panelu (bez linii przy mierze łączonej), ostatnie
+   * policzone pasmo i klucz zamkniętej świecy, przy której je policzono (sortowanie tylko po zamknięciu świecy).
+   */
+  private indBands: ({ lines: [IPriceLine, IPriceLine] | null; band: UsualBand | null; key: string } | null)[] = [];
   /** Widoczne instancje ze stylem (kolor legendy); przeliczanie trzyma je w silniku. */
   private indShown: IndicatorInstance[] = [];
   private indKey = '';
@@ -726,10 +732,15 @@ export class ProChartController {
     this.indShown = shown;
     this.indLegends = [];
     this.indClouds = [];
+    this.indBands = [];
     this.indSeries = shown.map((x, k) => {
       const def = indicatorDef(x.id);
       const own = def.pane === 'own';
       const lines = this.addIndicatorLines(def, x, own ? pane++ : 0);
+      // Pasmo zwykłości: dwie kropkowane linie w kolorze wskaźnika, niewidoczne do pierwszego policzonego pasma
+      const bandLine = () =>
+        lines[0].createPriceLine({ price: 0, color: rgba(x.color, 0.55), lineWidth: 1, lineStyle: LineStyle.Dotted, lineVisible: false, axisLabelVisible: false, title: '' });
+      this.indBands.push(def.usualBand && own ? { lines: def.usualBand.combine ? null : [bandLine(), bandLine()], band: null, key: '' } : null);
       if (own && lines[0]) this.lowerTicks(lines[0], this.indFormat(def.format), 0.0001);
       const legend = own ? new PaneLegend(`ind:${x.iid}`, `ind:${x.iid}`) : null;
       if (legend) lines[0].attachPrimitive(legend);
@@ -1530,10 +1541,36 @@ export class ProChartController {
       run.out.forEach((_, p) => this.pushPlot(k, p, moved && plotShift(this.indShown[k], plots[p]) > 0 ? 0 : start));
     });
     this.indPushed = n;
+    this.updateBands(n, ms);
     if (this.indFit) {
       this.indFit = false;
       this.fitAhead();
     }
+  }
+
+  /**
+   * Pasmo zwykłości po zamknięciu świecy: p10–p90 z ostatnich zamkniętych świec (30 dób na interwale wykresu), bez świecy
+   * w toku; linie w panelu przestawiane na nowe granice, w legendzie „zwykle a–b”.
+   */
+  private updateBands(n: number, ms: number): void {
+    const closed = n - 1;
+    if (closed < 1) return;
+    const key = `${this.bars[closed - 1].t}|${closed}`;
+    const maxN = Math.max(USUAL_BAND_MIN, Math.round((30 * 86_400_000) / ms));
+    this.indBands.forEach((b, k) => {
+      if (!b || b.key === key) return;
+      const def = indicatorDef(this.indShown[k].id);
+      const run = this.engine.runs[k];
+      if (!run) return;
+      b.key = key;
+      b.band = usualBand(def.usualBand?.combine ? [run.out[0], run.out[1]] : run.out[0], Math.min(closed, this.engine.count), maxN, def.usualBand?.combine);
+      if (!b.lines) return;
+      const ok = !b.band.short;
+      // Krótka próba (200–499 świec): linie jaśniejsze, pełne pasmo od 500 świec
+      const color = rgba(this.indShown[k].color, b.band.brief ? 0.28 : 0.55);
+      b.lines[0].applyOptions({ price: ok ? b.band.lo : 0, lineVisible: ok, color });
+      b.lines[1].applyOptions({ price: ok ? b.band.hi : 0, lineVisible: ok, color });
+    });
   }
 
   /** Chmura w przód (Ichimoku) zajmuje najwyżej trzecią część szerokości wykresu: na wąskim ekranie świece się zwężają. */
@@ -1864,10 +1901,22 @@ export class ProChartController {
                     const title = legendTitle(def, plot);
                     return [{ text: title ? `${title} ${text}${band}` : `${text}${band}`, color: legendColor(x, plot, vs[plot.signOf ?? p]) }];
                   });
+      // Pasmo zwykłości w legendzie panelu: „zwykle a–b (p10–p90, n świec)” albo powód braku
+      const band = this.indBands[k]?.band;
+      const fmtBand = this.indFormat(def.format);
+      const bandText =
+        band && !short
+          ? band.short
+            ? { text: tr(`zwykle: —, za mało świec (${band.n} z ${USUAL_BAND_MIN})`, `usual: —, too few candles (${band.n} of ${USUAL_BAND_MIN})`), color: PRO.ink3 }
+            : band.brief
+              ? { text: tr(`zwykle ${fmtBand(band.lo)}–${fmtBand(band.hi)} (p10–p90, krótka próba: ${band.n} świec)`, `usual ${fmtBand(band.lo)}–${fmtBand(band.hi)} (p10–p90, short sample: ${band.n} candles)`), color: PRO.ink3 }
+              : { text: tr(`zwykle ${fmtBand(band.lo)}–${fmtBand(band.hi)} (p10–p90, ${band.n} świec)`, `usual ${fmtBand(band.lo)}–${fmtBand(band.hi)} (p10–p90, ${band.n} candles)`), color: PRO.ink3 }
+          : null;
+      const shownValues = bandText ? [...values, bandText] : values;
       const legend = this.indLegends[k];
       // Pierwsza wartość przy nazwie, dalsze (OFI: Δp, R², oczekiwana) mogą przejść do następnego wiersza na wąskim panelu
-      if (legend) legend.set([{ text: indicatorLabel(x), color: PRO.ink3 }, ...values.map((v, p) => ({ ...v, glue: p === 0 }))]);
-      else indicators.push({ iid: x.iid, label: indicatorLabel(x), values });
+      if (legend) legend.set([{ text: indicatorLabel(x), color: PRO.ink3 }, ...shownValues.map((v, p) => ({ ...v, glue: p === 0 }))]);
+      else indicators.push({ iid: x.iid, label: indicatorLabel(x), values: shownValues });
     });
     this.statsTable.setHover(this.hoverTime === null ? -1 : i);
     const open = bar !== null && barEnd(bar.t, this.series.interval.ms) > this.store.serverNow();

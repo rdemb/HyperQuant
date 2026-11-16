@@ -884,7 +884,9 @@ describe('wskaźniki: absorpcja', () => {
     const def = indicatorDef('absorption');
     expect(def.plots[0]).toMatchObject({ hist: true, signOf: 1 });
     expect(def.plots[1]).toMatchObject({ hidden: true });
-    expect(def.levels).toEqual([-2, 0, 2]);
+    // Plan 59 (D7, H1): zamiast stałych ±2 pasmo zwykłości p10–p90 i linia zera
+    expect(def.levels).toEqual([0]);
+    expect(def.usualBand).toEqual({});
     expect(indicatorsLink([inst('absorption')])).toBe('absorption(120)');
     expect(parseList([{ id: 'absorption', tf: '1h' }])[0].tf).toBeUndefined();
   });
