@@ -105,6 +105,12 @@ const GLEBIA = {
   indThird: CAT.green,
   cohortMm: CAT.teal,
   cohortRest: CAT.grey,
+  // SMC+HL (rodzaje elementów, nie strony): OB fiolet kategorii, płynność (EQH, EQL, sweepy) jasny morski, połowy
+  // zakresu: premium różane, discount oliwkowe — żaden nie jest kolorem kupna, sprzedaży, POC, VWAP ani IB
+  smcOb: CAT.violet,
+  smcLiquidity: '#5EC8C0',
+  smcPremium: '#D08497',
+  smcDiscount: '#8FB070',
 };
 
 export const PRO = {

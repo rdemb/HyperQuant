@@ -11,7 +11,6 @@ import {
   type SmcSweep,
   type SmcSwing,
   type StructureState,
-  SCALES,
   fvgFill,
   stateAt,
 } from '../core/smcStructure';
@@ -23,22 +22,38 @@ import { tr } from '../../../i18n';
  * warstwie, legendzie i testom. Element jest brany tylko wtedy, gdy jego `known` ≤ `asOf`, a jego stan (przełamany,
  * wypełniona, zakończony) — tylko ze zdarzeń znanych do `asOf`.
  *
- * - **Tryb „bieżące”:** FVG otwarte (także częściowo wypełnione), 5 najbliższych ostatniemu zamknięciu; EQH i EQL
- *   aktywne, po 2 najbliższe; etykiety 6 ostatnich swingów (obu skal; na tej samej świecy i typie zostaje skala
- *   swingowa); linie BOS i CHoCH: 3 ostatnie z 24 h; sweepy: 2 ostatnie z 24 h; pas równowagi zakresu swingowego.
- * - **Tryb „historia 24 h”:** jak „bieżące” i do tego FVG oraz EQ zakończone w ostatnich 24 h (przygaszone), w tych
- *   samych limitach: najpierw aktywne według bliskości, potem zakończone od najnowszych.
- * - **OB (S1):** aktywne i dotknięte, po 3 najbliższe ostatniemu zamknięciu na skalę i typ (ta sama świeca i strona z obu
- *   skal — jeden, skali swingowej); zmitygowany (tryb `mitigation`: zamknięciem — domyślnie — albo knotem) i wygasły
- *   znikają, w „historii” zostają przygaszone (zakończone w oknie, od najnowszych). OB idą do rysunku ostatnie: gdy reszta
- *   zajmuje dużo, łączny limit 25 obiektów obcina najdalsze OB (najpierw zakończone).
+ * Czytelność (16.11): rysujemy mało i tylko to, co blisko ceny — po obu stronach osobno, bo element „pod ceną” i „nad
+ * ceną” czyta się inaczej.
+ *
+ * - **Tryb „bieżące”:** FVG otwarte (także częściowo wypełnione), po 2 najbliższe ostatniemu zamknięciu na kierunek;
+ *   EQH i EQL aktywne, po 1 najbliższym; etykiety 4 ostatnich swingów (obu skal; na tej samej świecy i typie zostaje
+ *   skala swingowa); linie BOS i CHoCH: 3 ostatnie z 24 h; sweepy: 2 ostatnie z 24 h; zakres premium i discount.
+ * - **Tryb „historia 24 h”:** jak „bieżące” i do tego FVG, EQ i OB zakończone w ostatnich 24 h (przygaszone), do limitu
+ *   historii na kierunek: najpierw aktywne według bliskości (w limicie „bieżące”), potem zakończone od najnowszych.
+ * - **OB (S1):** aktywne i dotknięte, po 2 najbliższe ostatniemu zamknięciu na kierunek, z obu skal razem (ta sama świeca
+ *   i strona z obu skal — jeden, skali swingowej; OB, który w ≥ 50% wysokości pokrywa się z bliższym wybranym, odpada);
+ *   zmitygowany (tryb `mitigation`: zamknięciem — domyślnie — albo knotem) i wygasły znikają, w „historii” zostają
+ *   przygaszone (zakończone w oknie, od najnowszych). Łączny limit 25 obiektów obcina najdalsze OB (najpierw zakończone).
  * - **Telefon:** tylko struktura (etykiety), BOS, CHoCH, najbliższa FVG i najbliższy OB.
  *
- * Bez OB najwięcej obiektów: 5 + 2 + 2 + 6 + 3 + 2 + 1 = 21; z OB łącznie najwyżej 25 (projekt). Bez częstości bazowych (etap S2).
+ * „Bieżące” najwięcej: 4 + 2 + 4 + 3 + 2 + 4 + 1 = 20 obiektów; „historia” jest przycinana do 25.
  */
 
-export const SMC_LIMITS = { fvg: 5, eq: 2, labels: 6, breaks: 3, sweeps: 2, ob: 3 } as const;
-export const SMC_PHONE_LIMITS = { fvg: 1, eq: 0, labels: 6, breaks: 3, sweeps: 0, ob: 1 } as const;
+/** Limity trybu „bieżące”: `fvg`, `ob` i `eq` na kierunek, reszta łącznie. */
+export const SMC_LIMITS = { fvg: 2, eq: 1, labels: 4, breaks: 3, sweeps: 2, ob: 2 } as const;
+/** Limity „historii 24 h” na kierunek (aktywne nadal w limicie „bieżące”, zakończone dopełniają do tego limitu). */
+export const SMC_HISTORY_LIMITS = { fvg: 3, eq: 2, ob: 3 } as const;
+/** Telefon: limity łączne (bez podziału na kierunki). */
+export const SMC_PHONE_LIMITS = { fvg: 1, eq: 0, labels: 4, breaks: 3, sweeps: 0, ob: 1 } as const;
+/** OB pokrywający się z bliższym wybranym w co najmniej tej części niższej z dwóch stref nie jest rysowany. */
+export const SMC_OB_OVERLAP = 0.5;
+
+/** Część wysokości niższej z dwóch stref, w której się pokrywają (0 — rozłączne). */
+export const overlapShare = (a: { lo: number; hi: number }, b: { lo: number; hi: number }): number => {
+  const h = Math.min(a.hi - a.lo, b.hi - b.lo);
+  const common = Math.min(a.hi, b.hi) - Math.max(a.lo, b.lo);
+  return h > 0 ? Math.max(0, common) / h : common >= 0 ? 1 : 0;
+};
 /** Łączny limit obiektów rysunku (projekt Pioniera: „najwyżej ok. 25”). */
 export const SMC_OBJECTS_MAX = 25;
 /** Łączny limit obiektów na telefonie (6 etykiet, 3 linie, 1 luka; pilnuje go też pomiar układu `ui:check`). */
@@ -95,6 +110,9 @@ export interface SmcPremium {
   /** Chwila, od której zakres jest znany (późniejszy z dwóch swingów), i świeca tej chwili. */
   known: number;
   t: number;
+  /** Świece szczytu i dołka zakresu (początek linii). */
+  hiT: number;
+  loT: number;
 }
 
 export interface SmcSelection {
@@ -198,20 +216,38 @@ export function selectSmc(r: SmcResult, bars: readonly SBar[], asOf: number, o: 
   out.breaks = r.breaks.filter((b) => recent(b.known)).sort((a, b) => b.known - a.known || b.id - a.id).slice(0, lim.breaks);
   out.sweeps = r.sweeps.filter((s) => recent(s.known)).sort((a, b) => b.known - a.known || b.id - a.id).slice(0, lim.sweeps);
 
-  // FVG: otwarte według bliskości (remis — nowsza), w historii potem zakończone w 24 h od najnowszych
+  // FVG: otwarte według bliskości (remis — nowsza), w historii potem zakończone w 24 h od najnowszych; na komputerze
+  // osobno na kierunek, na telefonie łącznie
   const knownFvg = r.fvgs.filter((f) => f.known <= asOf);
   const open = knownFvg.filter((f) => fvgEnd(f, asOf) === null);
   out.active.fvg = open.length;
-  const fvgList: SmcFvg[] = open.sort((a, b) => gapDistance(a.lo, a.hi, close) - gapDistance(b.lo, b.hi, close) || b.known - a.known);
-  if (o.history) {
-    const ended = knownFvg
-      .map((f) => ({ f, end: fvgEnd(f, asOf) }))
-      .filter((x) => x.end !== null && recent(x.end.at))
-      .sort((a, b) => (b.end?.at ?? 0) - (a.end?.at ?? 0) || b.f.id - a.f.id)
-      .map((x) => x.f);
-    fvgList.push(...ended);
-  }
-  out.fvgs = fvgList.slice(0, lim.fvg).map((f) => {
+  const fvgPick = (dir: Dir | null, n: number, cap: number): SmcFvg[] => {
+    const act = open
+      .filter((f) => dir === null || f.dir === dir)
+      .sort((a, b) => gapDistance(a.lo, a.hi, close) - gapDistance(b.lo, b.hi, close) || b.known - a.known)
+      .slice(0, n);
+    const ended = o.history
+      ? knownFvg
+          .filter((f) => dir === null || f.dir === dir)
+          .map((f) => ({ f, end: fvgEnd(f, asOf) }))
+          .filter((x) => x.end !== null && recent(x.end.at))
+          .sort((a, b) => (b.end?.at ?? 0) - (a.end?.at ?? 0) || b.f.id - a.f.id)
+          .map((x) => x.f)
+      : [];
+    return [...act, ...ended].slice(0, cap);
+  };
+  // Kolejność listy jak dotąd: otwarte według bliskości, potem zakończone od najnowszych
+  const endKey = (f: SmcFvg) => fvgEnd(f, asOf)?.at ?? null;
+  const fvgList = (
+    o.phone ? fvgPick(null, lim.fvg, lim.fvg) : ([1, -1] as Dir[]).flatMap((dir) => fvgPick(dir, SMC_LIMITS.fvg, o.history ? SMC_HISTORY_LIMITS.fvg : SMC_LIMITS.fvg))
+  ).sort((a, b) => {
+    const ea = endKey(a);
+    const eb = endKey(b);
+    if (ea === null && eb === null) return gapDistance(a.lo, a.hi, close) - gapDistance(b.lo, b.hi, close) || b.known - a.known;
+    if (ea === null || eb === null) return ea === null ? -1 : 1;
+    return eb - ea || b.id - a.id;
+  });
+  out.fvgs = fvgList.map((f) => {
     const end = fvgEnd(f, asOf);
     return { f: fvgAt(f, asOf), fill: fvgFill(f, bars, ms, asOf), ce: f.ceAt !== null && f.ceAt <= asOf, ended: end ? end.kind : null, endAt: end ? end.at : null };
   });
@@ -223,12 +259,12 @@ export function selectSmc(r: SmcResult, bars: readonly SBar[], asOf: number, o: 
     const act = knownEq.filter((e) => e.dir === dir && activeEq(e)).sort((a, b) => Math.abs(a.level - close) - Math.abs(b.level - close) || b.known - a.known);
     if (dir === 1) out.active.eqh = act.length;
     else out.active.eql = act.length;
-    const list: SmcEqView[] = act.map((e) => ({ e: eqAt(e, asOf), ended: false }));
+    const list: SmcEqView[] = act.slice(0, lim.eq).map((e) => ({ e: eqAt(e, asOf), ended: false }));
     if (o.history) {
       const ended = knownEq.filter((e) => e.dir === dir && !activeEq(e) && recent(e.endAt as number)).sort((a, b) => (b.endAt as number) - (a.endAt as number) || b.id - a.id);
       list.push(...ended.map((e) => ({ e: eqAt(e, asOf), ended: true })));
     }
-    out.eqs.push(...list.slice(0, lim.eq));
+    out.eqs.push(...list.slice(0, o.history && !o.phone ? SMC_HISTORY_LIMITS.eq : lim.eq));
   }
 
   // Premium i discount: ostatni szczyt i dołek skali swingowej znane do asOf
@@ -246,7 +282,7 @@ export function selectSmc(r: SmcResult, bars: readonly SBar[], asOf: number, o: 
       const p = DEFAULT_SMC_PARAMS;
       const zone = pct > p.equilibriumHi ? 'premium' : pct < p.equilibriumLo ? 'discount' : 'equilibrium';
       const known = Math.max(hi.known, lo.known);
-      out.pd = { hi: hi.price, lo: lo.price, eqLo: lo.price + p.equilibriumLo * w, eqHi: lo.price + p.equilibriumHi * w, pct, zone, known, t: known };
+      out.pd = { hi: hi.price, lo: lo.price, eqLo: lo.price + p.equilibriumLo * w, eqHi: lo.price + p.equilibriumHi * w, pct, zone, known, t: known, hiT: hi.t, loT: lo.t };
     }
   }
 
@@ -261,14 +297,22 @@ export function selectSmc(r: SmcResult, bars: readonly SBar[], asOf: number, o: 
   const obs = [...byCandle.values()].map((x) => ({ x, end: obEnd(x, asOf, mode), d: gapDistance(x.lo, x.hi, close) }));
   out.active.ob = obs.filter((v) => v.end === null).length;
   type Cand = (typeof obs)[number];
-  const pick = (list: Cand[], n: number): Cand[] => {
-    const act = list.filter((v) => v.end === null).sort((a, b) => a.d - b.d || b.x.known - a.x.known);
+  // Aktywne według bliskości (remis — skala swingowa, potem nowszy); OB pokryty przez bliższy wybrany odpada
+  const pick = (list: Cand[], n: number, cap: number): Cand[] => {
+    const act: Cand[] = [];
+    for (const v of list.filter((c) => c.end === null).sort((a, b) => a.d - b.d || Number(b.x.scale === 'swing') - Number(a.x.scale === 'swing') || b.x.known - a.x.known)) {
+      if (act.length >= n) break;
+      if (!o.phone && act.some((w) => overlapShare(w.x, v.x) >= SMC_OB_OVERLAP)) continue;
+      act.push(v);
+    }
     const ended = o.history
       ? list.filter((v) => v.end !== null && recent(v.end.at)).sort((a, b) => (b.end?.at ?? 0) - (a.end?.at ?? 0) || b.x.id - a.x.id)
       : [];
-    return [...act, ...ended].slice(0, n);
+    return [...act, ...ended].slice(0, cap);
   };
-  const chosen: Cand[] = o.phone ? pick(obs, lim.ob) : SCALES.flatMap((sc) => ([1, -1] as Dir[]).flatMap((dir) => pick(obs.filter((v) => v.x.scale === sc && v.x.dir === dir), lim.ob)));
+  const chosen: Cand[] = o.phone
+    ? pick(obs, lim.ob, lim.ob)
+    : ([1, -1] as Dir[]).flatMap((dir) => pick(obs.filter((v) => v.x.dir === dir), SMC_LIMITS.ob, o.history ? SMC_HISTORY_LIMITS.ob : SMC_LIMITS.ob));
   // Łączny limit obiektów: najdalsze OB odpadają pierwsze (najpierw zakończone)
   const room = Math.max(0, SMC_OBJECTS_MAX - smcObjects(out));
   const kept = new Set(

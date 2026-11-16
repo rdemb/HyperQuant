@@ -9,7 +9,7 @@ import { smcWindowMs } from './smcSelect';
  * gdy jego `known` (zamknięcie świecy wyższego interwału) ≤ `asOf`, a jego stan (wypełnienie) — tylko ze świec
  * wyższego interwału zamkniętych do `asOf`.
  *
- * - **Limity**: 3 FVG otwarte najbliższe ostatniemu zamknięciu wykresu, 2 OB na typ (wejście gotowe,
+ * - **Limity** (czytelność 16.11): 2 FVG otwarte najbliższe ostatniemu zamknięciu wykresu, 1 OB na typ (wejście gotowe,
  *   osobne dane modelu OB), 1 linia ostatniego przełamania (BOS albo CHoCH) z okna max(24 h, 24 świece wyższego
  *   interwału); stan struktury tylko w legendzie.
  * - **Łączny limit:** obiekty wyższego interwału mieszczą się w tym, co zostaje z 25 (telefon: 10) po rysunku interwału
@@ -19,7 +19,7 @@ import { smcWindowMs } from './smcSelect';
  *   struktury wykresu; stan struktury wyższego interwału zawsze w legendzie).
  */
 
-export const SMC_MTF_LIMITS = { fvg: 3, obPerDir: 2, breaks: 1 } as const;
+export const SMC_MTF_LIMITS = { fvg: 2, obPerDir: 1, breaks: 1 } as const;
 export const SMC_MTF_PHONE_LIMITS = { fvg: 1, obPerDir: 0, breaks: 0 } as const;
 
 /**
