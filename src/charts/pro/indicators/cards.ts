@@ -191,8 +191,8 @@ export const INDICATOR_CARD: Partial<Record<IndicatorId, IndicatorCard>> = {
   },
   smc: {
     claim: tr(
-      'Gdzie na zamkniętych świecach były swingi, przełamania zamknięciem (BOS, CHoCH), sweepy, luki FVG i równe szczyty; każdy element od chwili, od której był znany. Eksperymentalny.',
-      'Where on closed candles the swings, closing breaks (BOS, CHoCH), sweeps, FVG gaps and equal highs were; every element from the moment it became known. Experimental.'
+      'Gdzie na zamkniętych świecach były swingi, przełamania zamknięciem (BOS, CHoCH), sweepy, luki FVG, równe szczyty i bloki zleceń (ostatnia świeca przeciwna przed przełamaniem z impulsem ≥ 1,5 ATR); każdy element od chwili, od której był znany. Eksperymentalny.',
+      'Where on closed candles the swings, closing breaks (BOS, CHoCH), sweeps, FVG gaps, equal highs and order blocks (the last opposite candle before a break with an impulse ≥ 1.5 ATR) were; every element from the moment it became known. Experimental.'
     ),
     status: 'opis',
     noise: tr(

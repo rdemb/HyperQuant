@@ -76,8 +76,8 @@ describe('limity obiektów', () => {
   const r = smcStructure(bars, MS);
   const asOfs = Array.from({ length: 60 }, (_, k) => bars[300 + k * 45].t + MS);
 
-  it('limity z projektu: FVG 5, EQH i EQL po 2, etykiety 6, BOS i CHoCH 3, sweepy 2; łącznie ≤ 25 w obu trybach', () => {
-    expect(SMC_LIMITS).toEqual({ fvg: 5, eq: 2, labels: 6, breaks: 3, sweeps: 2 });
+  it('limity z projektu: FVG 5, EQH i EQL po 2, etykiety 6, BOS i CHoCH 3, sweepy 2, OB 3 na skalę i typ; łącznie ≤ 25 w obu trybach', () => {
+    expect(SMC_LIMITS).toEqual({ fvg: 5, eq: 2, labels: 6, breaks: 3, sweeps: 2, ob: 3 });
     let full = 0;
     for (const asOf of asOfs) {
       for (const history of [false, true]) {
@@ -97,7 +97,7 @@ describe('limity obiektów', () => {
   });
 
   it('telefon: tylko struktura, BOS i CHoCH oraz najbliższa FVG', () => {
-    expect(SMC_PHONE_LIMITS).toMatchObject({ fvg: 1, eq: 0, sweeps: 0 });
+    expect(SMC_PHONE_LIMITS).toMatchObject({ fvg: 1, eq: 0, sweeps: 0, ob: 1 });
     for (const asOf of asOfs) {
       const s = selectSmc(r, bars, asOf, { phone: true, history: false });
       expect([s.eqs.length, s.sweeps.length, s.pd]).toEqual([0, 0, null]);

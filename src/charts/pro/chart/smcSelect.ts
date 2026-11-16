@@ -6,10 +6,12 @@ import {
   type SmcBreak,
   type SmcEq,
   type SmcFvg,
+  type SmcOb,
   type SmcResult,
   type SmcSweep,
   type SmcSwing,
   type StructureState,
+  SCALES,
   fvgFill,
   stateAt,
 } from '../core/smcStructure';
@@ -26,13 +28,17 @@ import { tr } from '../../../i18n';
  *   swingowa); linie BOS i CHoCH: 3 ostatnie z 24 h; sweepy: 2 ostatnie z 24 h; pas równowagi zakresu swingowego.
  * - **Tryb „historia 24 h”:** jak „bieżące” i do tego FVG oraz EQ zakończone w ostatnich 24 h (przygaszone), w tych
  *   samych limitach: najpierw aktywne według bliskości, potem zakończone od najnowszych.
- * - **Telefon:** tylko struktura (etykiety), BOS, CHoCH i najbliższa FVG.
+ * - **OB (S1):** aktywne i dotknięte, po 3 najbliższe ostatniemu zamknięciu na skalę i typ (ta sama świeca i strona z obu
+ *   skal — jeden, skali swingowej); zmitygowany (tryb `mitigation`: zamknięciem — domyślnie — albo knotem) i wygasły
+ *   znikają, w „historii” zostają przygaszone (zakończone w oknie, od najnowszych). OB idą do rysunku ostatnie: gdy reszta
+ *   zajmuje dużo, łączny limit 25 obiektów obcina najdalsze OB (najpierw zakończone).
+ * - **Telefon:** tylko struktura (etykiety), BOS, CHoCH, najbliższa FVG i najbliższy OB.
  *
- * Najwięcej obiektów: 5 + 2 + 2 + 6 + 3 + 2 + 1 = 21 (≤ 25 z projektu). Bez częstości bazowych (etap S2).
+ * Bez OB najwięcej obiektów: 5 + 2 + 2 + 6 + 3 + 2 + 1 = 21; z OB łącznie najwyżej 25 (projekt). Bez częstości bazowych (etap S2).
  */
 
-export const SMC_LIMITS = { fvg: 5, eq: 2, labels: 6, breaks: 3, sweeps: 2 } as const;
-export const SMC_PHONE_LIMITS = { fvg: 1, eq: 0, labels: 6, breaks: 3, sweeps: 0 } as const;
+export const SMC_LIMITS = { fvg: 5, eq: 2, labels: 6, breaks: 3, sweeps: 2, ob: 3 } as const;
+export const SMC_PHONE_LIMITS = { fvg: 1, eq: 0, labels: 6, breaks: 3, sweeps: 0, ob: 1 } as const;
 /** Łączny limit obiektów rysunku (projekt Pioniera: „najwyżej ok. 25”). */
 export const SMC_OBJECTS_MAX = 25;
 /** Okno trybu „historia” oraz zdarzeń (przełamania, sweepy) w trybie „bieżące”. */
@@ -61,6 +67,20 @@ export interface SmcEqView {
   ended: boolean;
 }
 
+export type ObMitigation = 'close' | 'wick';
+export type ObState = 'active' | 'touched' | 'mitigated' | 'expired';
+
+export interface SmcObView {
+  o: SmcOb;
+  /** Stan w chwili `asOf` w wybranym trybie mitygacji. */
+  state: ObState;
+  /** Zakończony do `asOf` (tylko w trybie „historia”): zmitygowany albo wygasły. */
+  ended: boolean;
+  /** Koniec rysunku i świeca mitygacji (null — trwa albo wygasł). */
+  endAt: number | null;
+  endIdx: number | null;
+}
+
 export interface SmcPremium {
   hi: number;
   lo: number;
@@ -82,10 +102,12 @@ export interface SmcSelection {
   sweeps: SmcSweep[];
   fvgs: SmcFvgView[];
   eqs: SmcEqView[];
+  obs: SmcObView[];
   pd: SmcPremium | null;
   state: Record<Scale, StructureState>;
-  /** Aktywne w chwili `asOf` przed limitami (legenda). */
-  active: { fvg: number; eqh: number; eql: number };
+  /** Aktywne w chwili `asOf` przed limitami (legenda); OB — aktywne i dotknięte. */
+  active: { fvg: number; eqh: number; eql: number; ob: number };
+  mitigation: ObMitigation;
   close: number;
   atr: number;
   asOf: number;
@@ -94,10 +116,12 @@ export interface SmcSelection {
 export interface SmcSelectOptions {
   phone: boolean;
   history: boolean;
+  /** Mitygacja OB: zamknięciem za dalszą krawędzią (domyślnie) albo knotem. */
+  mitigation?: ObMitigation;
 }
 
 /** Liczba obiektów do narysowania. */
-export const smcObjects = (s: SmcSelection): number => s.labels.length + s.breaks.length + s.sweeps.length + s.fvgs.length + s.eqs.length + (s.pd ? 1 : 0);
+export const smcObjects = (s: SmcSelection): number => s.labels.length + s.breaks.length + s.sweeps.length + s.fvgs.length + s.eqs.length + s.obs.length + (s.pd ? 1 : 0);
 
 /** Indeks ostatniej świecy zamkniętej do `asOf` (−1, gdy brak). */
 function indexAt(bars: readonly SBar[], ms: number, asOf: number): number {
@@ -120,6 +144,21 @@ const eqAt = (e: SmcEq, asOf: number): SmcEq => {
   return { ...e, endAt, end: endAt === null ? null : e.end };
 };
 
+/** OB z chwilami zdarzeń tylko do `asOf`. */
+const obAt = (o: SmcOb, asOf: number): SmcOb => {
+  const wickAt = upTo(o.wickAt, asOf);
+  const closeAt = upTo(o.closeAt, asOf);
+  return { ...o, touchedAt: upTo(o.touchedAt, asOf), wickAt, wickIdx: wickAt === null ? null : o.wickIdx, closeAt, closeIdx: closeAt === null ? null : o.closeIdx };
+};
+
+/** Koniec OB do `asOf` w trybie mitygacji (mitygacja albo wygaśnięcie); null — trwa. */
+function obEnd(o: SmcOb, asOf: number, mode: ObMitigation): { at: number; idx: number | null; kind: 'mitigated' | 'expired' } | null {
+  const at = mode === 'wick' ? o.wickAt : o.closeAt;
+  if (at !== null && at <= asOf) return { at, idx: mode === 'wick' ? o.wickIdx : o.closeIdx, kind: 'mitigated' };
+  if (o.expiresAt <= asOf) return { at: o.expiresAt, idx: null, kind: 'expired' };
+  return null;
+}
+
 const gapDistance = (lo: number, hi: number, close: number) => (close >= lo && close <= hi ? 0 : Math.min(Math.abs(close - lo), Math.abs(close - hi)));
 
 /** Chwila końca FVG do `asOf` (wypełnienie albo wygaśnięcie); null — otwarta. */
@@ -134,7 +173,8 @@ export function selectSmc(r: SmcResult, bars: readonly SBar[], asOf: number, o: 
   const lim = o.phone ? SMC_PHONE_LIMITS : SMC_LIMITS;
   const i = indexAt(bars, ms, asOf);
   const state = { internal: stateAt(r, 'internal', asOf), swing: stateAt(r, 'swing', asOf) };
-  const out: SmcSelection = { history: o.history, labels: [], breaks: [], sweeps: [], fvgs: [], eqs: [], pd: null, state, active: { fvg: 0, eqh: 0, eql: 0 }, close: Number.NaN, atr: Number.NaN, asOf };
+  const mode: ObMitigation = o.mitigation ?? 'close';
+  const out: SmcSelection = { history: o.history, labels: [], breaks: [], sweeps: [], fvgs: [], eqs: [], obs: [], pd: null, state, active: { fvg: 0, eqh: 0, eql: 0, ob: 0 }, mitigation: mode, close: Number.NaN, atr: Number.NaN, asOf };
   if (i < 0) return out;
   const close = bars[i].c;
   out.close = close;
@@ -207,5 +247,41 @@ export function selectSmc(r: SmcResult, bars: readonly SBar[], asOf: number, o: 
       out.pd = { hi: hi.price, lo: lo.price, eqLo: lo.price + p.equilibriumLo * w, eqHi: lo.price + p.equilibriumHi * w, pct, zone, known, t: known - ms };
     }
   }
+
+  // OB: ta sama świeca i strona z obu skal — jeden (skala swingowa); aktywne według bliskości, w historii potem zakończone
+  const byCandle = new Map<string, SmcOb>();
+  for (const x of r.obs) {
+    if (x.known > asOf) continue;
+    const key = `${x.idx}|${x.dir}`;
+    const was = byCandle.get(key);
+    if (!was || (x.scale === 'swing' && was.scale !== 'swing')) byCandle.set(key, x);
+  }
+  const obs = [...byCandle.values()].map((x) => ({ x, end: obEnd(x, asOf, mode), d: gapDistance(x.lo, x.hi, close) }));
+  out.active.ob = obs.filter((v) => v.end === null).length;
+  type Cand = (typeof obs)[number];
+  const pick = (list: Cand[], n: number): Cand[] => {
+    const act = list.filter((v) => v.end === null).sort((a, b) => a.d - b.d || b.x.known - a.x.known);
+    const ended = o.history
+      ? list.filter((v) => v.end !== null && recent(v.end.at)).sort((a, b) => (b.end?.at ?? 0) - (a.end?.at ?? 0) || b.x.id - a.x.id)
+      : [];
+    return [...act, ...ended].slice(0, n);
+  };
+  const chosen: Cand[] = o.phone ? pick(obs, lim.ob) : SCALES.flatMap((sc) => ([1, -1] as Dir[]).flatMap((dir) => pick(obs.filter((v) => v.x.scale === sc && v.x.dir === dir), lim.ob)));
+  // Łączny limit obiektów: najdalsze OB odpadają pierwsze (najpierw zakończone)
+  const room = Math.max(0, SMC_OBJECTS_MAX - smcObjects(out));
+  const kept = new Set(
+    [...chosen]
+      .sort((a, b) => Number(a.end !== null) - Number(b.end !== null) || a.d - b.d)
+      .slice(0, room)
+  );
+  out.obs = chosen
+    .filter((v) => kept.has(v))
+    .map(({ x, end }): SmcObView => ({
+      o: obAt(x, asOf),
+      state: end ? end.kind : x.touchedAt !== null && x.touchedAt <= asOf ? 'touched' : 'active',
+      ended: end !== null,
+      endAt: end ? end.at : null,
+      endIdx: end ? end.idx : null,
+    }));
   return out;
 }

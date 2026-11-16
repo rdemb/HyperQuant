@@ -224,7 +224,8 @@ const effortRects = `(() => { const c = window.__hq.chart(); const host = c && c
 /**
  * Wskaźnik „Struktura i płynność (SMC+HL)” na tej samej powtórce co Effort (24.10 19:30, BTC 5m, Kokpit z samym tym
  * wskaźnikiem). Liczba obiektów z wyboru warstwy (`smcSelect`, atrybut `data-smc-objects`), nie z pikseli: limit z projektu
- * 25 (wybór daje najwyżej 21), telefon 10 (etykiety 6, BOS i CHoCH 3, najbliższa luka); na komputerze co najmniej jeden.
+ * 25 (bez OB najwyżej 21, OB dopełniają do 25), telefon 11 (etykiety 6, BOS i CHoCH 3, najbliższa luka i najbliższy OB); na
+ * komputerze co najmniej jeden.
  */
 const SMC_STORE = {
   'hq.charts.v1.cockpit': JSON.stringify({
@@ -235,7 +236,7 @@ const SMC_STORE = {
     indicators: [{ iid: 'smc', id: 'smc', params: {}, color: '#E9548D', alpha: 1, width: 1, labels: true, visible: true }],
   }),
 };
-const SMC_MAX = { desktop: 25, phone: 10 };
+const SMC_MAX = { desktop: 25, phone: 11 };
 const smcCount = `(() => { const c = window.__hq.chart(); const host = c && c.root.closest('[data-smc-objects]'); return host ? Number(host.dataset.smcObjects) : null; })()`;
 
 // ───────────────────────── inne rynki (M1: HYPE i rynek HIP-3) ─────────────────────────
