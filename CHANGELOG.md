@@ -4,6 +4,13 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Premia HL wobec spotu: o ile kontrakt na Hyperliquid stoi nad albo pod ceną oracle (2026-11-16)
+<!-- co-nowego: grupa=wykres | pl=Nowy wskaźnik Premia HL wobec spotu: o ile punktów bazowych arkusz kontraktu na Hyperliquid stoi nad albo pod ceną oracle, z pasmem zwykłości | en=New HL premium over spot indicator: how many basis points the Hyperliquid contract book sits above or below the oracle price, with a usual band -->
+
+#### Dodane
+- **Premia HL wobec spotu** (grupa „Kto stoi za ruchem”, LIVE; Pionier, runda 3, R3-2 po weryfikacji dokumentacji HL): pole `premium` z kanału activeAssetCtx w pb, według dokumentacji Hyperliquid (max(impact_bid − oracle, 0) − max(oracle − impact_ask, 0)) / oracle przy cenach wpływu 20 000 USDC na BTC (6 000 na innych rynkach), czyli wielkość, z której HL liczy finansowanie; w legendzie pomocniczo (mark − oracle) / oracle. Na świecę średnia odczytów ważona czasem (odczyt ważny najwyżej 60 s, dłuższa przerwa to luka „—”). Oracle to ważona mediana cen spot z giełd scentralizowanych, a na rynkach HIP-3 cena instrumentu bazowego od wydawcy rynku; poza notowaniami rynku bazowego (weekend, przerwa dzienna, święto) świece rynków desku HIP-3 nie mają wartości, bo oracle to wtedy cena platformy. Pasmo zwykłości p10–p90 i linia zera. Seria tylko od otwarcia strony: historia taśmy z serwera ma mark i OI, ale nie premii ani oracle (zapisane w opisie, na plakietce i w Źródłach).
+- Funkcje do paska ramy dnia w `core/premium.ts`: `premiumMinutes` (średnie minut) i `premiumRead` (kierunek zmiany w ostatnich N minutach: rośnie, płaska albo spada, z progiem szumu odczytu = p90 zmian minutowych w spokojniejszej połowie godzin, nie mniej niż krok ceny; położenie wobec pasma zwykłości). Testy: wzór, średnia ważona czasem z przerwą i starą próbką, próbka ze strumienia w magazynie, oracle HIP-3 poza notowaniami, próg szumu bez wpływu burzliwej godziny, „bez zmian” poniżej progu.
+
 ### Wysiłek a wynik v2: ruch świecy wobec ruchu oczekiwanego z λ Kyle’a (2026-11-16)
 <!-- co-nowego: grupa=wykres | pl=Nowy wskaźnik Wysiłek a wynik: o ile odchyleń ruch świecy różnił się od ruchu, jakiego oczekiwałoby bieżące λ Kyle’a przy jej agresji | en=New Effort vs result indicator: by how many deviations a candle’s move differed from the move the current Kyle’s λ would expect for its aggression -->
 

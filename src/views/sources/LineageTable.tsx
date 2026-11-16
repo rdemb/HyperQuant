@@ -425,6 +425,20 @@ export const GROUPS: { title: string; rows: Row[] }[] = [
         refresh: '10–15 s',
       },
       {
+        metric: tr('Premia HL wobec spotu (wskaźnik, W sesji)', 'HL premium over spot (indicator, In session)'),
+        source: tr('Hyperliquid WS activeAssetCtx (premium, markPx, oraclePx) od otwarcia strony', 'Hyperliquid WS activeAssetCtx (premium, markPx, oraclePx) since the page opened'),
+        method: tr(
+          'Premia = pole premium Hyperliquid w pb, według dokumentacji HL (max(impact_bid − oracle, 0) − max(oracle − impact_ask, 0)) / oracle przy cenach wpływu 20 000 USDC na BTC (6 000 na innych rynkach); pomocniczo (mark − oracle) / oracle; świeca = średnia odczytów ważona czasem (odczyt ważny najwyżej 60 s); pasmo zwykłości p10–p90 z ostatnich zamkniętych świec; zmiana nie większa niż szum odczytu (p90 zmian minutowych w spokojniejszej połowie godzin, nie mniej niż krok ceny) to „bez zmian”',
+          'Premium = the Hyperliquid premium field in bp, per the HL documentation (max(impact_bid − oracle, 0) − max(oracle − impact_ask, 0)) / oracle at impact prices for 20,000 USDC on BTC (6,000 on other markets); auxiliary (mark − oracle) / oracle; candle = time-weighted mean of readings (a reading is valid for at most 60 s); usual band p10–p90 from recent closed candles; a change no larger than the read noise (p90 of minute changes in the calmer half of the hours, at least one price step) is “no change”'
+        ),
+        kinds: ['LIVE'],
+        refresh: tr('na żywo', 'live'),
+        caveat: tr(
+          'Serwer nagrywa w historii taśmy mark i OI, ale nie premii ani oracle, więc premia jest tylko od otwarcia strony, bez powtórki. Na rynkach HIP-3 oracle to cena instrumentu bazowego od wydawcy rynku, nie spot z giełd; poza notowaniami rynku bazowego świece rynków desku nie mają wartości („—”). Kolejność cen w polu impactPxs nie jest opisana w dokumentacji, więc wskaźnik z niej nie korzysta.',
+          'The server records the mark price and OI in the tape history but neither the premium nor the oracle, so the premium exists only since the page opened, with no replay. On HIP-3 markets the oracle is the underlying’s price from the market deployer, not exchange spot; outside the underlying’s trading hours desk market candles have no value (“—”). The order of prices in the impactPxs field is not documented, so the indicator does not use it.'
+        ),
+      },
+      {
         metric: tr('Funding Binance / Bybit', 'Binance / Bybit funding'),
         source: 'Hyperliquid API: predictedFundings',
         method: tr(

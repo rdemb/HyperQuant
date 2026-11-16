@@ -128,6 +128,9 @@ function flowOf(f: Fixture): FlowContext {
   const window = (from: number, to: number) => f.orders.slice(lowerBound(f.orders, from), lowerBound(f.orders, to));
   return {
     oiAt: (t) => oiBase * (1 + 0.1 * Math.sin((t - T0) / (24 * H))),
+    // Premia w pb wahająca się wokół zera (odczyt mark wobec oracle)
+    premium: (from) => 3 * Math.sin((from - T0) / (6 * H)),
+    markOracle: (from) => 2 * Math.sin((from - T0) / (6 * H)),
     book: () => f.frames,
     exactBook: () => f.frames,
     identified: () => true,
