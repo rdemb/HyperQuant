@@ -46,6 +46,8 @@ import { BURSTS_MAX, CLASHES_EVIDENCE, RANK_WINDOW_MS, WALLS_DONE_MAX, WALLS_K, 
 import { BUBBLES_BARS, BUBBLES_EVIDENCE, BUBBLES_K, BUBBLES_MAX } from './chart/bubbleSelect';
 import { AUCTIONS_PER_SIDE, ZONES_EVIDENCE, ZONES_PER_SIDE } from './chart/zonesSelect';
 import { MarketStateBar } from './chart/MarketStateBar';
+import { DayFrameBar } from './chart/DayFrameBar';
+import { IVB_DEFAULT, ivbMinutes } from './core/ivb';
 import { LayoutHeader } from './chart/LayoutHeader';
 import { type ChartKind, FAVOURITE_INTERVALS, INTERVAL_MENU, KIND_OPTIONS, LayersMenu, type MoreEntry, MoreMenu as BarMore, kindOf, kindPatch } from './chart/ChartBar';
 import { type LayerChip, layerLabel } from './chart/layerSources';
@@ -850,6 +852,9 @@ export const ProChart: React.FC<{
 
   // Stan rynku: przycisk „Stan” i linia pod paskiem (w układzie 2 × 2 za mało miejsca)
   const stateShown = settings.showState && layout !== 4;
+  // Rama dnia (Fabio): pasek pod paskiem wykresu, gdy na wykresie są Strefy Effort albo IVB; okno IVB z parametru wskaźnika
+  const ivbShown = settings.indicators.find((x) => x.visible && x.id === 'ivb');
+  const frameShown = !inReplay && !chartOnly && settings.indicators.some((x) => x.visible && (x.id === 'effort' || x.id === 'ivb'));
   const fsOn = layoutFs ? layoutFs.active : fullscreen;
   const fsLabel = fsOn
     ? tr('Zamknij pełny ekran', 'Exit full screen')
@@ -1097,6 +1102,12 @@ export const ProChart: React.FC<{
       )}
 
       {replay && <ReplayBar session={replay.session} narrow={narrow} onExit={replay.onExit} />}
+
+      {frameShown && (
+        <LocalBoundary what={tr('Rama dnia', 'Day frame')} inline>
+          <DayFrameBar store={store} narrow={narrow} minutes={ivbMinutes(ivbShown?.params.minutes ?? IVB_DEFAULT)} />
+        </LocalBoundary>
+      )}
 
       {/* Stan rynku: zdanie z faktów pod paskiem (w układzie 2 × 2 za mało miejsca); na komputerze zwinięte do „Stan” */}
       {stateShown && settings.stateOpen && !chartOnly && (
