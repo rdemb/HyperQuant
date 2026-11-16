@@ -16,6 +16,11 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 - **Ranking LVN według trwałości topologicznej** (`lvnNodes` zamiast `lvnBins`): do 3 minimów najgłębszych wobec niższego z dwóch otaczających maksimów, a nie 3 najniższych; kolejność w legendzie od najtrwalszego. Test: minimum najniższe (5), ale z garbem 8 obok, wypada z trójki na rzecz dolin o trwałości 80, 60 i 10.
 - Testy: wyraźny profil dwugarbny daje LVN w dolinie z pewnością ≥ 0,9; na zaszumionym profilu jednogarbnym LVN z szumu mają pewność < 0,7 w ≥ 80% ziaren. Na płaskim profilu z szumem 3 z 15 LVN z szumu przeszły próg: losowanie pojedynczych świec nie oddaje tego, że sąsiednie świece handlują przy podobnych cenach (zapisane w opisie wskaźnika).
 
+### Wysiłek a wynik v2: ruch świecy wobec ruchu oczekiwanego z λ Kyle’a (2026-11-16)
+<!-- co-nowego: grupa=wykres | pl=Nowy wskaźnik Wysiłek a wynik: o ile odchyleń ruch świecy różnił się od ruchu, jakiego oczekiwałoby bieżące λ Kyle’a przy jej agresji | en=New Effort vs result indicator: by how many deviations a candle’s move differed from the move the current Kyle’s λ would expect for its aggression -->
+
+#### Dodane
+- **Wysiłek a wynik** (grupa „Presja”, MODEL; Pionier, Fabio runda 2, F-C1; u Fabio „law of effort and results”): dla zamkniętej świecy w całości objętej taśmą ruch od otwarcia do zamknięcia (pb) minus ruch oczekiwany z prostej OLS na poprzednich świecach (y = a + λ·x, x — przepływ agresora w mln USD), w odchyleniach reszt prostej. Przy przewadze kupna prosta świec z przewagą kupna, przy sprzedaży — sprzedaży, gdy ich λ przekracza swój próg szumu; bez λ ponad progiem R² „—: brak mierzalnego wpływu”. Pasmo zwykłości p10–p90. Testy: ruch zgodny z λ ≈ 0, ruch mniejszy ujemny, większy dodatni; strona wybiera swoje λ; na danych bez wpływu wynik w ≤ 10% okien; na SIM ze znanym λ |wynik| > 2 w 2–9% świec.
 ### Najbliższe poziomy: lista poziomów wokół ceny w W sesji i Przed sesją (2026-11-16)
 <!-- co-nowego: grupa=wykres | pl=Nowy panel Najbliższe poziomy: co jest najbliżej ceny, jak daleko w procentach i w ATR 5m oraz ile likwidacji leży po drodze | en=New Nearest levels panel: what lies closest to the price, how far in percent and in 5m ATR, and how much liquidation sits on the way -->
 

@@ -73,6 +73,7 @@ const SOURCES = {
   rvol: 'MODEL',
   ofi: 'LIVE',
   kyle: 'MODEL',
+  effres: 'MODEL',
   ordersize: 'LIVE',
   // „Więcej z HyperQuant”
   cone: 'MODEL',
@@ -102,6 +103,10 @@ const METHOD_HINT: Record<ModelKey, string> = {
   absorption: tr(
     'MODEL · Theil–Sen: zwykły ruch ceny przy takiej delcie z prostej Theila–Sena na poprzednich świecach, odchylenie w jednostkach MAD',
     'MODEL · Theil–Sen: the usual price move for such a delta from a Theil–Sen line over previous candles, the deviation in MAD units'
+  ),
+  effres: tr(
+    'MODEL · reszta OLS: ruch świecy minus ruch oczekiwany z prostej λ Kyle’a przy jej przepływie, w odchyleniach reszt; tylko gdy λ jest ponad progiem szumu',
+    'MODEL · OLS residual: the candle move minus the move expected from the Kyle’s λ line for its flow, in residual deviations; only when λ is above the noise floor'
   ),
   kyle: tr(
     'MODEL · OLS z progiem szumu: nachylenie zwrotu świecy na podpisany przepływ agresora (pb na 1 mln USD), pokazane tylko powyżej progu R² dla liczby świec',

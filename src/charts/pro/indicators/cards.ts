@@ -82,6 +82,17 @@ export const INDICATOR_CARD: Partial<Record<IndicatorId, IndicatorCard>> = {
     claim: tr('Czy wolumen jest wyższy niż zwykle o tej porze dnia w Nowym Jorku.', 'Whether volume is higher than usual at this New York time of day.'),
     status: 'test',
   },
+  effres: {
+    claim: tr(
+      'O ile odchyleń ruch zamkniętej świecy różnił się od ruchu oczekiwanego z bieżącego λ Kyle’a przy jej przepływie agresora.',
+      'By how many deviations the closed candle’s move differed from the move expected from the current Kyle’s λ for its aggressor flow.'
+    ),
+    status: 'opis',
+    noise: tr(
+      'Wynik pokazujemy tylko, gdy λ przekracza próg szumu R²; na danych SIM ze znanym λ |wynik| > 2 wypada w 2–9% świec.',
+      'The result is shown only when λ exceeds the R² noise floor; on SIM data with a known λ, |result| > 2 occurs in 2–9% of candles.'
+    ),
+  },
   kyle: {
     claim: tr(
       'O ile punktów bazowych cena ruszała się na każdy milion USD przepływu agresora w ostatnich świecach, osobno dla kupna i sprzedaży.',

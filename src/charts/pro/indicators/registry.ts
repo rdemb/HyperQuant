@@ -72,6 +72,7 @@ export type IndicatorId =
   | 'absorption'
   | 'ofi'
   | 'kyle'
+  | 'effres'
   | 'regime'
   | 'ordersize'
   | 'cone'
@@ -441,7 +442,10 @@ function olsPairs(xs: Float64Array, ys: Float64Array, n: number, keep: (x: numbe
   const cxy = sxy - (sx * sy) / m;
   const cyy = syy - (sy * sy) / m;
   if (!(cxx > 0) || !(cyy > 0)) return null;
-  return { beta: cxy / cxx, r2: (cxy * cxy) / (cxx * cyy), m };
+  const beta = cxy / cxx;
+  // Odchylenie reszt (m − 2 stopni swobody): skala „zwykłego” odchylenia ruchu od prostej
+  const sres = m > 2 ? Math.sqrt(Math.max(0, cyy - beta * cxy) / (m - 2)) : Number.NaN;
+  return { beta, alpha: (sy - beta * sx) / m, r2: (cxy * cxy) / (cxx * cyy), m, sres };
 }
 
 /**
@@ -458,6 +462,26 @@ export function kyleFit(xs: Float64Array, ys: Float64Array, n: number): KyleFit 
     return f && f.r2 >= ofiMinR2(f.m) ? f.beta : null;
   };
   return { lambda: all.beta, r2: all.r2, floor, n: all.m, shown: all.r2 >= floor ? all.beta : Number.NaN, buy: side((x) => x > 0), sell: side((x) => x < 0) };
+}
+
+export type EffortResult = { z: number; expected: number; lambda: number };
+
+/**
+ * Wysiłek a wynik v2 (Pionier, Fabio runda 2, F-C1; u Fabio „law of effort and results”): ruch świecy `y` (pb) wobec
+ * ruchu oczekiwanego przy jej przepływie agresora `x` (mln USD) z prostej OLS na poprzednich świecach (λ Kyle’a), w
+ * odchyleniach reszt tej prostej. Wymaga wspólnego λ powyżej progu szumu R² (inaczej brak mierzalnego wpływu, null);
+ * przy przewadze kupna bierze prostą świec z przewagą kupna, przy sprzedaży — sprzedaży, gdy ich λ też przekracza swój
+ * próg, w przeciwnym razie wspólną. Ujemny wynik: cena ruszyła mniej, niż „kupiła” agresja; dodatni: więcej.
+ */
+export function effortResult(x: number, y: number, xs: Float64Array, ys: Float64Array, n: number): EffortResult | null {
+  if (x === 0 || !Number.isFinite(x) || !Number.isFinite(y)) return null;
+  const all = olsPairs(xs, ys, n, () => true, 20);
+  if (!all || all.r2 < ofiMinR2(all.m)) return null;
+  const sideFit = olsPairs(xs, ys, n, x > 0 ? (v) => v > 0 : (v) => v < 0, 15);
+  const f = sideFit && sideFit.r2 >= ofiMinR2(sideFit.m) ? sideFit : all;
+  if (!(f.sres > 0)) return null;
+  const expected = f.alpha + f.beta * x;
+  return { z: (y - expected) / f.sres, expected, lambda: f.beta };
 }
 
 /** Najlepsze kwotowania migawki (kubełki najbliższej agregacji); null bez obu stron. */
@@ -1613,6 +1637,56 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
     },
   },
   {
+    id: 'effres',
+    short: tr('W/W', 'E/R'),
+    name: tr('Wysiłek a wynik: ruch wobec ruchu oczekiwanego z λ', 'Effort vs result: move against the move expected from λ'),
+    hint: tr(
+      'Linia mówi, o ile odchyleń ruch zamkniętej świecy różnił się od ruchu, jakiego oczekiwałaby bieżąca sztywność rynku (λ Kyle’a) przy jej przepływie agresora. Ujemna przy przewadze kupna: cena ruszyła mniej, niż „kupiła” agresja (wysiłek bez wyniku); dodatnia: cena ruszyła dalej przy małym wysiłku. Przy przewadze sprzedaży znaczenie znaku jest odwrócone. W legendzie ruch oczekiwany i faktyczny w pb oraz użyte λ',
+      'The line says by how many deviations the closed candle’s move differed from the move the current market stiffness (Kyle’s λ) would expect for its aggressor flow. Negative with buying dominant: price moved less than the aggression “paid for” (effort without result); positive: price moved further on little effort. With selling dominant the meaning of the sign is reversed. The legend shows the expected and actual move in bp and the λ used'
+    ),
+    group: 'hyperquant',
+    aliases: 'wysilek wynik effort result law of effort fabio absorpcja absorption kyle lambda wplyw impact reszta residual',
+    warmup: () => 0,
+    convention: tr(
+      'Tego wskaźnika nie ma w TradingView: liczony z nagranej taśmy Hyperliquid (Pionier, „prawo wysiłku i wyniku” u Fabio Valentiniego, zakotwiczone w λ Kyle’a). Dla każdej świecy w całości objętej taśmą: x — delta agresorów razy cena zamknięcia, w mln USD; y — zwrot od otwarcia do zamknięcia, w pb. Z poprzednich świec z wartością w liczbie „Długość” (bez bieżącej) liczona jest prosta OLS y = a + λ·x. Wynik = (y − (a + λ·x)) / s, gdzie s to odchylenie reszt prostej (n − 2 stopni swobody). Gdy wspólne λ nie przekracza progu szumu R² (t² / (t² + n − 2), test 5%), wynik to „—: brak mierzalnego wpływu”. Przy przewadze kupna używana jest prosta świec z przewagą kupna, przy sprzedaży — sprzedaży (od 15 świec), jeśli jej λ przekracza swój próg; inaczej wspólna. Na danych SIM ze znanym λ |wynik| > 2 wypada w 2–9% świec (test). Opis zamkniętej świecy, nie prognoza.',
+      'TradingView has no such indicator: it is computed from the recorded Hyperliquid tape (Pionier, Fabio Valentini’s “law of effort and results”, anchored in Kyle’s λ). For every candle fully covered by the tape: x is the aggressor delta times the close, in M USD; y is the return from open to close, in bp. An OLS line y = a + λ·x is fitted over the previous “Length” candles with a value (excluding the current one). The result = (y − (a + λ·x)) / s, where s is the residual deviation of the line (n − 2 degrees of freedom). When the common λ does not exceed the R² noise floor (t² / (t² + n − 2), a 5% test), the result is “—: no measurable impact”. With buying dominant the line of buying-dominated candles is used, with selling the selling one (from 15 candles), if its λ exceeds its own floor; otherwise the common one. On SIM data with a known λ, |result| > 2 occurs in 2–9% of candles (tested). A description of the closed candle, not a forecast.'
+    ),
+    memoryNote: tr(
+      'Wartość zależy od ostatnich świec w liczbie „Długość”, w całości objętych taśmą (świece z luką się pomija), bez bieżącej; bieżąca świeca dostaje wartość po zamknięciu. Brak wartości, dopóki nie ma tylu świec, gdy wpływ nie odróżnia się od szumu i przy zerowym przepływie.',
+      'The value depends on the last “Length” candles fully covered by the tape (candles with a gap are skipped), excluding the current one; the current candle gets a value once closed. No value until there are that many candles, when the impact does not stand out from noise, and with zero flow.'
+    ),
+    pane: 'own',
+    params: [{ key: 'length', label: tr('Długość', 'Length'), min: 20, max: 300, step: 1, def: 60 }],
+    lookback: (p) => p.length,
+    plots: [
+      { title: tr('wynik σ', 'result σ') },
+      { hidden: true, title: tr('oczek. pb', 'exp. bp'), format: 'fixed1' },
+      { hidden: true, title: tr('ruch pb', 'move bp'), format: 'fixed1' },
+      { hidden: true, title: tr('λ użyte', 'λ used'), format: 'fixed2' },
+    ],
+    levels: [0],
+    format: 'fixed2',
+    usualBand: {},
+    sample: {
+      span: (p) => p.length,
+      point: (b, xy) => {
+        // Tylko świeca w całości objęta nagraniem: część taśmy dałaby część przepływu
+        const fp = b.complete ? b.fp : null;
+        if (!fp || !(b.candle.o > 0)) return false;
+        xy[0] = (fp.delta * b.candle.c) / 1e6;
+        xy[1] = ((b.candle.c - b.candle.o) / b.candle.o) * 1e4;
+        return true;
+      },
+      create: () => (x, y, xs, ys, out) => {
+        const f = effortResult(x, y, xs, ys, xs.length);
+        out[0] = f ? f.z : Number.NaN;
+        out[1] = f ? f.expected : Number.NaN;
+        out[2] = f ? y : Number.NaN;
+        out[3] = f ? f.lambda : Number.NaN;
+      },
+    },
+  },
+  {
     id: 'regime',
     usualBand: {},
     short: tr('Reżim', 'Regime'),
@@ -2252,7 +2326,7 @@ export const REMOVED_INDICATORS: readonly string[] = ['obv', 'cmf', 'mfi', 'netv
  * Kolejność grup i wskaźników to kolejność menu.
  */
 export const MENU_GROUPS = [
-  { id: 'presja', label: tr('Kto naciska i czy cena ustępuje', 'Who is pushing and does price give way'), ids: ['absorption', 'ofi', 'kyle', 'oiflow'] },
+  { id: 'presja', label: tr('Kto naciska i czy cena ustępuje', 'Who is pushing and does price give way'), ids: ['absorption', 'effres', 'ofi', 'kyle', 'oiflow'] },
   { id: 'sklad', label: tr('Kto stoi za ruchem', 'Who is behind the move'), ids: ['breadth', 'repeat', 'makers', 'ordersize', 'twap', 'hawkes'] },
   { id: 'ruch', label: tr('Kiedy ruch i ile kosztuje wejście', 'When the market moves and what entry costs'), ids: ['rvol', 'regime', 'slippage', 'cone'] },
   { id: 'poziomy', label: tr('Poziomy i rynki prognoz', 'Levels and prediction markets'), ids: ['pbrange', 'effort', 'ivb', 'outcomes'] },
