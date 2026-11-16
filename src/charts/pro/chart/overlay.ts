@@ -41,6 +41,7 @@ import { DAY } from '../core/time';
 import { type WhaleLayer, groupWhaleOrders } from '../../../utils/whaleLayer';
 import type { Candle } from '../hl/parse';
 import type { ProBar } from '../store/proStore';
+import type { ValueKind, ValueRef } from '../core/valueReference';
 import { autoRowStep, fmtPx } from './layout';
 import type { ChartSettings } from './settings';
 import { MONO, PRO, rgba } from './theme';
@@ -344,6 +345,13 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
   private ibs: InitialBalance[] = [];
   /** Po każdej scenie profili okresów: liczba obiektów i udział pola pod słupkami (pomiar układu czyta je z wykresu). */
   onPeriods: ((c: { objects: number; area: number }) => void) | null = null;
+  /**
+   * POC i value area okresu z jednego źródła wartości (`valueReference`, jak pasek Rama dnia); null — okres poza zasięgiem
+   * źródła (wtedy POC i value area z profilu świec wykresu).
+   */
+  valueOf: ((kind: ValueKind, start: number) => ValueRef | null) | null = null;
+  /** Wartość ostatniego zamkniętego okresu z ostatniej sceny (plakietka warstwy: z taśmy LIVE, ze świec MODEL). */
+  periodValue: ValueRef | null = null;
   /** Zakresy początkowe do rysowania (bieżąca i poprzednia sesja, `selectIbs`). */
   private ibDraws: IbDraw[] = [];
   /** Po każdej scenie: liczba obiektów zakresu początkowego na ekranie (pomiar układu czyta ją z wykresu). */
@@ -616,6 +624,7 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
     } else {
       this.periodCache.clear();
       this.lvnCache.clear();
+      this.periodValue = null;
       this.onPeriods?.({ objects: 0, area: 0 });
     }
     if (t.showDevPoc && sc.periodProfile && step > 0) this.sceneDeveloping(s, bars, sc.periodProfile, step, visFrom, visTo, X, Y);
@@ -846,7 +855,8 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
   ): number {
     const ms = this.ms;
     const cache = new Map<number, PeriodCache>();
-    const items: { start: number; from: number; to: number; complete: boolean; pocPx: number; p: VolumeProfile }[] = [];
+    const items: { start: number; from: number; to: number; complete: boolean; pocPx: number; val: number; vah: number; p: VolumeProfile }[] = [];
+    let last: ValueRef | null = null;
     for (const r of periodRanges(bars, mode)) {
       const hit = this.periodCache.get(r.start);
       const entry =
@@ -855,9 +865,18 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
           : { step, refs: bars.slice(r.from, r.to + 1), profile: volumeProfile(bars, r.from, r.to, step) };
       cache.set(r.start, entry);
       const p = entry.profile;
-      if (p && p.max > 0) items.push({ start: r.start, from: r.from, to: r.to, complete: r.complete, pocPx: (p.lo + p.poc + 0.5) * p.step, p });
+      if (!p || !(p.max > 0)) continue;
+      // POC i value area z jednego źródła wartości; słupki zostają z profilu świec wykresu (siatka wierszy z przybliżenia)
+      const v = this.valueOf?.(mode, r.start) ?? null;
+      if (v?.complete) last = v;
+      items.push(
+        v
+          ? { start: r.start, from: r.from, to: r.to, complete: r.complete, pocPx: v.poc, val: v.val, vah: v.vah, p }
+          : { start: r.start, from: r.from, to: r.to, complete: r.complete, pocPx: (p.lo + p.poc + 0.5) * p.step, val: (p.lo + p.vaLo) * p.step, vah: (p.lo + p.vaHi + 1) * p.step, p }
+      );
     }
     this.periodCache = cache;
+    this.periodValue = last;
     const lvnCache = new Map<number, { refs: readonly ProBar[]; res: PeriodLvn | null }>();
     // Pełny profil: bieżący i poprzedni okres (z danych); starsze — linia POC i pasek value area; nagie POC — 3 najbliższe cenie
     const full = fullFrom(items.length);
@@ -868,7 +887,7 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
     );
     let objects = 0;
     for (let k = items.length - 1; k >= 0; k--) {
-      const { from, to, pocPx, p } = items[k];
+      const { from, to, pocPx, val, vah, p } = items[k];
       const x0 = edge(bars[from].t);
       const x1 = edge(bars[to].t + ms);
       const yPoc = Y(pocPx);
@@ -880,8 +899,8 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
       s.hlines.push({ x0, x1, y: yPoc, color: K.spPocLine, dash: DASH.none });
       objects += 2;
       if (k < full) {
-        const ya = Y((p.lo + p.vaHi + 1) * p.step);
-        const yb = Y((p.lo + p.vaLo) * p.step);
+        const ya = Y(vah);
+        const yb = Y(val);
         s.rects.push({ x: x0 - 3, y: ya, w: 2, h: Math.max(1, yb - ya), color: K.spVa });
         continue;
       }
@@ -910,7 +929,8 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
         if (!(v > 0)) continue;
         const ya = Y((p.lo + r + 1) * p.step);
         const yb = Y((p.lo + r) * p.step);
-        const color = r >= p.vaLo && r <= p.vaHi ? K.spVa : K.spOut;
+        const mid = (p.lo + r + 0.5) * p.step;
+        const color = mid >= val && mid <= vah ? K.spVa : K.spOut;
         s.rects.push({ x: x0, y: ya, w: Math.max(1, (v / p.max) * pw), h: Math.max(1, yb - ya - gap), color });
       }
     }

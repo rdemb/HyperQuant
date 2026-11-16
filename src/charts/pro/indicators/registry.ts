@@ -5,6 +5,7 @@ import type { BookFrame } from '../core/book';
 import type { MakerSplit } from '../core/makers';
 import { DEFAULT_EFFORT_PARAMS } from '../core/effortZones';
 import { IVB_DEFAULT, IVB_WINDOWS } from '../core/ivb';
+import { DEFAULT_SMC_PARAMS, SMC_LENS } from '../core/smcStructure';
 import { ACCEPT_CLOSES, ACCEPT_SHARE, IVB_SESSIONS, STATE_DAYS } from '../core/dayFrame';
 import { PB_EVIDENCE } from '../chart/pbSelect';
 import { EFFORT_LVN, PB_LVN } from '../chart/lvnText';
@@ -69,6 +70,7 @@ export type IndicatorId =
   | 'pbrange'
   | 'effort'
   | 'ivb'
+  | 'smc'
   | 'twap'
   | 'premium';
 
@@ -268,6 +270,11 @@ export interface IndicatorDef {
   effortZones?: true;
   /** IVB: zakres otwarcia NY ze świec wykresu (warstwa na wykresie ceny i opis w legendzie): bez wartości świec i bez plotów. */
   ivb?: true;
+  /**
+   * Struktura i płynność (SMC+HL): swingi, BOS i CHoCH, sweepy, FVG, EQH i EQL ze świec wykresu (warstwa na wykresie
+   * ceny i opis w legendzie): bez wartości świec i bez plotów.
+   */
+  smc?: true;
   /** Tyle świec przed lewą krawędzią widoku potrzeba danych z serwera (okno poprzednich świec: absorpcja, OFI). */
   lookback?(p: Params): number;
   /**
@@ -2237,8 +2244,8 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
     aliases: 'ivb otwarcie open opening nowy jork new york ny zakres range okno window fabio valentini deepm ib',
     warmup: () => 0,
     convention: tr(
-      `Tego wskaźnika nie ma w TradingView. Okno IVB jak w modelu IVB z dokumentacji Deep-M, z którego korzysta Fabio Valentini: zakres ceny od otwarcia giełdy w Nowym Jorku (09:30 czasu nowojorskiego) przez ${IVB_WINDOWS.join(' albo ')} minut, domyślnie ${IVB_DEFAULT}; wybór w parametrach. Otwarcie liczone z kalendarza stref czasowych (czas letni w USA i w Europie zmienia się w różnych tygodniach), więc w czasie polskim to 15:30, a w marcu i na przełomie października i listopada 14:30; nie stała godzina. IVB jest osobne od warstwy Initial balance (pierwsza godzina każdej sesji). Świeca należy do okna, gdy się w nim zaczyna, i liczy się dopiero po zamknięciu, więc w trakcie okna prostokąt rośnie z każdą zamkniętą świecą („w budowie” w legendzie), a linie szczytu i dołka zaczynają się dopiero na końcu okna, gdy zakres jest znany, i sięgają do końca sesji NY (00:00 UTC). Rysowana jest tylko bieżąca sesja NY: poza nią legenda podaje najbliższe otwarcie. Na interwałach do 30m (świece godzinowe nie zaczynają się o otwarciu). Sprawdzianu poziomów IVB wobec losowego poziomu jeszcze nie ma: to opis miejsca, nie prognoza wybicia. Przy włączonym IVB albo Strefach Effort pod paskiem wykresu jest pasek „Rama dnia”: status ceny wobec IVB (w środku, wybicie nad albo pod z minutami od wybicia, powrót do środka; fakt, LIVE) i szerokość IVB w ATR doby z percentylem wobec ${IVB_SESSIONS} poprzednich sesji NY tego samego typu (MODEL), a obok wartość dziś wobec wczorajszej i stan aukcji (przyjęcie poza wartością według Daltona: co najmniej ${ACCEPT_CLOSES} kolejne zamknięcia 30m poza VA i ${Math.round(ACCEPT_SHARE * 100)}% wolumenu doby po tej samej stronie; progi HyperQuant, MODEL) z częstością tego stanu o tej porze w ${STATE_DAYS} poprzednich dobach. Przy krótszej historii pasek podaje liczbę bez częstości albo percentyla („krótka historia”); pełne reguły są w jego rozwinięciu.`,
-      `TradingView has no such indicator. The IVB window follows the IVB model in the Deep-M documentation used by Fabio Valentini: the price range from the New York stock exchange open (09:30 New York time) for ${IVB_WINDOWS.join(' or ')} minutes, ${IVB_DEFAULT} by default; choose it in the inputs. The open comes from the time-zone calendar (daylight saving time changes in different weeks in the US and in Europe), so in Polish time it is 15:30, and 14:30 in March and around the turn of October and November; not a fixed hour. The IVB is separate from the Initial balance layer (the first hour of every session). A candle belongs to the window if it starts in it and counts only once closed, so during the window the box grows with every closed candle (“building” in the legend), and the high and low lines start only at the end of the window, when the range is known, and run to the end of the NY session (00:00 UTC). Only the current NY session is drawn: outside it the legend gives the next open. On intervals up to 30m (hourly candles do not start at the open). The IVB levels have not yet been checked against a random level: they describe a place, not a forecast of a breakout. With the IVB or the Effort zones on, a “Day frame” bar sits below the chart bar: the price status against the IVB (inside, broke above or below with minutes since the break, back inside; a fact, LIVE) and the IVB width in daily ATR with its percentile against the previous ${IVB_SESSIONS} NY sessions of the same type (MODEL), next to today's value against yesterday's and the auction state (acceptance outside value after Dalton: at least ${ACCEPT_CLOSES} consecutive 30m closes outside the VA and ${Math.round(ACCEPT_SHARE * 100)}% of the day's volume on the same side; HyperQuant thresholds, MODEL) with how often this state occurred at this time over the previous ${STATE_DAYS} days. With a shorter history the bar gives the number without a frequency or percentile (“short history”); the full rules are in its expanded view.`
+      `Tego wskaźnika nie ma w TradingView. Okno IVB jak w modelu IVB z dokumentacji Deep-M, z którego korzysta Fabio Valentini: zakres ceny od otwarcia giełdy w Nowym Jorku (09:30 czasu nowojorskiego) przez ${IVB_WINDOWS.join(' albo ')} minut, domyślnie ${IVB_DEFAULT}; wybór w parametrach. Otwarcie liczone z kalendarza stref czasowych (czas letni w USA i w Europie zmienia się w różnych tygodniach), więc w czasie polskim to 15:30, a w marcu i na przełomie października i listopada 14:30; nie stała godzina. IVB jest osobne od warstwy Initial balance (pierwsza godzina każdej sesji). Świeca należy do okna, gdy się w nim zaczyna, i liczy się dopiero po zamknięciu, więc w trakcie okna prostokąt rośnie z każdą zamkniętą świecą („w budowie” w legendzie), a linie szczytu i dołka zaczynają się dopiero na końcu okna, gdy zakres jest znany, i sięgają do końca sesji NY (00:00 UTC). Rysowana jest tylko bieżąca sesja NY: poza nią legenda podaje najbliższe otwarcie. Na interwałach do 30m (świece godzinowe nie zaczynają się o otwarciu). Sprawdzianu poziomów IVB wobec losowego poziomu jeszcze nie ma: to opis miejsca, nie prognoza wybicia. Przy włączonym IVB albo Strefach Effort pod paskiem wykresu jest pasek „Rama dnia”: status ceny wobec IVB (w środku, wybicie nad albo pod z minutami od wybicia, powrót do środka; fakt, LIVE) i szerokość IVB w ATR doby z percentylem wobec ${IVB_SESSIONS} poprzednich sesji NY tego samego typu (MODEL), a obok wartość dziś wobec wczorajszej (jedno źródło wartości: z taśmy LIVE, ze świec MODEL „przybliżenie ze świec”) i stan aukcji (przyjęcie poza wartością według Daltona: co najmniej ${ACCEPT_CLOSES} kolejne zamknięcia 30m poza VA i ${Math.round(ACCEPT_SHARE * 100)}% wolumenu od otwarcia sesji po tej samej stronie, liczone od otwarcia Londynu albo NY i od nowa na każdym otwarciu, poza sesjami od 00:00 UTC; progi HyperQuant, MODEL) z częstością tego stanu w tej samej minucie od otwarcia tej samej sesji w ${STATE_DAYS} poprzednich dobach. Przy krótszej historii pasek podaje liczbę bez częstości albo percentyla („krótka historia”); pełne reguły są w jego rozwinięciu.`,
+      `TradingView has no such indicator. The IVB window follows the IVB model in the Deep-M documentation used by Fabio Valentini: the price range from the New York stock exchange open (09:30 New York time) for ${IVB_WINDOWS.join(' or ')} minutes, ${IVB_DEFAULT} by default; choose it in the inputs. The open comes from the time-zone calendar (daylight saving time changes in different weeks in the US and in Europe), so in Polish time it is 15:30, and 14:30 in March and around the turn of October and November; not a fixed hour. The IVB is separate from the Initial balance layer (the first hour of every session). A candle belongs to the window if it starts in it and counts only once closed, so during the window the box grows with every closed candle (“building” in the legend), and the high and low lines start only at the end of the window, when the range is known, and run to the end of the NY session (00:00 UTC). Only the current NY session is drawn: outside it the legend gives the next open. On intervals up to 30m (hourly candles do not start at the open). The IVB levels have not yet been checked against a random level: they describe a place, not a forecast of a breakout. With the IVB or the Effort zones on, a “Day frame” bar sits below the chart bar: the price status against the IVB (inside, broke above or below with minutes since the break, back inside; a fact, LIVE) and the IVB width in daily ATR with its percentile against the previous ${IVB_SESSIONS} NY sessions of the same type (MODEL), next to today's value against yesterday's (the single value source: from the tape LIVE, from candles MODEL “approximation from candles”) and the auction state (acceptance outside value after Dalton: at least ${ACCEPT_CLOSES} consecutive 30m closes outside the VA and ${Math.round(ACCEPT_SHARE * 100)}% of the volume since the session open on the same side, counted from the London or NY open and restarted at every open, outside the sessions from 00:00 UTC; HyperQuant thresholds, MODEL) with how often this state occurred at the same minute after the open of the same session over the previous ${STATE_DAYS} days. With a shorter history the bar gives the number without a frequency or percentile (“short history”); the full rules are in its expanded view.`
     ),
     memoryNote: tr(
       'Liczone od nowa po każdej świecy wykresu z samej bieżącej sesji NY; świeca w trakcie nie wchodzi. Na interwałach do 30m, na każdym rynku, także w powtórce.',
@@ -2249,6 +2256,34 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
     plots: [],
     format: 'price',
     ivb: true,
+  },
+  {
+    id: 'smc',
+    short: 'SMC+HL',
+    name: tr('Struktura i płynność (SMC+HL)', 'Structure & Liquidity (SMC+HL)'),
+    hint: tr(
+      'Eksperymentalny opis kształtu ceny na zamkniętych świecach w dwóch skalach (wewnętrznej i swingowej): etykiety swingów HH, HL, LH i LL, linie BOS i CHoCH przy zamknięciu za swingiem, sweepy (knot za poziomem i powrót zamknięciem), luki FVG z procentem wypełnienia i dotknięciem środka luki (CE), równe szczyty i dołki EQH i EQL oraz położenie ceny w połowach zakresu swingowego; każdy element od chwili, od której był znany',
+      'An experimental description of the price shape on closed candles at two scales (internal and swing): swing labels HH, HL, LH and LL, BOS and CHoCH lines at a close beyond a swing, sweeps (a wick beyond a level and a close back), FVG gaps with the fill percentage and whether the gap midpoint was touched (CE), equal highs and lows EQH and EQL, and where the price sits in the halves of the swing range; every element from the moment it became known'
+    ),
+    group: 'hyperquant',
+    aliases: 'smc struktura structure plynnosc liquidity bos choch fvg luka gap eqh eql rowne equal sweep swing hh hl lh ll premium discount rownowaga equilibrium ce',
+    warmup: () => 0,
+    convention: tr(
+      `Tego wskaźnika w tej postaci nie ma w TradingView. Definicje są nasze, napisane od zera z ogólnych pojęć (BOS, CHoCH, FVG, EQH i EQL to terminy branżowe); opis mówi, co jest zmierzone na świecach, a nie kto handlował. Liczone tylko na zamkniętych świecach wykresu, ATR(${DEFAULT_SMC_PARAMS.atrLen}) Wildera. Pivot szczytu w świecy j przy oknie L: szczyt ściśle wyższy od L świec z lewej i nie niższy od L świec z prawej (remis wygrywa wcześniejsza świeca), lustrzanie dołek; znany od zamknięcia świecy j + L. Dwie skale: wewnętrzna (domyślnie L = ${DEFAULT_SMC_PARAMS.internalLen}) i swingowa (domyślnie L = ${DEFAULT_SMC_PARAMS.swingLen}), okna do wyboru w parametrach (${SMC_LENS.join(', ')}). Swing liczy się do struktury, gdy różnica do poprzedniego swingu przeciwnego typu wynosi co najmniej ${DEFAULT_SMC_PARAMS.swingMinAtr} ATR; dwa szczyty (dołki) bez swingu przeciwnego między nimi: zostaje skrajniejszy. Szczyt wobec poprzedniego szczytu skali to HH (wyższy) albo LH, dołek to LL (niższy) albo HL. Stan struktury: wzrostowa przy HH i HL, spadkowa przy LH i LL, inaczej mieszana; to opis przeszłości, bez prognozy. Przełamanie to zamknięcie świecy za ostatnim nieprzełamanym swingiem skali: BOS, gdy zgodne ze stanem, CHoCH, gdy przeciwne (stan przechodzi wtedy w mieszaną do następnego swingu); w stanie mieszanym odniesieniem jest poprzednie przełamanie skali, a bez niego to BOS. Sam knot za swingiem nie jest przełamaniem. Sweep: knot za ostatnim nieprzełamanym swingiem albo za EQH lub EQL o co najmniej ${numLang(String(DEFAULT_SMC_PARAMS.sweepMinAtr))} ATR i zamknięcie z powrotem po stronie poziomu w tej samej świecy albo w ciągu ${DEFAULT_SMC_PARAMS.sweepBars} kolejnych; znany od zamknięcia świecy powrotu, jeden na poziom. FVG: w świecy i dołek wyżej niż szczyt świecy i − 2 (luka po ruchu w górę) albo lustrzanie, szerokość co najmniej ${numLang(String(DEFAULT_SMC_PARAMS.fvgMinAtr))} ATR; wypełnienie w procentach od strony ceny, osobno dotknięcie środka luki (CE) knotem; luka wygasa po wypełnieniu albo po 24 h. EQH i EQL: dwa pivoty skali wewnętrznej tego samego typu (także odrzucone filtrem amplitudy) z różnicą najwyżej ${numLang(String(DEFAULT_SMC_PARAMS.eqMaxAtr))} ATR, oddalone o co najmniej ${DEFAULT_SMC_PARAMS.eqMinBars} świec, bez zamknięcia za poziomem (średnia obu) między nimi; znane od potwierdzenia drugiego pivota, kończą się zamknięciem za poziomem albo sweepem. Premium i discount: połowy zakresu od ostatniego szczytu do ostatniego dołka skali swingowej, równowaga od 47,5 do 52,5% zakresu (szary pas); to opis położenia, bez sugestii działania. Rysunek: tryb bieżący (otwarte luki, aktywne EQ) albo historia 24 h (z wypełnionymi i zakończonymi, przygaszone); najwyżej 5 luk najbliższych cenie, po 2 EQH i EQL, etykiety 6 ostatnich swingów, 3 ostatnie linie BOS i CHoCH oraz 2 sweepy z 24 h, łącznie najwyżej 21 obiektów; na telefonie tylko struktura, BOS, CHoCH i najbliższa luka. Kolory według rodzaju elementu, nie strony transakcji. Nic nie jest rysowane wcześniej, niż było znane: luka od swojej trzeciej świecy, EQ od potwierdzenia drugiego pivota, linia przełamania od chwili, gdy swing był znany. Krzyż nad elementem dopisuje w legendzie, od kiedy był znany. Częstości bazowe (co działo się po takich elementach wobec losowych poziomów) nie są jeszcze policzone, więc to wskaźnik eksperymentalny: elementy niczego nie przewidują. Bloki zleceń i potwierdzenia z danych Hyperliquid przyjdą w kolejnych etapach.`,
+      `TradingView has no indicator in this form. The definitions are ours, written from scratch from general concepts (BOS, CHoCH, FVG, EQH and EQL are industry terms); the description says what is measured on the candles, not who traded. Computed only on closed chart candles, Wilder ATR(${DEFAULT_SMC_PARAMS.atrLen}). A swing high pivot at candle j with window L: a high strictly above the L candles on the left and not below the L candles on the right (a tie goes to the earlier candle), the low mirrored; known from the close of candle j + L. Two scales: internal (L = ${DEFAULT_SMC_PARAMS.internalLen} by default) and swing (L = ${DEFAULT_SMC_PARAMS.swingLen} by default), windows selectable in the inputs (${SMC_LENS.join(', ')}). A swing counts for the structure when it is at least ${DEFAULT_SMC_PARAMS.swingMinAtr} ATR from the previous swing of the opposite type; two highs (lows) without an opposite swing between them: the more extreme one stays. A high against the previous high of the scale is HH (higher) or LH, a low is LL (lower) or HL. Structure state: rising with HH and HL, falling with LH and LL, otherwise mixed; a description of the past, no forecast. A break is a candle close beyond the last unbroken swing of the scale: BOS when it agrees with the state, CHoCH when it is opposite (the state then becomes mixed until the next swing); in a mixed state the previous break of the scale is the reference, and without one it is a BOS. A wick alone beyond a swing is not a break. Sweep: a wick beyond the last unbroken swing or beyond an EQH or EQL by at least ${DEFAULT_SMC_PARAMS.sweepMinAtr} ATR and a close back on the level’s side within the same candle or the next ${DEFAULT_SMC_PARAMS.sweepBars}; known from the close of the return candle, one per level. FVG: at candle i a low above the high of candle i − 2 (a gap after a move up) or mirrored, at least ${DEFAULT_SMC_PARAMS.fvgMinAtr} ATR wide; the fill in percent from the price side, and separately whether a wick touched the gap midpoint (CE); a gap expires once filled or after 24 h. EQH and EQL: two internal-scale pivots of the same type (also those rejected by the amplitude filter) at most ${DEFAULT_SMC_PARAMS.eqMaxAtr} ATR apart, at least ${DEFAULT_SMC_PARAMS.eqMinBars} candles apart, with no close beyond the level (the mean of both) between them; known from the confirmation of the second pivot, they end at a close beyond the level or a sweep. Premium and discount: halves of the range from the last high to the last low of the swing scale, equilibrium from 47.5 to 52.5% of the range (a grey band); a description of position, no suggestion to act. Drawing: current mode (open gaps, active EQ) or 24 h history (with filled and ended ones, dimmed); at most 5 gaps nearest the price, 2 EQH and 2 EQL, labels of the last 6 swings, the last 3 BOS and CHoCH lines and 2 sweeps from 24 h, at most 21 objects in total; on a phone only structure, BOS, CHoCH and the nearest gap. Colours by element type, not by trade side. Nothing is drawn before it was known: a gap from its third candle, EQ from the confirmation of the second pivot, a break line from the moment the swing was known. With the crosshair over an element the legend adds when it became known. Base rates (what followed such elements against random levels) are not computed yet, so the indicator is experimental: the elements predict nothing. Order blocks and confirmations from Hyperliquid data will come in later stages.`
+    ),
+    memoryNote: tr(
+      'Liczone od nowa po każdej zamkniętej świecy wykresu, od początku wczytanej historii; element świecy zależy tylko od świec do niej, więc historia się nie przerysowuje, a świeca w trakcie nie wchodzi. Stan struktury zależy od wcześniejszych swingów, więc na samym początku historii może się różnić od dłuższej historii. Na interwałach do 1 h, na każdym rynku, także w powtórce.',
+      'Recomputed after every closed chart candle, from the start of the loaded history; an element of a candle depends only on the candles up to it, so history is not redrawn, and the forming candle is not used. The structure state depends on earlier swings, so at the very start of the history it may differ from a longer history. On intervals up to 1 h, on every market, also in replay.'
+    ),
+    pane: 'price',
+    params: [
+      { key: 'internal', label: tr('Okno pivota, skala wewnętrzna (świece)', 'Pivot window, internal scale (candles)'), min: 3, max: 50, step: 1, def: DEFAULT_SMC_PARAMS.internalLen, options: SMC_LENS },
+      { key: 'swing', label: tr('Okno pivota, skala swingowa (świece)', 'Pivot window, swing scale (candles)'), min: 3, max: 50, step: 1, def: DEFAULT_SMC_PARAMS.swingLen, options: SMC_LENS },
+    ],
+    plots: [],
+    format: 'price',
+    smc: true,
   },
   {
     id: 'twap',
@@ -2353,6 +2388,7 @@ export const MENU_GROUPS = [
   { id: 'sklad', label: tr('Kto stoi za ruchem', 'Who is behind the move'), ids: ['breadth', 'repeat', 'makers', 'ordersize', 'twap', 'hawkes', 'premium'] },
   { id: 'ruch', label: tr('Kiedy ruch i ile kosztuje wejście', 'When the market moves and what entry costs'), ids: ['rvol', 'regime', 'slippage', 'cone'] },
   { id: 'poziomy', label: tr('Poziomy i rynki prognoz', 'Levels and prediction markets'), ids: ['pbrange', 'effort', 'ivb', 'outcomes'] },
+  { id: 'struktura', label: tr('Struktura i płynność', 'Structure and liquidity'), ids: ['smc'] },
 ] as const satisfies readonly { id: string; label: string; ids: readonly IndicatorId[] }[];
 const HQ_IDS: readonly IndicatorId[] = MENU_GROUPS.flatMap((g) => g.ids);
 /** Identyfikator wskaźnika z grup menu (plakietki źródeł: każdy musi mieć źródło). */
@@ -2401,7 +2437,7 @@ export interface IndicatorInstance {
   visible: boolean;
   /** Interwał świec, z których liczony jest wskaźnik (np. 1h na wykresie 5m); brak — interwał wykresu. */
   tf?: string;
-  /** Strefy Effort: tryb „Historia” (wszystkie strefy i serie pudełek obrysami); brak — wyłączony. */
+  /** Strefy Effort: tryb „Historia” (wszystkie strefy i serie pudełek obrysami); SMC: tryb „historia 24 h”; brak — wyłączony. */
   history?: true;
 }
 
@@ -2487,6 +2523,8 @@ export const swatchColor = (x: IndicatorInstance): string => {
   const def = indicatorDef(x.id);
   const p = def.plots.find((q) => !q.hidden && !q.hist);
   if (p) return plotColor(x, p);
+  // SMC: stałe neutralne kolory rodzajów (struktura szara, luki w bursztynie poziomów), bez kolorów stron
+  if (def.smc) return `linear-gradient(90deg, ${PRO.nakedPoc} 50%, ${PRO.level} 50%)`;
   return def.effortZones || def.plots.some((q) => q.hist && !q.hidden) ? `linear-gradient(90deg, ${HIST_UP} 50%, ${HIST_DOWN} 50%)` : x.color;
 };
 
@@ -2505,7 +2543,7 @@ export function indicatorLabel(x: IndicatorInstance): string {
  * wskaźnik przesunięty o świece wykresu (Ichimoku) i wskaźnik z danych spoza świec (taśma, otwarte pozycje).
  */
 export const tfAllowed = (def: IndicatorDef): boolean =>
-  !def.period && !def.fit && !def.flow && !def.series && !def.sample && !def.forecast && !def.outcomes && !def.pbRanges && !def.effortZones && !def.ivb && !def.plots.some((p) => p.shift);
+  !def.period && !def.fit && !def.flow && !def.series && !def.sample && !def.forecast && !def.outcomes && !def.pbRanges && !def.effortZones && !def.ivb && !def.smc && !def.plots.some((p) => p.shift);
 
 /** Interwał wskaźnika: znany identyfikator interwału, a wskaźnik bez parametru „Interwał” go nie ma. */
 const tfOk = (def: IndicatorDef, tf: unknown): tf is string => tfAllowed(def) && INTERVALS.some((iv) => iv.id === tf && iv.ms !== MONTH);
@@ -2566,7 +2604,7 @@ export function parseIndicators(raw: unknown): { list: IndicatorInstance[]; drop
     const flag = (v: unknown) => (typeof v === 'boolean' ? v : true);
     const x: IndicatorInstance = { iid, id: def.id, params: parseParams(def, r.params), color, alpha, width, labels: flag(r.labels), visible: flag(r.visible) };
     if (tfOk(def, r.tf)) x.tf = r.tf;
-    if (def.effortZones && r.history === true) x.history = true;
+    if ((def.effortZones || def.smc) && r.history === true) x.history = true;
     out.push(x);
   }
   return { list: out, dropped };

@@ -30,7 +30,7 @@ describe('źródła warstw (LIVE, MODEL, SIM)', () => {
 
   it('modele i symulacja oznaczone jako MODEL i SIM, dane z taśmy i arkusza jako LIVE', () => {
     // P/b bez miejsc wejścia i wyniku na historii (plan 59, C1): reguły na świecach, więc MODEL, nie SIM
-    for (const id of ['rvol', 'regime', 'hawkes', 'cone', 'outcomes', 'absorption', 'effort', 'showTpoOi', 'pbrange']) expect(LAYER_SOURCE[id], id).toBe('MODEL');
+    for (const id of ['rvol', 'regime', 'hawkes', 'cone', 'outcomes', 'absorption', 'effort', 'showTpoOi', 'pbrange', 'smc']) expect(LAYER_SOURCE[id], id).toBe('MODEL');
     for (const id of ['showHeatmap', 'showBubbles', 'showVwap', 'showLiq', 'showWhales', 'twap', 'slippage', 'oiflow', 'premium']) expect(LAYER_SOURCE[id], id).toBe('LIVE');
     // Premia: plakietka LIVE z zastrzeżeniem pokrycia (od otwarcia strony) i oracle rynków HIP-3
     expect(layerBadge('premium', { coin: 'BTC', now: NOW }).hint).toMatch(/od otwarcia strony.*HIP-3/);
@@ -38,7 +38,7 @@ describe('źródła warstw (LIVE, MODEL, SIM)', () => {
 
   it('podpowiedź plakietki MODEL i SIM nazywa metodę każdego klucza', () => {
     const model = Object.entries(LAYER_SOURCE).filter(([, v]) => v !== 'LIVE');
-    expect(model.length).toBe(11);
+    expect(model.length).toBe(12);
     for (const [key, src] of model) expect(layerBadge(key, { coin: 'BTC', now: NOW }).hint, key).toMatch(new RegExp(`^${src} · [^:]+: `));
     expect(layerBadge('rvol', { coin: 'BTC', now: NOW }).hint).toMatch(/^MODEL · mediana 20 dni: /);
     expect(layerBadge('cone', { coin: 'BTC', now: NOW }).hint).toMatch(/^MODEL · HAR: /);
@@ -238,5 +238,37 @@ describe('źródła świec i paneli przepływu w legendzie (plan 59, E5)', () =>
       ['showCvd', 'LIVE'],
     ]);
     expect(legendChips({ ...DEFAULT_SETTINGS, ...LAYERS_OFF, ...NO_FLOW, indicators: [] }, { coin: 'BTC', now: NOW, intervalMs: M5, scan: {} })).toEqual([]);
+  });
+});
+
+describe('Profile okresów: plakietka ze źródła wartości (reguła wartości: taśma LIVE, świece MODEL)', () => {
+  const v = (source: 'tape' | 'candles', tapeShare: number) => ({
+    kind: 'day' as const,
+    from: Date.UTC(2026, 10, 2),
+    to: Date.UTC(2026, 10, 3),
+    poc: 100_000,
+    vah: 100_500,
+    val: 99_500,
+    source,
+    tapeShare,
+    bars: 288,
+    through: Date.UTC(2026, 10, 3),
+    complete: true,
+  });
+
+  it('ostatni zamknięty okres z taśmy — LIVE; ze świec albo bez wartości — MODEL „przybliżenie ze świec”', () => {
+    expect(layerBadge('showPeriodProfiles', { coin: 'BTC', now: NOW, value: v('tape', 0.96) })).toMatchObject({ tone: 'live', text: 'LIVE' });
+    const c = layerBadge('showPeriodProfiles', { coin: 'BTC', now: NOW, value: v('candles', 0.4) });
+    expect(c).toMatchObject({ tone: 'model', text: 'MODEL' });
+    expect(c.hint).toMatch(/^MODEL · przybliżenie ze świec: ostatni zamknięty okres \(doba UTC 02\.11\)/);
+    expect(layerBadge('showPeriodProfiles', { coin: 'BTC', now: NOW, value: null }).text).toBe('MODEL');
+    // Bez pola `value` — plakietka stała z tabeli źródeł
+    expect(layerBadge('showPeriodProfiles', { coin: 'BTC', now: NOW }).text).toBe(LAYER_SOURCE.showPeriodProfiles);
+  });
+
+  it('legenda bierze wartość okresów z wykresu', () => {
+    const s = { ...DEFAULT_SETTINGS, ...LAYERS_OFF, ...NO_FLOW, showPeriodProfiles: true, indicators: [] };
+    const chips = legendChips(s, { coin: 'BTC', now: NOW, intervalMs: M5, scan: {}, value: { showPeriodProfiles: v('candles', 0.2) } });
+    expect(chips.map((c) => [c.key, c.text])).toEqual([['showPeriodProfiles', 'MODEL']]);
   });
 });

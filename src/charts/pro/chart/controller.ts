@@ -30,6 +30,8 @@ import type { LiqLevel } from '../core/indicators';
 import type { ResetMode } from '../core/sessions';
 import type { CandleSeries, ProBar, ProStore } from '../store/proStore';
 import { requestDayProfiles } from '../store/dayProfiles';
+import type { ValueRef } from '../core/valueReference';
+import { PeriodValues } from './periodValues';
 import { requestHistory } from '../store/serverHistory';
 import { DrawingLayer } from '../draw/layer';
 import { DrawingTools } from '../draw/tools';
@@ -55,6 +57,7 @@ import { Hip4Layer, Hip4Source, outcomeLevels } from './hip4Layer';
 import { PbRangeLayer, PbStyle, PbZone } from './pbRangeLayer';
 import { EffortLayer, type EffortStyle } from './effortLayer';
 import { IvbLayer, type IvbStyle } from './ivbLayer';
+import { SmcLayer, type SmcStyle } from './smcLayer';
 import { BlogMapLayer, blogMapMarks, blogMapModel, levelsInsteadOfMap } from './blogMapLayer';
 import type { Hip4State } from '../../../state/useHip4';
 import { type BlogMap, type BlogMapsState, pickMap } from '../../../state/useBlogMaps';
@@ -334,6 +337,7 @@ export class ProChartController {
   private releaseVenue: (() => void) | null = null;
   private unsubVenue: (() => void) | null = null;
   private readonly overlay: IndicatorOverlay;
+  private readonly periodValues: PeriodValues;
   private readonly liquidity: LiquidityLayer;
   private readonly drawLayer = new DrawingLayer();
   private readonly countdown = new CountdownLabel();
@@ -349,6 +353,8 @@ export class ProChartController {
   private readonly effort = new EffortLayer(() => this.effortStyle());
   /** Zakres otwarcia NY 30 albo 60 min ze świec wykresu (wskaźnik „IVB”). */
   private readonly ivb = new IvbLayer(() => this.ivbStyle());
+  /** Struktura i płynność (SMC+HL) ze świec wykresu: swingi, BOS i CHoCH, sweepy, FVG, EQH i EQL (wskaźnik eksperymentalny). */
+  private readonly smc = new SmcLayer(() => this.smcStyle());
   /**
    * Mapa z bloga (warstwa „Mapa z bloga”, tylko BTC): mapy z pliku bloga, rozliczenie poziomów (układ Rozliczenie),
    * mapa na wykresie i chwila ostatniego przeliczenia znaczników (najwyżej raz na minutę).
@@ -454,6 +460,9 @@ export class ProChartController {
     this.drawLayer.tickOf = (p) => store.baseTick(p);
     // Profile okresów i TPO: liczba obiektów i udział pola pod słupkami (pomiar układu czyta je z atrybutów)
     const pct = (x: number) => (x * 100).toFixed(1);
+    // POC i value area profili okresów z jednego źródła wartości (jak pasek Rama dnia)
+    this.periodValues = new PeriodValues(store);
+    this.overlay.valueOf = (kind, start) => this.periodValues.of(kind, start);
     this.overlay.onPeriods = (c) => {
       container.dataset.periodObjects = String(c.objects);
       container.dataset.periodArea = pct(c.area);
@@ -515,6 +524,12 @@ export class ProChartController {
     // Obiekty IVB na wykresie (prostokąt okna i linie; pomiar układu czyta je z atrybutu)
     this.ivb.onObjects = (n) => {
       container.dataset.ivbObjects = String(n);
+    };
+    this.main.attachPrimitive(this.smc);
+    this.smc.fmtPx = (p) => store.fmtPx(p);
+    // Obiekty SMC na wykresie (wybór warstwy, nie piksele; pomiar układu może czytać je z atrybutu)
+    this.smc.onObjects = (n) => {
+      container.dataset.smcObjects = String(n);
     };
     this.main.attachPrimitive(this.countdown);
     this.main.attachPrimitive(this.strip);
@@ -677,6 +692,7 @@ export class ProChartController {
     this.liquidity.setDom(!on);
     this.liquidity.setPhone(on);
     this.effort.setPhone(on);
+    this.smc.setPhone(on);
     this.liquidity.setLabelLimit(densityLimit(this.settings.labelDensity, on));
     this.overlay.setCompact(on);
     this.applyDomInset();
@@ -697,6 +713,7 @@ export class ProChartController {
     this.pb.setRightInset(px);
     this.effort.setRightInset(px);
     this.ivb.setRightInset(px);
+    this.smc.setRightInset(px);
     this.blog.setRightInset(px);
     this.chart.timeScale().applyOptions({ rightOffsetPixels: this.rightGap() });
   }
@@ -1131,7 +1148,18 @@ export class ProChartController {
     return x ? { color: x.color, alpha: x.alpha, width: x.width, minutes: x.params.minutes } : null;
   }
 
+  /** Styl pierwszego widocznego wskaźnika SMC: krycie, grubość, tryb historia 24 h i okna pivota (null — żaden). */
+  private smcStyle(): SmcStyle | null {
+    const x = this.indShown.find((y) => indicatorDef(y.id).smc);
+    return x ? { alpha: x.alpha, width: x.width, history: x.history === true, internalLen: x.params.internal, swingLen: x.params.swing } : null;
+  }
+
   /** Aktywna strefa P/b do alarmów z menu wykresu (null — wskaźnik ukryty albo brak ważnej strefy). */
+  /** Wartość ostatniego zamkniętego okresu warstwy „Profile okresów” (plakietka w legendzie: z taśmy LIVE, ze świec MODEL). */
+  periodValue(): ValueRef | null {
+    return this.overlay.periodValue;
+  }
+
   pbZone(): PbZone | null {
     return this.pbStyle() ? this.pb.zone() : null;
   }
@@ -1478,6 +1506,9 @@ export class ProChartController {
     }
     const ms = this.series.interval.ms;
     this.overlay.setMarket(this.store.coin);
+    // Źródło wartości profili okresów (świece 5m z taśmą) tylko przy włączonej warstwie na interwale z profilami okresów
+    // (warunek `indicatorScope().periodProfile`: interwały do 4h, bez budowania obiektu przy każdej świecy)
+    if (this.settings.showPeriodProfiles && ms <= 4 * 3_600_000 && next.length > 0) this.periodValues.update(next[0].t, this.store.serverNow());
     this.overlay.setBars(next, ms, this.store.vwapCandles(this.series.interval), this.store.serverNow());
     this.overlay.setDaily(this.store.daily);
     this.drawLayer.setBars(next, ms);
@@ -1496,6 +1527,7 @@ export class ProChartController {
     this.pb.setData(next, ms, now, st, this.phone);
     this.effort.setData(next, ms, now);
     this.ivb.setData(next, ms, now);
+    this.smc.setData(next, ms, now);
     this.syncBlog(now);
     if (full || now - this.stripAt >= STRIP_EVERY_MS) {
       this.stripAt = now;
@@ -1905,6 +1937,8 @@ export class ProChartController {
               ? this.effort.legend(this.hoverTime !== null && this.hoverPrice !== null ? { t: this.hoverTime, p: this.hoverPrice } : null, this.indFormat('price'))
               : def.ivb
                 ? this.ivb.legend()
+                : def.smc
+                ? this.smc.legend(this.hoverTime !== null && this.hoverPrice !== null ? { t: this.hoverTime, p: this.hoverPrice } : null, this.indFormat('price'))
                 : short
                 ? [{ text: `—, ${short}`, color: PRO.ink3 }]
                 : vs.flatMap((v, p) => {

@@ -3,8 +3,7 @@ import { type IndicatorBar, dayLevels, initialBalances, liqLevels, vwapFrom } fr
 import type { Candle } from '../../charts/pro/hl/parse';
 import { selectDays } from '../../charts/pro/chart/levelsSelect';
 import { selectIbs } from '../../charts/pro/chart/ibSelect';
-import { prevDayOf } from '../../charts/pro/chart/layoutNumbers';
-import { profileStep } from '../auction';
+import { type ValueRef, valueReference } from '../../charts/pro/core/valueReference';
 import { coneForecastOf } from '../cone';
 import type { DeskLedgerSummary } from '../deskLedger';
 import type { EntryMap } from '../entryMap';
@@ -52,7 +51,8 @@ function aggregate(c1m: readonly Candle[], ms: number): Candle[] {
 
 const C1M = minutes();
 const C5M = aggregate(C1M, 5 * MIN);
-const C1H = aggregate(C1M, H);
+/** VA wczorajszej doby z jednego źródła (świece 5m, bez taśmy) — ta sama funkcja co pasek Rama dnia i nagłówek Mapy dnia. */
+const PREV = valueReference('day', FROM, { bars: C5M.map((c) => ({ t: c.t, l: c.l, h: c.h, v: c.v })), ms: 5 * MIN }, NOW)!;
 const DAILY = aggregate(C1M, DAY);
 const PRICE = C1M[C1M.length - 1].c;
 
@@ -118,7 +118,7 @@ const inputs = (o: Partial<LevelInputs> = {}): LevelInputs => ({
   noScannerWhy: 'bez skanera: test',
   daily: DAILY,
   c1m: C1M.filter((c) => c.t >= TODAY),
-  c1h: C1H,
+  prevValue: PREV,
   c5m: C5M,
   liq: { status: 'ready', map: LIQ },
   entry: { status: 'ready', map: ENTRY },
@@ -163,11 +163,24 @@ describe('nearestLevels: odległość z panelu = odległość linii na wykresie'
     expect(rowOf(n, 'ibh').label).toBe('IBH · Nowy Jork');
   });
 
-  it('VAH i VAL wczoraj: te same liczby co nagłówek Mapy dnia (`prevDayOf`)', () => {
-    const p = prevDayOf(C1H, NOW, profileStep(PRICE));
-    if (isAbsent(p)) throw new Error(p.why);
-    same('vah', p.vah);
-    same('val', p.val);
+  it('POC, VAH i VAL wczoraj: jedno źródło wartości (`valueReference`), jak pasek Rama dnia i nagłówek Mapy dnia', () => {
+    expect(PREV).toMatchObject({ kind: 'day', from: FROM, source: 'candles' });
+    same('vah', PREV.vah);
+    same('val', PREV.val);
+    same('poc', PREV.poc);
+  });
+
+  it('plakietka wartości: ze świec MODEL „przybliżenie ze świec” z udziałem taśmy, z taśmy LIVE', () => {
+    const v = rowOf(n, 'vah');
+    expect(v.badge).toBe('MODEL');
+    expect(v.hint).toMatch(/^MODEL · przybliżenie ze świec \(przybliżenie, taśma 0%\): VAH /);
+    const tape: ValueRef = { ...PREV, source: 'tape', tapeShare: 0.95 };
+    const live = rowOf(nearestLevels(inputs({ prevValue: tape }), 99), 'poc');
+    expect(live.badge).toBe('LIVE');
+    expect(live.hint).toContain('Profil wolumenu z taśmy Hyperliquid (95% wolumenu okresu nagrane');
+    // Brak wartości: „—” z powodem, bez liczby zastępczej
+    const miss = nearestLevels(inputs({ prevValue: { why: 'Świece 5m nie obejmują 90% wczorajszej doby UTC' } }), 99).missing.filter((m) => ['poc', 'vah', 'val'].includes(m.id));
+    expect(miss.map((m) => m.why)).toEqual(Array(3).fill('Świece 5m nie obejmują 90% wczorajszej doby UTC'));
   });
 
   it('klastry likwidacji: największy z rysowanych po każdej stronie (`liqLevels`)', () => {
@@ -210,13 +223,14 @@ describe('nearestLevels: lista nad i pod ceną', () => {
     for (const r of rowsOf(n)) expect(r.distAtr).toBeCloseTo(Math.abs(r.px - PRICE) / atr.value, 12);
   });
 
-  it('plakietki: LIVE dla poziomów z ceny, świec i VWAP; MODEL dla klastrów, Uwięzionych i stożka', () => {
+  it('plakietki: LIVE dla poziomów z ceny, świec i VWAP; MODEL dla klastrów, Uwięzionych, stożka i value area ze świec', () => {
     const n = nearestLevels(inputs(), 99);
     const model = rowsOf(n)
       .filter((r) => r.badge === 'MODEL')
       .map((r) => r.id)
       .sort();
-    expect(model).toEqual(['coneHi', 'coneLo', 'liqLong', 'liqShort', 'trappedLong', 'trappedShort']);
+    // Value area wczoraj bez taśmy (przybliżenie ze świec 5m) — MODEL według reguły plakietki wartości
+    expect(model).toEqual(['coneHi', 'coneLo', 'liqLong', 'liqShort', 'poc', 'trappedLong', 'trappedShort', 'vah', 'val']);
     for (const r of rowsOf(n)) if (r.badge === 'MODEL') expect(r.hint).toMatch(/^MODEL · /);
   });
 
