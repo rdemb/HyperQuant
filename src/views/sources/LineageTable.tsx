@@ -90,6 +90,23 @@ export const GROUPS: { title: string; rows: Row[] }[] = [
       },
       {
         metric: tr(
+          'Pasek „Rama dnia” (W sesji, przy Strefach Effort albo IVB): wartość dziś wobec wczoraj, stan aukcji, status i szerokość IVB',
+          'The “Day frame” bar (In session, with the Effort zones or the IVB): today’s value against yesterday’s, auction state, IVB status and width'
+        ),
+        source: tr('Hyperliquid API: candleSnapshot (świece 5m od wczoraj i 30m z 76 dób)', 'Hyperliquid API: candleSnapshot (5m candles since yesterday and 30m candles over 76 days)'),
+        method: tr(
+          'VA wczoraj jak poziomy doby P/b (profil świec 5m, 70%, koszyki 5 pb); przyjęcie poza wartością według Daltona z progami HyperQuant (≥ 2 zamknięcia 30m i ≥ 30% wolumenu doby po tej samej stronie) i częstość stanu o tej porze w 60 dobach; IVB z okna od otwarcia NY, szerokość w ATR doby z percentylem wobec 20 sesji NY tego samego typu.',
+          'Yesterday’s VA as the P/b day levels (5m candle profile, 70%, 5 bp bins); acceptance outside value after Dalton with HyperQuant thresholds (≥ 2 30m closes and ≥ 30% of the day’s volume on the same side) and the state frequency at this time over 60 days; IVB from the window after the NY open, width in daily ATR with a percentile against 20 NY sessions of the same type.'
+        ),
+        kinds: ['LIVE', 'MODEL'],
+        refresh: tr('co 5 s', 'every 5 s'),
+        caveat: tr(
+          'Historia stanów i VA dób w niej ze świec 30m (przybliżenie); przy krótszej historii liczba bez częstości albo percentyla. Rynek bez sesji regularnej NYSE: IVB „—” z powodem.',
+          'The state history and the VA of its days come from 30m candles (an approximation); with a shorter history the number has no frequency or percentile. A market without a regular NYSE session: IVB “—” with the reason.'
+        ),
+      },
+      {
+        metric: tr(
           'Narzędzia rysowania (W sesji): pomiar, profil zakresu, VWAP zakotwiczony, pozycja',
           'Drawing tools (In session): measure, range profile, anchored VWAP, position'
         ),
