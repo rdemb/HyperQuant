@@ -5,11 +5,11 @@ import { DEFAULT_SMC_PARAMS, type SBar, type Scale, type SmcParams, type SmcResu
 import { fmtDayTime } from '../core/time';
 import type { Candle } from '../hl/parse';
 import { logicalOfTime } from './overlay';
-import { type SmcSelection, selectSmc, smcObjects } from './smcSelect';
+import { type SmcSelection, selectSmc, smcObjects, smcWindowText } from './smcSelect';
 import { MONO, PRO, rgba } from './theme';
 
 /**
- * Warstwa wskaźnika „Struktura i płynność (SMC+HL)” na wykresie ceny (interwały do 1 h, na żywo i w powtórce). Model
+ * Warstwa wskaźnika „Struktura i płynność (SMC+HL)” na wykresie ceny (każdy interwał, na żywo i w powtórce). Model
  * (`smcStructure`) liczy elementy na zamkniętych świecach, rysowany jest wybór `selectSmc` na ostatniej zamkniętej
  * świecy. Kolory neutralne według rodzaju elementu, nie strony transakcji: struktura (etykiety swingów, linie BOS
  * i CHoCH, sweepy, pas równowagi) szara, FVG w bursztynie poziomów, EQH i EQL w jego jaśniejszym odcieniu. Nic nie
@@ -32,7 +32,8 @@ export interface SmcSourceBar {
   candle: Candle;
 }
 
-export const SMC_MAX_TF = 3_600_000;
+/** Bez górnej granicy interwału: okna liczone są w max(24 h, 24 świece) (`smcWindowMs`). */
+export const SMC_MAX_TF = Number.POSITIVE_INFINITY;
 /** Kolory rodzajów elementów (bez kolorów kupna i sprzedaży). */
 export const SMC_INK = { structure: PRO.nakedPoc, fvg: PRO.level, eq: PRO.levelSoft } as const;
 
@@ -95,7 +96,7 @@ export function smcLegend(sel: SmcSelection | null, ms: number, hover: { t: numb
   if (ms > SMC_MAX_TF) return [{ text: tr('—, interwał do 1 h', '—, intervals up to 1 h'), color: PRO.ink3 }];
   if (!sel || !Number.isFinite(sel.close)) return [{ text: tr('czekam na świece…', 'waiting for candles…'), color: PRO.ink3 }];
   const out: LegendPart[] = [{ text: tr('eksperymentalny', 'experimental'), color: PRO.ink3 }];
-  if (sel.history) out.push({ text: tr('historia 24 h', '24 h history'), color: PRO.ink2 });
+  if (sel.history) out.push({ text: tr(`historia ${smcWindowText(ms)}`, `${smcWindowText(ms)} history`), color: PRO.ink2 });
   out.push({
     text: tr(`· struktura: wewn. ${stateText(sel.state.internal)} · swing. ${stateText(sel.state.swing)}`, `· structure: internal ${stateText(sel.state.internal)} · swing ${stateText(sel.state.swing)}`),
     color: PRO.ink1,
