@@ -4,6 +4,14 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Czytelny SMC z potwierdzeniami z taśmy HL (2026-11-16)
+<!-- co-nowego: grupa=wykres | pl=SMC czytelniej: mniej stref, kolory rodzajów, podpisy przy osi, linijka premium i discount oraz potwierdzenia z taśmy | en=Clearer SMC: fewer zones, kind colours, labels at the axis, a premium and discount ruler and tape confirmations -->
+- Mniej i bliżej ceny: po 2 OB i 2 luki na kierunek (obie skale razem), po 1 EQH i EQL, 4 etykiety swingów; OB pokryty w co najmniej połowie przez bliższy odpada, wyższy interwał najwyżej 2 luki i 1 OB na kierunek.
+- Kolor mówi o rodzaju (OB fiolet, luka bursztyn, płynność morski, struktura szara), strzałka w podpisie o ruchu, po którym element powstał; podpisy stoją w kolumnie przy osi ceny bez nakładania się, a przy włączonym SMC wykres zostawia na nie miejsce za ostatnią świecą.
+- Luka pokazuje tylko niewypełnioną część; luka pokrywająca się z OB łączy się z nim („+FVG”), strefa w strefie wyższego interwału dostaje dopisek „+4H” albo „+1D”; dotknięty OB jest przygaszony.
+- Premium i discount jako linijka przy osi ceny z trójkątem przy ostatnim zamknięciu, linie szczytu i dołka zakresu z oceną „słaby” albo „mocny”, przerywana linia równowagi zamiast szarych prostokątów na świecach.
+- Potwierdzenia z taśmy HL (eksperymentalne): absorpcja w świecy OB, POC świecy OB jako kreska w strefie, luka „pusta” (mało handlu w luce) i przełamanie z przyjęciem ✓; opis pod krzyżem podaje liczby albo powód braku.
+
 ### Strefy SMC i wartość czasu TPO (2026-11-16)
 <!-- co-nowego: grupa=wykres | pl=Premium, discount i wartość czasu TPO | en=Premium, discount and TPO time value -->
 - SMC pokazuje trzy opisane strefy zakresu swingowego od potwierdzenia obu krańców; opcjonalne maksima i minima poprzedniej doby, tygodnia i miesiąca UTC wymagają pełnej historii dziennej.

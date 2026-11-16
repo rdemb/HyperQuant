@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_SMC_PARAMS, type SBar, smcStructure } from '../core/smcStructure';
-import { SMC_LIMITS, SMC_OBJECTS_MAX, SMC_PHONE_LIMITS, selectSmc, smcObjects, smcWindowMs } from '../chart/smcSelect';
+import { SMC_HISTORY_LIMITS, SMC_LIMITS, SMC_OBJECTS_MAX, SMC_PHONE_LIMITS, selectSmc, smcObjects, smcWindowMs } from '../chart/smcSelect';
 
 /** Wybór rysunku SMC: limity obiektów w trybach „bieżące” i „historia 24 h”, telefon, premium i discount, bez wglądu w przyszłość. */
 
@@ -76,20 +76,25 @@ describe('limity obiektów', () => {
   const r = smcStructure(bars, MS);
   const asOfs = Array.from({ length: 60 }, (_, k) => bars[300 + k * 45].t + MS);
 
-  it('limity z projektu: FVG 5, EQH i EQL po 2, etykiety 6, BOS i CHoCH 3, sweepy 2, OB 3 na skalę i typ; łącznie ≤ 25 w obu trybach', () => {
-    expect(SMC_LIMITS).toEqual({ fvg: 5, eq: 2, labels: 6, breaks: 3, sweeps: 2, ob: 3 });
+  it('limity czytelności: FVG po 2 na kierunek, EQH i EQL po 1, etykiety 4, BOS i CHoCH 3, sweepy 2; historia dopełnia zakończonymi; łącznie ≤ 25', () => {
+    expect(SMC_LIMITS).toEqual({ fvg: 2, eq: 1, labels: 4, breaks: 3, sweeps: 2, ob: 2 });
+    expect(SMC_HISTORY_LIMITS).toEqual({ fvg: 3, eq: 2, ob: 3 });
     let full = 0;
     for (const asOf of asOfs) {
       for (const history of [false, true]) {
         const s = selectSmc(r, bars, asOf, { phone: false, history });
-        expect(s.fvgs.length).toBeLessThanOrEqual(5);
-        expect(s.eqs.filter((x) => x.e.dir === 1).length).toBeLessThanOrEqual(2);
-        expect(s.eqs.filter((x) => x.e.dir === -1).length).toBeLessThanOrEqual(2);
-        expect(s.labels.length).toBeLessThanOrEqual(6);
+        for (const dir of [1, -1] as const) {
+          const g = s.fvgs.filter((x) => x.f.dir === dir);
+          expect(g.filter((x) => x.ended === null).length).toBeLessThanOrEqual(2);
+          expect(g.length).toBeLessThanOrEqual(history ? 3 : 2);
+          expect(s.eqs.filter((x) => x.e.dir === dir && !x.ended).length).toBeLessThanOrEqual(1);
+          expect(s.eqs.filter((x) => x.e.dir === dir).length).toBeLessThanOrEqual(history ? 2 : 1);
+        }
+        expect(s.labels.length).toBeLessThanOrEqual(4);
         expect(s.breaks.length).toBeLessThanOrEqual(3);
         expect(s.sweeps.length).toBeLessThanOrEqual(2);
         expect(smcObjects(s)).toBeLessThanOrEqual(SMC_OBJECTS_MAX);
-        if (s.fvgs.length === 5 && s.labels.length === 6) full++;
+        if (!history && s.active.fvg > s.fvgs.length) full++;
       }
     }
     // Limity naprawdę tną: w wielu chwilach FVG i etykiet jest więcej niż limit
