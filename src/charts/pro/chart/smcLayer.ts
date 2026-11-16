@@ -5,6 +5,7 @@ import { DEFAULT_SMC_PARAMS, type SBar, type Scale, type SmcParams, type SmcResu
 import { fmtDayTime } from '../core/time';
 import type { Candle } from '../hl/parse';
 import { logicalOfTime } from './overlay';
+import { loadSmcRates, smcRatesHover, smcRatesLine } from './smcRates';
 import { type SmcSelection, selectSmc, smcObjects, smcWindowText } from './smcSelect';
 import { MONO, PRO, rgba } from './theme';
 
@@ -65,32 +66,33 @@ function hoverText(sel: SmcSelection, hover: { t: number; p: number }, ms: numbe
     if (hover.t < s.t || hover.t >= s.returnT + ms || !near(s.level, 0.3)) continue;
     const n = s.returnIdx - s.idx;
     const where = s.dir === 1 ? tr('nad poziomem', 'above the level') : tr('pod poziomem', 'below the level');
-    return [{ text: tr(`· sweep: knot ${where} ${fmt(s.level)}, powrót zamknięciem po ${n} świecach, znany od ${at(s.known)}`, `· sweep: wick ${where} ${fmt(s.level)}, close back after ${n} candles, known from ${at(s.known)}`), color: ink }];
+    return [{ text: tr(`· sweep: knot ${where} ${fmt(s.level)}, powrót zamknięciem po ${n} świecach, znany od ${at(s.known)}`, `· sweep: wick ${where} ${fmt(s.level)}, close back after ${n} candles, known from ${at(s.known)}`), color: ink }, ...smcRatesHover(ms, 'sweep')];
   }
   for (const b of sel.breaks) {
     if (hover.t < b.swingKnown - ms || hover.t >= b.t + ms || !near(b.level, 0.15)) continue;
     const where = b.dir === 1 ? tr('nad szczytem', 'above the high') : tr('pod dołkiem', 'below the low');
-    return [{ text: tr(`· ${b.kind} (${scaleText(b.scale)}): zamknięcie ${where} ${fmt(b.level)}, znany od ${at(b.known)}`, `· ${b.kind} (${scaleText(b.scale)}): close ${where} ${fmt(b.level)}, known from ${at(b.known)}`), color: ink }];
+    return [{ text: tr(`· ${b.kind} (${scaleText(b.scale)}): zamknięcie ${where} ${fmt(b.level)}, znany od ${at(b.known)}`, `· ${b.kind} (${scaleText(b.scale)}): close ${where} ${fmt(b.level)}, known from ${at(b.known)}`), color: ink }, ...smcRatesHover(ms, `${b.kind}_${b.scale}`)];
   }
   for (const { e } of sel.eqs) {
     if (hover.t < e.t || (e.endAt !== null && hover.t >= e.endAt) || !near(e.level, 0.15)) continue;
     const name = e.dir === 1 ? 'EQH' : 'EQL';
     const gap = e.b.idx - e.a.idx;
-    return [{ text: tr(`· ${name} ${fmt(e.level)}: dwa pivoty z różnicą ${fmt(Math.abs(e.b.price - e.a.price))}, ${gap} świec od siebie, znany od ${at(e.known)}`, `· ${name} ${fmt(e.level)}: two pivots ${fmt(Math.abs(e.b.price - e.a.price))} apart, ${gap} candles apart, known from ${at(e.known)}`), color: ink }];
+    return [{ text: tr(`· ${name} ${fmt(e.level)}: dwa pivoty z różnicą ${fmt(Math.abs(e.b.price - e.a.price))}, ${gap} świec od siebie, znany od ${at(e.known)}`, `· ${name} ${fmt(e.level)}: two pivots ${fmt(Math.abs(e.b.price - e.a.price))} apart, ${gap} candles apart, known from ${at(e.known)}`), color: ink }, ...smcRatesHover(ms, 'EQH_EQL')];
   }
   for (const v of sel.fvgs) {
     const f = v.f;
     if (hover.t < f.t || (v.endAt !== null && hover.t >= v.endAt) || hover.p < f.lo || hover.p > f.hi) continue;
     const kind = f.dir === 1 ? tr('luka po ruchu w górę', 'gap after a move up') : tr('luka po ruchu w dół', 'gap after a move down');
     const ce = v.ce ? tr('dotknięcie środka luki (CE)', 'gap midpoint touched (CE)') : tr('bez dotknięcia środka luki (CE)', 'gap midpoint not touched (CE)');
-    return [{ text: tr(`· FVG (${kind}) ${fmt(f.lo)}–${fmt(f.hi)}: wypełnienie ${pct(v.fill)}%, ${ce}, znana od ${at(f.known)}`, `· FVG (${kind}) ${fmt(f.lo)}–${fmt(f.hi)}: ${pct(v.fill)}% filled, ${ce}, known from ${at(f.known)}`), color: ink }];
+    return [{ text: tr(`· FVG (${kind}) ${fmt(f.lo)}–${fmt(f.hi)}: wypełnienie ${pct(v.fill)}%, ${ce}, znana od ${at(f.known)}`, `· FVG (${kind}) ${fmt(f.lo)}–${fmt(f.hi)}: ${pct(v.fill)}% filled, ${ce}, known from ${at(f.known)}`), color: ink }, ...smcRatesHover(ms, 'FVG')];
   }
   return [];
 }
 
 /**
  * Opis w legendzie: etykieta „eksperymentalny”, stan struktury obu skal, liczby aktywnych FVG, EQH i EQL, położenie
- * ceny w połowach zakresu swingowego i brak częstości bazowych z powodem; krzyż nad elementem dopisuje, od kiedy był znany.
+ * ceny w połowach zakresu swingowego i częstości bazowe interwału wykresu (`smcRates`); krzyż nad elementem dopisuje,
+ * od kiedy był znany, i częstości bazowe jego typu.
  */
 export function smcLegend(sel: SmcSelection | null, ms: number, hover: { t: number; p: number } | null = null, fmt: (p: number) => string = (p) => numLang(String(p))): LegendPart[] {
   if (ms > SMC_MAX_TF) return [{ text: tr('—, interwał do 1 h', '—, intervals up to 1 h'), color: PRO.ink3 }];
@@ -109,7 +111,7 @@ export function smcLegend(sel: SmcSelection | null, ms: number, hover: { t: numb
   } else {
     out.push({ text: tr('· zakres swingowy: —, brak szczytu i dołka skali swingowej', '· swing range: —, no swing-scale high and low yet'), color: PRO.ink3 });
   }
-  out.push({ text: tr('· częstości bazowe wobec losowych poziomów: —, jeszcze nie policzone', '· base rates against random levels: —, not computed yet'), color: PRO.ink3 });
+  out.push(...smcRatesLine(ms));
   if (hover) out.push(...hoverText(sel, hover, ms, fmt));
   return out;
 }
@@ -258,6 +260,11 @@ export class SmcLayer implements ISeriesPrimitive<Time> {
       { zOrder: () => 'bottom', renderer: () => back },
       { zOrder: () => 'top', renderer: () => front },
     ];
+    // Częstości bazowe (osobny kawałek paczki): po wczytaniu odświeżenie, żeby legenda je pokazała
+    loadSmcRates().then(
+      () => this.requestUpdate?.(),
+      () => this.requestUpdate?.()
+    );
   }
 
   attached(p: SeriesAttachedParameter<Time>): void {

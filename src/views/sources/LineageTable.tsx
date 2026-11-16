@@ -101,8 +101,28 @@ export const GROUPS: { title: string; rows: Row[] }[] = [
         kinds: ['MODEL'],
         refresh: tr('po każdej zamkniętej świecy', 'after every closed candle'),
         caveat: tr(
-          'Eksperymentalny: częstości bazowe wobec losowych poziomów nie są jeszcze policzone, więc elementy opisują kształt ceny i niczego nie przewidują.',
-          'Experimental: base rates against random levels are not computed yet, so the elements describe the price shape and predict nothing.'
+          'Eksperymentalny: częstości bazowe z historii (wiersz niżej) prawie nie różnią się od losowych poziomów, więc elementy opisują kształt ceny i niczego nie przewidują.',
+          'Experimental: the historical base rates (next row) barely differ from random levels, so the elements describe the price shape and predict nothing.'
+        ),
+      },
+      {
+        metric: tr(
+          'Częstości bazowe SMC+HL (legenda i krzyż nad elementem, W sesji): co działo się po FVG, BOS, CHoCH, sweepach, EQH i EQL wobec losowej kontroli',
+          'SMC+HL base rates (legend and crosshair over an element, In session): what followed FVG, BOS, CHoCH, sweeps, EQH and EQL against a random control'
+        ),
+        source: tr(
+          'Świece Binance BTCUSDT perp 5m od 2020 r. (wyższe interwały składane w UTC), kolejność dotknięć w świecy ze świec 1m Binance; plik statyczny w aplikacji',
+          'Binance BTCUSDT perp 5m candles since 2020 (higher intervals built in UTC), the order of touches within the candle from Binance 1m candles; a static file in the app'
+        ),
+        method: tr(
+          'Plan miar i kontroli zapisany przed liczeniem. Elementy liczone tym samym kodem co wskaźnik (domyślne parametry) na 5m, 15m, 1h, 4H i 1D; miary w 24 i 72 świecach od chwili, od której element był znany: dotknięcie środka luki (CE) i wypełnienie, dalszy ruch w ATR i powrót za poziom po przełamaniu, ponowne wyjście za poziom po sweepie, zebranie albo przełamanie EQH i EQL. Każde zdarzenie ma losową kontrolę w tej samej odległości (przedział tej samej szerokości, losowy poziom, losowy knot, pojedynczy szczyt), przy BOS na skali swingowej i sweepie dopasowaną do zmienności i pędu. Przedział 95% z bootstrapu klastrowego (2000 losowań); pokazany tylko sprawdzian 2024–2026 poza próbą; przedział obejmujący 0 to „bez wyraźnej różnicy”, n < 100 to „za mało przypadków”. Przypadki niejednoznaczne na 1m wypadają z n.',
+          'The plan of measures and controls was written down before computing. Elements computed with the same code as the indicator (default parameters) on 5m, 15m, 1h, 4H and 1D; measures within 24 and 72 candles from the moment the element became known: gap midpoint (CE) touch and fill, further move in ATR and return beyond the level after a break, going beyond the level again after a sweep, sweep or break of EQH and EQL. Every event has a random control at the same distance (a range of the same width, a random level, a random wick, a single high), for swing-scale BOS and sweeps matched for volatility and momentum. 95% interval from a cluster bootstrap (2000 draws); only the out-of-sample check 2024–2026 is shown; an interval containing 0 is “no clear difference”, n < 100 is “too few cases”. Cases ambiguous on 1m drop out of n.'
+        ),
+        kinds: ['MODEL'],
+        refresh: tr('raz, z badania (16.11.2026); nowa wersja tylko z nowym plikiem', 'once, from the study (16 Nov 2026); a new version only with a new file'),
+        caveat: tr(
+          'Historia BTC z Binance, nie taśma Hyperliquid, i ta sama tabela na każdym rynku. Wynik: elementy prawie nie różnią się od kontroli; po BOS na skali swingowej dalszy ruch ok. 0,3 ATR większy (5m i 15m), po sweepie ok. 2 pp rzadziej ponownie za poziomem, na 1D za mało przypadków. Wiele miar naraz, więc pojedyncza różnica tuż przy zerze może być przypadkiem. Opis przeszłości, nie prognoza.',
+          'BTC history from Binance, not the Hyperliquid tape, and the same table on every market. Result: the elements barely differ from the control; after a swing-scale BOS the further move is about 0.3 ATR larger (5m and 15m), after a sweep about 2 pp less often beyond the level again, too few cases on 1D. Many measures at once, so a single difference right next to zero may be chance. A description of the past, not a forecast.'
         ),
       },
       {

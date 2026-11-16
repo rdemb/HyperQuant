@@ -137,8 +137,8 @@ const METHOD_HINT: Record<ModelKey, string> = {
     "MODEL · Valentini's intraday model rules: absorption zones and effort boxes from the tape delta only (no value with a reason without the tape), swing discount zones from the swing profile of the tape (from candles only as an approximation), swing LVN with bootstrap confidence; not entry cues"
   ),
   smc: tr(
-    'MODEL · reguły struktury na zamkniętych świecach: pivoty dwóch skal z filtrem 1 ATR, BOS i CHoCH zamknięciem, sweepy, FVG, EQH i EQL, każdy z chwilą „znany od”; eksperymentalny, częstości bazowe jeszcze nie policzone',
-    'MODEL · structure rules on closed candles: two-scale pivots with a 1 ATR filter, closing BOS and CHoCH, sweeps, FVG, EQH and EQL, each with a “known from” time; experimental, base rates not computed yet'
+    'MODEL · reguły struktury na zamkniętych świecach: pivoty dwóch skal z filtrem 1 ATR, BOS i CHoCH zamknięciem, sweepy, FVG, EQH i EQL, każdy z chwilą „znany od”; eksperymentalny, częstości bazowe z historii BTC (Binance 5m, sprawdzian 2024–2026) prawie bez różnicy wobec losowych poziomów',
+    'MODEL · structure rules on closed candles: two-scale pivots with a 1 ATR filter, closing BOS and CHoCH, sweeps, FVG, EQH and EQL, each with a “known from” time; experimental, base rates from BTC history (Binance 5m, 2024–2026 check) barely differ from random levels'
   ),
 };
 
