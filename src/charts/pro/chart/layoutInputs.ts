@@ -36,7 +36,11 @@ import {
 } from './layoutNumbers';
 import type { StationId } from './stations';
 import { tr } from '../../../i18n';
-import { capsOf } from '../../../state/markets';
+import { capsOf, marketOf } from '../../../state/markets';
+import { deskMarketOf } from '../../../config/deskMarkets';
+import { PERIOD_MS, dayFrame, ivbCalendarOf, toBar5 } from '../core/dayFrame';
+import { utcDayStart } from '../core/sessions';
+import type { FrameInput } from './dayFrameText';
 
 /**
  * Wejścia liczb nagłówka układu z magazynu rynku wykresu i migawek skanera (czytane co kilka sekund przez LayoutHeader).
@@ -170,6 +174,32 @@ function mapHitsOf(store: InputStore, blog: InputScan['blog'], s: TradeSession, 
   // Lista sięga wpisu albo historia API się skończyła — tu tylko ten drugi przypadek
   if (!r) return { why: tr(`Świece 1m nie sięgają wpisu (${fmtHm(w.from)}): limit historii API`, `The 1m candles do not reach the post (${fmtHm(w.from)}): API history limit`) };
   return { s, kind: map.kind, publishedAt: map.publishedAt, touched: r.levels.filter((l) => l.touchedAt !== null).length, total: r.levels.length, complete: r.complete, from: w.from, to };
+}
+
+/**
+ * Historia świec 30m paska „Rama dnia” w dobach: 70 dób kontekstu stanu z dobą VA przed nimi oraz 60 dób szerokości IVB
+ * z 15 dobami ATR przed nimi (ok. 3 650 świec, w limicie 5000 świec API).
+ */
+export const FRAME_HISTORY_DAYS = 76;
+
+/**
+ * Wejście paska „Rama dnia” z magazynu rynku: świece 5m od wczoraj 00:00 UTC (VA wczoraj, stan doby, IVB) i 30m z 76 dób
+ * (kontekst stanu i szerokości IVB), doczytywane jak na wykresie. Świece w drodze — `frame` undefined; nieudane pobranie
+ * historii 30m — rama bez częstości i percentyla, z powodem.
+ */
+export function frameInputOf(store: InputStore, minutes: number): FrameInput {
+  const now = store.serverNow();
+  const coin = store.coin;
+  const m = marketOf(coin);
+  const base = { coin, now, szDecimals: m?.szDecimals };
+  const day = utcDayStart(now);
+  const c5 = candlesFrom(store, '5m', day - DAY, now);
+  if (c5 === undefined || isAbsent(c5)) return { ...base, frame: c5 };
+  const c30 = candlesFrom(store, '30m', day - FRAME_HISTORY_DAYS * DAY, now);
+  if (c30 === undefined) return { ...base, frame: undefined };
+  const cal = ivbCalendarOf(coin, deskMarketOf(coin)?.underlying ?? null, m?.class);
+  const frame = dayFrame({ b5: toBar5(c5, 5 * 60_000, now), c30: isAbsent(c30) ? [] : toBar5(c30, PERIOD_MS, now), now, cal, minutes });
+  return { ...base, frame, historyWhy: isAbsent(c30) ? c30.why : null };
 }
 
 /** Wejścia liczb układu `id`; `hawkes` liczy nagłówek w tle (Web Worker) i podaje gotowy. */
