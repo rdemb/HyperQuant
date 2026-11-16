@@ -4,6 +4,18 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Fabio: LVN z pewnością bootstrapową i rankingiem trwałości (2026-11-16)
+<!-- co-nowego: grupa=wykres | pl=LVN w profilu swingu Effort i w profilu tygodnia P/b mają pewność z 200 losowań świec, a LVN z pewnością poniżej 70% nie są rysowane | en=LVN in the Effort swing profile and in the P/b weekly profile carry a confidence from 200 candle resamples, and LVN below 70% confidence are not drawn -->
+
+#### Dodane
+- **Pewność LVN** (projekt Pioniera F-B1, plakietka MODEL, eksperymentalne; nowy moduł `core/lvnConfidence.ts`): bootstrap blokowy jednostek profilu, 200 replik, stałe ziarno (mulberry32), profil na tej samej siatce koszyków, obszar wartości i LVN tą samą regułą; pewność = udział replik z LVN w ±1 koszyku. Jednostką i blokiem jest świeca, nie minuta taśmy: taśma jest zapisana w świecach bez czasu transakcji (profil swingu: świeca wykresu, na 1m bloki 1-minutowe), a profil tygodnia P/b jest ze świec 5m bez taśmy; tak też mówią opisy wskaźników.
+- **Próg 70% (hipoteza zerowa: poniżej to szum profilu):** LVN poniżej progu nie są rysowane, a nie rysowane blado, bo blada linia zajęłaby jedno z 2 + 2 miejsc najbliższych poziomów P/b. P/b: linia „tydz. LVN 65 200 · pewność 84%” (telefon „tydz. LVN 84%”), w legendzie „LVN tyg. z pewnością ≥ 70%: 1 z 3”, a „poziom tyg.” przy strefie liczy tylko pewne LVN. Effort: pod kursorem nad pasmem D „LVN 98,5 · pewność 84%; 1 poniżej 70%” albo „LVN: —, pewność < 70% (2)”.
+- **Koszt:** 200 replik na swingu 300 świec × 40 wierszy taśmy ok. 2–4 ms, na tygodniu 2016 świec 5m ok. 9–10 ms (mediana z 15, test `lvnConfidence.test.ts`). Pewność swingu liczy się leniwie, tylko dla profilu pod kursorem i raz na profil; tydzień P/b raz na tydzień i liczbę jego świec, a nie po każdej świecy 5m.
+
+#### Zmienione
+- **Ranking LVN według trwałości topologicznej** (`lvnNodes` zamiast `lvnBins`): do 3 minimów najgłębszych wobec niższego z dwóch otaczających maksimów, a nie 3 najniższych; kolejność w legendzie od najtrwalszego. Test: minimum najniższe (5), ale z garbem 8 obok, wypada z trójki na rzecz dolin o trwałości 80, 60 i 10.
+- Testy: wyraźny profil dwugarbny daje LVN w dolinie z pewnością ≥ 0,9; na zaszumionym profilu jednogarbnym LVN z szumu mają pewność < 0,7 w ≥ 80% ziaren. Na płaskim profilu z szumem 3 z 15 LVN z szumu przeszły próg: losowanie pojedynczych świec nie oddaje tego, że sąsiednie świece handlują przy podobnych cenach (zapisane w opisie wskaźnika).
+
 ### Fabio: Effort tylko z taśmy, profil swingu z taśmy, IVB 30/60 min i czas dostępności stref (2026-11-16)
 <!-- co-nowego: grupa=wykres | pl=Strefy i pudełka Effort liczą deltę tylko z nagranej taśmy, a pod kursorem widać, od kiedy strefa była znana; nowy wskaźnik IVB z zakresem pierwszych 30 albo 60 minut od otwarcia Nowego Jorku | en=Effort zones and boxes take delta only from the recorded tape, and under the cursor you can see since when a zone was known; a new IVB indicator shows the range of the first 30 or 60 minutes after the New York open -->
 

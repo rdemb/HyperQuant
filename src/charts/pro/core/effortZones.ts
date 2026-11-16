@@ -1,5 +1,5 @@
 import { type TradeSession, tradeSessionOn } from '../../../utils/sessionDay';
-import { lvnBins } from './pbRanges';
+import { type LvnOptions, type LvnPrice, type ProfileUnits, lvnConfidence, lvnNodes, profileOf, unitsBuilder, valueArea } from './lvnConfidence';
 import { utcDayStart } from './sessions';
 
 /**
@@ -146,8 +146,14 @@ export interface SwingProfile {
   val: number;
   vah: number;
   poc: number;
-  lvn: number[];
+  /** Do 3 najtrwalszych LVN, malejąco po trwałości; pewność liczy `swingLvnConfidence` (leniwie). */
+  lvn: LvnPrice[];
   tapeShare: number;
+  /**
+   * Wejście profilu do bootstrapu pewności LVN: czasy pierwszej i ostatniej świecy swingu (nie indeksy, żeby profil nie
+   * zależał od głębokości wczytanej historii), liczba przedziałów i udział VA.
+   */
+  src: { from: number; to: number; bins: number; share: number };
 }
 
 /**
@@ -236,10 +242,25 @@ function atrOf(bars: readonly VBar[], n: number): Float64Array {
 /**
  * Profil wolumenu swingu `bars[a..b]` w `bins` przedziałach od dołka do szczytu: świeca z taśmą wnosi wolumen transakcji
  * na każdej cenie (wiersze taśmy), świeca bez taśmy — swój wolumen rozłożony równo na zakres (przybliżenie). [VAL, VAH]
- * obejmuje udział `share` wolumenu wokół POC, LVN jak w profilu okresów (`lvnBins`), `tapeShare` — udział wolumenu
- * z taśmy.
+ * obejmuje udział `share` wolumenu wokół POC, LVN jak w profilu okresów (`lvnNodes`: najtrwalsze, bez pewności),
+ * `tapeShare` — udział wolumenu z taśmy.
  */
 export function swingProfile(bars: readonly VBar[], a: number, b: number, bins: number, share: number): SwingProfile | null {
+  const s = swingUnits(bars, a, b, bins);
+  if (!s) return null;
+  const vol = profileOf(s.units);
+  const { poc, a: lo2, z: hi2, total } = valueArea(vol, share);
+  if (!(total > 0)) return null;
+  const mid = (k: number) => s.lo + (k + 0.5) * s.step;
+  const lvn = lvnNodes(vol, lo2, hi2, poc).map((x) => ({ ...x, px: mid(x.bin) }));
+  return { val: s.lo + lo2 * s.step, vah: s.lo + (hi2 + 1) * s.step, poc: mid(poc), lvn, tapeShare: s.fromTape / total, src: { from: bars[a].t, to: bars[b].t, bins, share } };
+}
+
+/**
+ * Jednostki profilu swingu `bars[a..b]` (jedna na świecę) na siatce `bins` przedziałów od dołka do szczytu: świeca
+ * z taśmą — wolumen wierszy taśmy w ich przedziałach, bez taśmy — wolumen świecy rozłożony równo na zakres.
+ */
+function swingUnits(bars: readonly VBar[], a: number, b: number, bins: number): { units: ProfileUnits; lo: number; step: number; fromTape: number } | null {
   let lo = Infinity;
   let hi = -Infinity;
   for (let i = a; i <= b; i++) {
@@ -248,7 +269,7 @@ export function swingProfile(bars: readonly VBar[], a: number, b: number, bins: 
   }
   if (!(hi > lo)) return null;
   const step = (hi - lo) / bins;
-  const vol = new Float64Array(bins);
+  const ub = unitsBuilder(bins);
   let fromTape = 0;
   for (let i = a; i <= b; i++) {
     const x = bars[i];
@@ -257,33 +278,32 @@ export function swingProfile(bars: readonly VBar[], a: number, b: number, bins: 
       for (let r = 0; r < tape.buy.length; r++) {
         const v = tape.buy[r] + tape.sell[r];
         if (!(v > 0)) continue;
-        const k = Math.max(0, Math.min(bins - 1, Math.floor(((tape.lo + r) * tape.tick - lo) / step)));
-        vol[k] += v;
+        ub.add(Math.max(0, Math.min(bins - 1, Math.floor(((tape.lo + r) * tape.tick - lo) / step))), v);
         fromTape += v;
       }
-      continue;
+    } else {
+      // Przedziały [dół, góra): szczyt dokładnie na granicy nie wpada do przedziału wyżej
+      const i0 = Math.min(bins - 1, Math.floor((x.l - lo) / step));
+      const i1 = Math.min(bins - 1, Math.max(i0, Math.ceil((x.h - lo) / step) - 1));
+      const per = x.v / (i1 - i0 + 1);
+      for (let k = i0; k <= i1; k++) ub.add(k, per);
     }
-    // Przedziały [dół, góra): szczyt dokładnie na granicy nie wpada do przedziału wyżej
-    const i0 = Math.min(bins - 1, Math.floor((x.l - lo) / step));
-    const i1 = Math.min(bins - 1, Math.max(i0, Math.ceil((x.h - lo) / step) - 1));
-    const per = x.v / (i1 - i0 + 1);
-    for (let k = i0; k <= i1; k++) vol[k] += per;
+    ub.next();
   }
-  const total = vol.reduce((s, v) => s + v, 0);
-  if (!(total > 0)) return null;
-  let poc = 0;
-  for (let k = 1; k < bins; k++) if (vol[k] > vol[poc]) poc = k;
-  let lo2 = poc;
-  let hi2 = poc;
-  let acc = vol[poc];
-  while (acc < share * total && (lo2 > 0 || hi2 < bins - 1)) {
-    const down = lo2 > 0 ? vol[lo2 - 1] : -1;
-    const up = hi2 < bins - 1 ? vol[hi2 + 1] : -1;
-    if (up >= down) acc += vol[++hi2];
-    else acc += vol[--lo2];
-  }
-  const mid = (k: number) => lo + (k + 0.5) * step;
-  return { val: lo + lo2 * step, vah: lo + (hi2 + 1) * step, poc: mid(poc), lvn: lvnBins(vol, lo2, hi2, poc).map(mid), tapeShare: fromTape / total };
+  return { units: ub.done(), lo, step, fromTape };
+}
+
+/**
+ * Pewność LVN profilu swingu (w kolejności `p.lvn`) z bootstrapu świec swingu: blok = 1 świeca wykresu, bo taśma jest
+ * zapisana w świecach (wiersze cen bez czasu transakcji), więc na wykresie 1m to bloki 1-minutowe, a na 5m pięciominutowe.
+ * Liczone leniwie (tylko dla profilu pod kursorem) na tych samych świecach, z których powstał profil.
+ */
+export function swingLvnConfidence(bars: readonly VBar[], p: SwingProfile, o?: LvnOptions): number[] {
+  const a = bars.findIndex((x) => x.t === p.src.from);
+  const b = a < 0 ? -1 : bars.findIndex((x, i) => i >= a && x.t === p.src.to);
+  const s = b >= a && a >= 0 ? swingUnits(bars, a, b, p.src.bins) : null;
+  if (!s) return p.lvn.map(() => 0);
+  return lvnConfidence(s.units, p.src.share, p.lvn.map((x) => x.bin), o);
 }
 
 /** Świeca z deltą z taśmy na sobie i w całym oknie średniej |delty| (próg agresji z samej taśmy). */

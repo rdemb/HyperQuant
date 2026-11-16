@@ -105,10 +105,10 @@ describe('delta i profil', () => {
     const bars = [taped({ t: 0, o: 100, h: 112, l: 100, c: 112, v: 0, delta: 0 }, vol)];
     const prof = swingProfile(bars, 0, 0, 24, 0.9)!;
     expect(prof.lvn).toHaveLength(1);
-    expect(prof.lvn[0]).toBeGreaterThan(105);
-    expect(prof.lvn[0]).toBeLessThan(107);
-    expect(prof.lvn[0]).toBeGreaterThan(prof.val);
-    expect(prof.lvn[0]).toBeLessThan(prof.vah);
+    expect(prof.lvn[0].px).toBeGreaterThan(105);
+    expect(prof.lvn[0].px).toBeLessThan(107);
+    expect(prof.lvn[0].px).toBeGreaterThan(prof.val);
+    expect(prof.lvn[0].px).toBeLessThan(prof.vah);
   });
 });
 
