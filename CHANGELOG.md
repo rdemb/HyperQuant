@@ -4,6 +4,12 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Kokpit: okno opisu liczb układu w granicach ekranu (2026-11-16)
+<!-- co-nowego: ukryj -->
+
+#### Naprawione
+- **Opis liczb układu** (Kokpit i pozostałe układy, liczby w pasku wykresu): okno było przypięte do prawej krawędzi grupy liczb i miało 36rem, więc przy 720 px wychodziło za lewą krawędź okna (−64…512 px). Po otwarciu okno jest mierzone i przesuwane do marginesu 8 px (`shiftIntoView`, test jednostkowy). `ui:check` otwiera je przy 720 i 1024 px i sprawdza, że całe jest na ekranie (przed poprawką przy 720 px: lewa krawędź −64).
+
 ### Uwięzieni: podpisy osi histogramu bez ucięcia (2026-11-16)
 <!-- co-nowego: ukryj -->
 

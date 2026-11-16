@@ -34,6 +34,16 @@ export function chipsThatFit(widths: readonly number[], avail: number, gap: numb
   }
   return widths.length;
 }
+/**
+ * Przesunięcie (px) okna opisu liczb tak, żeby całe było na ekranie z marginesem: kotwica przy prawej krawędzi grupy
+ * liczb wypychała je przy 720 px poza lewą krawędź okna. Szersze niż ekran: przyklejone do lewego marginesu.
+ */
+export function shiftIntoView(left: number, right: number, viewport: number, margin = 8): number {
+  if (left < margin) return margin - left;
+  if (right > viewport - margin) return Math.max(margin - left, viewport - margin - right);
+  return 0;
+}
+
 /** Przez pierwsze sekundy (dane dopiero dochodzą) — co sekundę. */
 const WAIT_MS = 1_000;
 const WARMUP_MS = 15_000;
@@ -211,9 +221,29 @@ export const LayoutHeader: React.FC<{
     };
   }, [open]);
 
+  const detailsRef = useRef<HTMLDivElement>(null);
+  const [shift, setShift] = useState(0);
+  useLayoutEffect(() => {
+    if (!open) {
+      setShift(0);
+      return;
+    }
+    const el = detailsRef.current;
+    if (!el) return;
+    const place = () => {
+      el.style.transform = '';
+      const r = el.getBoundingClientRect();
+      const dx = shiftIntoView(r.left, r.right, document.documentElement.clientWidth);
+      el.style.transform = dx ? `translateX(${dx}px)` : '';
+      setShift(dx);
+    };
+    place();
+    window.addEventListener('resize', place);
+    return () => window.removeEventListener('resize', place);
+  }, [open, nums.length]);
   const details = (pos: string) =>
     open && (
-      <div className={`absolute ${pos} top-full mt-1 z-40 max-h-[calc(100dvh-22rem)] sm:max-h-[60vh] overflow-y-auto rounded-xl border border-line-strong bg-surface-2 p-3 shadow-2xl text-xs pointer-events-auto`}>
+      <div ref={detailsRef} data-liczby-opis="" data-przesuniecie={shift || undefined} className={`absolute ${pos} top-full mt-1 z-40 max-h-[calc(100dvh-22rem)] sm:max-h-[60vh] overflow-y-auto rounded-xl border border-line-strong bg-surface-2 p-3 shadow-2xl text-xs pointer-events-auto`}>
         <p className="text-ink-1 leading-snug">{question}</p>
         <dl className="mt-2.5 flex flex-col gap-2">
           {nums.map((n) => (
