@@ -88,6 +88,18 @@ describe('ProStore', () => {
     expect(subs).toEqual(expect.arrayContaining(['trades', 'activeAssetCtx', 'candle']));
   });
 
+  it('kontekst activeAssetCtx daje próbkę pola premium (pb) i mark wobec oracle (pb); brak pola — bez próbki tej serii', async () => {
+    const ws = await boot();
+    const ctx = { markPx: '81081', oraclePx: '81000', midPx: '81080', funding: '0.00001', openInterest: '25000', premium: '0.0003', dayNtlVlm: '1', prevDayPx: '80000' };
+    ws.msg({ channel: 'activeAssetCtx', data: { coin: 'BTC', ctx } });
+    expect(store.premium.atWithin(store.serverNow(), 60_000)).toBeCloseTo(3, 9);
+    expect(store.markOracle.atWithin(store.serverNow(), 60_000)).toBeCloseTo(10, 9);
+    vi.setSystemTime((now += 5_000));
+    ws.msg({ channel: 'activeAssetCtx', data: { coin: 'BTC', ctx: { ...ctx, oraclePx: '0', premium: undefined } } });
+    expect(store.premium.times()).toHaveLength(1);
+    expect(store.markOracle.times()).toHaveLength(1);
+  });
+
   it('transakcje tworzą footprint świecy; świeca otwarta w trakcie nagrania jest niepełna', async () => {
     const ws = await boot();
     ws.msg({ channel: 'trades', data: [trade(now - 1000, 81025, 0.5, 'B', 1), trade(now - 500, 81024, 0.2, 'A', 2)] });

@@ -1,6 +1,7 @@
 import type { IChartApiBase, IPrimitivePaneRenderer, IPrimitivePaneView, ISeriesApi, ISeriesPrimitive, Logical, SeriesAttachedParameter, SeriesType, Time } from 'lightweight-charts';
 import { tr } from '../../../i18n';
 import { numLang } from '../../../ui/format';
+import { LVN_MIN_CONFIDENCE, confidentLvn } from '../core/lvnConfidence';
 import { type Bar5, LIFE, type Levels, type Range, TF_MS, atr, ranges, typicalHourBp, weekLevels } from '../core/pbRanges';
 import { utcDayStart, utcWeekStart } from '../core/sessions';
 import { valueReference } from '../core/valueReference';
@@ -77,6 +78,24 @@ interface HLine {
 
 type State = 'off' | 'replay' | 'interval' | 'loading' | 'ready';
 
+const WEEK_MS = 7 * DAY;
+const WEEK_CACHE = 6;
+
+const pct = (c: number) => numLang(String(Math.round(c * 100)));
+
+/** Podpis linii poziomu: „tydz. LVN 65 200 · pewność 84%” (telefon: „tydz. LVN 84%”), pozostałe bez pewności. */
+export function lineText(l: { px: number; name: string; tag: string; conf: number | null }, phone: boolean): string {
+  if (phone) return l.conf === null ? `${l.tag} ${l.name}` : `${l.tag} ${l.name} ${pct(l.conf)}%`;
+  const conf = l.conf === null ? '' : ` · ${tr('pewność', 'confidence')} ${pct(l.conf)}%`;
+  return `${l.tag} ${l.name} ${fmtPx(l.px)}${conf}`;
+}
+
+/** Legenda: ile LVN tygodnia przeszło próg pewności (pozostałe to szum profilu i nie są rysowane). */
+export function weekLvnText(kept: number, all: number): string {
+  const min = pct(LVN_MIN_CONFIDENCE);
+  return tr(`LVN tyg. z pewnością ≥ ${min}%: ${kept} z ${all}`, `weekly LVN with confidence ≥ ${min}%: ${kept} of ${all}`);
+}
+
 export class PbRangeLayer implements ISeriesPrimitive<Time> {
   private chart: IChartApiBase<Time> | null = null;
   private series: ISeriesApi<SeriesType, Time> | null = null;
@@ -92,6 +111,11 @@ export class PbRangeLayer implements ISeriesPrimitive<Time> {
   private b5: Bar5[] = [];
   private key = '';
   private view: View | null = null;
+  /**
+   * Poziomy tygodni z ostatnich przeliczeń (pewność LVN to 200 replik bootstrapu): klucz rynek, tydzień i liczba jego
+   * świec 5m, więc zamknięty tydzień liczy się raz, a nie po każdej świecy.
+   */
+  private weekCache = new Map<string, Levels | null>();
   private boxes: Box[] = [];
   private lines: HLine[] = [];
   /** Po każdej scenie: pudełka i linie poziomów na ekranie (pomiar układu czyta je z wykresu). */
@@ -243,16 +267,22 @@ export class PbRangeLayer implements ISeriesPrimitive<Time> {
     this.state = 'ready';
     const rs = ranges(b);
     const A = atr(b);
-    const weeks = new Map<number, Levels | null>();
     const weekOf = (t: number) => {
       const w = utcWeekStart(t);
-      if (!weeks.has(w)) weeks.set(w, weekLevels(b, t));
-      return weeks.get(w)!;
+      let n = 0;
+      for (const x of b) if (x.t >= w - WEEK_MS && x.t < w) n++;
+      const key = `${store.coin}|${w}|${n}`;
+      if (!this.weekCache.has(key)) {
+        if (this.weekCache.size >= WEEK_CACHE) this.weekCache.delete(this.weekCache.keys().next().value!);
+        this.weekCache.set(key, weekLevels(b, t));
+      }
+      return this.weekCache.get(key)!;
     };
+    // Poziom tygodnia przy strefie: VAH, VAL i LVN z pewnością ≥ 70%
     const level = rs.map((r) => {
       const k = r.kv ?? b.length - 1;
       const lv = weekOf(b[k].t);
-      return lv !== null && [lv.vah, lv.val, ...lv.lvn].some((x) => x >= r.lo - 0.5 * A[k] && x <= r.hi + 0.5 * A[k]);
+      return lv !== null && [lv.vah, lv.val, ...confidentLvn(lv.lvn).map((l) => l.px)].some((x) => x >= r.lo - 0.5 * A[k] && x <= r.hi + 0.5 * A[k]);
     });
     this.view = {
       ranges: rs,
@@ -295,15 +325,20 @@ export class PbRangeLayer implements ISeriesPrimitive<Time> {
     const y = (p: number) => series.priceToCoordinate(p);
     const b = this.b5;
     const last = b.length - 1;
-    // Poziomy tygodnia i doby: najwyżej 2 najbliższe nad ceną i 2 pod nią (z obu profili razem)
-    const levels: { px: number; name: string; from: number; color: string; tag: string }[] = [];
+    // Poziomy tygodnia i doby: najwyżej 2 najbliższe nad ceną i 2 pod nią (z obu profili razem); LVN tylko z pewnością ≥ 70%
+    const levels: { px: number; name: string; from: number; color: string; tag: string; conf: number | null }[] = [];
     for (const [lv, from, color, tag] of [
       [v.week, utcWeekStart(this.now), WEEK, tr('tydz.', 'wk')],
       [v.day, utcDayStart(this.now), DAY_INK, tr('doba', 'day')],
     ] as const) {
       if (!lv) continue;
-      const items: [number, string][] = [[lv.vah, 'VAH'], [lv.poc, 'POC'], [lv.val, 'VAL'], ...lv.lvn.map((p): [number, string] => [p, 'LVN'])];
-      for (const [px, name] of items) levels.push({ px, name, from, color, tag });
+      const items: [number, string, number | null][] = [
+        [lv.vah, 'VAH', null],
+        [lv.poc, 'POC', null],
+        [lv.val, 'VAL', null],
+        ...confidentLvn(lv.lvn).map((l): [number, string, number] => [l.px, 'LVN', l.confidence]),
+      ];
+      for (const [px, name, conf] of items) levels.push({ px, name, from, color, tag, conf });
     }
     const near = nearestLevels(levels, b[last].c);
     levels.forEach((l, i) => {
@@ -314,7 +349,7 @@ export class PbRangeLayer implements ISeriesPrimitive<Time> {
         x1: right,
         y: yy,
         color: l.color,
-        text: this.phone ? `${l.tag} ${l.name}` : `${l.tag} ${l.name} ${fmtPx(l.px)}`,
+        text: lineText(l, this.phone),
       });
     });
     // Zakres aktywny i ostatni zakończony; zakres w budowie tylko w legendzie
@@ -419,6 +454,8 @@ export class PbRangeLayer implements ISeriesPrimitive<Time> {
       zone = `${forming.s > 0 ? 'P' : 'b'} ${tr(`w budowie: ${n} ${word} z ${PB_TOUCHES}`, `forming: ${n} of ${PB_TOUCHES} touches`)} · ${hm} ${tr('z', 'of')} 4:00`;
     }
     const parts = [{ text: zone, color: a ? color : PRO.ink2 }];
+    const wl = v.week?.lvn ?? [];
+    if (wl.length > 0) parts.push({ text: weekLvnText(confidentLvn(wl).length, wl.length), color: PRO.ink2 });
     if (v.hourBp !== null)
       parts.push({
         text: `${tr('typowa godzina', 'typical hour')} ${numLang(String(Math.round(v.hourBp)))} bp`,
