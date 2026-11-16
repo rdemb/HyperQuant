@@ -52,6 +52,7 @@ import { ConeForecast, ConeLayer, ConeSource } from './coneLayer';
 import { Hip4Layer, Hip4Source, outcomeLevels } from './hip4Layer';
 import { PbRangeLayer, PbStyle, PbZone } from './pbRangeLayer';
 import { EffortLayer, type EffortStyle } from './effortLayer';
+import { IvbLayer, type IvbStyle } from './ivbLayer';
 import { BlogMapLayer, blogMapMarks, blogMapModel, levelsInsteadOfMap } from './blogMapLayer';
 import type { Hip4State } from '../../../state/useHip4';
 import { type BlogMap, type BlogMapsState, pickMap } from '../../../state/useBlogMaps';
@@ -346,6 +347,8 @@ export class ProChartController {
   private readonly pb = new PbRangeLayer(() => this.pbStyle());
   /** Strefy absorpcji i pudełka Effort ze świec wykresu (wskaźnik „Strefy absorpcji i pudełka Effort”). */
   private readonly effort = new EffortLayer(() => this.effortStyle());
+  /** Zakres otwarcia NY 30 albo 60 min ze świec wykresu (wskaźnik „IVB”). */
+  private readonly ivb = new IvbLayer(() => this.ivbStyle());
   /**
    * Mapa z bloga (warstwa „Mapa z bloga”, tylko BTC): mapy z pliku bloga, rozliczenie poziomów (układ Rozliczenie),
    * mapa na wykresie i chwila ostatniego przeliczenia znaczników (najwyżej raz na minutę).
@@ -506,6 +509,12 @@ export class ProChartController {
     // Liczba prostokątów wybranych przez warstwę Effort na wykresie (pomiar układu czyta ją z atrybutu, nie z pikseli)
     this.effort.onSelect = (n) => {
       container.dataset.effortRects = String(n);
+    };
+    this.main.attachPrimitive(this.ivb);
+    this.ivb.fmtPx = (p) => store.fmtPx(p);
+    // Obiekty IVB na wykresie (prostokąt okna i linie; pomiar układu czyta je z atrybutu)
+    this.ivb.onObjects = (n) => {
+      container.dataset.ivbObjects = String(n);
     };
     this.main.attachPrimitive(this.countdown);
     this.main.attachPrimitive(this.strip);
@@ -687,6 +696,7 @@ export class ProChartController {
     for (const p of this.plugins) p.setRightInset?.(px);
     this.pb.setRightInset(px);
     this.effort.setRightInset(px);
+    this.ivb.setRightInset(px);
     this.blog.setRightInset(px);
     this.chart.timeScale().applyOptions({ rightOffsetPixels: this.rightGap() });
   }
@@ -1115,6 +1125,12 @@ export class ProChartController {
     return x ? { alpha: x.alpha, width: x.width, history: x.history === true } : null;
   }
 
+  /** Styl pierwszego widocznego wskaźnika IVB: kolor, krycie, grubość i okno 30 albo 60 min (null — żaden). */
+  private ivbStyle(): IvbStyle | null {
+    const x = this.indShown.find((y) => indicatorDef(y.id).ivb);
+    return x ? { color: x.color, alpha: x.alpha, width: x.width, minutes: x.params.minutes } : null;
+  }
+
   /** Aktywna strefa P/b do alarmów z menu wykresu (null — wskaźnik ukryty albo brak ważnej strefy). */
   pbZone(): PbZone | null {
     return this.pbStyle() ? this.pb.zone() : null;
@@ -1484,6 +1500,7 @@ export class ProChartController {
     for (const p of this.plugins) p.setData(next, ms, now, st);
     this.pb.setData(next, ms, now, st, this.phone);
     this.effort.setData(next, ms, now);
+    this.ivb.setData(next, ms, now);
     this.syncBlog(now);
     if (full || now - this.stripAt >= STRIP_EVERY_MS) {
       this.stripAt = now;
@@ -1888,8 +1905,10 @@ export class ProChartController {
           : def.pbRanges
             ? this.pb.legend(x.color)
             : def.effortZones
-              ? this.effort.legend()
-              : short
+              ? this.effort.legend(this.hoverTime !== null && this.hoverPrice !== null ? { t: this.hoverTime, p: this.hoverPrice } : null, this.indFormat('price'))
+              : def.ivb
+                ? this.ivb.legend()
+                : short
                 ? [{ text: `—, ${short}`, color: PRO.ink3 }]
                 : vs.flatMap((v, p) => {
                     const plot = def.plots[p];

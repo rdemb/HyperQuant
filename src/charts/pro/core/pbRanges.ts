@@ -269,21 +269,27 @@ export function profileLevels(lo: readonly number[], hi: readonly number[], vol:
   }
   const edge = (k: number) => Math.exp(base + step * k);
   const mid = (k: number) => Math.sqrt(edge(k) * edge(k + 1));
-  const lvn: number[] = [];
-  if (withLvn) {
-    // Średnia krocząca 5 koszyków wyśrodkowana na koszyku, zera poza profilem
-    const sm = new Float64Array(nb);
-    for (let k = 0; k < nb; k++) {
-      let t = 0;
-      for (let j = k - 2; j <= k + 2; j++) if (j >= 0 && j < nb) t += prof[j];
-      sm[k] = t / 5;
-    }
-    const cand: number[] = [];
-    for (let k = a + 2; k < z - 1; k++) if (sm[k] < sm[k - 1] && sm[k] <= sm[k + 1] && sm[k] < 0.5 * sm[poc]) cand.push(k);
-    cand.sort((x, y) => sm[x] - sm[y]);
-    for (const k of cand.slice(0, 3).sort((x, y) => x - y)) lvn.push(mid(k));
-  }
+  const lvn = withLvn ? lvnBins(prof, a, z, poc).map(mid) : [];
   return { poc: mid(poc), vah: edge(z + 1), val: edge(a), lvn };
+}
+
+/**
+ * LVN profilu w koszykach: do 3 najgłębszych lokalnych minimów wygładzonego profilu (średnia 5 koszyków wyśrodkowana na
+ * koszyku, zera poza profilem) wewnątrz obszaru wartości [a, z], poniżej 50% wygładzonego POC; rosnąco po koszyku.
+ * Wspólne dla profilu okresów P/b i profilu swingu stref Effort.
+ */
+export function lvnBins(prof: ArrayLike<number>, a: number, z: number, poc: number): number[] {
+  const nb = prof.length;
+  const sm = new Float64Array(nb);
+  for (let k = 0; k < nb; k++) {
+    let t = 0;
+    for (let j = k - 2; j <= k + 2; j++) if (j >= 0 && j < nb) t += prof[j];
+    sm[k] = t / 5;
+  }
+  const cand: number[] = [];
+  for (let k = a + 2; k < z - 1; k++) if (sm[k] < sm[k - 1] && sm[k] <= sm[k + 1] && sm[k] < 0.5 * sm[poc]) cand.push(k);
+  cand.sort((x, y) => sm[x] - sm[y]);
+  return cand.slice(0, 3).sort((x, y) => x - y);
 }
 
 /** Profil świec z [from, to), gdy jest co najmniej 90% świec okresu. */
