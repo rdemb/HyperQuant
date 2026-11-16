@@ -86,6 +86,8 @@ const SOURCES = {
   effort: 'MODEL',
   // Zakres otwarcia NY wprost ze świec Hyperliquid (okno z kalendarza, bez modelu)
   ivb: 'LIVE',
+  // Swingi, przełamania, sweepy, FVG i EQ z naszych reguł na świecach (eksperymentalny, bez częstości bazowych)
+  smc: 'MODEL',
 } as const satisfies Record<SourceKey, LayerSource>;
 
 /** Źródło każdej warstwy `show*` (na wykresie ceny i panele pod nim) i każdego wskaźnika z warstw menu front i second. */
@@ -130,6 +132,10 @@ const METHOD_HINT: Record<ModelKey, string> = {
   effort: tr(
     'MODEL · reguły modelu intraday Valentiniego: strefy absorpcji i pudełka Effort tylko z delty taśmy (bez taśmy brak wartości z powodem), strefy dyskonta z profilu swingu z taśmy (ze świec tylko jako przybliżenie); to nie wskazania wejścia',
     "MODEL · Valentini's intraday model rules: absorption zones and effort boxes from the tape delta only (no value with a reason without the tape), swing discount zones from the swing profile of the tape (from candles only as an approximation); not entry cues"
+  ),
+  smc: tr(
+    'MODEL · reguły struktury na zamkniętych świecach: pivoty dwóch skal z filtrem 1 ATR, BOS i CHoCH zamknięciem, sweepy, FVG, EQH i EQL, każdy z chwilą „znany od”; eksperymentalny, częstości bazowe jeszcze nie policzone',
+    'MODEL · structure rules on closed candles: two-scale pivots with a 1 ATR filter, closing BOS and CHoCH, sweeps, FVG, EQH and EQL, each with a “known from” time; experimental, base rates not computed yet'
   ),
 };
 

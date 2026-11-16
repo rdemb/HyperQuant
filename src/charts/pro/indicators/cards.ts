@@ -175,6 +175,17 @@ export const INDICATOR_CARD: Partial<Record<IndicatorId, IndicatorCard>> = {
     status: 'opis',
     noise: tr('Sprawdzianu wobec losowego poziomu jeszcze nie ma.', 'Not yet checked against a random level.'),
   },
+  smc: {
+    claim: tr(
+      'Gdzie na zamkniętych świecach były swingi, przełamania zamknięciem (BOS, CHoCH), sweepy, luki FVG i równe szczyty; każdy element od chwili, od której był znany. Eksperymentalny.',
+      'Where on closed candles the swings, closing breaks (BOS, CHoCH), sweeps, FVG gaps and equal highs were; every element from the moment it became known. Experimental.'
+    ),
+    status: 'opis',
+    noise: tr(
+      'Częstości bazowe (co działo się po takich elementach) wobec losowych poziomów nie są jeszcze policzone.',
+      'Base rates (what followed such elements) against random levels are not computed yet.'
+    ),
+  },
   effort: {
     claim: tr(
       'Gdzie rynek przyjął agresję na krańcach swingu i które świece miały agresję z wybiciem.',

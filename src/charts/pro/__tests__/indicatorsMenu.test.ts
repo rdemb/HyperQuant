@@ -10,6 +10,7 @@ const GROUPS = [
   ['sklad', ['breadth', 'repeat', 'makers', 'ordersize', 'twap', 'hawkes']],
   ['ruch', ['rvol', 'regime', 'slippage', 'cone']],
   ['poziomy', ['pbrange', 'effort', 'ivb', 'outcomes']],
+  ['struktura', ['smc']],
 ] as const;
 const FRONT = GROUPS.flatMap(([, ids]) => ids) as string[];
 const SECOND: string[] = [];

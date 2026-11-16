@@ -30,13 +30,13 @@ describe('źródła warstw (LIVE, MODEL, SIM)', () => {
 
   it('modele i symulacja oznaczone jako MODEL i SIM, dane z taśmy i arkusza jako LIVE', () => {
     // P/b bez miejsc wejścia i wyniku na historii (plan 59, C1): reguły na świecach, więc MODEL, nie SIM
-    for (const id of ['rvol', 'regime', 'hawkes', 'cone', 'outcomes', 'absorption', 'effort', 'showTpoOi', 'pbrange']) expect(LAYER_SOURCE[id], id).toBe('MODEL');
+    for (const id of ['rvol', 'regime', 'hawkes', 'cone', 'outcomes', 'absorption', 'effort', 'showTpoOi', 'pbrange', 'smc']) expect(LAYER_SOURCE[id], id).toBe('MODEL');
     for (const id of ['showHeatmap', 'showBubbles', 'showVwap', 'showLiq', 'showWhales', 'twap', 'slippage', 'oiflow']) expect(LAYER_SOURCE[id], id).toBe('LIVE');
   });
 
   it('podpowiedź plakietki MODEL i SIM nazywa metodę każdego klucza', () => {
     const model = Object.entries(LAYER_SOURCE).filter(([, v]) => v !== 'LIVE');
-    expect(model.length).toBe(11);
+    expect(model.length).toBe(12);
     for (const [key, src] of model) expect(layerBadge(key, { coin: 'BTC', now: NOW }).hint, key).toMatch(new RegExp(`^${src} · [^:]+: `));
     expect(layerBadge('rvol', { coin: 'BTC', now: NOW }).hint).toMatch(/^MODEL · mediana 20 dni: /);
     expect(layerBadge('cone', { coin: 'BTC', now: NOW }).hint).toMatch(/^MODEL · HAR: /);

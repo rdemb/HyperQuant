@@ -221,6 +221,22 @@ const zoneCounts = `(() => { const c = window.__hq.chart(); const host = c && c.
 /** Limity z projektu szlifu: komputer najwyżej 7 prostokątów, telefon najwyżej 3. */
 const EFFORT_MAX = { desktop: 7, phone: 3 };
 const effortRects = `(() => { const c = window.__hq.chart(); const host = c && c.root.closest('[data-effort-rects]'); return host ? Number(host.dataset.effortRects) : null; })()`;
+/**
+ * Wskaźnik „Struktura i płynność (SMC+HL)” na tej samej powtórce co Effort (24.10 19:30, BTC 5m, Kokpit z samym tym
+ * wskaźnikiem). Liczba obiektów z wyboru warstwy (`smcSelect`, atrybut `data-smc-objects`), nie z pikseli: limit z projektu
+ * 25 (wybór daje najwyżej 21), telefon 10 (etykiety 6, BOS i CHoCH 3, najbliższa luka); na komputerze co najmniej jeden.
+ */
+const SMC_STORE = {
+  'hq.charts.v1.cockpit': JSON.stringify({
+    coin: 'BTC',
+    interval: '5m',
+    view: 'candles',
+    layersV: 2,
+    indicators: [{ iid: 'smc', id: 'smc', params: {}, color: '#E9548D', alpha: 1, width: 1, labels: true, visible: true }],
+  }),
+};
+const SMC_MAX = { desktop: 25, phone: 10 };
+const smcCount = `(() => { const c = window.__hq.chart(); const host = c && c.root.closest('[data-smc-objects]'); return host ? Number(host.dataset.smcObjects) : null; })()`;
 
 // ───────────────────────── inne rynki (M1: HYPE i rynek HIP-3) ─────────────────────────
 /**
@@ -855,6 +871,21 @@ async function main() {
     report.effort.desktop = await probe(page, effortRects);
     await shot(page, '1440-effort');
 
+    // Wskaźnik SMC+HL na tej samej powtórce (1440, potem 390)
+    report.smc = {};
+    await open(page, EFFORT_REPLAY, SMC_STORE);
+    await sleep(4000);
+    await page.mouseAway();
+    await sleep(400);
+    report.smc.desktop = await probe(page, smcCount);
+    await shot(page, '1440-smc');
+    await page.viewport(390, 844, true);
+    await open(page, EFFORT_REPLAY, SMC_STORE);
+    await sleep(4000);
+    report.smc.phone = await probe(page, smcCount);
+    await shot(page, '390-smc');
+    await page.viewport(1440, 900, false);
+
     // Szlif 3: ściany i serie w Kokpicie 1m na powtórce (1440)
     report.clashes = {};
     await open(page, CLASH_REPLAY);
@@ -1282,7 +1313,9 @@ async function main() {
   const s9 = typeof r.hip4?.desktop === 'number' && typeof r.hip4?.phone === 'number' && r.hip4.desktop >= 1 && r.hip4.desktop <= HIP4_MAX.desktop && r.hip4.phone === HIP4_MAX.phone;
   const pbOk = (c) => !!c && c.boxes <= PB_MAX.boxes && c.lines <= PB_MAX.lines;
   const s8 = pbOk(r.pb?.desktop) && pbOk(r.pb?.phone);
-  r.summary = { t1, t2, t3, t4, t5, t6, s1, s2, s3, s4, s5, s6, s7, s8, s9 };
+  // SMC+HL: obiekty wyboru w limicie projektu, na komputerze co najmniej jeden (warstwa liczy i rysuje)
+  const s10 = typeof r.smc?.desktop === 'number' && typeof r.smc?.phone === 'number' && r.smc.desktop >= 1 && r.smc.desktop <= SMC_MAX.desktop && r.smc.phone <= SMC_MAX.phone;
+  r.summary = { t1, t2, t3, t4, t5, t6, s1, s2, s3, s4, s5, s6, s7, s8, s9, s10 };
   // M1: na każdym rynku i w obu układach bez elementów nad świecami i nachodzących etykiet, bez błędów strony i NaN, właściwy rynek
   const marketOk = (coin, key) => {
     const x = r.markets?.[coin]?.[key];
@@ -1393,7 +1426,8 @@ async function main() {
     }).join('; ')} (limit TPO ${PROFILE_MAX.objects} obiektów; pole ${PROFILE_MAX.area1440}% / ${PROFILE_MAX.area390}%) — ${ok(s6)}`,
     `Szlif 9. Progi rynków HIP-4 (Kokpit 5m, dane stałe, 14 płynnych rynków): 1440 ${r.hip4?.desktop ?? '—'}, 390 ${r.hip4?.phone ?? '—'} (limit ${HIP4_MAX.desktop} / ${HIP4_MAX.phone}) — ${ok(s9)}`,
     `Szlif 7. Poziomy dnia / linie sesji (dane stałe): „Mapa dnia” 1440: 4h ${r.levels?.dayMap?.desktop?.levels4h ?? '—'}, wszystkie wykresy ${r.levels?.dayMap?.desktop ? `${r.levels.dayMap.desktop.levels} / ${r.levels.dayMap.desktop.sessions}` : '—'}; „Rozliczenie doby” 30m 1440 ${r.levels?.review?.desktop ? `${r.levels.review.desktop.levels} / ${r.levels.review.desktop.sessions}` : '—'}, 390 ${r.levels?.review?.phone ? `${r.levels.review.phone.levels} / ${r.levels.review.phone.sessions}` : '—'} (limit: 4h ${LEVELS_MAX.h4} poziomy, sesje ${LEVELS_MAX.sessions}) — ${ok(s7)}`,
-    `Szlif 1. Prostokąty wskaźnika Effort (powtórka 24.10 19:30, BTC 5m): 1440 ${r.effort?.desktop ?? '—'} (limit ${EFFORT_MAX.desktop}), 390 ${r.effort?.phone ?? '—'} (limit ${EFFORT_MAX.phone}) — ${ok(s1)}`
+    `Szlif 1. Prostokąty wskaźnika Effort (powtórka 24.10 19:30, BTC 5m): 1440 ${r.effort?.desktop ?? '—'} (limit ${EFFORT_MAX.desktop}), 390 ${r.effort?.phone ?? '—'} (limit ${EFFORT_MAX.phone}) — ${ok(s1)}`,
+    `SMC+HL. Obiekty wskaźnika (powtórka 24.10 19:30, BTC 5m): 1440 ${r.smc?.desktop ?? '—'} (limit ${SMC_MAX.desktop}), 390 ${r.smc?.phone ?? '—'} (limit ${SMC_MAX.phone}) — ${ok(s10)}`
   );
   if (r.markets) {
     const one = (x) =>
