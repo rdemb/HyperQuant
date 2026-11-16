@@ -24,6 +24,7 @@ import { fetchLeaderboardAccounts } from './seed.ts';
 import { publishToGit } from './gitPublish.ts';
 import { HISTORY_README, MarketRecorder, historyIndex, pruneHistory } from './history.ts';
 import { recorderStreams } from './recorderStreams.ts';
+import { ctxExpectedOf, deskMarketsStatus, loadNyseCalendar } from './deskStatus.ts';
 import { prepareHistoryRepo, publishHistory, startWhenReady } from './historyGit.ts';
 import { WHALE_MARKETS, WhaleWatcher } from './whales.ts';
 import { MAX_DEX_QUERIES, MarketRegistryRunner } from './marketRegistryRunner.ts';
@@ -135,13 +136,26 @@ const scanner = new Scanner({
   tapeSince,
   prices,
   cohorts,
-  ...(shadow
-    ? {
-        onScan: (addr: string, st: unknown) => shadow.onScan(addr, st),
-        extraStatus: (asOf: number, coverage: number) => shadow.status(asOf, { inBook: (a) => book.has(a), btc: { coin: cfg.coin, coverage } }),
-      }
-    : {}),
+  ...(shadow ? { onScan: (addr: string, st: unknown) => shadow.onScan(addr, st) } : {}),
+  // Pola dodatkowe statusu: pomiar w cieniu M0 (`markets`, `xyz`, `marketsHours`) i stan rynków desku z rejestratora
+  // (`deskMarkets`, projekt 60 Q7); bez obu — status jak dotąd
+  extraStatus: (asOf: number, coverage: number) => ({
+    ...(shadow ? shadow.status(asOf, { inBook: (a) => book.has(a), btc: { coin: cfg.coin, coverage } }) : {}),
+    ...deskStatusOrNothing(asOf),
+  }),
 });
+
+/** Sekcja `deskMarkets` (rynki desku nagrywane przez rejestrator); błąd nie wstrzymuje reszty statusu. */
+function deskStatusOrNothing(asOf: number): { deskMarkets?: ReturnType<typeof deskMarketsStatus> } {
+  if (recorders.length === 0) return {};
+  try {
+    const deskMarkets = deskMarketsStatus(recorders, asOf, nyseCalendar);
+    return Object.keys(deskMarkets).length > 0 ? { deskMarkets } : {};
+  } catch (e) {
+    console.error(`[skaner] błąd stanu rynków desku: ${String(e)}`);
+    return {};
+  }
+}
 let lastWsCtx = 0;
 /** Ostatnia wiadomość WebSocket (transakcje lub kontekst) — przerwa > 2 min zeruje okres obserwacji taśmy */
 let lastWsMsg = Date.now();
@@ -267,7 +281,9 @@ const DAY_MS = 86_400_000;
 const historyRepo = cfg.git && cfg.history ? { remote: cfg.git.remote, dir: join(cfg.stateDir, 'git', 'history'), sshKey: cfg.git.sshKey, branch: 'history' } : null;
 const historyDir = historyRepo ? historyRepo.dir : join(cfg.stateDir, 'history');
 if (cfg.history) mkdirSync(historyDir, { recursive: true });
-const recorders = (cfg.history?.markets ?? []).map((coin) => new MarketRecorder(coin, historyDir));
+/** Kalendarz NYSE z repozytorium: stan rynku bazowego S&P 500 (luki kontekstu, `deskMarkets` w statusie) */
+const nyseCalendar = loadNyseCalendar();
+const recorders = (cfg.history?.markets ?? []).map((coin) => new MarketRecorder(coin, historyDir, { ctxExpected: ctxExpectedOf(coin, nyseCalendar) }));
 const recorderLinks = recorderStreams(recorders, WebSocket);
 /** Repo gałęzi przygotowane (bez repo — od razu): dopiero wtedy rejestratory słuchają, a takt historii zapisuje i wypycha */
 let historyReady = historyRepo === null;
@@ -283,6 +299,8 @@ async function historyTick(): Promise<void> {
     const now = Date.now();
     let written = 0;
     for (const rec of recorders) written += rec.flush(now);
+    // Luki w danych (projekt 60, Q6): pliki dób `gaps.json`, w spisie pole `gaps`
+    for (const rec of recorders) written += rec.trackGaps(now);
     // Profile zamkniętych dób (po połączeniu ostatniej godziny doby; po wdrożeniu — po jednej dobie wstecz na takt)
     for (const rec of recorders) written += rec.profiles(now);
     const day = Math.floor(now / DAY_MS);

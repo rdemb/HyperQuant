@@ -133,14 +133,27 @@ export interface CtxFile {
 /**
  * Spis gałęzi: godziny z plikiem godzinowym i części godzin jeszcze niepołączonych, dla każdego rynku; `days` — doby
  * z plikiem profilu (src/utils/dayProfile.ts; brak pola w spisach sprzed profili). Klucz to nazwa rynku (`xyz:GOLD`),
- * `dir` — jego katalog w gałęzi (`historyDir`; brak pola w spisach sprzed projektu 60).
+ * `dir` — jego katalog w gałęzi (`historyDir`; brak pola w spisach sprzed projektu 60), `gaps` — luki w danych z dób okna
+ * (projekt 60, Q6; brak pola w starszych spisach).
  */
 export interface HistoryIndex {
   v: number;
   asOf: number;
   keepDays: number;
   partMs: number;
-  markets: Record<string, { dir?: string; hours: number[]; parts: number[]; days?: number[] }>;
+  markets: Record<string, { dir?: string; hours: number[]; parts: number[]; days?: number[]; gaps?: HistGap[] }>;
+}
+
+/**
+ * Luka w danych rynku w czasie nagrania (projekt 60, Q6): `book` — brak migawki arkusza ponad 30 s, `ctx` — brak
+ * kontekstu rynku ponad 15 s, gdy rynek bazowy notuje (poza sesją kontekst stoi z konstrukcji wyroczni, więc się nie
+ * liczy), `ws` — zerwane połączenie. Rzadka taśma (weekend) nie jest luką. Luka w toku ma koniec równy ostatniemu taktowi.
+ */
+export type GapKind = 'book' | 'ctx' | 'ws';
+export interface HistGap {
+  from: number;
+  to: number;
+  kind: GapKind;
 }
 
 /** Rodzaj pliku: taśma, arkusz i (od projektu 60, Q5) próbki kontekstu rynku co 5 s. */

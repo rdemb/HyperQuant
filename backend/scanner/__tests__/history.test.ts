@@ -602,7 +602,7 @@ describe('historyIndex i pruneHistory', () => {
     }
     put(historyPath('BTC', T0 + 65 * MIN, 'trades', true)); // bez pliku arkusza — pominięta
     const idx = historyIndex(dir, ['BTC', 'ETH'], 2, T0);
-    expect(idx.markets.BTC).toEqual({ dir: 'BTC', hours: [T0 - 3 * 86_400_000, T0], parts: [T0 + 60 * MIN], days: [] });
+    expect(idx.markets.BTC).toEqual({ dir: 'BTC', hours: [T0 - 3 * 86_400_000, T0], parts: [T0 + 60 * MIN], days: [], gaps: [] });
     // Rynek z listy bez katalogu — bez wpisu (projekt 60, R5)
     expect(idx.markets.ETH).toBeUndefined();
     expect(pruneHistory(dir, 2, T0)).toBe(1);
