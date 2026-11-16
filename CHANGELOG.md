@@ -4,6 +4,12 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Blog: filtry rubryk bez przewijania strony w bok na telefonie (2026-11-16)
+<!-- co-nowego: ukryj -->
+
+#### Naprawione
+- **Filtry rubryk na liście wpisów** (przegląd Audytora 16.11): rząd filtrów to `fieldset`, który domyślnie ma `min-inline-size: min-content`, więc przy 360 i 390 px rozpychał stronę do ok. 653 px i cała strona przewijała się w bok. Teraz `min-inline-size: 0`: filtry przewijają się tylko w swoim rzędzie. `ui:check` buduje blog z wpisów w repo i przy 360, 390 i 720 px sprawdza, że strona ma szerokość okna (porównanie z zadaną szerokością, bo w trybie telefonu okno układu rośnie razem z treścią) i że rząd filtrów mieści się w oknie (przed poprawką: 653 px przy 360 i 390).
+
 ### Struktura i płynność (SMC+HL), etap S0: szkielet (2026-11-16)
 <!-- co-nowego: grupa=wykres | pl=Nowy eksperymentalny wskaźnik Struktura i płynność (SMC+HL): swingi, BOS i CHoCH, sweepy, luki FVG z CE, EQH i EQL, każdy od chwili, od której był znany | en=New experimental Structure & Liquidity (SMC+HL) indicator: swings, BOS and CHoCH, sweeps, FVG gaps with CE, EQH and EQL, each from the moment it became known -->
 
