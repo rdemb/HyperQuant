@@ -4,6 +4,11 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### λ Kyle’a: ile cenę rusza milion USD agresji (2026-11-16)
+<!-- co-nowego: grupa=wykres | pl=Nowy wskaźnik λ Kyle’a w grupie Presja: o ile punktów bazowych cena ruszała się na każdy 1 mln USD przepływu agresora, osobno dla kupna i sprzedaży, z progiem szumu | en=New Kyle’s λ indicator in the Pressure group: how many basis points price moved per 1 M USD of aggressor flow, separately for buying and selling, with a noise floor -->
+
+#### Dodane
+- **λ Kyle’a** (grupa „Presja”, plakietka MODEL; projekt Pioniera §3.1): nachylenie OLS zwrotu świecy (pb, od otwarcia do zamknięcia) na podpisany przepływ agresora (delta taśmy razy cena, mln USD) w ostatnich świecach w całości objętych taśmą (domyślnie 60, bez bieżącej). Linia tylko wtedy, gdy R² przekracza próg szumu dla liczby świec (t² / (t² + n − 2), test 5%), poniżej „—”. W legendzie R² z progiem, λ kupna i sprzedaży (osobne regresje od 15 świec, każda ze swoim progiem) i ruch oczekiwany przy przepływie bieżącej świecy. Testy: odtwarza znane λ = 2 i asymetrię 3/1, na danych z losowym znakiem przepływu pokazuje się w ≤ 6% z 2000 okien.
 ### Wskaźniki: pasmo zwykłości p10–p90 (2026-11-16)
 <!-- co-nowego: grupa=wykres | pl=Osiem wskaźników HyperQuant pokazuje pasmo „zwykle” (p10–p90 z ostatnich 30 dób), więc od razu widać, czy bieżąca wartość jest nietypowa | en=Eight HyperQuant indicators show a “usual” band (p10–p90 over the last 30 days), so you can see at once whether the current value is unusual -->
 
