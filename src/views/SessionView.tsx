@@ -5,6 +5,7 @@ import { subscribeHash } from '../state/route';
 import { deskMarketOf, marketLabel } from '../config/deskMarkets';
 import { tr } from '../i18n';
 import { useLiqMap } from '../state/useLiqMap';
+import { LocalBoundary } from '../ui/LocalBoundary';
 import { HOME_MARKET } from '../utils/marketCaps';
 import { FirstContact } from './session/FirstContact';
 
@@ -14,6 +15,7 @@ type Market = string;
 const ChartsView = lazy(() => import('./ChartsView'));
 const CohortFlowPanel = lazy(() => import('./desk/CohortFlowPanel').then((m) => ({ default: m.CohortFlowPanel })));
 const LiquidationTape = lazy(() => import('./desk/LiquidationTape').then((m) => ({ default: m.LiquidationTape })));
+const NearestLevelsPanel = lazy(() => import('./desk/NearestLevelsPanel').then((m) => ({ default: m.NearestLevelsPanel })));
 
 /** Link powtórki w adresie (#charts?replay=…): wykres pokazuje przeszłość (ten sam warunek co `parseReplayLink`). */
 const inReplay = () => {
@@ -25,7 +27,7 @@ const inReplay = () => {
 
 /**
  * Ekran „W sesji”: wykres z układami sesji (Kokpit domyślnie, od 1440 px z prawą kolumną DOM i taśmy, od 640 px
- * z tą kolumną jako szufladą nad wykresem), pod nim przepływ kohort i zrealizowane likwidacje BTC (na każdej
+ * z tą kolumną jako szufladą nad wykresem), pod nim najbliższe poziomy, przepływ kohort i zrealizowane likwidacje BTC (na każdej
  * szerokości; na wykresie rynku bez skanera „—, bez skanera”). Na telefonie pięć liczb przepływu (Pulse) jest w karcie
  * „Liczby” paska wykresu, nie nad wykresem (karty Wykres, Taśma, DOM, Liczby są w pasku wykresu).
  * Nad wykresem pierwszy kontakt (dymki i przycisk powtórki 15 min, FirstContact).
@@ -43,6 +45,14 @@ const SessionView: React.FC<{ onPhase?: (phase: PhaseId) => void }> = ({ onPhase
       <Suspense fallback={<div data-wykres-czeka className="min-h-[70dvh] rounded-xl border border-line bg-surface-1" />}>
         <ChartsView phase="session" onPhase={onPhase} onMarket={setCoin} />
       </Suspense>
+      {/* Najbliższe poziomy na każdym rynku: na rynku bez skanera klastry, Uwięzieni i paliwo z „—” i powodem */}
+      {!replay && (
+        <Suspense fallback={null}>
+          <LocalBoundary what={tr('Najbliższe poziomy', 'Nearest levels')}>
+            <NearestLevelsPanel coin={coin} />
+          </LocalBoundary>
+        </Suspense>
+      )}
       {!replay && scanner && (
         <Suspense fallback={null}>
           <CohortFlowPanel coin={coin} />

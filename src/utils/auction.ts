@@ -121,6 +121,37 @@ export function profile(bars: VBar[], step = PROFILE_STEP, pct = VA_PCT): { poc:
   return { poc: base + (va.poc + 0.5) * step, val: base + va.lo * step, vah: base + (va.hi + 1) * step };
 }
 
+/** Profil zamkniętej doby UTC: początek i koniec doby, POC (środek koszyka) i value area 70%. */
+export interface UtcDayProfile {
+  day: number;
+  end: number;
+  poc: number;
+  vah: number;
+  val: number;
+}
+
+/**
+ * Profile zamkniętych dób UTC ze świec 1h (doba tylko z kompletem 24 świec, `profile` z krokiem `step`), rosnąco —
+ * wspólne dla liczb nagłówka Mapy dnia (VA wczoraj, nagi POC) i panelu „Najbliższe poziomy”.
+ */
+export function utcDayProfiles(c1h: readonly { t: number; o: number; h: number; l: number; c: number; v: number }[], now: number, step: number): UtcDayProfile[] {
+  const byDay = new Map<number, (typeof c1h)[number][]>();
+  for (const c of c1h) {
+    const d = dayStart(c.t);
+    if (d + DAY > now) continue;
+    const a = byDay.get(d);
+    if (a) a.push(c);
+    else byDay.set(d, [c]);
+  }
+  const out: UtcDayProfile[] = [];
+  for (const [day, list] of [...byDay].sort((a, b) => a[0] - b[0])) {
+    if (list.length < 24) continue;
+    const p = profile(toVBars(list), step);
+    if (p) out.push({ day, end: day + DAY, ...p });
+  }
+  return out;
+}
+
 /** Maksimum/minimum zakresu i liczba różnych okien `windowMs`, w których ekstremum wypadło w odległości ≤ eps. */
 export function extremeTouches(bars: RangeBar[], windowMs: number, eps = POOR_EPS): { high: number; low: number; hiTouches: number; loTouches: number } | null {
   if (bars.length === 0) return null;
