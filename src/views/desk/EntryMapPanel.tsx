@@ -110,12 +110,15 @@ const EntryHistogram: React.FC<{ map: EntryMap }> = ({ map }) => {
   const width = useElementWidth(ref);
   const [hover, setHover] = useState<number | null>(null);
   const H = 170;
-  const pad = { l: 48, r: 10, t: 18, b: 24 };
   const longs = useMemo(() => rebin(map.longs, map.markPx, RANGE, BINS, map.stepUsd), [map]);
   const shorts = useMemo(() => rebin(map.shorts, map.markPx, RANGE, BINS, map.stepUsd), [map]);
   const maxY = Math.max(1, ...longs.map((b, i) => b.ntlUsd + shorts[i].ntlUsd));
+  const padTB = { t: 18, b: 24 };
+  const y = scaleLinear().domain([0, maxY]).range([H - padTB.b, padTB.t]);
+  const ticks = y.ticks(3);
+  // Lewy margines z najdłuższego podpisu osi („$300,0 mln”): pismo stałej szerokości 10 px, ok. 6,2 px na znak
+  const pad = { l: Math.max(48, Math.ceil(Math.max(...ticks.map((t) => fmtCompact(t, '$').length)) * 6.2) + 10), r: 10, ...padTB };
   const x = scaleLinear().domain([map.markPx * (1 - RANGE), map.markPx * (1 + RANGE)]).range([pad.l, Math.max(pad.l + 1, width - pad.r)]);
-  const y = scaleLinear().domain([0, maxY]).range([H - pad.b, pad.t]);
   const bw = Math.max(1, (x.range()[1] - x.range()[0]) / BINS - 2);
   const hv = hover !== null ? { l: longs[hover], s: shorts[hover] } : null;
 
@@ -135,7 +138,7 @@ const EntryHistogram: React.FC<{ map: EntryMap }> = ({ map }) => {
       <div ref={ref} className="relative w-full" style={{ height: H }}>
         {width > 0 && (
           <svg width={width} height={H} role="img" aria-label={tr('Rozkład cen wejścia pozycji według ceny', 'Distribution of position entry prices by price')}>
-            {y.ticks(3).map((t) => (
+            {ticks.map((t) => (
               <g key={t}>
                 <line x1={pad.l} x2={width - pad.r} y1={y(t)} y2={y(t)} stroke="var(--color-line)" strokeWidth={1} />
                 <text x={pad.l - 6} y={y(t)} dy="0.32em" textAnchor="end" className="fill-ink-3 font-mono" fontSize={10}>
