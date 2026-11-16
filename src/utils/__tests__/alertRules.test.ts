@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { ENABLED_MARKETS } from '../../config/deskMarkets';
 import {
+  ALERT_MARKETS,
+  serverWatches,
   AlertEngine,
   type AlertEvent,
   type AlertRule,
@@ -19,6 +22,14 @@ import {
   ruleText,
   tradeKey,
 } from '../alertRules';
+
+describe('rynki serwera powiadomień (projekt 60, M7)', () => {
+  it('lista alarmów = włączone rynki desku z konfiguracji (BTC, złoto, S&P 500); ETH, SOL, HYPE i Brent poza serwerem', () => {
+    expect([...ALERT_MARKETS]).toEqual(ENABLED_MARKETS.map((m) => m.coin));
+    expect([...ALERT_MARKETS]).toEqual(['BTC', 'xyz:GOLD', 'xyz:SP500']);
+    expect(['ETH', 'SOL', 'HYPE', 'xyz:BRENTOIL'].map(serverWatches)).toEqual([false, false, false, false]);
+  });
+});
 
 const T0 = Date.UTC(2026, 9, 29, 7, 0); // 08:00 PL, początek świecy 15m
 const M = 60_000;

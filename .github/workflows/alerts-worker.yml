@@ -9,6 +9,8 @@ on:
     paths:
       - 'workers/alerts/**'
       - 'src/utils/alertRules.ts'
+      # Rynki alarmów (`ALERT_MARKETS`) pochodzą z konfiguracji rynków desku
+      - 'src/config/deskMarkets.ts'
       - 'src/utils/alertsServer.ts'
       - '.github/workflows/alerts-worker.yml'
   workflow_dispatch:

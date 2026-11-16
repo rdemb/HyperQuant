@@ -108,7 +108,7 @@ export function parseSub(v: unknown): Sub | null {
 /** Alarmy z przeglądarki: poprawne, na rynkach desku, najwyżej MAX_RULES najnowszych (strona dopisuje nowe na końcu listy). */
 const cleanRules = (raw: unknown, now: number): AlertRule[] =>
   parseRules(raw, now)
-    .filter((r) => (ALERT_MARKETS as readonly string[]).includes(r.coin))
+    .filter((r) => ALERT_MARKETS.includes(r.coin))
     .slice(-MAX_RULES);
 
 async function readJson(req: Request): Promise<{ text: string; data: Record<string, unknown> }> {
