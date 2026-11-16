@@ -85,7 +85,7 @@ export const pl: LessonsContent = {
       checkpoints: [
         {
           context:
-            'Jest 15:30. Od północy cena krąży między 81 300 a 81 800 USD. VWAP prawie się nie rusza (81 627), a obszar wartości dnia, czyli 70% wolumenu, mieści się w 400 dolarach (81 360–81 760).',
+            'Jest 15:30. Od 10:00 cena krąży między 81 300 a 81 770 USD. VWAP prawie się nie rusza (81 627), a obszar wartości dnia, czyli 70% wolumenu, mieści się w 400 dolarach (81 360–81 760).',
           questions: [
             {
               prompt: 'Jak opisać ten poranek?',
@@ -111,7 +111,7 @@ export const pl: LessonsContent = {
               pick: {
                 hint: 'Wskaż cenę na wykresie: pod nią teza o kontynuacji przestaje mieć sens.',
                 good: 'Dobrze. Pod dołkiem zrzutu (82 200) i pod VWAP teza traci sens: jeśli kupujący bronią średniej ceny dnia, cena nie powinna zostać pod nią. Unieważnienie jest blisko, więc strata przy błędzie jest mała, a wielkość pozycji można policzyć z tej odległości.',
-                ok: 'Do obrony, ale szeroko. Powrót do porannego zakresu (pod 81 800) naprawdę oznacza porażkę wybicia, tylko że ryzyko jest dwa, trzy razy większe. Przy tym samym ryzyku w dolarach pozycja musi być odpowiednio mniejsza.',
+                ok: 'Do obrony, ale szeroko. Powrót do porannego zakresu (pod 81 770) naprawdę oznacza porażkę wybicia, tylko że ryzyko jest dwa, trzy razy większe. Przy tym samym ryzyku w dolarach pozycja musi być odpowiednio mniejsza.',
                 tight: 'Za ciasno. To środek zwykłych wahań po wybiciu, a dołek zrzutu (82 200) leży niżej. Taki poziom zbije szum, zanim rynek powie cokolwiek o tezie.',
                 wide: 'Za szeroko. Poniżej porannego zakresu nie zostaje już nic z logiki tego scenariusza, a ryzyko rośnie kilkukrotnie bez żadnej korzyści.',
               },
