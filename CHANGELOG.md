@@ -4,6 +4,26 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Rejestrator historii: złoto i S&P 500 obok BTC (2026-11-16)
+<!-- co-nowego: ukryj -->
+
+Zmiany serwera do tagu v2.8.0 (projekt 60, R1–R5, Q5–Q8, M7). Działają po wdrożeniu tagu na serwerze i ustawieniu `HQ_HISTORY_MARKETS=BTC,xyz:GOLD,xyz:SP500`; do tego czasu serwer nagrywa jak dotąd.
+
+#### Dodane
+- **Rynki HIP-3 w rejestratorze** (R1): `HQ_HISTORY_MARKETS` i `HQ_COIN` przyjmują symbol z przedrostkiem giełdy (`xyz:GOLD`); zła wielkość liter, ścieżka i drugi dwukropek są odrzucane.
+- **Wspólne połączenie HIP-3** (R3): BTC nagrywa na osobnym połączeniu jak dotąd, a złoto i S&P 500 na jednym wspólnym (taśma, kontekst, arkusz bliski, daleki i bez agregacji), z rozdzielaniem zdarzeń po rynku. Rejestrator ma 2 połączenia zamiast 3; zerwanie wspólnego zapisuje lukę na obu rynkach naraz. Dziennik startu skanera podaje liczbę połączeń.
+- **Kontekst rynku co 5 s** (Q5): pliki `GG.ctx.json.gz` obok taśmy i arkusza z ceną mark, wyrocznią, mid, cenami impact i premią (do 720 próbek na godzinę), do kalibracji progów jakości (Q9).
+- **Luki w danych** (Q6): arkusz cichy ponad 30 s (`book`), kontekst cichy ponad 15 s przy notującym rynku bazowym (`ctx`) i zerwane połączenie (`ws`) zapisywane w `<rynek>/<doba>/gaps.json` i w polu `gaps` spisu `index.json`. Rzadka taśma w weekend nie jest luką.
+- **Stan rynków desku w `status.json`** (Q7): sekcja `deskMarkets` (btc, gold, sp500) z jakością danych (ta sama ocena co w przeglądarce), stanem rynku bazowego, pulsem kanałów, p95 rozjazdu mark–wyrocznia, p50 spreadu impact, p50 głębokości ±0,5% z ostatniej godziny i liczbą luk z 24 h. Nazwa `deskMarkets`, bo klucz `markets` zajmuje pomiar w cieniu M0. Rynek bez nagrania nie ma klucza.
+- **Strażnik rynków desku** (Q8): nadzór danych czyta spis gałęzi `history` i sekcję `deskMarkets`; zgłoszenie, gdy ostatni plik godzinny rynku jest starszy niż 90 min albo kontekst starszy niż 2 min przy notującym rynku bazowym, dopiero po 30 min takiego stanu. Bez restartu skanera.
+
+#### Zmienione
+- **Katalogi historii bez dwukropka** (R2): `historyDir` daje katalog z konfiguracji desku (`xyz-GOLD`, `xyz-SP500`), zapis rejestratora i odczyt strony (historia serwera, powtórka, profile dób) idą przez tę samą ścieżkę. BTC bez zmian (`BTC/…`). W `index.json` klucz to nazwa rynku, a katalog w nowym polu `dir`; rynek bez katalogu nie ma wpisu.
+- **Arkusz bez agregacji z konfiguracji** (R4): dla rynków z `caps.exactBook` (BTC, złoto, S&P 500), dotąd tylko BTC.
+- **Przycinanie całej gałęzi historii** (R5): dni spoza okna znikają we wszystkich katalogach, także ETH, SOL i HYPE po zdjęciu z listy; pusty katalog rynku jest usuwany.
+- **Rynki serwera powiadomień z konfiguracji** (M7): BTC, złoto i S&P 500 zamiast BTC, ETH, SOL i HYPE. Alarm na ETH, SOL i HYPE dzwoni tylko przy otwartej stronie. Skrzynka alarmów wdraża się też po zmianie `src/config/deskMarkets.ts`.
+- `nyseSession.ts` i `underlyingCore.ts`: sesja NYSE i stan rynku bazowego bez importów, więc serwer czyta je natywnie; strona bez zmian.
+
 ### Fabio: Effort tylko z taśmy, profil swingu z taśmy, IVB 30/60 min i czas dostępności stref (2026-11-16)
 <!-- co-nowego: grupa=wykres | pl=Strefy i pudełka Effort liczą deltę tylko z nagranej taśmy, a pod kursorem widać, od kiedy strefa była znana; nowy wskaźnik IVB z zakresem pierwszych 30 albo 60 minut od otwarcia Nowego Jorku | en=Effort zones and boxes take delta only from the recorded tape, and under the cursor you can see since when a zone was known; a new IVB indicator shows the range of the first 30 or 60 minutes after the New York open -->
 

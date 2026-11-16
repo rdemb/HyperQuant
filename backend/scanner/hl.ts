@@ -301,7 +301,7 @@ export class HlMarketsStream {
     return a ? { type: 'l2Book', coin, nSigFigs: a.nSigFigs, ...(a.mantissa ? { mantissa: a.mantissa } : {}) } : { type: 'l2Book', coin };
   }
 
-  /** Subskrypcje arkusza rynku: agregacje i (gdy `exact`) arkusz bez agregacji; `null` w miejscu agregacji = bez agregacji. */
+  /** Subskrypcje arkusza rynku według klucza (krok agregacji albo `exact`): agregacje i, gdy `exact`, arkusz bez agregacji. */
   private static bookSubs(coin: string, b: { aggs: BookAgg[]; exact: boolean } | undefined): Map<string, Record<string, unknown>> {
     const out = new Map<string, Record<string, unknown>>();
     for (const a of b?.aggs ?? []) out.set(`${a.nSigFigs}:${a.mantissa ?? 0}`, HlMarketsStream.bookSub(coin, a));
