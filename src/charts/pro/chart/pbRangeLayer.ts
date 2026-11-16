@@ -1,7 +1,8 @@
 import type { IChartApiBase, IPrimitivePaneRenderer, IPrimitivePaneView, ISeriesApi, ISeriesPrimitive, Logical, SeriesAttachedParameter, SeriesType, Time } from 'lightweight-charts';
 import { tr } from '../../../i18n';
 import { numLang } from '../../../ui/format';
-import { LVN_MIN_CONFIDENCE, type LvnLevel, confidentLvn } from '../core/lvnConfidence';
+import { type LvnLevel, shownLvn } from '../core/lvn';
+import { LVN_P_TEXT, PATHS_PENDING, fmtP } from './lvnText';
 import { type Bar5, LIFE, type Levels, type Range, TF_MS, atr, dayLevels, ranges, typicalHourBp, weekLevels } from '../core/pbRanges';
 import { utcDayStart, utcWeekStart } from '../core/sessions';
 import type { ProBar, ProStore } from '../store/proStore';
@@ -80,33 +81,34 @@ type State = 'off' | 'replay' | 'interval' | 'loading' | 'ready';
 const WEEK_MS = 7 * DAY;
 const WEEK_CACHE = 6;
 
-const pct = (c: number) => numLang(String(Math.round(c * 100)));
+/** Wynik testu LVN przy linii: głębokość względna i p wobec szumu pomiaru. */
+type LvnNote = Pick<LvnLevel, 'depth' | 'p'>;
 
 /**
- * Podpis linii poziomu: „tydz. LVN 65 200 · pewność 100%”, obszar „tydz. LVA 65 100–65 300 · pewność 100%” (telefon:
- * „tydz. LVN 100%”), pozostałe poziomy bez pewności.
+ * Podpis linii poziomu: „tydz. LVN 65 200 · głęb. 62% · p = 0,03”, obszar „tydz. LVA 65 100–65 300 · głęb. 80% · p =
+ * 0,01” (telefon: „tydz. LVN p = 0,03”), pozostałe poziomy bez testu.
  */
-export function lineText(l: { px: number; name: string; tag: string; conf: number | null; lo?: number; hi?: number }, phone: boolean): string {
-  if (phone) return l.conf === null ? `${l.tag} ${l.name}` : `${l.tag} ${l.name} ${pct(l.conf)}%`;
-  const conf = l.conf === null ? '' : ` · ${tr('pewność', 'confidence')} ${pct(l.conf)}%`;
+export function lineText(l: { px: number; name: string; tag: string; test: LvnNote | null; lo?: number; hi?: number }, phone: boolean): string {
+  const t = l.test;
+  if (phone) return t === null ? `${l.tag} ${l.name}` : `${l.tag} ${l.name} p ${fmtP(t.p)}`;
+  const note = t === null ? '' : ` · ${tr('głęb.', 'depth')} ${numLang(String(Math.round(t.depth * 100)))}% · p ${fmtP(t.p)}`;
   const px = l.lo !== undefined && l.hi !== undefined ? `${fmtPx(l.lo)}–${fmtPx(l.hi)}` : fmtPx(l.px);
-  return `${l.tag} ${l.name} ${px}${conf}`;
+  return `${l.tag} ${l.name} ${px}${note}`;
 }
 
 /**
- * Legenda: LVN tygodnia z pewnością od progu, osobno węzły i obszary, z liczbą wszystkich (pozostałe to szum profilu
- * i nie są rysowane); null — za mało świec do pewności.
+ * Legenda: LVN tygodnia po testach (filtr położenia i p ≤ 0,05), osobno węzły i obszary, z liczbą wszystkich (pozostałe
+ * w granicach szumu pomiaru, nie są rysowane) i dopiskiem o teście losowych ścieżek; null — za mało świec do testu.
  */
-export function weekLvnText(lvn: readonly Pick<LvnLevel, 'kind' | 'confidence'>[] | null): string | null {
-  if (lvn === null) return tr('LVN tyg.: —, za mało świec do pewności', 'weekly LVN: —, too few candles for a confidence');
+export function weekLvnText(lvn: readonly Pick<LvnLevel, 'kind' | 'location' | 'p'>[] | null): string | null {
+  if (lvn === null) return tr('LVN tyg.: —, za mało świec do testu', 'weekly LVN: —, too few candles for a test');
   if (lvn.length === 0) return null;
-  const kept = confidentLvn(lvn);
+  const kept = shownLvn(lvn);
   const nodes = kept.filter((l) => l.kind === 'node').length;
   const areas = kept.length - nodes;
-  const min = pct(LVN_MIN_CONFIDENCE);
   return tr(
-    `LVN tyg. z pewnością ${min}%: ${nodes} LVN (węzeł), ${areas} LVA (obszar) z ${lvn.length}`,
-    `weekly LVN with confidence ${min}%: ${nodes} LVN (node), ${areas} LVA (area) of ${lvn.length}`
+    `LVN tyg. z p ≤ ${LVN_P_TEXT}: ${nodes} LVN (węzeł), ${areas} LVA (obszar) z ${lvn.length} · ${PATHS_PENDING}`,
+    `weekly LVN with p ≤ ${LVN_P_TEXT}: ${nodes} LVN (node), ${areas} LVA (area) of ${lvn.length} · ${PATHS_PENDING}`
   );
 }
 
@@ -126,7 +128,7 @@ export class PbRangeLayer implements ISeriesPrimitive<Time> {
   private key = '';
   private view: View | null = null;
   /**
-   * Poziomy tygodni z ostatnich przeliczeń (pewność LVN to 200 replik bootstrapu): klucz rynek, tydzień i liczba jego
+   * Poziomy tygodni z ostatnich przeliczeń (testy LVN: 200 replik bootstrapu i 300 profili SIM): klucz rynek, tydzień i liczba jego
    * świec 5m, więc zamknięty tydzień liczy się raz, a nie po każdej świecy.
    */
   private weekCache = new Map<string, Levels | null>();
@@ -296,11 +298,11 @@ export class PbRangeLayer implements ISeriesPrimitive<Time> {
       }
       return this.weekCache.get(key)!;
     };
-    // Poziom tygodnia przy strefie: VAH, VAL i LVN (także środek LVA) z pewnością od progu kalibracji SIM
+    // Poziom tygodnia przy strefie: VAH, VAL i LVN (także środek LVA) po testach
     const level = rs.map((r) => {
       const k = r.kv ?? b.length - 1;
       const lv = weekOf(b[k].t);
-      return lv !== null && [lv.vah, lv.val, ...confidentLvn(lv.lvn ?? []).map((l) => l.px)].some((x) => x >= r.lo - 0.5 * A[k] && x <= r.hi + 0.5 * A[k]);
+      return lv !== null && [lv.vah, lv.val, ...shownLvn(lv.lvn ?? []).map((l) => l.px)].some((x) => x >= r.lo - 0.5 * A[k] && x <= r.hi + 0.5 * A[k]);
     });
     this.view = {
       ranges: rs,
@@ -337,18 +339,18 @@ export class PbRangeLayer implements ISeriesPrimitive<Time> {
     const b = this.b5;
     const last = b.length - 1;
     // Poziomy tygodnia i doby: najwyżej 2 najbliższe nad ceną i 2 pod nią (z obu profili razem); LVN i LVA tylko z
-    // pewnością od progu kalibracji SIM, LVA jako pasmo doliny
-    type Lv = { px: number; name: string; from: number; color: string; tag: string; conf: number | null; lo?: number; hi?: number };
+    // filtrem położenia i p ≤ 0,05 wobec szumu pomiaru, LVA jako pasmo doliny
+    type Lv = { px: number; name: string; from: number; color: string; tag: string; test: LvnNote | null; lo?: number; hi?: number };
     const levels: Lv[] = [];
     for (const [lv, from, color, tag] of [
       [v.week, utcWeekStart(this.now), WEEK, tr('tydz.', 'wk')],
       [v.day, utcDayStart(this.now), DAY_INK, tr('doba', 'day')],
     ] as const) {
       if (!lv) continue;
-      levels.push({ px: lv.vah, name: 'VAH', from, color, tag, conf: null }, { px: lv.poc, name: 'POC', from, color, tag, conf: null }, { px: lv.val, name: 'VAL', from, color, tag, conf: null });
-      for (const l of confidentLvn(lv.lvn ?? [])) {
+      levels.push({ px: lv.vah, name: 'VAH', from, color, tag, test: null }, { px: lv.poc, name: 'POC', from, color, tag, test: null }, { px: lv.val, name: 'VAL', from, color, tag, test: null });
+      for (const l of shownLvn(lv.lvn ?? [])) {
         const area = l.kind === 'area' ? { lo: l.pxLo, hi: l.pxHi } : {};
-        levels.push({ px: l.px, name: l.kind === 'area' ? 'LVA' : 'LVN', from, color, tag, conf: l.confidence, ...area });
+        levels.push({ px: l.px, name: l.kind === 'area' ? 'LVA' : 'LVN', from, color, tag, test: l, ...area });
       }
     }
     const near = nearestLevels(levels, b[last].c);

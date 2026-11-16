@@ -1,4 +1,4 @@
-import { type LvnLevel, areaBins, lvnLevels, profileOf, unitsBuilder, valueArea } from './lvnConfidence';
+import { type LvnLevel, areaBins, lvnLevels, profileOf, unitsBuilder, valueArea } from './lvn';
 import { utcDayStart, utcWeekStart } from './sessions';
 
 /**
@@ -218,8 +218,8 @@ export interface Levels {
   vah: number;
   val: number;
   /**
-   * Do 3 najtrwalszych LVN i LVA (malejąco po trwałości) z pewnością bootstrapową; rysowane tylko z pewnością od progu
-   * z kalibracji SIM. null — bez LVN (profil bez LVN albo za mało świec do pewności).
+   * Do 3 najtrwalszych LVN i LVA (malejąco po trwałości) po testach; rysowane tylko z filtrem położenia i p ≤ 0,05
+   * wobec szumu pomiaru. null — za mało świec do testu.
    */
   lvn: LvnLevel[] | null;
 }
@@ -230,7 +230,7 @@ const VA_SHARE = 0.7;
  * Profil wolumenu: wolumen świecy rozłożony równo na koszyki (log-cena, `binBp` punktów bazowych) między jej minimum
  * a maksimum, obszar wartości 70% rozszerzany od POC o większego sąsiada, LVN (`lvnLevels`): do 3 najtrwalszych
  * lokalnych minimów wygładzonego profilu wewnątrz obszaru wartości, poniżej 50% POC; dolina szersza niż max(5 koszyków,
- * 0,25 średniego zakresu świecy) to LVA. Pewność z kołowego bootstrapu blokami ok. 15 min (świece 5m: 3 świece; profil
+ * 0,25 średniego zakresu świecy) to LVA. Filtr położenia z kołowego bootstrapu blokami ok. 15 min i p wobec SIM (świece 5m: 3 świece; profil
  * okresu jest ze świec, bez taśmy).
  */
 export function profileLevels(lo: readonly number[], hi: readonly number[], vol: readonly number[], binBp: number, withLvn: boolean): Levels | null {

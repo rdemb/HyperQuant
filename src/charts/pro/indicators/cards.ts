@@ -1,7 +1,7 @@
 import { tr } from '../../../i18n';
 import type { IndicatorId } from './registry';
-import { LVN_CALIBRATION as C } from '../core/lvnConfidence';
-import { LVN_THRESHOLD_PCT } from '../chart/lvnText';
+import { LVN_CALIBRATION as C } from '../core/lvn';
+import { LVN_P_TEXT, PATHS_PENDING } from '../chart/lvnText';
 
 /**
  * Karta wskaźnika (plan 59, F1): co liczba twierdzi, czy to sprawdzono (te same 4 stany co karta modelu) i pasmo szumu.
@@ -179,8 +179,8 @@ export const INDICATOR_CARD: Partial<Record<IndicatorId, IndicatorCard>> = {
     ),
     status: 'opis',
     noise: tr(
-      `Dawne miejsca wejścia sprawdzone na 2026 r.: bez przewagi (A 52%, B 48%, C 53%). LVN i LVA tygodnia tylko z pewnością bootstrapową ${LVN_THRESHOLD_PCT}% (200 replik, bloki ${C.blockMin} min); próg z kalibracji na SIM: ${C.pass} z ${C.lvn} fałszywych LVN na ${C.profiles} płaskich profilach.`,
-      `Former entry places checked on 2026: no edge (A 52%, B 48%, C 53%). Weekly LVN and LVA only with ${LVN_THRESHOLD_PCT}% bootstrap confidence (200 replicas, ${C.blockMin}-minute blocks); threshold calibrated on SIM: ${C.pass} of ${C.lvn} false LVN on ${C.profiles} flat profiles.`
+      `Dawne miejsca wejścia sprawdzone na 2026 r.: bez przewagi (A 52%, B 48%, C 53%). LVN i LVA tygodnia tylko z p ≤ ${LVN_P_TEXT} wobec szumu pomiaru (SIM dopasowany do profilu); kalibracja na ${C.classes.length} klasach SIM po ${C.profiles} profili: w każdej najwyżej 5% fałszywych. ${PATHS_PENDING}.`,
+      `Former entry places checked on 2026: no edge (A 52%, B 48%, C 53%). Weekly LVN and LVA only with p ≤ ${LVN_P_TEXT} against measurement noise (SIM matched to the profile); calibrated on ${C.classes.length} SIM classes of ${C.profiles} profiles: at most 5% false in each. ${PATHS_PENDING}.`
     ),
   },
   ivb: {

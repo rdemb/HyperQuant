@@ -1,8 +1,8 @@
 import { mulberry32 } from '../../../utils/pathEngine';
-import { LVN_BLOCK_MS, type ProfileUnits, blockFor, lvnConfidence, lvnNodes, profileOf, unitCount, unitsBuilder, valueArea } from '../core/lvnConfidence';
+import { LVA_MIN_BINS, LVN_BLOCK_MS, type LvnTest, type ProfileUnits, blockFor, lvnNodes, lvnTests, profileOf, shownLvn, unitCount, unitsBuilder, valueArea } from '../core/lvn';
 
 /**
- * SIM do kalibracji progu pewności LVN (projekt Pioniera F-B1, runda 2): płaski profil z szumem. Cena świecy to błądzenie
+ * SIM do kalibracji testu (a) LVN (projekt Pioniera F-B1, runda 2): płaski profil z szumem. Cena świecy to błądzenie
  * losowe odbijane od brzegów zakresu [0, 1), więc profil oczekiwany jest płaski (każda dolina jest fałszywa), a
  * sąsiednie świece handlują przy podobnych cenach jak na rynku. Wolumen świecy z grubym ogonem (log-normalny).
  */
@@ -26,9 +26,9 @@ export interface SimSpec {
   /**
    * `cluster` — hipoteza zerowa kalibracji: skupiska świec przy jednej cenie trwające średnio 15 min (długość
    * geometryczna), środki skupisk losowane jednostajnie w zakresie; zależność tylko w skali bloku, profil oczekiwany
-   * płaski. `walk` — błądzenie losowe odbijane w zakresie (zależność na godziny, test ograniczenia metody).
+   * płaski.
    */
-  path: 'cluster' | 'walk';
+  path: 'cluster';
 }
 
 /** Jednostki płaskiego profilu z szumem dla ziarna `seed`. */
@@ -53,13 +53,14 @@ export function simUnits(s: SimSpec, seed: number): ProfileUnits {
   return ub.done();
 }
 
-/** Fałszywe LVN profilu SIM i ich pewność (blok ok. 15 min, chyba że `block` podany). */
-export function simConfidence(s: SimSpec, seed: number, block = blockFor(s.unitMs)): number[] {
+/** Testy fałszywych LVN profilu SIM: filtr położenia i p wobec szumu pomiaru, tą samą ścieżką co na wykresie. */
+export function simTests(s: SimSpec, seed: number): LvnTest[] {
   const u = simUnits(s, seed);
   const prof = profileOf(u);
   const va = valueArea(prof, 0.7);
+  if (!(va.total > 0) || unitCount(u) === 0) return [];
   const nodes = lvnNodes(prof, va.a, va.z, va.poc);
-  return unitCount(u) > 0 ? lvnConfidence(u, 0.7, nodes, { block, seed: seed + 7919 }) : [];
+  return lvnTests(u, nodes, 0.7, LVA_MIN_BINS, blockFor(s.unitMs), { seed: seed + 7919 });
 }
 
 /**
@@ -79,40 +80,20 @@ const CLASSES: readonly Omit<SimSpec, 'path'>[] = [
   { n: 2016, unitMs: 300_000, bins: 80, sigma: 0.035, width: 0.02, volSig: 1 },
 ];
 
-/** Zestaw kalibracji progu (hipoteza zerowa: skupiska do ok. 15 min) i zestaw ograniczenia (błądzenie na godziny). */
+/** Zestaw kalibracji testu (a) (hipoteza zerowa: skupiska do ok. 15 min na płaskim profilu). */
 export const SIM_SPECS: readonly SimSpec[] = CLASSES.map((c) => ({ ...c, path: 'cluster' }));
-export const WALK_SPECS: readonly SimSpec[] = CLASSES.map((c) => ({ ...c, path: 'walk' }));
 
-/** Siatka progów do kalibracji (najniższy spełniający warunek wygrywa). */
-export const THRESHOLDS = [0.7, 0.75, 0.8, 0.85, 0.9, 0.95, 0.975, 0.99, 0.995, 1] as const;
+/** Nazwa klasy: liczba świec i interwał, np. „120 × 1m”. */
+export const className = (s: SimSpec): string => `${s.n} × ${s.unitMs >= 3_600_000 ? `${s.unitMs / 3_600_000}h` : `${s.unitMs / 60_000}m`}`;
 
-export interface Calibration {
-  /** Najniższy próg z siatki, przy którym w każdej klasie przechodzi ≤ `maxRate` fałszywych LVN; null — żaden. */
-  threshold: number | null;
-  profiles: number;
-  /** Fałszywe LVN i LVA razem i ile przeszło wybrany próg. */
-  lvn: number;
-  pass: number;
-  /** Udział przechodzących w najgorszej klasie przy wybranym progu. */
-  worst: number;
-}
-
-/** Kalibracja progu na SIM: `seeds` profili na klasę, warunek ≤ `maxRate` fałszywych LVN w każdej klasie. */
-export function calibrate(specs: readonly SimSpec[], seeds: number, maxRate = 0.05): Calibration {
-  const perClass = specs.map((s) => {
-    const conf: number[] = [];
-    for (let seed = 1; seed <= seeds; seed++) conf.push(...simConfidence(s, seed));
-    return conf;
+/**
+ * Kalibracja testu (a) na SIM: w każdej klasie `seeds` płaskich profili z szumem, `lvn` — kandydaci (wszystkie fałszywe),
+ * `shown` — ile przeszło filtr położenia i p ≤ 0,05 (tak jak na wykresie).
+ */
+export function calibrate(specs: readonly SimSpec[], seeds: number): { name: string; lvn: number; shown: number }[] {
+  return specs.map((s) => {
+    const t: LvnTest[] = [];
+    for (let seed = 1; seed <= seeds; seed++) t.push(...simTests(s, seed));
+    return { name: className(s), lvn: t.length, shown: shownLvn(t).length };
   });
-  const rate = (c: readonly number[], th: number) => (c.length > 0 ? c.filter((x) => x >= th).length / c.length : 0);
-  const all = perClass.flat();
-  const threshold = THRESHOLDS.find((th) => perClass.every((c) => rate(c, th) <= maxRate)) ?? null;
-  const th = threshold ?? 1;
-  return {
-    threshold,
-    profiles: specs.length * seeds,
-    lvn: all.length,
-    pass: all.filter((x) => x >= th).length,
-    worst: Math.max(...perClass.map((c) => rate(c, th))),
-  };
 }

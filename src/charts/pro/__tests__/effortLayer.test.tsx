@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { IndicatorSettings } from '../chart/IndicatorSettings';
-import { type LvnConfidenceOf, ZONE_ABOVE, ZONE_BELOW, closedBars, effortLegend, zoneInk } from '../chart/effortLayer';
+import { type LvnTestOf, ZONE_ABOVE, ZONE_BELOW, closedBars, effortLegend, zoneInk } from '../chart/effortLayer';
 import { PRO } from '../chart/theme';
 import { type SwingProfile, swingProfile } from '../core/effortZones';
 import { fmtHm } from '../core/time';
@@ -16,7 +16,7 @@ const MS = 5 * 60_000;
 const HOUR = 3_600_000;
 const T0 = Date.UTC(2026, 10, 4, 15, 0);
 /** Profil swingu D do legendy (bez LVN; testy dopisują swoje). */
-const PROF: SwingProfile = { val: 98, vah: 99.5, poc: 99, lvn: [], tapeShare: 1, src: { from: T0, to: T0, bins: 24, share: 0.7 } };
+const PROF: SwingProfile = { val: 98, vah: 99.5, poc: 99, lvn: [], tapeShare: 1, src: { from: T0, to: T0, bins: 24, share: 0.7, minArea: 5 } };
 
 const ROWS = { tick: 0.5, lo: 198, buy: new Float64Array([1, 2, 3, 4, 2]), sell: new Float64Array([0, 1, 0, 0, 0]) };
 const fpOf = (delta: number) => ({ delta, ...ROWS });
@@ -75,7 +75,7 @@ describe('legenda', () => {
     history: false,
   };
   const fmt = (p: number) => String(p).replace('.', ',');
-  const text = (x: EffortSelection | null, ms = MS, hover: { t: number; p: number } | null = null, conf: LvnConfidenceOf = (p) => ({ conf: p.lvn.map(() => 1) })) =>
+  const text = (x: EffortSelection | null, ms = MS, hover: { t: number; p: number } | null = null, conf: LvnTestOf = (p) => ({ tests: p.lvn.map(() => ({ location: 1, p: 0.03 })) })) =>
     effortLegend(x, ms, asOf, hover, fmt, conf)
       .map((p) => p.text)
       .join(' ');
@@ -109,12 +109,12 @@ describe('legenda', () => {
       mark: 'D·F',
       kinds: ['discount', 'flip'],
       known: [
-        { kind: 'discount', at: T0 + 6 * MS, lag: 135 * 60_000, profile: { ...PROF, lvn: [{ px: 98.5, pxLo: 98.4, pxHi: 98.6, bin: 1, lo: 1, hi: 1, persistence: 0.5, kind: 'node' }], tapeShare: 0.4 } },
+        { kind: 'discount', at: T0 + 6 * MS, lag: 135 * 60_000, profile: { ...PROF, lvn: [{ px: 98.5, pxLo: 98.4, pxHi: 98.6, bin: 1, lo: 1, hi: 1, persistence: 0.5, depth: 0.62, kind: 'node' }], tapeShare: 0.4 } },
         { kind: 'flip', at: T0 + 7 * MS, lag: 0 },
       ],
     };
     const s = text({ ...sel, bands: [d] }, MS, hover);
-    expect(s).toContain(`· strefa D znana od ${fmtHm(T0 + 6 * MS)}, 2 h 15 min po krańcu · profil swingu: POC 99, VA 98–99,5, LVN (węzeł) 98,5 · pewność 100% · przybliżenie: taśma 40%`);
+    expect(s).toContain(`· strefa D znana od ${fmtHm(T0 + 6 * MS)}, 2 h 15 min po krańcu · profil swingu: POC 99, VA 98–99,5, LVN (węzeł) 98,5 · głębokość 62% · p = 0,03 · test wobec losowych ścieżek: w przygotowaniu · przybliżenie: taśma 40%`);
     expect(s).toContain(`· strefa F znana od ${fmtHm(T0 + 7 * MS)}, na zamknięciu przebicia`);
     const tape = { ...d, known: [{ ...d.known[0], profile: { ...PROF, tapeShare: 1 } }] };
     expect(text({ ...sel, bands: [tape] }, MS, hover)).toContain('profil swingu: POC 99, VA 98–99,5 · z taśmy');
@@ -123,20 +123,23 @@ describe('legenda', () => {
     expect(guardHits(s)).toEqual([]);
   });
 
-  it('LVN profilu swingu: węzeł i obszar z pewnością od progu, poniżej tylko liczba odrzuconych; bez pewności „—” z powodem', () => {
+  it('LVN profilu swingu: węzeł i obszar z głębokością i p, w granicach szumu tylko liczba; bez testu „—” z powodem', () => {
     const hover = { t: T0 + 10 * MS, p: 99.5 };
     const lvn = [
-      { px: 98.5, pxLo: 98.4, pxHi: 98.6, bin: 1, lo: 1, hi: 1, persistence: 0.6, kind: 'node' as const },
-      { px: 99.2, pxLo: 99, pxHi: 99.4, bin: 2, lo: 2, hi: 8, persistence: 0.2, kind: 'area' as const },
+      { px: 98.5, pxLo: 98.4, pxHi: 98.6, bin: 1, lo: 1, hi: 1, persistence: 0.6, depth: 0.7, kind: 'node' as const },
+      { px: 99.2, pxLo: 99, pxHi: 99.4, bin: 2, lo: 2, hi: 8, persistence: 0.2, depth: 0.9, kind: 'area' as const },
     ];
     const d: EffortBand = { ...band(1), mark: 'D', kinds: ['discount'], known: [{ kind: 'discount', at: T0 + 6 * MS, lag: 0, profile: { ...PROF, lvn, tapeShare: 1 } }] };
-    const at = (conf: LvnConfidenceOf) => text({ ...sel, bands: [d] }, MS, hover, conf);
-    expect(at(() => ({ conf: [1, 0.99] }))).toContain('profil swingu: POC 99, VA 98–99,5, LVN (węzeł) 98,5 · pewność 100%; 1 poniżej 100% · z taśmy');
-    expect(at(() => ({ conf: [1, 0.99] }))).not.toContain('99,2');
-    expect(at(() => ({ conf: [1, 1] }))).toContain('LVN (węzeł) 98,5 · pewność 100%; LVA (obszar) 99–99,4 · pewność 100% · z taśmy');
-    expect(at(() => ({ conf: [0.4, 0.52] }))).toContain('profil swingu: POC 99, VA 98–99,5, LVN: —, pewność < 100% (2) · z taśmy');
-    expect(at(() => ({ short: { have: 40, need: 60 } }))).toContain('LVN: —, za mało świec do pewności (40 z 60)');
-    expect(at(() => null)).toContain('LVN: —, pewność nieznana');
+    const at = (conf: LvnTestOf) => text({ ...sel, bands: [d] }, MS, hover, conf);
+    const ok = { location: 1, p: 0.02 };
+    expect(at(() => ({ tests: [ok, { location: 1, p: 0.3 }] }))).toContain(
+      'profil swingu: POC 99, VA 98–99,5, LVN (węzeł) 98,5 · głębokość 70% · p = 0,02; 1 w granicach szumu · test wobec losowych ścieżek: w przygotowaniu · z taśmy'
+    );
+    expect(at(() => ({ tests: [ok, { location: 0.2, p: 0.01 }] }))).not.toContain('99,2');
+    expect(at(() => ({ tests: [ok, ok] }))).toContain('LVN (węzeł) 98,5 · głębokość 70% · p = 0,02; LVA (obszar) 99–99,4 · głębokość 90% · p = 0,02 · test wobec');
+    expect(at(() => ({ tests: [{ location: 1, p: 0.4 }, { location: 0.1, p: 0.01 }] }))).toContain('profil swingu: POC 99, VA 98–99,5, LVN: —, w granicach szumu pomiaru (2) · z taśmy');
+    expect(at(() => ({ short: { have: 40, need: 60 } }))).toContain('LVN: —, za mało świec do testu (40 z 60)');
+    expect(at(() => null)).toContain('LVN: —, test nieznany');
   });
 
   it('powyżej 1 h bez rysowania, z powodem; bez zamkniętych świec — czekanie', () => {

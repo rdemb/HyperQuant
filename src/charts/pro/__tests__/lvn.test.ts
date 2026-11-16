@@ -3,12 +3,14 @@ import { mulberry32 } from '../../../utils/pathEngine';
 import { fmtPx } from '../chart/layout';
 import { lvnLabel } from '../chart/lvnText';
 import { lineText, weekLvnText } from '../chart/pbRangeLayer';
-import { type VBar, swingLvnConfidence, swingProfile } from '../core/effortZones';
+import { readFileSync } from 'node:fs';
+import { type VBar, swingLvnTest, swingProfile } from '../core/effortZones';
 import type { IndicatorBar } from '../core/indicators';
-import { LVN_CALIBRATION, LVN_MIN_CONFIDENCE, blockFor, confidentLvn, lvnConfidence, lvnNodes, minUnits, unitsBuilder } from '../core/lvnConfidence';
+import { LVN_CALIBRATION, LVN_LOCATION_MIN, LVN_P_MAX, blockFor, lvnLocation, lvnNodes, minUnits, nullDepths, nullSpec, nullUnits, pValue, shownLvn, unitsBuilder } from '../core/lvn';
 import { profileLevels } from '../core/pbRanges';
 import { periodLvn } from '../core/periodLvn';
-import { SIM_SPECS, WALK_SPECS, calibrate, normal, simConfidence } from './lvnSim';
+import { EFFORT_LVN, PB_LVN, PERIOD_LVN } from '../chart/lvnText';
+import { SIM_SPECS, calibrate, normal } from './lvnSim';
 
 /** Świeca z taśmą: `rows` wierszy co `tick` od ceny `from`, wolumen wiersza z `vol(cena)`. */
 function tapeBar(t: number, from: number, rows: number, tick: number, vol: (px: number) => number): VBar {
@@ -97,7 +99,7 @@ describe('LVN: węzeł a obszar', () => {
     expect(n.hi - n.lo + 1).toBeLessThanOrEqual(5);
   });
 
-  it('dolina na 38 koszyków to obszar LVA z pewnością strefy (LVN repliki gdziekolwiek w dolinie)', () => {
+  it('dolina na 38 koszyków to obszar LVA; położenie liczone jak strefa (LVN repliki gdziekolwiek w dolinie), p ≤ 0,05', () => {
     // Profil tygodnia: garby 101–104 i 108–111 (× 600), rzadki handel w dolinie 104–108, czyli ok. 38 koszyków 10 bp
     const w = week(11, bimodal);
     const lv = profileLevels(w.lo, w.hi, w.vol, 10, true)!;
@@ -106,50 +108,56 @@ describe('LVN: węzeł a obszar', () => {
     expect(area.hi - area.lo + 1).toBeGreaterThan(20);
     expect(area.pxLo).toBeLessThan(104.5 * 600);
     expect(area.pxHi).toBeGreaterThan(107.5 * 600);
-    // Regułą węzła (±1 koszyk) pewność wynosiła 0,47; jako obszar dolina jest w każdej replice
-    expect(area.confidence).toBeGreaterThanOrEqual(LVN_MIN_CONFIDENCE);
+    // Regułą węzła (±1 koszyk) położenie wynosiło 0,47; jako obszar dolina jest w każdej replice
+    expect(area.location).toBe(1);
+    expect(area.p).toBeLessThanOrEqual(LVN_P_MAX);
+    expect(area.depth).toBeGreaterThan(0.8);
     // Próg ATR: ta sama dolina przy ATR szerszym niż dolina (0,25 ATR > szerokość) jest węzłem
     expect(lvnNodes([0, 0, 0, ...new Array(10).fill(100), ...new Array(8).fill(0), ...new Array(10).fill(100), 0, 0, 0], 3, 27, 8, 40)[0].kind).toBe('node');
   });
 
-  it('wąska pusta dolina tygodnia (ok. 3 koszyki) to węzeł z pewnością od progu', () => {
+  it('wąska pusta dolina tygodnia (ok. 3 koszyki) to węzeł, który przechodzi oba kroki', () => {
     const w = week(11, (rnd) => (rnd() < 0.5 ? 100 + 4 * rnd() : 104.3 + 4 * rnd()));
     const lv = profileLevels(w.lo, w.hi, w.vol, 10, true)!;
     expect(lv.lvn![0]).toMatchObject({ kind: 'node' });
     expect(lv.lvn![0].px).toBeGreaterThan(104 * 600);
     expect(lv.lvn![0].px).toBeLessThan(104.4 * 600);
-    expect(lv.lvn![0].confidence).toBeGreaterThanOrEqual(LVN_MIN_CONFIDENCE);
+    expect(shownLvn(lv.lvn!)).toContain(lv.lvn![0]);
   });
 });
 
-describe('LVN: pewność bootstrapowa', () => {
+describe('LVN: filtr położenia i test szumu pomiaru', () => {
   it('bloki ok. 15 min niezależnie od interwału; najmniej 20 świec i 4 bloki', () => {
     expect([60_000, 300_000, 900_000, 3_600_000].map(blockFor)).toEqual([15, 3, 1, 1]);
     expect([15, 3, 1].map(minUnits)).toEqual([60, 20, 20]);
   });
 
-  it('wyraźny profil dwugarbny: LVN w dolinie z pewnością od progu', () => {
-    const bars = swing(300, 40, 7, bimodal);
+  it('wyraźny profil dwugarbny: LVN w dolinie przechodzi filtr położenia i ma p ≤ 0,05', () => {
+    // Bez transakcji w dolinie: przy 15-minutowych skupiskach w hipotezie zerowej rzadki handel w dolinie (4% świec)
+    // daje p ≈ 0,1, czyli w granicach szumu pomiaru
+    const bars = swing(300, 20, 7, (rnd) => (rnd() < 0.5 ? 101 + 3 * rnd() : 108 + 3 * rnd()));
     const p = swingProfile(bars, 0, bars.length - 1, 24, 0.7)!;
     const top = p.lvn[0];
     expect(top.px).toBeGreaterThan(104);
     expect(top.px).toBeLessThan(108);
-    const c = swingLvnConfidence(bars, p, 60_000);
-    expect('conf' in c && c.conf[0]).toBeGreaterThanOrEqual(LVN_MIN_CONFIDENCE);
+    const c = swingLvnTest(bars, p, 60_000);
+    if (!('tests' in c)) throw new Error('za krótki swing');
+    expect(c.tests[0].location).toBeGreaterThanOrEqual(LVN_LOCATION_MIN);
+    expect(c.tests[0].p).toBeLessThanOrEqual(LVN_P_MAX);
   });
 
-  it('swing krótszy niż 4 bloki: bez pewności, z liczbą świec', () => {
+  it('swing krótszy niż 4 bloki: bez testu, z liczbą świec', () => {
     const bars = swing(40, 20, 3, bimodal);
     const p = swingProfile(bars, 0, bars.length - 1, 24, 0.7)!;
-    expect(swingLvnConfidence(bars, p, 60_000)).toEqual({ short: { have: 40, need: 60 } });
-    expect('conf' in swingLvnConfidence(bars, p, 300_000)).toBe(true);
+    expect(swingLvnTest(bars, p, 60_000)).toEqual({ short: { have: 40, need: 60 } });
+    expect('tests' in swingLvnTest(bars, p, 300_000)).toBe(true);
   });
 
   it('to samo ziarno daje ten sam wynik', () => {
     const bars = swing(120, 20, 3, bimodal);
     const p = swingProfile(bars, 0, bars.length - 1, 24, 0.7)!;
-    expect(swingLvnConfidence(bars, p, 60_000, { seed: 42 })).toEqual(swingLvnConfidence(bars, p, 60_000, { seed: 42 }));
-    expect(swingLvnConfidence(bars, p, 60_000)).toEqual(swingLvnConfidence(bars, p, 60_000));
+    expect(swingLvnTest(bars, p, 60_000, { seed: 42 })).toEqual(swingLvnTest(bars, p, 60_000, { seed: 42 }));
+    expect(swingLvnTest(bars, p, 60_000)).toEqual(swingLvnTest(bars, p, 60_000));
   });
 
   it('bootstrap kołowy: blok długości profilu daje obrót, czyli ten sam profil w każdej replice', () => {
@@ -159,24 +167,33 @@ describe('LVN: pewność bootstrapowa', () => {
       ub.next();
     }
     const u = ub.done();
-    expect(lvnConfidence(u, 0.7, [])).toEqual([]);
-    const c = lvnConfidence(u, 0.7, [{ bin: 13, persistence: 1, lo: 13, hi: 15, kind: 'node' }], { block: 30 });
+    expect(lvnLocation(u, 0.7, [])).toEqual([]);
+    const c = lvnLocation(u, 0.7, [{ bin: 13, persistence: 1, depth: 1, lo: 13, hi: 15, kind: 'node' }], { block: 30 });
     expect(c[0] === 0 || c[0] === 1).toBe(true);
   });
 });
 
-describe('LVN: kalibracja progu na SIM', () => {
-  it('próg najniższy z siatki z ≤ 5% fałszywych LVN w każdej z 10 klas (2000 płaskich profili), zgodny z zapisanym', () => {
-    const c = calibrate(SIM_SPECS, 200);
-    expect(c.profiles).toBeGreaterThanOrEqual(200);
-    expect(c.threshold).toBe(LVN_CALIBRATION.threshold);
-    expect(LVN_MIN_CONFIDENCE).toBe(LVN_CALIBRATION.threshold);
-    expect(c.worst).toBeLessThanOrEqual(0.05);
-    expect(c).toEqual({ threshold: LVN_CALIBRATION.threshold, profiles: LVN_CALIBRATION.profiles, lvn: LVN_CALIBRATION.lvn, pass: LVN_CALIBRATION.pass, worst: expect.closeTo(LVN_CALIBRATION.worst, 12) });
-    // Ograniczenie metody zapisane w opisie: błądzenie losowe (zależność na godziny)
-    const walk = WALK_SPECS.flatMap((s) => Array.from({ length: 200 }, (_, i) => simConfidence(s, i + 1)).flat());
-    expect([walk.length, walk.filter((x) => x >= LVN_MIN_CONFIDENCE).length]).toEqual([LVN_CALIBRATION.walkLvn, LVN_CALIBRATION.walkPass]);
+describe('LVN: kalibracja testu (a) na SIM', () => {
+  it('w każdej z 10 klas (po 200 płaskich profili) najwyżej 5% fałszywych LVN przechodzi filtr i p ≤ 0,05; zgodna z zapisem', () => {
+    const c = calibrate(SIM_SPECS, LVN_CALIBRATION.profiles);
+    expect(c).toEqual(LVN_CALIBRATION.classes);
+    expect(c).toHaveLength(10);
+    for (const k of c) {
+      expect(k.lvn, k.name).toBeGreaterThan(0);
+      expect(k.shown / k.lvn, k.name).toBeLessThanOrEqual(0.05);
+    }
   }, 60_000);
+
+  it('p: udział dolin zerowych co najmniej tak głębokich (z jedynką w liczniku i mianowniku); rozkład zerowy pamiętany', () => {
+    const nul = Float64Array.from([0.1, 0.2, 0.3, 0.9]);
+    expect(pValue(0.95, nul)).toBeCloseTo(1 / 5, 12);
+    expect(pValue(0.3, nul)).toBeCloseTo(3 / 5, 12);
+    expect(pValue(0, nul)).toBe(1);
+    const spec = { n: 120, nb: 24, span: 2, volSig: 1, block: 15 };
+    expect(nullDepths(spec, 0.7, 5)).toBe(nullDepths(spec, 0.7, 5));
+    // Parametry SIM z profilu: rozpiętość świecy i rozrzut wolumenu wracają z jednostek
+    expect(nullSpec(nullUnits({ ...spec, span: 3 }, 1), 15)).toMatchObject({ n: 120, nb: 24, span: 3, volSig: 1 });
+  });
 });
 
 /** Świeca okresu z footprintem: wiersze co 1 od `lo` z wolumenem `v` na wierszu. */
@@ -188,12 +205,12 @@ function fpBar(t: number, lo: number, rows: number, v: number): IndicatorBar {
 }
 
 describe('LVN profilu okresu (sesja, doba)', () => {
-  it('sesja 1m z taśmy: LVN z pewnością w dolinie, okres w toku oznaczony; za krótka — bez LVN z liczbą świec', () => {
+  it('sesja 1m z taśmy: LVN po testach w dolinie, okres w toku oznaczony; za krótka — bez LVN z liczbą świec', () => {
     const rnd = mulberry32(5);
-    const bars = Array.from({ length: 240 }, (_, i) => fpBar(i * 60_000, rnd() < 0.5 ? 60_000 + Math.floor(150 * rnd()) : 60_300 + Math.floor(150 * rnd()), 20, 1 + rnd()));
+    const bars = Array.from({ length: 480 }, (_, i) => fpBar(i * 60_000, rnd() < 0.5 ? 60_000 + Math.floor(150 * rnd()) : 60_300 + Math.floor(150 * rnd()), 20, 1 + rnd()));
     const r = periodLvn(bars, 0, bars.length - 1, 60_000, true)!;
     expect(r.building).toBe(true);
-    const kept = confidentLvn(r.lvn!);
+    const kept = shownLvn(r.lvn!);
     expect(kept.length).toBeGreaterThan(0);
     expect(kept[0].pxLo).toBeGreaterThanOrEqual(60_150);
     expect(kept[0].pxHi).toBeLessThanOrEqual(60_330);
@@ -202,27 +219,39 @@ describe('LVN profilu okresu (sesja, doba)', () => {
 });
 
 describe('LVN: podpisy', () => {
-  it('P/b: linia LVN z pewnością, LVA z zakresem doliny, inne poziomy bez; legenda węzłów i obszarów', () => {
-    expect(lineText({ px: 65_200, name: 'LVN', tag: 'tydz.', conf: 1 }, false)).toBe(`tydz. LVN ${fmtPx(65_200)} · pewność 100%`);
-    expect(lineText({ px: 65_200, name: 'LVA', tag: 'tydz.', conf: 1, lo: 65_100, hi: 65_300 }, false)).toBe(`tydz. LVA ${fmtPx(65_100)}–${fmtPx(65_300)} · pewność 100%`);
-    expect(lineText({ px: 65_200, name: 'LVN', tag: 'tydz.', conf: 1 }, true)).toBe('tydz. LVN 100%');
-    expect(lineText({ px: 65_200, name: 'VAH', tag: 'tydz.', conf: null }, false)).toBe(`tydz. VAH ${fmtPx(65_200)}`);
+  it('P/b: linia LVN z głębokością i p, LVA z zakresem doliny, inne poziomy bez; legenda węzłów i obszarów', () => {
+    const t = { depth: 0.62, p: 0.03 };
+    expect(lineText({ px: 65_200, name: 'LVN', tag: 'tydz.', test: t }, false)).toBe(`tydz. LVN ${fmtPx(65_200)} · głęb. 62% · p = 0,03`);
+    expect(lineText({ px: 65_200, name: 'LVA', tag: 'tydz.', test: { depth: 0.8, p: 0.004 }, lo: 65_100, hi: 65_300 }, false)).toBe(`tydz. LVA ${fmtPx(65_100)}–${fmtPx(65_300)} · głęb. 80% · p = 0,004`);
+    expect(lineText({ px: 65_200, name: 'LVN', tag: 'tydz.', test: t }, true)).toBe('tydz. LVN p = 0,03');
+    expect(lineText({ px: 65_200, name: 'VAH', tag: 'tydz.', test: null }, false)).toBe(`tydz. VAH ${fmtPx(65_200)}`);
     const lv = [
-      { kind: 'node' as const, confidence: 1 },
-      { kind: 'area' as const, confidence: 1 },
-      { kind: 'node' as const, confidence: 0.9 },
+      { kind: 'node' as const, location: 1, p: 0.01 },
+      { kind: 'area' as const, location: 0.9, p: 0.05 },
+      { kind: 'node' as const, location: 1, p: 0.2 },
+      { kind: 'node' as const, location: 0.3, p: 0.01 },
     ];
-    expect(weekLvnText(lv)).toBe('LVN tyg. z pewnością 100%: 1 LVN (węzeł), 1 LVA (obszar) z 3');
-    expect(weekLvnText(null)).toBe('LVN tyg.: —, za mało świec do pewności');
+    expect(weekLvnText(lv)).toBe('LVN tyg. z p ≤ 0,05: 1 LVN (węzeł), 1 LVA (obszar) z 4 · test wobec losowych ścieżek: w przygotowaniu');
+    expect(weekLvnText(null)).toBe('LVN tyg.: —, za mało świec do testu');
     expect(weekLvnText([])).toBeNull();
   });
 
-  it('profil okresu: „LVN (węzeł)” i „LVA (obszar)”, okres w toku „profil w budowie”', () => {
-    const base = { bin: 3, persistence: 0.5, lo: 2, hi: 4, px: 65_200, pxLo: 65_100, pxHi: 65_300, confidence: 1 };
+  it('profil okresu: „LVN (węzeł)” i „LVA (obszar)” z głębokością i p, okres w toku „profil w budowie”', () => {
+    const base = { px: 65_200, pxLo: 65_100, pxHi: 65_300, depth: 0.62, p: 0.0004 };
     const fmt = (p: number) => String(p);
-    expect(lvnLabel({ ...base, kind: 'node' }, false, false, fmt)).toBe('LVN (węzeł) 65200 · pewność 100%');
-    expect(lvnLabel({ ...base, kind: 'area' }, true, false, fmt)).toBe('LVA (obszar) 65100–65300 · pewność 100% · profil w budowie');
-    expect(lvnLabel({ ...base, kind: 'node' }, false, true, fmt)).toBe('LVN 100%');
+    expect(lvnLabel({ ...base, kind: 'node' }, false, false, fmt)).toBe('LVN (węzeł) 65200 · głębokość 62% · p < 0,001');
+    expect(lvnLabel({ ...base, kind: 'area', p: 0.03 }, true, false, fmt)).toBe('LVA (obszar) 65100–65300 · głębokość 62% · p = 0,03 · profil w budowie');
+    expect(lvnLabel({ ...base, kind: 'node', p: 0.03 }, false, true, fmt)).toBe('LVN p = 0,03');
+  });
+
+  it('bez słowa „pewność” w tekstach LVN (liczba bootstrapu to filtr, nie miara istotności)', () => {
+    for (const t of [PB_LVN, EFFORT_LVN, PERIOD_LVN]) {
+      expect(t.pl).not.toMatch(/pewno/i);
+      expect(t.en).not.toMatch(/confidence/i);
+      expect(t.pl).toMatch(/test wobec losowych ścieżek/i);
+    }
+    const files = ['../chart/lvnText.ts', '../chart/effortLayer.ts', '../chart/pbRangeLayer.ts', '../chart/overlay.ts', '../chart/layerSources.ts', '../indicators/cards.ts', '../indicators/registry.ts'];
+    for (const f of files) expect(readFileSync(new URL(f, import.meta.url), 'utf8'), f).not.toMatch(/pewno|confidence/i);
   });
 });
 
@@ -244,7 +273,7 @@ describe('LVN: koszt bootstrapu', () => {
     const bars = swing(300, 40, 5, bimodal);
     const p = swingProfile(bars, 0, bars.length - 1, 24, 0.7)!;
     expect(p.lvn.length).toBeGreaterThan(0);
-    const swingMs = medianMs(15, (i) => swingLvnConfidence(bars, p, 60_000, { seed: i + 1 }));
+    const swingMs = medianMs(15, (i) => swingLvnTest(bars, p, 60_000, { seed: i + 1 }));
     const w = week(2, (rnd) => (rnd() < 0.5 ? 100 + 4 * rnd() : 104.5 + 4 * rnd()));
     expect(profileLevels(w.lo, w.hi, w.vol, 10, true)!.lvn!.length).toBeGreaterThan(0);
     const weekMs = medianMs(15, () => profileLevels(w.lo, w.hi, w.vol, 10, true));
@@ -252,7 +281,14 @@ describe('LVN: koszt bootstrapu', () => {
     const ses = Array.from({ length: 480 }, (_, i) => fpBar(i * 60_000, rnd() < 0.5 ? 60_000 + Math.floor(150 * rnd()) : 60_300 + Math.floor(150 * rnd()), 40, 1 + rnd()));
     expect(periodLvn(ses, 0, 479, 60_000, false)!.lvn!.length).toBeGreaterThan(0);
     const sesMs = medianMs(15, () => periodLvn(ses, 0, 479, 60_000, false));
-    console.info(`LVN bootstrap 200 replik (mediana z 15): swing 300×40 ${swingMs.toFixed(2)} ms, tydzień 2016 świec ${weekMs.toFixed(2)} ms, sesja 480×40 ${sesMs.toFixed(2)} ms`);
+    // Rozkład zerowy testu (a) na zimno (nowe parametry; potem z pamięci): 300 profili SIM
+    const cold = (n: number, nb: number) => medianMs(5, (i) => nullDepths({ n, nb, span: 2, volSig: 1 + i / 1000, block: 3 }, 0.7, 5));
+    const nullSwingMs = cold(300, 24);
+    const nullWeekMs = cold(2016, 80);
+    console.info(
+      `LVN 200 replik i p (mediana z 15, rozkład zerowy z pamięci): swing 300×40 ${swingMs.toFixed(2)} ms, tydzień 2016 świec ${weekMs.toFixed(2)} ms, sesja 480×40 ${sesMs.toFixed(2)} ms; rozkład zerowy na zimno: swing ${nullSwingMs.toFixed(1)} ms, tydzień ${nullWeekMs.toFixed(1)} ms`
+    );
+    expect(nullWeekMs).toBeLessThan(500);
     // Luźny próg (CI bywa wolne)
     expect(swingMs).toBeLessThan(100);
     expect(weekMs).toBeLessThan(200);

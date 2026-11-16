@@ -15,7 +15,7 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 #### Dodane
 - **LVN po testach na profilach okresów** (sesja albo doba UTC, warstwa „Profile okresów”): bieżący i poprzedni okres na stałej siatce 5 bp niezależnej od powiększenia, ze świec zamkniętych (świeca z pełną taśmą wnosi wiersze taśmy), liczone po zamknięciu świecy i pamiętane; węzeł linią, obszar pasmem przez szerokość okresu, a w okresie w toku „· profil w budowie”. Opis metody w podpowiedzi plakietki warstwy.
-- **Koszt** (mediana z 15, z rozkładem zerowym pamiętanym według parametrów): swing 300 świec × 40 wierszy ok. 1,9 ms, tydzień 2016 świec 5m ok. 7 ms, sesja 480 świec 1m × 40 wierszy ok. 3,8 ms.
+- **Koszt** (mediana z 15): z rozkładem zerowym już w pamięci swing 300 świec × 40 wierszy ok. 1,3–1,9 ms, tydzień 2016 świec 5m ok. 6–7 ms, sesja 480 świec 1m × 40 wierszy ok. 2–4 ms; rozkład zerowy liczony raz na zestaw parametrów (do 32 w pamięci): swing ok. 18 ms, tydzień ok. 110 ms.
 
 ### Premia HL wobec spotu: o ile kontrakt na Hyperliquid stoi nad albo pod ceną oracle (2026-11-16)
 <!-- co-nowego: grupa=wykres | pl=Nowy wskaźnik Premia HL wobec spotu: o ile punktów bazowych arkusz kontraktu na Hyperliquid stoi nad albo pod ceną oracle, z pasmem zwykłości | en=New HL premium over spot indicator: how many basis points the Hyperliquid contract book sits above or below the oracle price, with a usual band -->

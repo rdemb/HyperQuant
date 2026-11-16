@@ -1,5 +1,5 @@
 import { type TradeSession, tradeSessionOn } from '../../../utils/sessionDay';
-import { type LvnOptions, type LvnPrice, type ProfileUnits, areaBins, blockFor, lvnConfidence, lvnNodes, lvnPrices, minUnits, profileOf, unitCount, unitsBuilder, valueArea } from './lvnConfidence';
+import { type LvnOptions, type LvnPrice, type LvnTest, type ProfileUnits, areaBins, blockFor, lvnNodes, lvnPrices, lvnTests, minUnits, profileOf, unitCount, unitsBuilder, valueArea } from './lvn';
 import { utcDayStart } from './sessions';
 
 /**
@@ -146,14 +146,14 @@ export interface SwingProfile {
   val: number;
   vah: number;
   poc: number;
-  /** Do 3 najtrwalszych LVN i LVA, malejąco po trwałości; pewność liczy `swingLvnConfidence` (leniwie). */
+  /** Do 3 najtrwalszych LVN i LVA, malejąco po trwałości; testy liczy `swingLvnTest` (leniwie). */
   lvn: LvnPrice[];
   tapeShare: number;
   /**
-   * Wejście profilu do bootstrapu pewności LVN: czasy pierwszej i ostatniej świecy swingu (nie indeksy, żeby profil nie
+   * Wejście profilu do testów LVN: czasy pierwszej i ostatniej świecy swingu (nie indeksy, żeby profil nie
    * zależał od głębokości wczytanej historii), liczba przedziałów i udział VA.
    */
-  src: { from: number; to: number; bins: number; share: number };
+  src: { from: number; to: number; bins: number; share: number; minArea: number };
 }
 
 /**
@@ -242,7 +242,7 @@ function atrOf(bars: readonly VBar[], n: number): Float64Array {
 /**
  * Profil wolumenu swingu `bars[a..b]` w `bins` przedziałach od dołka do szczytu: świeca z taśmą wnosi wolumen transakcji
  * na każdej cenie (wiersze taśmy), świeca bez taśmy — swój wolumen rozłożony równo na zakres (przybliżenie). [VAL, VAH]
- * obejmuje udział `share` wolumenu wokół POC, LVN jak w profilu okresów (`lvnNodes`: najtrwalsze, bez pewności; dolina
+ * obejmuje udział `share` wolumenu wokół POC, LVN jak w profilu okresów (`lvnNodes`: najtrwalsze, bez testów; dolina
  * szersza niż max(5 przedziałów, 0,25 `atr`) to LVA), `tapeShare` — udział wolumenu z taśmy.
  */
 export function swingProfile(bars: readonly VBar[], a: number, b: number, bins: number, share: number, atr = Number.NaN): SwingProfile | null {
@@ -252,8 +252,9 @@ export function swingProfile(bars: readonly VBar[], a: number, b: number, bins: 
   const { poc, a: lo2, z: hi2, total } = valueArea(vol, share);
   if (!(total > 0)) return null;
   const mid = (k: number) => s.lo + (k + 0.5) * s.step;
-  const lvn = lvnPrices(lvnNodes(vol, lo2, hi2, poc, areaBins(atr, s.step)), mid, (k) => s.lo + k * s.step);
-  return { val: s.lo + lo2 * s.step, vah: s.lo + (hi2 + 1) * s.step, poc: mid(poc), lvn, tapeShare: s.fromTape / total, src: { from: bars[a].t, to: bars[b].t, bins, share } };
+  const minArea = areaBins(atr, s.step);
+  const lvn = lvnPrices(lvnNodes(vol, lo2, hi2, poc, minArea), mid, (k) => s.lo + k * s.step);
+  return { val: s.lo + lo2 * s.step, vah: s.lo + (hi2 + 1) * s.step, poc: mid(poc), lvn, tapeShare: s.fromTape / total, src: { from: bars[a].t, to: bars[b].t, bins, share, minArea } };
 }
 
 /**
@@ -293,22 +294,22 @@ function swingUnits(bars: readonly VBar[], a: number, b: number, bins: number): 
   return { units: ub.done(), lo, step, fromTape };
 }
 
-/** Pewność LVN swingu: w kolejności `p.lvn` albo za mało świec do pewności (`have` z `need`). */
-export type SwingLvnConfidence = { conf: number[] } | { short: { have: number; need: number } };
+/** Testy LVN swingu: w kolejności `p.lvn` albo za mało świec do testu (`have` z `need`). */
+export type SwingLvnTest = { tests: LvnTest[] } | { short: { have: number; need: number } };
 
 /**
- * Pewność LVN profilu swingu (w kolejności `p.lvn`) z kołowego bootstrapu świec swingu blokami ok. 15 min świec
- * interwału `ms` (1m — 15 świec, 5m — 3). Liczone leniwie (tylko dla profilu pod kursorem) na tych samych świecach,
- * z których powstał profil; swing krótszy niż `minUnits` bloków — bez pewności.
+ * Testy LVN profilu swingu (w kolejności `p.lvn`): filtr położenia z kołowego bootstrapu świec swingu blokami ok.
+ * 15 min świec interwału `ms` (1m: 15 świec, 5m: 3) i p wobec szumu pomiaru. Liczone leniwie (tylko dla profilu pod
+ * kursorem) na tych samych świecach, z których powstał profil; swing krótszy niż `minUnits` — bez testu.
  */
-export function swingLvnConfidence(bars: readonly VBar[], p: SwingProfile, ms: number, o: Omit<LvnOptions, 'block'> = {}): SwingLvnConfidence {
+export function swingLvnTest(bars: readonly VBar[], p: SwingProfile, ms: number, o: Omit<LvnOptions, 'block'> = {}): SwingLvnTest {
   const a = bars.findIndex((x) => x.t === p.src.from);
   const b = a < 0 ? -1 : bars.findIndex((x, i) => i >= a && x.t === p.src.to);
   const s = b >= a && a >= 0 ? swingUnits(bars, a, b, p.src.bins) : null;
   const block = blockFor(ms);
   const have = s ? unitCount(s.units) : 0;
   if (!s || have < minUnits(block)) return { short: { have, need: minUnits(block) } };
-  return { conf: lvnConfidence(s.units, p.src.share, p.lvn, { ...o, block }) };
+  return { tests: lvnTests(s.units, p.lvn, p.src.share, p.src.minArea, block, o) };
 }
 
 /** Świeca z deltą z taśmy na sobie i w całym oknie średniej |delty| (próg agresji z samej taśmy). */

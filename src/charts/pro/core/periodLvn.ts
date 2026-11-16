@@ -1,8 +1,8 @@
 import type { IndicatorBar } from './indicators';
-import { type LvnLevel, areaBins, blockFor, lvnLevels, minUnits, profileOf, unitCount, unitsBuilder, valueArea } from './lvnConfidence';
+import { type LvnLevel, areaBins, blockFor, lvnLevels, minUnits, profileOf, unitCount, unitsBuilder, valueArea } from './lvn';
 
 /**
- * LVN z pewnością profilu sesji albo doby (warstwa „Profile okresów”, projekt Pioniera F-B1, runda 2). Siatka stała,
+ * LVN po testach profilu sesji albo doby (warstwa „Profile okresów”, projekt Pioniera F-B1, runda 2). Siatka stała,
  * niezależna od powiększenia wykresu: koszyki 5 bp w log-cenie od najniższej ceny okresu. Świeca w całości nagrana
  * wnosi wiersze taśmy (footprint), inna — wolumen rozłożony równo na swój zakres. Tylko świece zamknięte; okres
  * w toku to „profil w budowie”.
@@ -13,7 +13,7 @@ export const PERIOD_LVN_BP = 5;
 const VA_SHARE = 0.7;
 
 export interface PeriodLvn {
-  /** LVN i LVA z pewnością, malejąco po trwałości; null — za mało świec do pewności (`have` z `need`). */
+  /** LVN i LVA po testach, malejąco po trwałości; null — za mało świec do testu (`have` z `need`). */
   lvn: LvnLevel[] | null;
   have: number;
   need: number;
@@ -23,8 +23,8 @@ export interface PeriodLvn {
 
 /**
  * LVN okresu ze świec `bars[from..to]` (zamkniętych, interwał `ms`): profil na koszykach 5 bp, obszar wartości 70%,
- * LVN regułą `lvnNodes` (dolina szersza niż max(5 koszyków, 0,25 średniego zakresu świecy) to LVA) i pewność
- * z kołowego bootstrapu blokami ok. 15 min. null — okres bez wolumenu.
+ * LVN regułą `lvnNodes` (dolina szersza niż max(5 koszyków, 0,25 średniego zakresu świecy) to LVA), filtr położenia
+ * z kołowego bootstrapu blokami ok. 15 min i p wobec szumu pomiaru. null — okres bez wolumenu.
  */
 export function periodLvn(bars: readonly IndicatorBar[], from: number, to: number, ms: number, building: boolean): PeriodLvn | null {
   if (to < from) return null;

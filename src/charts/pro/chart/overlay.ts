@@ -47,7 +47,7 @@ import { MONO, PRO, rgba } from './theme';
 import { lang, tr } from '../../../i18n';
 import { type DeskMarket, deskMarketOf } from '../../../config/deskMarkets';
 import { closedSpans } from '../../../utils/underlying';
-import { confidentLvn } from '../core/lvnConfidence';
+import { shownLvn } from '../core/lvn';
 import { type PeriodLvn, periodLvn } from '../core/periodLvn';
 import { lvnLabel } from './lvnText';
 
@@ -359,7 +359,7 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
   private profileBars: readonly ProBar[] | null = null;
   private periodCache = new Map<number, PeriodCache>();
   private devCache = new Map<number, DevCache>();
-  /** LVN z pewnością profili okresów (bieżący i poprzedni): przeliczane tylko po zmianie zamkniętych świec okresu. */
+  /** LVN po testach profili okresów (bieżący i poprzedni): przeliczane tylko po zmianie zamkniętych świec okresu. */
   private lvnCache = new Map<number, { refs: readonly ProBar[]; res: PeriodLvn | null }>();
   /** Chwila danych (świeca w toku nie wchodzi do LVN okresu). */
   private now = Number.POSITIVE_INFINITY;
@@ -885,14 +885,14 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
         s.rects.push({ x: x0 - 3, y: ya, w: 2, h: Math.max(1, yb - ya), color: K.spVa });
         continue;
       }
-      // LVN i LVA z pewnością od progu (kalibracja SIM): węzeł linią, obszar pasmem przez szerokość okresu; okres w toku
+      // LVN i LVA po testach (filtr położenia, p ≤ 0,05): węzeł linią, obszar pasmem przez szerokość okresu; okres w toku
       // tylko ze świec zamkniętych, z dopiskiem „profil w budowie”
       let toC = items[k].to;
       while (toC >= from && bars[toC].t + ms > this.now) toC--;
       const hitL = this.lvnCache.get(items[k].start);
       const lv = hitL && sameRefs(hitL.refs, bars, from, toC) ? hitL : { refs: bars.slice(from, toC + 1), res: periodLvn(bars, from, toC, ms, !items[k].complete) };
       lvnCache.set(items[k].start, lv);
-      for (const l of confidentLvn(lv.res?.lvn ?? [])) {
+      for (const l of shownLvn(lv.res?.lvn ?? [])) {
         const yl = Y(l.px);
         if (!Number.isFinite(yl)) continue;
         objects++;
