@@ -55,7 +55,7 @@ const SessionView: React.FC<{ onPhase?: (phase: PhaseId) => void }> = ({ onPhase
 };
 
 /**
- * Rynek bez skanera kont (złoto, S&P 500): zamiast dwóch pustych kart BTC („—, bez skanera”) jedno zdanie, co tu jest
+ * Rynek bez skanera kont (rynki HIP-3): zamiast dwóch pustych kart BTC („—, bez skanera”) jedno zdanie, co tu jest
  * na żywo, a czego nie ma i dlaczego.
  */
 export const NoScannerNote: React.FC<{ coin: Market }> = ({ coin }) => {

@@ -239,7 +239,7 @@ export const TapePanel: React.FC<{
   onClose?: () => void;
 }> = ({ store, settings: s, bigUsd, selected, highlight, className, onPick, onChange, onClose }) => {
   const recent = store.orders.latest(TAPE_SCAN);
-  // Próg w skali rynku (złoto, S&P 500: mniejsze zlecenia niż na BTC)
+  // Próg w skali rynku (rynki HIP-3: mniejsze zlecenia niż na BTC)
   const scale = usdScaleOf(store.coin);
   const minUsd = tapeMinUsdOf(s.tapeMinUsd, scale);
   const rows: AggressorOrder[] = [];
