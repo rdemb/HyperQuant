@@ -4,6 +4,7 @@ import { t975 } from '../../../utils/tQuantile';
 import type { BookFrame } from '../core/book';
 import type { MakerSplit } from '../core/makers';
 import { DEFAULT_EFFORT_PARAMS } from '../core/effortZones';
+import { IVB_DEFAULT, IVB_WINDOWS } from '../core/ivb';
 import { PB_EVIDENCE } from '../chart/pbSelect';
 import { type Branching, MIN_EVENTS, fitBranching } from '../core/hawkes';
 import { fitBranchingLater, inBackground } from '../core/hawkesWorker';
@@ -63,6 +64,7 @@ export type IndicatorId =
   | 'outcomes'
   | 'pbrange'
   | 'effort'
+  | 'ivb'
   | 'twap';
 
 /**
@@ -79,6 +81,8 @@ export interface ParamDef {
   max: number;
   step: number;
   def: number;
+  /** Tylko te wartości (wybór z listy zamiast pola liczbowego, np. okno IVB 30 albo 60 min). */
+  options?: readonly number[];
 }
 
 export type Params = Readonly<Record<string, number>>;
@@ -244,6 +248,8 @@ export interface IndicatorDef {
   pbRanges?: true;
   /** Strefy absorpcji i pudełka Effort ze świec wykresu (warstwa na wykresie ceny i opis w legendzie): bez wartości świec i bez plotów. */
   effortZones?: true;
+  /** IVB: zakres otwarcia NY ze świec wykresu (warstwa na wykresie ceny i opis w legendzie): bez wartości świec i bez plotów. */
+  ivb?: true;
   /** Tyle świec przed lewą krawędzią widoku potrzeba danych z serwera (okno poprzednich świec: absorpcja, OFI). */
   lookback?(p: Params): number;
   /**
@@ -2022,6 +2028,31 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
     effortZones: true,
   },
   {
+    id: 'ivb',
+    short: 'IVB',
+    name: tr('IVB: zakres otwarcia NY', 'IVB: New York opening range'),
+    hint: tr(
+      'Zakres ceny pierwszych 30 albo 60 minut od otwarcia giełdy w Nowym Jorku (09:30 czasu nowojorskiego według kalendarza, czyli 15:30 czasu polskiego, a w tygodniach rozjazdu zmiany czasu 14:30), osobno od IB: prostokąt okna z zamkniętych świec, po oknie linie szczytu i dołka do końca sesji NY',
+      'The price range of the first 30 or 60 minutes after the New York stock exchange opens (09:30 New York time by the calendar, i.e. 15:30 Polish time, or 14:30 in the weeks when the clock changes are out of step), separate from the IB: a box of the window from closed candles, after the window lines at its high and low until the end of the NY session'
+    ),
+    group: 'hyperquant',
+    aliases: 'ivb otwarcie open opening nowy jork new york ny zakres range okno window fabio valentini deepm ib',
+    warmup: () => 0,
+    convention: tr(
+      `Tego wskaźnika nie ma w TradingView. Okno IVB jak w modelu IVB z dokumentacji Deep-M, z którego korzysta Fabio Valentini: zakres ceny od otwarcia giełdy w Nowym Jorku (09:30 czasu nowojorskiego) przez ${IVB_WINDOWS.join(' albo ')} minut, domyślnie ${IVB_DEFAULT}; wybór w parametrach. Otwarcie liczone z kalendarza stref czasowych (czas letni w USA i w Europie zmienia się w różnych tygodniach), więc w czasie polskim to 15:30, a w marcu i na przełomie października i listopada 14:30; nie stała godzina. IVB jest osobne od warstwy Initial balance (pierwsza godzina każdej sesji). Świeca należy do okna, gdy się w nim zaczyna, i liczy się dopiero po zamknięciu, więc w trakcie okna prostokąt rośnie z każdą zamkniętą świecą („w budowie” w legendzie), a linie szczytu i dołka zaczynają się dopiero na końcu okna, gdy zakres jest znany, i sięgają do końca sesji NY (00:00 UTC). Rysowana jest tylko bieżąca sesja NY: poza nią legenda podaje najbliższe otwarcie. Na interwałach do 30m (świece godzinowe nie zaczynają się o otwarciu). Sprawdzianu poziomów IVB wobec losowego poziomu jeszcze nie ma: to opis miejsca, nie prognoza wybicia.`,
+      `TradingView has no such indicator. The IVB window follows the IVB model in the Deep-M documentation used by Fabio Valentini: the price range from the New York stock exchange open (09:30 New York time) for ${IVB_WINDOWS.join(' or ')} minutes, ${IVB_DEFAULT} by default; choose it in the inputs. The open comes from the time-zone calendar (daylight saving time changes in different weeks in the US and in Europe), so in Polish time it is 15:30, and 14:30 in March and around the turn of October and November; not a fixed hour. The IVB is separate from the Initial balance layer (the first hour of every session). A candle belongs to the window if it starts in it and counts only once closed, so during the window the box grows with every closed candle (“building” in the legend), and the high and low lines start only at the end of the window, when the range is known, and run to the end of the NY session (00:00 UTC). Only the current NY session is drawn: outside it the legend gives the next open. On intervals up to 30m (hourly candles do not start at the open). The IVB levels have not yet been checked against a random level: they describe a place, not a forecast of a breakout.`
+    ),
+    memoryNote: tr(
+      'Liczone od nowa po każdej świecy wykresu z samej bieżącej sesji NY; świeca w trakcie nie wchodzi. Na interwałach do 30m, na każdym rynku, także w powtórce.',
+      'Recomputed after every chart candle from the current NY session only; the forming candle is not used. On intervals up to 30m, on every market, also in replay.'
+    ),
+    pane: 'price',
+    params: [{ key: 'minutes', label: tr('Okno od otwarcia NY (min)', 'Window from the NY open (min)'), min: 30, max: 60, step: 30, def: IVB_DEFAULT, options: IVB_WINDOWS }],
+    plots: [],
+    format: 'price',
+    ivb: true,
+  },
+  {
     id: 'twap',
     short: 'TWAP',
     name: tr('Udział TWAP w taśmie', 'TWAP share of the tape'),
@@ -2090,7 +2121,7 @@ export const MENU_GROUPS = [
   { id: 'presja', label: tr('Kto naciska i czy cena ustępuje', 'Who is pushing and does price give way'), ids: ['absorption', 'ofi', 'oiflow'] },
   { id: 'sklad', label: tr('Kto stoi za ruchem', 'Who is behind the move'), ids: ['breadth', 'repeat', 'makers', 'ordersize', 'twap', 'hawkes'] },
   { id: 'ruch', label: tr('Kiedy ruch i ile kosztuje wejście', 'When the market moves and what entry costs'), ids: ['rvol', 'regime', 'slippage', 'cone'] },
-  { id: 'poziomy', label: tr('Poziomy i rynki prognoz', 'Levels and prediction markets'), ids: ['pbrange', 'effort', 'outcomes'] },
+  { id: 'poziomy', label: tr('Poziomy i rynki prognoz', 'Levels and prediction markets'), ids: ['pbrange', 'effort', 'ivb', 'outcomes'] },
 ] as const satisfies readonly { id: string; label: string; ids: readonly IndicatorId[] }[];
 const HQ_IDS: readonly IndicatorId[] = MENU_GROUPS.flatMap((g) => g.ids);
 /** Identyfikator wskaźnika z grup menu (plakietki źródeł: każdy musi mieć źródło). */
@@ -2229,7 +2260,7 @@ export const swatchColor = (x: IndicatorInstance): string => {
 
 /** Czy kolor instancji coś zmienia na wykresie (inaczej okno stylu go nie pokazuje). */
 export const usesInstanceColor = (def: IndicatorDef): boolean =>
-  !!(def.forecast || def.outcomes || def.pbRanges || def.band) || def.plots.some((p) => !p.hidden && !p.hist && p.color === undefined);
+  !!(def.forecast || def.outcomes || def.pbRanges || def.ivb || def.band) || def.plots.some((p) => !p.hidden && !p.hist && p.color === undefined);
 
 /** Podpis w legendzie i na liście: skrót, parametry i interwał spoza wykresu („EMA 21”, „BB 20 2,5”, „RSI 14 1h”). */
 export function indicatorLabel(x: IndicatorInstance): string {
@@ -2242,14 +2273,14 @@ export function indicatorLabel(x: IndicatorInstance): string {
  * wskaźnik przesunięty o świece wykresu (Ichimoku) i wskaźnik z danych spoza świec (taśma, otwarte pozycje).
  */
 export const tfAllowed = (def: IndicatorDef): boolean =>
-  !def.period && !def.fit && !def.flow && !def.series && !def.sample && !def.forecast && !def.outcomes && !def.pbRanges && !def.effortZones && !def.plots.some((p) => p.shift);
+  !def.period && !def.fit && !def.flow && !def.series && !def.sample && !def.forecast && !def.outcomes && !def.pbRanges && !def.effortZones && !def.ivb && !def.plots.some((p) => p.shift);
 
 /** Interwał wskaźnika: znany identyfikator interwału, a wskaźnik bez parametru „Interwał” go nie ma. */
 const tfOk = (def: IndicatorDef, tf: unknown): tf is string => tfAllowed(def) && INTERVALS.some((iv) => iv.id === tf && iv.ms !== MONTH);
 
-/** Wartość parametru w zakresie (przy kroku 1 liczba całkowita). */
+/** Wartość parametru w zakresie (przy kroku 1 liczba całkowita, przy liście wartości jedna z nich). */
 export const paramOk = (v: unknown, p: ParamDef): v is number =>
-  typeof v === 'number' && v >= p.min && v <= p.max && (p.step < 1 || Number.isInteger(v));
+  typeof v === 'number' && v >= p.min && v <= p.max && (p.step < 1 || Number.isInteger(v)) && (!p.options || p.options.includes(v));
 
 /** Parametry z walidacją: brakujący albo spoza zakresu → domyślny. */
 export function parseParams(def: IndicatorDef, raw: unknown): Params {

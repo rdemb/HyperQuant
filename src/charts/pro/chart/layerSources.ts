@@ -82,6 +82,8 @@ const SOURCES = {
   pbrange: 'MODEL',
   // Strefy i pudełka z reguł modelu na świecach i delcie taśmy (opis rynku, nie sygnały)
   effort: 'MODEL',
+  // Zakres otwarcia NY wprost ze świec Hyperliquid (okno z kalendarza, bez modelu)
+  ivb: 'LIVE',
 } as const satisfies Record<SourceKey, LayerSource>;
 
 /** Źródło każdej warstwy `show*` (na wykresie ceny i panele pod nim) i każdego wskaźnika z warstw menu front i second. */
@@ -152,6 +154,10 @@ export const LIVE_NOTE: Record<string, string> = {
   showLiq: tr(
     ' Klastry: 3 największe przedziały około 0,25% ceny z każdej strony, od 1 mln USD.',
     ' Clusters: the 3 largest bins of about 0.25% of the price on each side, from USD 1M.'
+  ),
+  ivb: tr(
+    ' Okno od otwarcia NY (09:30 czasu nowojorskiego według kalendarza) z zamkniętych świec wykresu.',
+    ' The window from the NY open (09:30 New York time by the calendar) from closed chart candles.'
   ),
 };
 

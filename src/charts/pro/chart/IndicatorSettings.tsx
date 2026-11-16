@@ -17,6 +17,7 @@ import {
 } from '../indicators/registry';
 import { INTERVALS, MONTH, intervalById } from '../core/time';
 import { tr } from '../../../i18n';
+import { numLang } from '../../../ui/format';
 import { STATUS_LABEL, indicatorCard } from '../indicators/cards';
 
 /**
@@ -47,6 +48,17 @@ function candles(n: number, tf = ''): string {
 const ParamInput: React.FC<{ p: ParamDef; value: number; onChange: (v: number) => void }> = ({ p, value, onChange }) => {
   const [text, setText] = useState(String(value));
   useEffect(() => setText(String(value)), [value]);
+  // Parametr z listą wartości (okno IVB 30 albo 60 min): wybór zamiast pola liczbowego
+  if (p.options)
+    return (
+      <select aria-label={p.label} value={value} onChange={(e) => onChange(Number(e.target.value))} className={`${FIELD} w-24`}>
+        {p.options.map((o) => (
+          <option key={o} value={o}>
+            {numLang(String(o))}
+          </option>
+        ))}
+      </select>
+    );
   return (
     <input
       type="number"
@@ -102,7 +114,7 @@ export const IndicatorSettings: React.FC<{ x: IndicatorInstance; loaded: number;
   // Same słupki w kolorach znaku i wartości tylko w legendzie (zmiana OI, OFI): kolor i grubość linii nic nie zmieniają, zostaje
   // krycie; stożek, rynki HIP-4, zakresy P/b i strefy Effort nie mają plotów, ale mają grubość linii (strefy Effort mają
   // stałe kolory stron, więc bez koloru, z kryciem)
-  const bars = !def.forecast && !def.outcomes && !def.pbRanges && !def.effortZones && def.plots.every((p) => p.hist || p.hidden);
+  const bars = !def.forecast && !def.outcomes && !def.pbRanges && !def.effortZones && !def.ivb && def.plots.every((p) => p.hist || p.hidden);
   // Kolor instancji tylko tam, gdzie coś zmienia: linie strony i kohort mają stałe kolory palety
   const tinted = usesInstanceColor(def);
   const memory = memoryCandles(def, x.params);
@@ -194,9 +206,11 @@ export const IndicatorSettings: React.FC<{ x: IndicatorInstance; loaded: number;
           def.params.map((p) => (
             <Row key={p.key} label={p.label}>
               <ParamInput p={p} value={x.params[p.key]} onChange={(v) => set({ params: { ...x.params, [p.key]: v } })} />
-              <span className="text-ink-3 font-mono">
-                {p.min}–{p.max}
-              </span>
+              {!p.options && (
+                <span className="text-ink-3 font-mono">
+                  {p.min}–{p.max}
+                </span>
+              )}
             </Row>
           ))}
         {tab === 'params' && tfAllowed(def) && (
@@ -288,7 +302,7 @@ export const IndicatorSettings: React.FC<{ x: IndicatorInstance; loaded: number;
                 <ColorPicker color={x.color} alpha={x.alpha} onColor={(color) => set({ color })} onAlpha={(alpha) => set({ alpha })} />
               </div>
             )}
-            {!def.forecast && !def.outcomes && !def.pbRanges && !def.effortZones && (
+            {!def.forecast && !def.outcomes && !def.pbRanges && !def.effortZones && !def.ivb && (
               <label className="flex items-center gap-2.5 min-h-10 cursor-pointer text-ink-1">
                 <input type="checkbox" checked={x.labels} onChange={(e) => set({ labels: e.target.checked })} className="w-4 h-4 shrink-0 accent-accent" />
                 {tr('Wartość na osi ceny', 'Value on the price scale')}
@@ -352,7 +366,12 @@ export const IndicatorSettings: React.FC<{ x: IndicatorInstance; loaded: number;
                           'Strefy i pudełka to miejsca do obserwacji, nie wskazania wejścia: opisują, gdzie rynek przyjął agresję i gdzie ją pokazał, nie co zrobi dalej.',
                           'Zones and boxes are places to watch, not entry cues: they describe where the market absorbed aggression and where it showed it, not what it will do next.'
                         )
-                      : tr('Wskaźnik opisuje ostatnie świece, nie przewiduje następnych.', 'An indicator describes recent candles; it does not predict the next ones.')}
+                      : def.ivb
+                        ? tr(
+                            'Szczyt i dołek IVB to miejsca do obserwacji, nie wskazania wejścia: opisują zakres otwarcia NY, nie to, w którą stronę cena z niego wyjdzie.',
+                            'The IVB high and low are places to watch, not entry cues: they describe the NY opening range, not which way the price will leave it.'
+                          )
+                        : tr('Wskaźnik opisuje ostatnie świece, nie przewiduje następnych.', 'An indicator describes recent candles; it does not predict the next ones.')}
             </p>
           </div>
         )}

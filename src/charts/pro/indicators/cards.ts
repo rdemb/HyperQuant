@@ -145,6 +145,14 @@ export const INDICATOR_CARD: Partial<Record<IndicatorId, IndicatorCard>> = {
     status: 'opis',
     noise: tr('Dawne miejsca wejścia sprawdzone na 2026 r.: bez przewagi (A 52%, B 48%, C 53%).', 'Former entry places checked on 2026: no edge (A 52%, B 48%, C 53%).'),
   },
+  ivb: {
+    claim: tr(
+      'Zakres ceny pierwszych 30 albo 60 minut od otwarcia giełdy w Nowym Jorku; opis miejsca, bez prognozy wybicia.',
+      'The price range of the first 30 or 60 minutes after the New York stock exchange opens; a description of a place, no breakout forecast.'
+    ),
+    status: 'opis',
+    noise: tr('Sprawdzianu wobec losowego poziomu jeszcze nie ma.', 'Not yet checked against a random level.'),
+  },
   effort: {
     claim: tr(
       'Gdzie rynek przyjął agresję na krańcach swingu i które świece miały agresję z wybiciem.',
