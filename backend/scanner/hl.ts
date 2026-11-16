@@ -86,6 +86,14 @@ export interface HlCtx {
   dayNtlVlm: number;
   /** Stawka finansowania za godzinę (ułamek); brak w zapasowym odczycie REST */
   funding?: number;
+  /**
+   * Jakość ceny (projekt 60, Q5): wyrocznia, mid arkusza, ceny impact [kupno, sprzedaż] i premia z `activeAssetCtx`;
+   * null — giełda nie podała pola (np. mid bez arkusza); brak — zapasowy odczyt REST.
+   */
+  oraclePx?: number | null;
+  midPx?: number | null;
+  impactPxs?: [number, number] | null;
+  premium?: number | null;
 }
 
 /**
@@ -229,9 +237,8 @@ export class HlStream {
         if (fresh.length > 0) this.onTrades(fresh);
       }
       else if (msg.channel === 'activeAssetCtx') {
-        const ctx = (msg.data as { ctx?: Record<string, unknown> } | undefined)?.ctx;
-        const c = { markPx: Number(ctx?.markPx), oiBtc: Number(ctx?.openInterest), dayNtlVlm: Number(ctx?.dayNtlVlm), funding: Number(ctx?.funding) };
-        if (Number.isFinite(c.markPx) && Number.isFinite(c.oiBtc)) this.onCtx(c);
+        const c = parseCtx((msg.data as { ctx?: Record<string, unknown> } | undefined)?.ctx);
+        if (c) this.onCtx(c);
       }
     };
     ws.onclose = () => {
@@ -410,10 +417,34 @@ export class HlMarketsStream {
   }
 }
 
-/** Kontekst rynku z `activeAssetCtx` (mark, OI, obrót, finansowanie); null bez ceny mark albo OI. */
+/** Liczba dodatnia z pola API (tekst albo liczba); inaczej null. */
+const pxOrNull = (v: unknown): number | null => {
+  const x = typeof v === 'string' || typeof v === 'number' ? Number(v) : Number.NaN;
+  return Number.isFinite(x) && x > 0 ? x : null;
+};
+
+/**
+ * Kontekst rynku z `activeAssetCtx`: mark, OI, obrót, finansowanie oraz wyrocznia, mid, ceny impact i premia (projekt 60,
+ * Q5); null bez ceny mark albo OI. Pole jakości bez poprawnej wartości → null (nie zero).
+ */
 export function parseCtx(ctx: Record<string, unknown> | undefined): HlCtx | null {
-  const c = { markPx: Number(ctx?.markPx), oiBtc: Number(ctx?.openInterest), dayNtlVlm: Number(ctx?.dayNtlVlm), funding: Number(ctx?.funding) };
-  return Number.isFinite(c.markPx) && Number.isFinite(c.oiBtc) ? c : null;
+  const markPx = Number(ctx?.markPx);
+  const oiBtc = Number(ctx?.openInterest);
+  if (!Number.isFinite(markPx) || !Number.isFinite(oiBtc)) return null;
+  const imp = ctx?.impactPxs;
+  const ib = Array.isArray(imp) && imp.length === 2 ? pxOrNull(imp[0]) : null;
+  const ia = Array.isArray(imp) && imp.length === 2 ? pxOrNull(imp[1]) : null;
+  const pr = typeof ctx?.premium === 'string' || typeof ctx?.premium === 'number' ? Number(ctx.premium) : Number.NaN;
+  return {
+    markPx,
+    oiBtc,
+    dayNtlVlm: Number(ctx?.dayNtlVlm),
+    funding: Number(ctx?.funding),
+    oraclePx: pxOrNull(ctx?.oraclePx),
+    midPx: pxOrNull(ctx?.midPx),
+    impactPxs: ib !== null && ia !== null ? [ib, ia] : null,
+    premium: Number.isFinite(pr) ? pr : null,
+  };
 }
 
 /**

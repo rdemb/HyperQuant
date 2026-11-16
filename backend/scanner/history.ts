@@ -2,15 +2,19 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, w
 import { dirname, join } from 'node:path';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import {
+  CTX_SAMPLE_MS,
   HIST_HOUR_MS,
   HIST_PART_MS,
   HISTORY_VERSION,
   bookSigFigs,
   clipSpans,
   decodeBook,
+  decodeCtx,
   decodeTrades,
   encodeBook,
+  encodeCtx,
   encodeTrades,
+  type CtxSample,
   historyDir,
   historyPath,
   type HistCtx,
@@ -114,6 +118,13 @@ function uniqFrames(xs: readonly HistFrame[]): HistFrame[] {
 function uniqCtx(xs: readonly HistCtx[]): HistCtx[] {
   return [...new Map(xs.map((c) => [c.t, c])).values()];
 }
+/** Próbki kontekstu bez duplikatów okienka 5 s (późniejsza wygrywa). */
+function uniqSamples(xs: readonly CtxSample[]): CtxSample[] {
+  return [...new Map(xs.map((c) => [c.t, c])).values()];
+}
+
+/** Próbki kontekstu w pamięci: godzina (statystyki jakości w `status.json`) i zapas na niezapisaną część. */
+const SAMPLES_KEEP_MS = HIST_HOUR_MS + 2 * HIST_PART_MS;
 
 /** Numeracja jednej doby UTC: numer ważny dobę, nowa doba od 0. */
 interface Ids {
@@ -144,6 +155,8 @@ export class MarketRecorder {
   private readonly trades = new Map<number, HistTrade[]>();
   private readonly frames = new Map<number, HistFrame[]>();
   private readonly ctx = new Map<number, HistCtx>();
+  /** Próbki kontekstu co 5 s według początku okienka (projekt 60, Q5) */
+  private readonly samples = new Map<number, CtxSample>();
   /** Zamknięte odcinki nagrania jeszcze potrzebne niezapisanym częściom; otwarty — od `openAt` */
   private spans: HistSpan[] = [];
   private openAt: number | null = null;
@@ -217,6 +230,18 @@ export class MarketRecorder {
     if (!(c.markPx > 0) || !(c.oiBtc >= 0)) return;
     const minute = Math.floor(at / MIN) * MIN;
     if (Number.isFinite(c.funding)) this.ctx.set(minute, { t: minute, oi: c.oiBtc, funding: c.funding as number, mark: c.markPx });
+    // Próbka jakości ceny co 5 s (ostatni odczyt okienka); część już zapisana — pominięta jak spóźniona transakcja
+    const slot = Math.floor(at / CTX_SAMPLE_MS) * CTX_SAMPLE_MS;
+    if (partOf(slot) > this.lastPart)
+      this.samples.set(slot, {
+        t: slot,
+        mark: c.markPx,
+        oracle: c.oraclePx ?? null,
+        mid: c.midPx ?? null,
+        impactBid: c.impactPxs?.[0] ?? null,
+        impactAsk: c.impactPxs?.[1] ?? null,
+        premium: c.premium ?? null,
+      });
     const sf = bookSigFigs(c.markPx);
     if (this.sigFigs && sf.near === this.sigFigs.near && sf.far === this.sigFigs.far) return;
     const digits = Math.floor(Math.log10(c.markPx)) + 1;
@@ -344,8 +369,17 @@ export class MarketRecorder {
       writeGz(bPath, encodeBook(this.coin, p, p + HIST_PART_MS, [...spans, ...(oldB?.spans ?? [])], uniqFrames([...(oldB?.frames ?? []), ...frames])));
       this.lastPart = p;
       written += 2;
+      // Próbki kontekstu części (bez odczytu kontekstu — bez pliku), scalone z częścią z poprzedniego uruchomienia
+      const samples = [...this.samples.values()].filter((s) => s.t >= p && s.t < p + HIST_PART_MS);
+      if (samples.length > 0) {
+        const cPath = join(this.dir, historyPath(this.coin, p, 'ctx', true));
+        const oldC = existsSync(cPath) ? decodeCtx(readGz(cPath)) : null;
+        writeGz(cPath, encodeCtx(this.coin, p, p + HIST_PART_MS, [...spans, ...(oldC?.spans ?? [])], uniqSamples([...(oldC?.samples ?? []), ...samples])));
+        written++;
+      }
     }
     for (const k of this.ctx.keys()) if (k < due) this.ctx.delete(k);
+    for (const k of this.samples.keys()) if (k < now - SAMPLES_KEEP_MS) this.samples.delete(k);
     this.spans = this.spans.filter(([, b]) => b > due);
     // Doba, której ostatnia część jest już zapisana: numeracja i mapy kont zapomniane (numer ważny najwyżej dobę)
     const open = dayOf(now - SETTLE_MS);
@@ -382,7 +416,13 @@ export class MarketRecorder {
       writeGz(join(this.dir, historyPath(this.coin, h, 'trades', false)), encodeTrades(this.coin, h, h + HIST_HOUR_MS, tFiles.flatMap((f) => f.spans), trades, ctx, tFiles.every((f) => f.zeroKnown), idScope));
       writeGz(join(this.dir, historyPath(this.coin, h, 'book', false)), encodeBook(this.coin, h, h + HIST_HOUR_MS, bFiles.flatMap((f) => f.spans), frames));
       written += 2;
-      for (const p of parts) for (const kind of ['trades', 'book'] as const) rmSync(join(this.dir, historyPath(this.coin, p, kind, true)), { force: true });
+      // Kontekst co 5 s (projekt 60, Q5): plik godzinowy tylko, gdy któraś część albo dawny plik godziny go ma
+      const cFiles = [read('ctx', false, h), ...parts.map((p) => read('ctx', true, p))].map(decodeCtx).filter((x) => x !== null);
+      if (cFiles.length > 0) {
+        writeGz(join(this.dir, historyPath(this.coin, h, 'ctx', false)), encodeCtx(this.coin, h, h + HIST_HOUR_MS, cFiles.flatMap((f) => f.spans), uniqSamples(cFiles.flatMap((f) => f.samples))));
+        written++;
+      }
+      for (const p of parts) for (const kind of ['trades', 'book', 'ctx'] as const) rmSync(join(this.dir, historyPath(this.coin, p, kind, true)), { force: true });
     }
     return written;
   }

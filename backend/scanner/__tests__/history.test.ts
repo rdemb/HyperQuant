@@ -44,7 +44,8 @@ describe('MarketRecorder — nagranie taśmy, arkusza i kontekstu jednego rynku'
     r.onTrades([trade(T0 + 3000, 3, 'A', 2, 9, ZERO), trade(T0 + 3000, 4, 'A', 2, 9, ZERO), trade(T0 + 4000, 5, 'A', 2, 9, ZERO)]);
     r.onCtx({ markPx: 80_000, oiBtc: 30_000, dayNtlVlm: 1e9, funding: 1.25e-5 }, T0 + 5000);
     expect(r.flush(T0 + 5 * MIN + SETTLE_MS - 1)).toBe(0); // część jeszcze otwarta
-    expect(r.flush(T0 + 5 * MIN + SETTLE_MS)).toBe(2);
+    // Taśma, arkusz i próbki kontekstu co 5 s (projekt 60, Q5)
+    expect(r.flush(T0 + 5 * MIN + SETTLE_MS)).toBe(3);
     const f = decodeTrades(read(dir, 'BTC', T0, 'trades', true))!;
     expect(f.spans).toEqual([[T0 + 2000, T0 + 5 * MIN]]);
     // Biorcy i makerzy w jednej numeracji: 1 → 0, 9 → 1, 8 → 2, 2 → 3
