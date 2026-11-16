@@ -1,4 +1,5 @@
 import { tr } from '../../../i18n';
+import { SMC_RATES_SUMMARY } from '../chart/smcRates';
 import type { IndicatorId } from './registry';
 import { LVN_CALIBRATION as C } from '../core/lvn';
 import { LVN_P_TEXT, PATHS_PENDING } from '../chart/lvnText';
@@ -197,10 +198,7 @@ export const INDICATOR_CARD: Partial<Record<IndicatorId, IndicatorCard>> = {
       'Where on closed candles the swings, closing breaks (BOS, CHoCH), sweeps, FVG gaps and equal highs were; every element from the moment it became known. Experimental.'
     ),
     status: 'opis',
-    noise: tr(
-      'Częstości bazowe (co działo się po takich elementach) wobec losowych poziomów nie są jeszcze policzone.',
-      'Base rates (what followed such elements) against random levels are not computed yet.'
-    ),
+    noise: SMC_RATES_SUMMARY,
   },
   effort: {
     claim: tr(

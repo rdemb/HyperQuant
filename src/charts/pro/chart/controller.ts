@@ -1941,7 +1941,7 @@ export class ProChartController {
               : def.ivb
                 ? this.ivb.legend()
                 : def.smc
-                ? this.smc.legend(this.hoverTime !== null && this.hoverPrice !== null ? { t: this.hoverTime, p: this.hoverPrice } : null, this.indFormat('price'))
+                ? this.smc.legend(this.hoverTime !== null && this.hoverPrice !== null ? { t: this.hoverTime, p: this.hoverPrice } : null, this.indFormat('price'), this.store.coin)
                 : short
                 ? [{ text: `—, ${short}`, color: PRO.ink3 }]
                 : vs.flatMap((v, p) => {

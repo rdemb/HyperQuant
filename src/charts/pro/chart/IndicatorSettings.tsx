@@ -384,8 +384,8 @@ export const IndicatorSettings: React.FC<{ x: IndicatorInstance; loaded: number;
                         )
                       : def.smc
                         ? tr(
-                            'Etykiety, linie, luki i równe szczyty opisują kształt ceny, nie miejsca wejścia. Częstości bazowe wobec losowych poziomów nie są jeszcze policzone: wskaźnik jest eksperymentalny.',
-                            'Labels, lines, gaps and equal highs describe the price shape, not entry places. Base rates against random levels are not computed yet: the indicator is experimental.'
+                            'Etykiety, linie, luki i równe szczyty opisują kształt ceny, nie miejsca wejścia. Częstości bazowe z historii prawie nie różnią się od losowych poziomów (liczby w legendzie): wskaźnik jest eksperymentalny.',
+                            'Labels, lines, gaps and equal highs describe the price shape, not entry places. Historical base rates barely differ from random levels (numbers in the legend): the indicator is experimental.'
                           )
                       : def.ivb
                         ? tr(

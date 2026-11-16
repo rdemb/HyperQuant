@@ -1,8 +1,9 @@
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { IndicatorSettings } from '../chart/IndicatorSettings';
 import { LAYER_SOURCE, layerBadge } from '../chart/layerSources';
 import { SMC_INK, smcLegend } from '../chart/smcLayer';
+import { SMC_RATES_SUMMARY, loadSmcRates } from '../chart/smcRates';
 import { selectSmc } from '../chart/smcSelect';
 import { type SBar, smcStructure } from '../core/smcStructure';
 import { fmtDayTime } from '../core/time';
@@ -12,7 +13,11 @@ import { MENU_GROUPS, indicatorDef, indicatorLabel, indicatorsFromLink, parseInd
 import { PRO } from '../chart/theme';
 import { guardHits } from '../../../utils/safeguards.mjs';
 
-/** Wskaźnik SMC+HL: legenda (eksperymentalny, bez częstości, „znany od” pod krzyżem), wpis w rejestrze, karta i plakietka. */
+/** Wskaźnik SMC+HL: legenda (eksperymentalny, częstości bazowe interwału, „znany od” i częstości typu pod krzyżem), wpis w rejestrze, karta i plakietka. */
+
+beforeAll(async () => {
+  await loadSmcRates();
+});
 
 const MS = 5 * 60_000;
 const T0 = Date.UTC(2026, 10, 16, 0, 0);
@@ -35,30 +40,50 @@ const bars = mk(rows);
 const asOf = bars[bars.length - 1].t + MS;
 const sel = selectSmc(smcStructure(bars, MS), bars, asOf, { phone: false, history: false });
 const text = (h: { t: number; p: number } | null = null, s = sel) =>
-  smcLegend(s, MS, h, fmt)
+  smcLegend(s, MS, 'BTC', h, fmt)
     .map((p) => p.text)
     .join(' ');
 
 describe('legenda SMC', () => {
-  it('eksperymentalny, stan obu skal, liczby aktywnych elementów, brak zakresu i częstości bazowych z powodem', () => {
+  it('eksperymentalny, stan obu skal, liczby aktywnych elementów, brak zakresu z powodem i częstości bazowe interwału', () => {
     const t = text();
     expect(t.startsWith('eksperymentalny · struktura: wewn. mieszana · swing. mieszana · FVG 1 · EQH 0 · EQL 0')).toBe(true);
     expect(t).toContain('· zakres swingowy: —, brak szczytu i dołka skali swingowej');
-    expect(t).toContain('· częstości bazowe wobec losowych poziomów: —, jeszcze nie policzone');
+    expect(t).toContain('· częstości bazowe (BTC 5m, 2024–2026, wobec losowej kontroli, BOS i sweep przy tej samej zmienności): BOS swing.: dalszy ruch większy, +0,25 ATR [0,10; 0,42]');
+    expect(t).not.toContain('jeszcze nie policzone');
     expect(t).not.toMatch(BANNED);
   });
 
-  it('krzyż nad luką: wypełnienie, dotknięcie środka luki (CE) i chwila „znana od”', () => {
+  it('krzyż nad luką: wypełnienie, dotknięcie środka luki (CE), chwila „znana od” i częstości bazowe FVG', () => {
     const f = sel.fvgs[0].f;
-    const t = text({ t: f.t + 2 * MS, p: 100.75 });
-    expect(t).toContain(`· FVG (luka po ruchu w górę) 100.5–100.8: wypełnienie 50%, dotknięcie środka luki (CE), znana od ${fmtDayTime(f.known, asOf)}`);
+    const parts = smcLegend(sel, MS, 'BTC', { t: f.t + 2 * MS, p: 100.75 }, fmt).map((p) => p.text);
+    const at = parts.findIndex((p) => p.startsWith('· FVG ('));
+    expect(parts[at]).toBe(`· FVG (luka po ruchu w górę) 100.5–100.8: wypełnienie 50%, dotknięcie środka luki (CE), znana od ${fmtDayTime(f.known, asOf)}`);
+    expect(parts[at + 1]).toBe('· FVG (BTC 5m, 2024–2026, n = 59 403): środek luki (CE) dotknięty w 24 świecach 80,4% · losowa luka 78,7% · różnica +1,7 pp [1,2; 2,2] · częściej niż przy losowej luce');
+    expect(parts[at + 2]).toMatch(/^· FVG \(BTC 5m, 2024–2026, n = 59 403\): cała luka wypełniona w 24 świecach /);
+    expect(parts).toHaveLength(at + 3);
     // Przed świecą, na której luka była znana, krzyż nic nie dopisuje
     expect(text({ t: f.t - MS, p: 100.75 })).not.toContain('FVG (');
   });
 
-  it('każdy interwał (także 4H); powód braku tylko bez świec', () => {
-    expect(smcLegend(sel, 4 * 3_600_000).map((p) => p.text)[0]).toBe('eksperymentalny');
-    expect(smcLegend(null, MS).map((p) => p.text)).toEqual(['czekam na świece…']);
+  it('każdy interwał (także 4H); częstości tylko dla 5m, 15m, 1h, 4H i 1D; powód braku świec', () => {
+    const h4 = smcLegend(sel, 4 * 3_600_000, 'BTC').map((p) => p.text);
+    expect(h4[0]).toBe('eksperymentalny');
+    expect(h4.join(' ')).toContain('BOS swing.: —: za mało przypadków (n = 81)');
+    expect(smcLegend(sel, 30 * 60_000, 'BTC').map((p) => p.text)).toContain('· częstości bazowe: —: brak częstości dla tego interwału');
+    expect(smcLegend(null, MS, 'BTC').map((p) => p.text)).toEqual(['czekam na świece…']);
+  });
+
+  it('inny rynek niż BTC: częstości z powodem braku w legendzie, krzyż nad elementem bez częstości', () => {
+    const f = sel.fvgs[0].f;
+    for (const coin of ['ETH', 'SOL', 'HYPE']) {
+      const parts = smcLegend(sel, MS, coin, { t: f.t + 2 * MS, p: 100.75 }, fmt).map((p) => p.text);
+      expect(parts).toContain('· częstości bazowe: —: policzone tylko dla BTC');
+      expect(parts.filter((p) => p.includes('2024–2026'))).toEqual([]);
+      const at = parts.findIndex((p) => p.startsWith('· FVG ('));
+      expect(parts[at]).toContain('wypełnienie 50%');
+      expect(parts).toHaveLength(at + 1);
+    }
   });
 
   it('kolory według rodzaju elementu, nie strony transakcji', () => {
@@ -92,8 +117,8 @@ describe('wpis SMC w rejestrze', () => {
     expect(parseIndicators([base]).list[0].history).toBeUndefined();
   });
 
-  it('opis: nasze definicje, known, CE, limity, eksperymentalny bez częstości; bez zakazanych słów i myślników', () => {
-    for (const s of ['napisane od zera', 'znany od zamknięcia świecy j + L', '3, 5, 10, 20, 50', 'dotknięcie środka luki (CE)', 'najwyżej 21 obiektów', 'połowy zakresu', 'Częstości bazowe', 'eksperymentalny'])
+  it('opis: nasze definicje, known, CE, limity, eksperymentalny z podsumowaniem częstości; bez zakazanych słów i myślników', () => {
+    for (const s of ['napisane od zera', 'znany od zamknięcia świecy j + L', '3, 5, 10, 20, 50', 'dotknięcie środka luki (CE)', 'najwyżej 21 obiektów', 'połowy zakresu', SMC_RATES_SUMMARY, 'eksperymentalny'])
       expect(def.convention, s).toContain(s);
     for (const t of [def.convention ?? '', def.hint, def.memoryNote ?? '']) {
       expect(guardHits(t)).toEqual([]);
@@ -101,12 +126,18 @@ describe('wpis SMC w rejestrze', () => {
     }
   });
 
-  it('plakietka MODEL z metodą, karta „opis” ze zdaniem o braku częstości bazowych', () => {
+  it('plakietka MODEL z metodą, karta „opis” z uczciwym podsumowaniem częstości bazowych', () => {
     expect(LAYER_SOURCE.smc).toBe('MODEL');
-    expect(layerBadge('smc', { coin: 'BTC', now: T0 })).toMatchObject({ tone: 'model', text: 'MODEL', hint: expect.stringMatching(/^MODEL · reguły struktury na zamkniętych świecach: .*częstości bazowe jeszcze nie policzone$/) });
+    expect(layerBadge('smc', { coin: 'BTC', now: T0 })).toMatchObject({
+      tone: 'model',
+      text: 'MODEL',
+      hint: expect.stringMatching(/^MODEL · reguły struktury na zamkniętych świecach: .*eksperymentalny, częstości bazowe z historii BTC \(Binance 5m, sprawdzian 2024–2026\) prawie bez różnicy wobec losowych poziomów$/),
+    });
     const card = indicatorCard('smc');
     expect(card.status).toBe('opis');
-    expect(card.noise).toContain('nie są jeszcze policzone');
+    expect(card.noise).toBe(SMC_RATES_SUMMARY);
+    expect(card.noise).toContain('elementy prawie nie różnią się od losowych poziomów');
+    expect(card.noise).not.toContain('nie są jeszcze policzone');
     expect(card.claim).toContain('Eksperymentalny');
   });
 
