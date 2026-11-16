@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { IndicatorSettings } from '../chart/IndicatorSettings';
 import { type SmcHigherFeed, SmcLayer, type SmcStyle, smcLegend } from '../chart/smcLayer';
-import { SMC_OBJECTS_MAX, selectSmc } from '../chart/smcSelect';
+import { SMC_OBJECTS_MAX, SMC_PHONE_OBJECTS_MAX, selectSmc } from '../chart/smcSelect';
 import { selectSmcMtf } from '../chart/smcMtfSelect';
 import { SMC_HTF_OFF, pickHtf, smcMtf } from '../core/smcMtf';
 import { type SBar, smcStructure } from '../core/smcStructure';
@@ -119,6 +119,26 @@ describe('legenda wyższego interwału', () => {
       if ((l.higher()?.sel?.fvgs.length ?? 0) > 0) max = Math.max(max, objects());
     }
     expect(max).toBeGreaterThan(0);
+  });
+
+  it('telefon: razem najwyżej 10 obiektów; luka wyższego interwału tylko w miejscu, które zostawia rysunek wykresu', () => {
+    let shown = 0;
+    for (let n = 400; n <= ltf.length; n += 50) {
+      const part = ltf.slice(0, n);
+      const l = new SmcLayer(() => style(0));
+      l.setPhone(true);
+      let objects = -1;
+      l.onObjects = (k) => (objects = k);
+      l.setData(source(part), M15, part[part.length - 1].t + M15, { ms: H4, candles: aggregate(part, H4) });
+      const base = l.selection();
+      const hs = l.higher()?.sel;
+      expect(objects).toBeLessThanOrEqual(SMC_PHONE_OBJECTS_MAX);
+      expect(hs?.breaks).toEqual([]);
+      expect(hs?.fvgs.length ?? 0).toBeLessThanOrEqual(1);
+      if (base && hs && base.labels.length + base.breaks.length + base.fvgs.length < SMC_PHONE_OBJECTS_MAX && hs.active.fvg > 0) expect(hs.fvgs).toHaveLength(1);
+      shown += hs?.fvgs.length ?? 0;
+    }
+    expect(shown).toBeGreaterThan(0);
   });
 });
 

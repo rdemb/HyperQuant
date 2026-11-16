@@ -12,10 +12,11 @@ import { smcWindowMs } from './smcSelect';
  * - **Limity** (smc-hl.md §7.2): 3 FVG otwarte najbliższe ostatniemu zamknięciu wykresu, 2 OB na typ (wejście gotowe,
  *   model OB to etap S1), 1 linia ostatniego przełamania (BOS albo CHoCH) z okna max(24 h, 24 świece wyższego
  *   interwału); stan struktury tylko w legendzie.
- * - **Łączny limit:** obiekty wyższego interwału mieszczą się w tym, co zostaje z 25 po rysunku interwału wykresu
- *   (`room`); przy braku miejsca odpadają kolejno: dalsze FVG, OB, linia, najbliższa FVG.
- * - **Telefon:** tylko najbliższa FVG wyższego interwału (strefa z wyższego interwału to kontekst, którego nie widać
- *   na krótkim wykresie; linia przełamania i OB zostają w legendzie i na komputerze).
+ * - **Łączny limit:** obiekty wyższego interwału mieszczą się w tym, co zostaje z 25 (telefon: 10) po rysunku interwału
+ *   wykresu (`room`); przy braku miejsca odpadają kolejno: dalsze FVG, OB, linia, najbliższa FVG.
+ * - **Telefon:** najwyżej najbliższa FVG wyższego interwału i tylko wtedy, gdy rysunek wykresu zostawia miejsce w limicie
+ *   10 obiektów (strefa z wyższego interwału to kontekst, którego nie widać na krótkim wykresie, ale nie wypiera
+ *   struktury wykresu; stan struktury wyższego interwału zawsze w legendzie).
  */
 
 export const SMC_MTF_LIMITS = { fvg: 3, obPerDir: 2, breaks: 1 } as const;

@@ -35,6 +35,8 @@ export const SMC_LIMITS = { fvg: 5, eq: 2, labels: 6, breaks: 3, sweeps: 2 } as 
 export const SMC_PHONE_LIMITS = { fvg: 1, eq: 0, labels: 6, breaks: 3, sweeps: 0 } as const;
 /** Łączny limit obiektów rysunku (projekt Pioniera: „najwyżej ok. 25”). */
 export const SMC_OBJECTS_MAX = 25;
+/** Łączny limit obiektów na telefonie (6 etykiet, 3 linie, 1 luka; pilnuje go też pomiar układu `ui:check`). */
+export const SMC_PHONE_OBJECTS_MAX = 10;
 /** Okno trybu „historia” oraz zdarzeń (przełamania, sweepy) w trybie „bieżące”. */
 export const SMC_WINDOW_MS = 24 * 3_600_000;
 /** Okno w świecach dla wyższych interwałów: 24 h to na 4H tylko 6 świec, więc okno rośnie do 24 świec interwału. */

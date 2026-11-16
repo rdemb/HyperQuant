@@ -6,7 +6,7 @@ import { type HtfPick, type SmcMtf, htfLabel, pickHtf, smcMtf } from '../core/sm
 import { fmtDayTime } from '../core/time';
 import type { Candle } from '../hl/parse';
 import { logicalOfTime } from './overlay';
-import { SMC_OBJECTS_MAX, type SmcSelection, selectSmc, smcObjects, smcWindowText } from './smcSelect';
+import { SMC_OBJECTS_MAX, SMC_PHONE_OBJECTS_MAX, type SmcSelection, selectSmc, smcObjects, smcWindowText } from './smcSelect';
 import { type SmcMtfSelection, selectSmcMtf, smcMtfObjects } from './smcMtfSelect';
 import { MONO, PRO, rgba } from './theme';
 
@@ -481,7 +481,8 @@ export class SmcLayer implements ISeriesPrimitive<Time> {
     this.sel = r && last ? selectSmc(r, this.sbars, asOf, { phone: this.phone, history }) : null;
     const base = this.sel ? smcObjects(this.sel) : 0;
     // Wyższy interwał w tej samej chwili, w tym, co zostaje z łącznego limitu obiektów
-    this.hsel = this.mtf && this.sel ? selectSmcMtf(this.mtf, asOf, this.sel.close, { phone: this.phone, room: SMC_OBJECTS_MAX - base }) : null;
+    const cap = this.phone ? SMC_PHONE_OBJECTS_MAX : SMC_OBJECTS_MAX;
+    this.hsel = this.mtf && this.sel ? selectSmcMtf(this.mtf, asOf, this.sel.close, { phone: this.phone, room: cap - base }) : null;
     this.onObjects?.(base + (this.hsel ? smcMtfObjects(this.hsel) : 0));
   }
 
