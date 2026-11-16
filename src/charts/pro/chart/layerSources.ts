@@ -75,6 +75,8 @@ const SOURCES = {
   kyle: 'MODEL',
   effres: 'MODEL',
   ordersize: 'LIVE',
+  // Pole premium (i pomocniczo mark wobec oracle) wprost z kanału activeAssetCtx (średnia świecy, bez modelu)
+  premium: 'LIVE',
   // „Więcej z HyperQuant”
   cone: 'MODEL',
   outcomes: 'MODEL',
@@ -164,6 +166,10 @@ export const LIVE_NOTE: Record<string, string> = {
   showLiq: tr(
     ' Klastry: 3 największe przedziały około 0,25% ceny z każdej strony, od 1 mln USD.',
     ' Clusters: the 3 largest bins of about 0.25% of the price on each side, from USD 1M.'
+  ),
+  premium: tr(
+    ' Pole premium kanału activeAssetCtx od otwarcia strony (serwer nie nagrywa premii ani oracle); na rynkach HIP-3 oracle to cena instrumentu bazowego od wydawcy rynku, a poza notowaniami rynku bazowego świece desku nie mają wartości.',
+    ' The premium field of the activeAssetCtx channel since the page opened (the server records neither the premium nor the oracle); on HIP-3 markets the oracle is the underlying’s price from the market deployer, and outside the underlying’s trading hours desk candles have no value.'
   ),
   ivb: tr(
     ' Okno od otwarcia NY (09:30 czasu nowojorskiego według kalendarza) z zamkniętych świec wykresu.',

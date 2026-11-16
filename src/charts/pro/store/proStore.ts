@@ -9,6 +9,7 @@ import { MakerFlow, MakerSplit, MakerTop } from '../core/makers';
 import { OrderAggregator, OrderLog } from '../core/orders';
 import { PlayerFlow, bigPlayerUsd } from '../core/players';
 import { QueueHead } from '../core/queueHead';
+import { PremiumLog, hlPremiumBp, markOracleBp, oracleLive } from '../core/premium';
 import { FundingBook, HOUR_MS, OiLog } from '../core/stats';
 import { Tape, TradeRow } from '../core/tape';
 import { periodStart, utcDayStart } from '../core/sessions';
@@ -123,6 +124,12 @@ export class ProStore {
   private bboWatchers = 0;
   /** Otwarte pozycje z kanału activeAssetCtx (od otwarcia strony) i stawki finansowania z historii API. */
   readonly oi = new OiLog();
+  /**
+   * Premia HL wobec spotu (pb, pole `premium` z cen wpływu) i pomocniczo mark wobec oracle (pb), z kanału activeAssetCtx,
+   * tylko od otwarcia strony (serwer nie nagrywa premii ani oracle).
+   */
+  readonly premium = new PremiumLog();
+  readonly markOracle = new PremiumLog();
   readonly funding = new FundingBook();
   private fundingLoading = false;
   readonly clock = new ClockSync();
@@ -222,6 +229,7 @@ export class ProStore {
       if (c && !this.ctx) {
         this.ctx = c;
         this.oi.push(this.serverNow(), c.openInterest);
+        this.pushPremium(c);
         this.ensureBookSubs(c.markPx);
         this.bump();
       }
@@ -430,6 +438,7 @@ export class ProStore {
       if (ctx) {
         this.ctx = ctx;
         this.oi.push(this.serverNow(), ctx.openInterest);
+        this.pushPremium(ctx);
         this.ensureBookSubs(ctx.markPx);
         this.bump();
       }
@@ -460,6 +469,16 @@ export class ProStore {
       h.add(toFrame(snap, step));
       this.bump();
     }
+  }
+
+  /** Odczyt premii z kontekstu rynku; na rynku desku HIP-3 poza notowaniami rynku bazowego oracle to cena platformy (bez próbki). */
+  private pushPremium(ctx: AssetCtx): void {
+    const t = this.serverNow();
+    if (!oracleLive(this.coin, t)) return;
+    const hl = hlPremiumBp(ctx.premium);
+    const mo = markOracleBp(ctx.markPx, ctx.oraclePx);
+    if (hl !== null) this.premium.push(t, hl);
+    if (mo !== null) this.markOracle.push(t, mo);
   }
 
   // ───────────────────────── arkusz ─────────────────────────
@@ -630,6 +649,8 @@ export class ProStore {
     this.players.prune(windowCut);
     this.walls.prune(this.serverNow(), cut);
     this.oi.prune(cut);
+    this.premium.prune(cut);
+    this.markOracle.prune(cut);
     this.books.forEach((b) => b.prune(cut));
     this.exact.prune(cut);
     this.makers.prune(windowCut);
