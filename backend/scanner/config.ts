@@ -47,6 +47,12 @@ export interface ScannerConfig {
 
 type Env = Record<string, string | undefined>;
 
+/**
+ * Symbol rynku Hyperliquid: giełda główna (`BTC`) albo HIP-3 z przedrostkiem giełdy małymi literami (`xyz:GOLD`, projekt 60 R1).
+ * Jeden dwukropek najwyżej, bez kropek i ukośników: symbol trafia do nazw katalogów i plików stanu.
+ */
+export const MARKET_RE = /^([a-z]{2,8}:)?[A-Z0-9]{2,12}$/;
+
 function intIn(env: Env, key: string, def: number, lo: number, hi: number, errors: string[]): number {
   const raw = env[key];
   if (raw === undefined || raw === '') return def;
@@ -69,7 +75,7 @@ export function loadConfig(env: Env): { ok: true; config: ScannerConfig } | { ok
   const seedTop = intIn(env, 'HQ_SEED_TOP', 5000, 0, 20_000, errors);
   const seedMinUsd = intIn(env, 'HQ_SEED_MIN_USD', 100_000, 0, 1_000_000_000, errors);
   const coin = (env.HQ_COIN ?? 'BTC').trim();
-  if (!/^[A-Z0-9]{2,10}$/.test(coin)) errors.push('HQ_COIN: niepoprawny symbol rynku');
+  if (!MARKET_RE.test(coin)) errors.push('HQ_COIN: niepoprawny symbol rynku');
 
   const r2Keys = ['R2_ACCOUNT_ID', 'R2_BUCKET', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY'] as const;
   const present = r2Keys.filter((k) => (env[k] ?? '') !== '');
@@ -95,7 +101,7 @@ export function loadConfig(env: Env): { ok: true; config: ScannerConfig } | { ok
   }
 
   const markets = (env.HQ_HISTORY_MARKETS ?? '').split(',').map((m) => m.trim()).filter(Boolean);
-  if (markets.some((m) => !/^[A-Z0-9]{2,10}$/.test(m)) || new Set(markets).size !== markets.length) errors.push('HQ_HISTORY_MARKETS: lista symboli rynków po przecinku, bez powtórzeń');
+  if (markets.some((m) => !MARKET_RE.test(m)) || new Set(markets).size !== markets.length) errors.push('HQ_HISTORY_MARKETS: lista symboli rynków po przecinku, bez powtórzeń');
   const keepDays = intIn(env, 'HQ_HISTORY_DAYS', 7, 1, 30, errors);
   const history = markets.length > 0 ? { markets, keepDays } : null;
   const whaleTop = intIn(env, 'HQ_WHALE_TOP', 0, 0, 1000, errors);

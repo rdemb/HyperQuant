@@ -56,6 +56,14 @@ describe('loadConfig — wyłącznie zmienne środowiskowe', () => {
     expect(loadConfig({ ...base, HQ_HISTORY_MARKETS: 'BTC,btc' }).ok).toBe(false);
     expect(loadConfig({ ...base, HQ_HISTORY_MARKETS: 'BTC,BTC' }).ok).toBe(false);
     expect(loadConfig({ ...base, HQ_HISTORY_DAYS: '60' }).ok).toBe(false);
+    // Rynki HIP-3 z przedrostkiem giełdy (projekt 60, R1): `xyz:GOLD` przyjęty, zła wielkość liter, ścieżka i dwa dwukropki — nie
+    const hip3 = loadConfig({ ...base, HQ_HISTORY_MARKETS: 'BTC,xyz:GOLD,xyz:SP500' });
+    expect(hip3.ok && hip3.config.history).toEqual({ markets: ['BTC', 'xyz:GOLD', 'xyz:SP500'], keepDays: 7 });
+    for (const bad of ['xyz:gold', '../x', 'xyz:GO:LD', 'XYZ:GOLD', 'xyz:', ':GOLD', 'abcdefghi:GOLD', 'xyz:ABCDEFGHIJKLM'])
+      expect(loadConfig({ ...base, HQ_HISTORY_MARKETS: `BTC,${bad}` }).ok, bad).toBe(false);
+    expect(loadConfig({ ...base, HQ_COIN: 'xyz:GOLD' }).ok).toBe(true);
+    expect(loadConfig({ ...base, HQ_COIN: 'xyz:gold' }).ok).toBe(false);
+    expect(loadConfig({ ...base, HQ_COIN: '../x' }).ok).toBe(false);
     expect(loadConfig({ ...base, HQ_WEIGHT_PER_MIN: '600', HQ_WHALE_TOP: '10', HQ_WHALE_WEIGHT_PER_MIN: '300' }).ok).toBe(false);
   });
 });
