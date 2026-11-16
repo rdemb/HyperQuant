@@ -36,7 +36,7 @@ describe('źródła warstw (LIVE, MODEL, SIM)', () => {
 
   it('podpowiedź plakietki MODEL i SIM nazywa metodę każdego klucza', () => {
     const model = Object.entries(LAYER_SOURCE).filter(([, v]) => v !== 'LIVE');
-    expect(model.length).toBe(9);
+    expect(model.length).toBe(10);
     for (const [key, src] of model) expect(layerBadge(key, { coin: 'BTC', now: NOW }).hint, key).toMatch(new RegExp(`^${src} · [^:]+: `));
     expect(layerBadge('rvol', { coin: 'BTC', now: NOW }).hint).toMatch(/^MODEL · mediana 20 dni: /);
     expect(layerBadge('cone', { coin: 'BTC', now: NOW }).hint).toMatch(/^MODEL · HAR: /);
