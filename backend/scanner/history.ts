@@ -11,6 +11,7 @@ import {
   decodeTrades,
   encodeBook,
   encodeTrades,
+  historyDir,
   historyPath,
   type HistCtx,
   type HistFrame,
@@ -20,6 +21,7 @@ import {
   type HistoryIndex,
 } from '../../src/utils/tapeHistory.ts';
 import { DayProfileBuilder, PROFILE_DAY_MS, type DayProfile, dayProfilePath, decodeDayProfile, encodeDayProfile, profileTick } from '../../src/utils/dayProfile.ts';
+import { DESK_MARKETS } from '../../src/config/deskMarkets.ts';
 import type { HlCtx, HlTrade } from './hl.ts';
 import type { BookAgg } from './liquidity.ts';
 
@@ -82,9 +84,10 @@ function levelsOf(levels: unknown): [number[], number[]] | null {
 
 /**
  * Rynki z nagraniem arkusza także bez agregacji ceny (koszt zlecenia rynkowego na wykresie potrzebuje poziomów co tick;
- * bliska agregacja BTC to 10 USD). Pliki arkusza rosną o około połowę, więc tylko tam, gdzie wskaźnik jest używany.
+ * bliska agregacja BTC to 10 USD). Pliki arkusza rosną o około połowę, więc tylko rynki desku z `caps.exactBook`
+ * w konfiguracji (BTC, złoto, S&P 500; projekt 60 R4).
  */
-const EXACT_BOOK = new Set(['BTC']);
+const EXACT_BOOK = new Set(DESK_MARKETS.filter((m) => m.caps.exactBook).map((m) => m.coin));
 
 /** Krok migawki arkusza dokładnego: najmniejszy odstęp sąsiednich cen po jednej stronie, zaokrąglony do potęgi 10. */
 function gapStep(lv: [number[], number[]]): number {
@@ -355,7 +358,7 @@ export class MarketRecorder {
   consolidate(now: number): number {
     let written = 0;
     const lastClosed = hourOf(now - SETTLE_MS) - HIST_HOUR_MS;
-    const root = join(this.dir, this.coin);
+    const root = join(this.dir, historyDir(this.coin));
     if (!existsSync(root)) return 0;
     const hours = new Set<number>();
     for (const day of readdirSync(root)) {
@@ -389,7 +392,7 @@ export class MarketRecorder {
    * godzinowych); doba z niepołączonymi częściami czeka. Zwraca liczbę zapisanych plików.
    */
   profiles(now: number): number {
-    const root = join(this.dir, this.coin);
+    const root = join(this.dir, historyDir(this.coin));
     if (!existsSync(root)) return 0;
     const today = Math.floor(now / PROFILE_DAY_MS) * PROFILE_DAY_MS;
     for (const name of readdirSync(root).sort()) {
@@ -449,34 +452,47 @@ export function buildDayProfile(dir: string, coin: string, day: number): DayProf
   return b?.build() ?? null;
 }
 
-/** Usuwa dni starsze niż `keepDays` (pełne dni UTC przed dzisiejszym) i pliki tymczasowe po przerwanym zapisie. */
-export function pruneHistory(dir: string, coins: readonly string[], keepDays: number, now: number): number {
+const DAY_DIR = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Usuwa dni starsze niż `keepDays` (pełne dni UTC przed dzisiejszym) i pliki tymczasowe po przerwanym zapisie we
+ * **wszystkich** katalogach rynków w gałęzi, także rynków zdjętych z `HQ_HISTORY_MARKETS` (projekt 60, R5: historia ETH,
+ * SOL i HYPE znika sama po oknie, a nocne spłaszczenie usuwa ją z gałęzi). Katalog rynku bez dni po przycięciu jest
+ * usuwany. Pomijane: katalogi z kropką (`.git`) i pliki w katalogu głównym (`index.json`, `README.md`).
+ */
+export function pruneHistory(dir: string, keepDays: number, now: number): number {
   const cut = new Date(Math.floor(now / 86_400_000) * 86_400_000 - keepDays * 86_400_000).toISOString().slice(0, 10);
   let removed = 0;
-  for (const coin of coins) {
-    const root = join(dir, coin);
-    if (!existsSync(root)) continue;
-    for (const day of readdirSync(root)) {
-      if (/^\d{4}-\d{2}-\d{2}$/.test(day) && day < cut) {
-        rmSync(join(root, day), { recursive: true, force: true });
+  for (const market of existsSync(dir) ? readdirSync(dir, { withFileTypes: true }) : []) {
+    if (!market.isDirectory() || market.name.startsWith('.')) continue;
+    const root = join(dir, market.name);
+    for (const day of readdirSync(root, { withFileTypes: true })) {
+      if (!day.isDirectory()) continue;
+      if (DAY_DIR.test(day.name) && day.name < cut) {
+        rmSync(join(root, day.name), { recursive: true, force: true });
         removed++;
         continue;
       }
-      for (const f of readdirSync(join(root, day))) if (f.endsWith('.tmp')) rmSync(join(root, day, f), { force: true });
+      for (const f of readdirSync(join(root, day.name))) if (f.endsWith('.tmp')) rmSync(join(root, day.name, f), { force: true });
     }
+    if (readdirSync(root).length === 0) rmSync(root, { recursive: true, force: true });
   }
   return removed;
 }
 
-/** Spis gałęzi z plików na dysku: godziny i części każdego rynku (rosnąco). */
+/**
+ * Spis gałęzi z plików na dysku: godziny i części każdego rynku z listy (rosnąco); klucz to nazwa rynku, katalog w polu
+ * `dir`. Rynek bez katalogu (jeszcze nic nie zapisał albo przycięty do zera) nie ma wpisu.
+ */
 export function historyIndex(dir: string, coins: readonly string[], keepDays: number, now: number): HistoryIndex {
   const markets: HistoryIndex['markets'] = {};
   for (const coin of coins) {
     const hours: number[] = [];
     const parts: number[] = [];
     const days: number[] = [];
-    const root = join(dir, coin);
-    for (const day of existsSync(root) ? readdirSync(root).sort() : []) {
+    const root = join(dir, historyDir(coin));
+    if (!existsSync(root)) continue;
+    for (const day of readdirSync(root).sort()) {
       const d = Date.parse(`${day}T00:00:00Z`);
       if (Number.isFinite(d) && existsSync(join(dir, dayProfilePath(coin, d)))) days.push(d);
       for (const f of readdirSync(join(root, day)).sort()) {
@@ -487,7 +503,7 @@ export function historyIndex(dir: string, coins: readonly string[], keepDays: nu
         (m[2] === undefined ? hours : parts).push(t);
       }
     }
-    markets[coin] = { hours, parts, days };
+    markets[coin] = { dir: historyDir(coin), hours, parts, days };
   }
   return { v: HISTORY_VERSION, asOf: now, keepDays, partMs: HIST_PART_MS, markets };
 }

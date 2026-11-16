@@ -1,5 +1,7 @@
+import { historyDir } from './tapeHistory.ts';
+
 /**
- * Profil doby UTC z nagranej taśmy (bez importów zewnętrznych; uruchamiany także natywnie przez Node 24 w rejestratorze).
+ * Profil doby UTC z nagranej taśmy (bez pakietów zewnętrznych; uruchamiany także natywnie przez Node 24 w rejestratorze).
  *
  * Na każdym wierszu ceny (krok `tick`): agresywne kupno i sprzedaż oraz zmiana otwartych pozycji (OI) przypisana tej cenie.
  * OI jest minutowe, więc zmianę OI minuty dzielimy na wiersze w proporcji do wolumenu minuty na każdym z nich i zaliczamy
@@ -58,10 +60,10 @@ export interface DayProfileFile {
 
 const pad = (x: number) => String(x).padStart(2, '0');
 
-/** Ścieżka pliku w gałęzi historii: `BTC/2026-10-31/profile.json.gz`. */
+/** Ścieżka pliku w gałęzi historii: `BTC/2026-10-31/profile.json.gz` (katalog rynku z `historyDir`: `xyz-GOLD/…`). */
 export function dayProfilePath(coin: string, day: number): string {
   const d = new Date(day);
-  return `${coin}/${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}/profile.json.gz`;
+  return `${historyDir(coin)}/${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}/profile.json.gz`;
 }
 
 /**

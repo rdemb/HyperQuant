@@ -131,6 +131,23 @@ describe('ServerHistory — historia z serwera do magazynu wykresu', () => {
     expect(new Set(s2.orders.range(H0, H0 + 2 * HIST_HOUR_MS).map((o) => o.taker))).toEqual(new Set([`~${H0}:1`, `~${H0 + HIST_HOUR_MS}:1`]));
   });
 
+  it('rynek HIP-3 (xyz:GOLD): pliki z katalogu `xyz-GOLD` gałęzi, bez dwukropka w adresie (projekt 60, R2)', async () => {
+    const coin = 'xyz:GOLD';
+    const gold = new ProStore(new HlStream({ wsFactory: () => ({}) as WebSocket }), coin);
+    const end = H0 + HIST_HOUR_MS;
+    const m = new Map<string, unknown>([
+      ['xyz-GOLD/2026-10-24/10.trades.json.gz', encodeTrades(coin, H0, end, [[H0, end]], [{ t: H0 + 1000, px: 3840, sz: 1, side: 'B', tid: 1, o: 0, k: 0, m: 1 }], [], true, 'day')],
+      ['xyz-GOLD/2026-10-24/10.book.json.gz', encodeBook(coin, H0, end, [[H0, end]], [])],
+    ]);
+    const f = fakeFetch(m, { v: 1, asOf: NOW - 30_000, keepDays: 7, partMs: HIST_PART_MS, markets: { [coin]: { dir: 'xyz-GOLD', hours: [H0], parts: [] } } });
+    h = new ServerHistory(gold, BASE, f.fetcher);
+    await h.ensure(H0);
+    expect(f.calls).toContain('xyz-GOLD/2026-10-24/10.trades.json.gz');
+    expect(f.calls.filter((c) => c.includes(':'))).toEqual([]);
+    expect(gold.coverage.covers(H0, end)).toBe(true);
+    expect(gold.tape.count).toBe(1);
+  });
+
   it('świeży spis bez pliku — serwer nie nagrywał, plik nie jest pobierany', async () => {
     const f = fakeFetch(new Map(), index(NOW - 10_000, [], []));
     h = new ServerHistory(store, BASE, f.fetcher);

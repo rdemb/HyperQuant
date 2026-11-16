@@ -1,6 +1,8 @@
+import { deskMarketOf } from '../config/deskMarkets.ts';
+
 /**
  * Historia taśmy i arkusza rynków Hyperliquid nagrywana przez serwer — format plików współdzielony przez rejestrator
- * i stronę (bez importów zewnętrznych; uruchamiany także natywnie przez Node 24).
+ * i stronę (bez pakietów zewnętrznych, jedyny import to konfiguracja rynków desku; uruchamiany także natywnie przez Node 24).
  *
  * Publiczne API nie daje historii transakcji ani arkusza, więc rejestrator nagrywa je na serwerze i publikuje w gałęzi
  * `history` repo danych: części 5-minutowe bieżącej godziny, łączone po jej zamknięciu w plik godzinowy (JSON w gzip).
@@ -96,17 +98,19 @@ export interface BookFile {
 
 /**
  * Spis gałęzi: godziny z plikiem godzinowym i części godzin jeszcze niepołączonych, dla każdego rynku; `days` — doby
- * z plikiem profilu (src/utils/dayProfile.ts; brak pola w spisach sprzed profili).
+ * z plikiem profilu (src/utils/dayProfile.ts; brak pola w spisach sprzed profili). Klucz to nazwa rynku (`xyz:GOLD`),
+ * `dir` — jego katalog w gałęzi (`historyDir`; brak pola w spisach sprzed projektu 60).
  */
 export interface HistoryIndex {
   v: number;
   asOf: number;
   keepDays: number;
   partMs: number;
-  markets: Record<string, { hours: number[]; parts: number[]; days?: number[] }>;
+  markets: Record<string, { dir?: string; hours: number[]; parts: number[]; days?: number[] }>;
 }
 
-export type HistKind = 'trades' | 'book';
+/** Rodzaj pliku: taśma, arkusz i (od projektu 60, Q5) próbki kontekstu rynku co 5 s. */
+export type HistKind = 'trades' | 'book' | 'ctx';
 
 /**
  * Adres gałęzi `history` z adresu danych (gałąź `main`): …/hyperquant-data/main → …/hyperquant-data/history. Adres bez
@@ -116,11 +120,23 @@ export const historyBaseOf = (dataBase: string): string => dataBase.replace(/\/m
 
 const pad = (x: number) => String(x).padStart(2, '0');
 
-/** Ścieżka pliku w gałęzi: `BTC/2026-10-24/13.trades.json.gz` (godzina) albo `BTC/2026-10-24/13-05.trades.json.gz` (część). */
+/**
+ * Katalog rynku w gałęzi `history` (projekt 60, R2): z konfiguracji desku (`historyDir`), poza nią nazwa rynku z myślnikiem
+ * zamiast dwukropka (`xyz:NVDA` → `xyz-NVDA`, jak nazwa bazy taśmy w IndexedDB, `tapeDb.ts`). Checkout gałęzi na Windows
+ * nie zna `:` w nazwach plików. Rynki giełdy głównej bez zmian (`BTC`). Zapis i odczyt idą tylko przez tę funkcję.
+ */
+export function historyDir(coin: string): string {
+  return deskMarketOf(coin)?.historyDir ?? coin.replace(':', '-');
+}
+
+/**
+ * Ścieżka pliku w gałęzi: `BTC/2026-10-24/13.trades.json.gz` (godzina) albo `BTC/2026-10-24/13-05.trades.json.gz` (część);
+ * katalog rynku z `historyDir` (`xyz-GOLD/…` dla `xyz:GOLD`).
+ */
 export function historyPath(coin: string, start: number, kind: HistKind, part: boolean): string {
   const d = new Date(start);
   const day = `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
-  return `${coin}/${day}/${pad(d.getUTCHours())}${part ? `-${pad(d.getUTCMinutes())}` : ''}.${kind}.json.gz`;
+  return `${historyDir(coin)}/${day}/${pad(d.getUTCHours())}${part ? `-${pad(d.getUTCMinutes())}` : ''}.${kind}.json.gz`;
 }
 
 const fin = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x);

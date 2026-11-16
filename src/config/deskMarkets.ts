@@ -31,6 +31,11 @@ export interface DeskMarket {
   };
   /** Katalog historii taśmy w repo danych (bez dwukropka: checkout na Windows). */
   historyDir: string;
+  /**
+   * Zdolności rynku po stronie serwera: `exactBook` — rejestrator nagrywa też arkusz bez agregacji ceny (koszt zlecenia
+   * rynkowego na wykresie; pliki arkusza rosną o około połowę, projekt 60 R4).
+   */
+  caps: { exactBook: boolean };
   /** Progi wstępne jakości na żywo (projekt 60, Q3), w punktach bazowych i sekundach. */
   quality: { markOracleOkBp: number; markOracleBadBp: number; spreadOkBp: number; spreadBadBp: number; oracleStaleSec: number };
   enabled: boolean;
@@ -52,6 +57,7 @@ export const DESK_MARKETS: readonly DeskMarket[] = [
     scanner: 'full',
     underlying: { ref: { pl: 'kontrakt wieczysty BTC na Hyperliquid', en: 'the BTC perpetual on Hyperliquid' }, calendar: 'crypto' },
     historyDir: 'BTC',
+    caps: { exactBook: true },
     quality: { markOracleOkBp: 10, markOracleBadBp: 30, spreadOkBp: 2, spreadBadBp: 6, oracleStaleSec: 60 },
     enabled: true,
   },
@@ -68,6 +74,7 @@ export const DESK_MARKETS: readonly DeskMarket[] = [
     scanner: 'none',
     underlying: { ref: { pl: 'złoto spot XAU/USD', en: 'spot gold XAU/USD' }, calendar: 'cme' },
     historyDir: 'xyz-GOLD',
+    caps: { exactBook: true },
     quality: HIP3_QUALITY,
     enabled: true,
   },
@@ -88,6 +95,7 @@ export const DESK_MARKETS: readonly DeskMarket[] = [
       rth: { open: '09:30', close: '16:00', tz: 'America/New_York' },
     },
     historyDir: 'xyz-SP500',
+    caps: { exactBook: true },
     quality: HIP3_QUALITY,
     enabled: true,
   },
@@ -105,6 +113,7 @@ export const DESK_MARKETS: readonly DeskMarket[] = [
     scanner: 'none',
     underlying: { ref: { pl: 'futures Brent z rolowaniem', en: 'Brent futures with rolling' }, calendar: 'ice' },
     historyDir: 'xyz-BRENTOIL',
+    caps: { exactBook: false },
     quality: HIP3_QUALITY,
     enabled: false,
   },

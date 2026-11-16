@@ -298,7 +298,8 @@ async function historyTick(): Promise<void> {
     for (const { rec } of recorders) written += rec.profiles(now);
     const day = Math.floor(now / DAY_MS);
     const daily = day !== historyDay && now - day * DAY_MS >= 15 * 60_000;
-    if (daily) pruneHistory(historyDir, cfg.history.markets, cfg.history.keepDays, now);
+    // Wszystkie katalogi gałęzi, także rynków zdjętych z listy (projekt 60, R5)
+    if (daily) pruneHistory(historyDir, cfg.history.keepDays, now);
     if (written > 0 || daily) {
       writeJsonAtomic(join(historyDir, 'index.json'), historyIndex(historyDir, cfg.history.markets, cfg.history.keepDays, now));
       writeFileSync(join(historyDir, 'README.md'), HISTORY_README);
