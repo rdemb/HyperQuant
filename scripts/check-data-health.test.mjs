@@ -1,6 +1,6 @@
 // Testy nadzoru publicznych danych skanera (świeżość, pokrycie, strażnik prywatności).
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { FILES, LIMITS, MARKETS_MAX_AGE_MIN, OPTIONAL, VERIFY_FILE, assessHealth, fetchInput, findLeaks, ntlLag, renderReport } from './check-data-health.mjs';
+import { FILES, HISTORY_INDEX_FILE, LIMITS, MARKETS_MAX_AGE_MIN, OPTIONAL, VERIFY_FILE, assessHealth, fetchInput, findLeaks, ntlLag, renderReport } from './check-data-health.mjs';
 import { VERIFY_LATEST_URL } from '../src/utils/verifyFreshness.ts';
 
 const NOW = Date.UTC(2026, 9, 22, 12, 0, 0);
@@ -274,6 +274,61 @@ describe('warstwa wielorybów (plik opcjonalny)', () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+describe('rynki desku: historia i kontekst rejestratora (projekt 60, Q8)', () => {
+  const H = 60 * MIN;
+  const idx = (markets) => ({ v: 1, asOf: NOW - 2 * MIN, keepDays: 7, partMs: 5 * MIN, markets });
+  const desk = (over = {}) => ({ coin: 'xyz:GOLD', quality: 'good', reasons: [], underlying: { state: 'open', next: NOW + H }, lastTradeAt: NOW - 4 * MIN, lastBookAt: NOW - 3 * MIN - 5000, lastCtxAt: NOW - 3 * MIN - 2000, markOracleBpP95_1h: 2, impactSpreadBpP50_1h: 0.3, depthUsdP50_1h: 1e7, gaps24h: 1, ...over });
+  const withDesk = (deskMarkets, historyIndex) => {
+    const s = status({ deskMarkets });
+    return input({ status: s, historyIndex, raw: { 'status.json': JSON.stringify(s) } });
+  };
+
+  it('stara historia złota (ostatni plik godzinny 3 h po końcu godziny) → zgłoszenie; BTC świeże bez problemu', () => {
+    const r = assessHealth(withDesk({}, idx({ BTC: { hours: [NOW - 2 * H], parts: [NOW - H] }, 'xyz:GOLD': { dir: 'xyz-GOLD', hours: [NOW - 4 * H], parts: [] } })), NOW);
+    expect(r.ok).toBe(false);
+    expect(r.problems).toEqual(['historia GOLD: ostatni plik godzinny 180 min po końcu godziny (próg 90 min, zgłoszenie po 30 min ponad progiem)']);
+    expect(r.facts).toContainEqual({ label: 'Historia BTC: ostatni plik godzinny', value: '60 min po końcu godziny' });
+  });
+
+  it('czerwony stan krótszy niż 30 min (historia 100 min) — tylko fakt; nowy rynek z samymi częściami i rynek spoza desku — bez alarmu', () => {
+    const r = assessHealth(withDesk({}, idx({ 'xyz:GOLD': { hours: [NOW - 160 * MIN], parts: [] }, 'xyz:SP500': { hours: [], parts: [NOW - 10 * MIN] }, ETH: { hours: [NOW - 48 * H], parts: [] } })), NOW);
+    expect(r.ok).toBe(true);
+    expect(r.facts).toContainEqual({ label: 'Historia GOLD: ostatni plik godzinny', value: '100 min po końcu godziny' });
+  });
+
+  it('kontekst rynku przy notującym rynku bazowym: cisza ponad 2 min przez ponad 30 min → zgłoszenie; poza sesją — bez alarmu', () => {
+    const asOf = NOW - 3 * MIN;
+    const stale = desk({ lastCtxAt: asOf - 40 * MIN });
+    expect(assessHealth(withDesk({ gold: stale }, null), NOW).problems).toEqual([
+      'kontekst rynku GOLD: ostatni odczyt 40 min przed statusem przy notującym rynku bazowym (próg 2 min, zgłoszenie po 30 min ponad progiem)',
+    ]);
+    expect(assessHealth(withDesk({ gold: desk({ lastCtxAt: asOf - 20 * MIN }) }, null), NOW).ok).toBe(true);
+    expect(assessHealth(withDesk({ gold: { ...stale, underlying: { state: 'closed', next: NOW + H } } }, null), NOW).ok).toBe(true);
+    // BTC całodobowo
+    expect(assessHealth(withDesk({ btc: desk({ coin: 'BTC', underlying: { state: 'always', next: null }, lastCtxAt: asOf - 40 * MIN }) }, null), NOW).problems.join(' ')).toMatch(/kontekst rynku BTC/);
+    // Fakt z jakością i lukami
+    expect(assessHealth(withDesk({ gold: desk() }, null), NOW).facts).toContainEqual({ label: 'Rynek GOLD', value: 'jakość danych: dobre, kontekst 2 s przed statusem, luki z 24 h: 1' });
+  });
+
+  it('spis historii pobierany z gałęzi `history`; brak spisu (rejestrator wyłączony) nie jest alarmem', async () => {
+    expect(OPTIONAL.has(HISTORY_INDEX_FILE)).toBe(true);
+    const urls = [];
+    vi.stubGlobal('fetch', async (url) => {
+      urls.push(String(url));
+      return String(url).endsWith('/history/index.json') ? new Response(JSON.stringify(idx({}))) : new Response('{}');
+    });
+    try {
+      const inp = await fetchInput('https://example.test/main');
+      expect(urls).toContain('https://example.test/history/index.json');
+      expect(inp.historyIndex).toEqual(idx({}));
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    const r = assessHealth(input({ errors: { [HISTORY_INDEX_FILE]: 'HTTP 404' } }), NOW);
+    expect(r.ok).toBe(true);
   });
 });
 

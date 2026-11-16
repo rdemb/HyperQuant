@@ -29,6 +29,9 @@ describe('strażnik: decyzja o restarcie skanera', () => {
       'status.json: nie udało się pobrać (HTTP 503)',
       'pokrycie open interest 3% < 5% — skanowanie pozycji nie nadąża',
       'laboratorium folkloru: ostatnia aktualizacja 200 min temu (próg 180 min)',
+      // Rynki desku (projekt 60, Q8): tylko zgłoszenie, bez restartu
+      'historia GOLD: ostatni plik godzinny 180 min po końcu godziny (próg 90 min, zgłoszenie po 30 min ponad progiem)',
+      'kontekst rynku S&P 500: ostatni odczyt 40 min przed statusem przy notującym rynku bazowym (próg 2 min, zgłoszenie po 30 min ponad progiem)',
     ]) {
       expect(decide({ ...base, health: { ok: false, problems: [p], facts: [] } })).toMatchObject({ restart: false, reason: null });
     }
