@@ -51,6 +51,7 @@ export type IndicatorId =
   | 'oiflow'
   | 'absorption'
   | 'ofi'
+  | 'kyle'
   | 'regime'
   | 'ordersize'
   | 'cone'
@@ -381,6 +382,51 @@ export const OFI_MAX_GAP = 12_000;
 export function ofiMinR2(n: number): number {
   const t = t975(n - 2);
   return (t * t) / (t * t + n - 2);
+}
+
+export type KyleFit = { lambda: number; r2: number; floor: number; n: number; shown: number; buy: number | null; sell: number | null };
+
+/** OLS y = a + b·x na parach (bez NaN); null przy < `min` parach albo bez zmienności x lub y. */
+function olsPairs(xs: Float64Array, ys: Float64Array, n: number, keep: (x: number) => boolean, min: number) {
+  let m = 0;
+  let sx = 0;
+  let sy = 0;
+  let sxx = 0;
+  let sxy = 0;
+  let syy = 0;
+  for (let i = 0; i < n; i++) {
+    const x = xs[i];
+    const y = ys[i];
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !keep(x)) continue;
+    m++;
+    sx += x;
+    sy += y;
+    sxx += x * x;
+    sxy += x * y;
+    syy += y * y;
+  }
+  if (m < min) return null;
+  const cxx = sxx - (sx * sx) / m;
+  const cxy = sxy - (sx * sy) / m;
+  const cyy = syy - (sy * sy) / m;
+  if (!(cxx > 0) || !(cyy > 0)) return null;
+  return { beta: cxy / cxx, r2: (cxy * cxy) / (cxx * cyy), m };
+}
+
+/**
+ * λ Kyle’a (Pionier, nowy LVL §3.1): nachylenie regresji zwrotu świecy (pb) na podpisany przepływ agresora (mln USD)
+ * w ostatnich świecach z pełną taśmą. Pokazywane dopiero powyżej progu szumu R² dla liczby świec (t² / (t² + n − 2),
+ * test nachylenia 5%, jak w OFI); osobno λ kupna i λ sprzedaży (świece z przewagą jednej strony, od 15 świec).
+ */
+export function kyleFit(xs: Float64Array, ys: Float64Array, n: number): KyleFit | null {
+  const all = olsPairs(xs, ys, n, () => true, 20);
+  if (!all) return null;
+  const floor = ofiMinR2(all.m);
+  const side = (keep: (x: number) => boolean) => {
+    const f = olsPairs(xs, ys, n, keep, 15);
+    return f && f.r2 >= ofiMinR2(f.m) ? f.beta : null;
+  };
+  return { lambda: all.beta, r2: all.r2, floor, n: all.m, shown: all.r2 >= floor ? all.beta : Number.NaN, buy: side((x) => x > 0), sell: side((x) => x < 0) };
 }
 
 /** Najlepsze kwotowania migawki (kubełki najbliższej agregacji); null bez obu stron. */
@@ -1478,6 +1524,60 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
     },
   },
   {
+    id: 'kyle',
+    short: 'λ',
+    name: tr('λ Kyle’a: ile cenę rusza milion agresji', 'Kyle’s λ: how far a million of aggression moves price'),
+    hint: tr(
+      'Linia to λ: o ile punktów bazowych ruszała się cena na każdy 1 mln USD przepływu agresora (kupno minus sprzedaż) w ostatnich świecach z pełną taśmą. Wysokie λ — rynek jest „cienki”, ta sama delta przesuwa cenę dalej; niskie — rynek przyjmuje agresję. W legendzie R² z progiem szumu, λ osobno dla kupna i sprzedaży (asymetria wpływu) i ruch oczekiwany przy przepływie bieżącej świecy',
+      'The line is λ: how many basis points price moved per 1 M USD of aggressor flow (buying minus selling) over the recent candles with full tape. High λ: a “thin” market, the same delta moves price further; low: the market absorbs aggression. The legend shows R² with its noise floor, λ for buying and selling separately (impact asymmetry) and the move expected for the current candle’s flow'
+    ),
+    group: 'hyperquant',
+    aliases: 'kyle lambda lambda wplyw impact price impact sztywnosc plynnosc illiquidity amihud przeplyw agresor flow',
+    warmup: () => 0,
+    convention: tr(
+      'Tego wskaźnika nie ma w TradingView: liczony z nagranej taśmy Hyperliquid (Kyle 1985; w praktyce regresja zwrotu na podpisany przepływ, jak u Hasbroucka). Dla każdej świecy w całości objętej taśmą: x — delta agresorów razy cena zamknięcia, w mln USD; y — zwrot świecy od otwarcia do zamknięcia, w pb. λ to nachylenie OLS y na x (z wyrazem wolnym) w poprzednich świecach z wartością w liczbie „Długość”, bez bieżącej świecy. Linia pojawia się dopiero, gdy R² przekracza próg szumu dla liczby świec (t² / (t² + n − 2), test nachylenia na poziomie 5%); poniżej „—”. λ kupna i sprzedaży to te same regresje na świecach z przewagą kupna albo sprzedaży (od 15 świec), każda ze swoim progiem. Na danych z losowym znakiem przepływu λ pokazuje się w nie więcej niż ok. 5% okien (test). To miara z cen transakcji, nie ze środka arkusza.',
+      'TradingView has no such indicator: it is computed from the recorded Hyperliquid tape (Kyle 1985; in practice a regression of returns on signed flow, as in Hasbrouck). For every candle fully covered by the tape: x is the aggressor delta times the close, in M USD; y is the candle return from open to close, in bp. λ is the OLS slope of y on x (with an intercept) over the previous candles with a value, “Length” of them, excluding the current candle. The line appears only when R² exceeds the noise floor for the number of candles (t² / (t² + n − 2), a 5% slope test); below it, “—”. Buying and selling λ are the same regressions on candles dominated by buying or selling (from 15 candles), each with its own floor. On data with a random flow sign, λ shows in no more than about 5% of windows (tested). It is measured on trade prices, not on the book mid.'
+    ),
+    memoryNote: tr(
+      'Wartość zależy od ostatnich świec w liczbie „Długość”, w całości objętych taśmą (świece z luką się pomija), bez bieżącej świecy. Brak wartości, dopóki nie ma 20 takich świec, i gdy wpływ nie odróżnia się od szumu.',
+      'The value depends on the last “Length” candles fully covered by the tape (candles with a gap are skipped), excluding the current one. No value until there are 20 such candles, or when the impact does not stand out from noise.'
+    ),
+    pane: 'own',
+    params: [{ key: 'length', label: tr('Długość', 'Length'), min: 20, max: 300, step: 1, def: 60 }],
+    lookback: (p) => p.length,
+    plots: [
+      { title: tr('λ pb/1 mln', 'λ bp/1 M') },
+      { hidden: true, title: 'R²', format: 'fixed2' },
+      { hidden: true, title: tr('próg szumu R²', 'R² noise floor'), format: 'fixed2' },
+      { hidden: true, title: tr('λ kupna', 'buy λ'), format: 'fixed2' },
+      { hidden: true, title: tr('λ sprzedaży', 'sell λ'), format: 'fixed2' },
+      { hidden: true, title: tr('oczek. pb', 'exp. bp'), format: 'fixed1' },
+    ],
+    levels: [0],
+    format: 'fixed2',
+    usualBand: {},
+    sample: {
+      span: (p) => p.length,
+      point: (b, xy) => {
+        // Tylko świeca w całości objęta nagraniem: część taśmy dałaby część przepływu
+        const fp = b.complete ? b.fp : null;
+        if (!fp || !(b.candle.o > 0)) return false;
+        xy[0] = (fp.delta * b.candle.c) / 1e6;
+        xy[1] = ((b.candle.c - b.candle.o) / b.candle.o) * 1e4;
+        return true;
+      },
+      create: () => (x, _y, xs, ys, out) => {
+        const f = kyleFit(xs, ys, xs.length);
+        out[0] = f ? f.shown : Number.NaN;
+        out[1] = f ? f.r2 : Number.NaN;
+        out[2] = f ? f.floor : Number.NaN;
+        out[3] = f?.buy ?? Number.NaN;
+        out[4] = f?.sell ?? Number.NaN;
+        out[5] = f && Number.isFinite(f.shown) ? f.shown * x : Number.NaN;
+      },
+    },
+  },
+  {
     id: 'regime',
     short: tr('Reżim', 'Regime'),
     name: tr('Reżim zmienności (BOCPD)', 'Volatility regime (BOCPD)'),
@@ -2087,7 +2187,7 @@ export const REMOVED_INDICATORS: readonly string[] = ['obv', 'cmf', 'mfi', 'netv
  * Kolejność grup i wskaźników to kolejność menu.
  */
 export const MENU_GROUPS = [
-  { id: 'presja', label: tr('Kto naciska i czy cena ustępuje', 'Who is pushing and does price give way'), ids: ['absorption', 'ofi', 'oiflow'] },
+  { id: 'presja', label: tr('Kto naciska i czy cena ustępuje', 'Who is pushing and does price give way'), ids: ['absorption', 'ofi', 'kyle', 'oiflow'] },
   { id: 'sklad', label: tr('Kto stoi za ruchem', 'Who is behind the move'), ids: ['breadth', 'repeat', 'makers', 'ordersize', 'twap', 'hawkes'] },
   { id: 'ruch', label: tr('Kiedy ruch i ile kosztuje wejście', 'When the market moves and what entry costs'), ids: ['rvol', 'regime', 'slippage', 'cone'] },
   { id: 'poziomy', label: tr('Poziomy i rynki prognoz', 'Levels and prediction markets'), ids: ['pbrange', 'effort', 'outcomes'] },
