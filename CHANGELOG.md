@@ -4,6 +4,17 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Najbliższe poziomy: lista poziomów wokół ceny w W sesji i Przed sesją (2026-11-16)
+<!-- co-nowego: grupa=wykres | pl=Nowy panel Najbliższe poziomy: co jest najbliżej ceny, jak daleko w procentach i w ATR 5m oraz ile likwidacji leży po drodze | en=New Nearest levels panel: what lies closest to the price, how far in percent and in 5m ATR, and how much liquidation sits on the way -->
+
+#### Dodane
+- **Panel „Najbliższe poziomy”** (rekomendacje Pioniera, pkt 3) pod wykresem W sesji i na górze kontekstu Przed sesją, dla rynku wykresu: do 6 poziomów nad ceną i 6 pod nią, posortowanych od najbliższego, w drabince wokół ceny. Przy każdym odległość w % i w ATR(14) świec 5m oraz paliwo: USD likwidacji z mapy skanera między ceną a poziomem (longi i shorty razem, te same granice co paliwo ±1% Czwórki).
+- Poziomy liczone tymi samymi funkcjami co linie na wykresie (test równości odległości z panelu i z linii): PDH i PDL (`dayLevels`), VWAP doby i pasma ±1σ, ±2σ (ostatni punkt linii VWAP), IB bieżącej sesji (`initialBalances`), największy klaster likwidacji po każdej stronie (`liqLevels`), granice stożka 90% na 1 h (ta sama prognoza dziennika co stożek). POC, VAH i VAL wczorajszej doby UTC jak w nagłówku Mapy dnia. Dodatkowo szczyt i dołek sesji azjatyckiej (świece 1m, na wykresie tej linii nie ma) i mediana cen wejścia Uwięzionych, osobno longów i shortów (mapa wejść skanera).
+- Plakietki: LIVE przy poziomach z ceny, świec i VWAP; MODEL przy klastrach, Uwięzionych i stożku, z pokryciem open interest i chwilą stanu mapy w legendzie. Poziom bez danych trafia na listę „Bez liczby” z powodem (np. rynek HIP-3 bez skanera: klastry, Uwięzieni, stożek i paliwo „—”); mapa starsza niż 10 min daje „—” z jej wiekiem. Opis, bez kierunku i bez porad.
+
+#### Zmienione
+- Wybór prognozy stożka i kwantyl stożka (`coneForecastOf`, `coneQuantile`) oraz profile dób UTC ze świec 1h (`utcDayProfiles`) przeniesione do `src/utils` (bez modułów wykresu), żeby panel i wykres liczyły z jednej funkcji; zachowanie wykresu i nagłówka Mapy dnia bez zmian.
+
 ### Złoto i S&P 500: taśma w skali rynku, jasna informacja zamiast pustych kart BTC (2026-11-16)
 <!-- co-nowego: grupa=rynki | pl=Na złocie i S&P 500 taśma pokazuje zlecenia w skali rynku, a pod wykresem jest zdanie, co jest na żywo, zamiast pustych kart BTC | en=On gold and the S&P 500 the tape shows orders on the market's own scale, and below the chart one sentence says what is live instead of empty BTC cards -->
 

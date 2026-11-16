@@ -48,6 +48,7 @@ import { IndicatorEngine } from '../indicators/engine';
 import { HIST_DOWN, HIST_UP, IndicatorDef, IndicatorInstance, PlotDef, indicatorDef, axisTitle, indicatorLabel, legendColor, legendTitle, plotColor, plotShift, shortHistoryNote } from '../indicators/registry';
 import { CloudFill, CloudSource } from './cloudFill';
 import { ConeForecast, ConeLayer, ConeSource } from './coneLayer';
+import { coneForecastOf } from '../../../utils/cone';
 import { Hip4Layer, Hip4Source, outcomeLevels } from './hip4Layer';
 import { PbRangeLayer, PbStyle, PbZone } from './pbRangeLayer';
 import { EffortLayer, type EffortStyle } from './effortLayer';
@@ -199,8 +200,6 @@ const OI_LINES: readonly ('hl' | OiVenue)[] = ['hl', 'binance', 'bybit'];
 const HL_OI_MAX_AGE = 3 * 60_000;
 /** Węższy obszar wykresu (px) dostaje zwięzły opis paneli giełd. */
 const COMPACT_LEGEND_PX = 480;
-/** Stożek: prognoza z dziennika starsza niż to nie jest rysowana (jak przeterminowany dziennik prognoz Po sesji). */
-const CONE_MAX_AGE_MS = 3 * 3_600_000;
 /** Dziennik: szanse dotknięcia poziomów w 2 h od początku horyzontu (jak w dzienniku prognoz Po sesji). */
 const CONE_TOUCH_MIN = 120;
 /** Pokrycie przedziałów w legendzie stożka od tylu rozstrzygnięć (jak w dzienniku prognoz Po sesji). */
@@ -1118,13 +1117,8 @@ export class ProChartController {
    * z przyszłości względem czasu wykresu (powtórka).
    */
   private coneForecast(): ConeForecast | null {
-    const s = this.ledger;
-    if (!s || s.coin !== this.store.coin || s.latest.ret.length === 0) return null;
-    const t = Math.max(...s.latest.ret.map((r) => r.t));
-    const now = this.store.serverNow();
-    if (t > now || now - t > CONE_MAX_AGE_MS) return null;
-    const rets = s.latest.ret.filter((r) => r.t === t).sort((a, b) => a.h - b.h);
-    return { t, px0: rets[0].px0, horizons: rets.map((r) => ({ h: r.h, taus: r.taus, q: r.q })) };
+    // Ta sama prognoza co granice stożka w panelu „Najbliższe poziomy” (utils/cone)
+    return coneForecastOf(this.ledger, this.store.coin, this.store.serverNow());
   }
 
   /** Rysowana część prognozy: na telefonie tylko pierwszy horyzont (1 h), cały stożek nie mieści się w wąskim wykresie. */
