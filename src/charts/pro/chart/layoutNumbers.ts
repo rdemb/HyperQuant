@@ -7,7 +7,7 @@ import { scannerAge } from './layerSources';
 import { WAIT_TEXT } from '../../../utils/sessionText';
 import { fmtPx } from './layout';
 import type { StationId } from './stations';
-import { profile, profileStep, toVBars } from '../../../utils/auction';
+import { profileStep, toVBars, utcDayProfiles } from '../../../utils/auction';
 import { vaMigration } from '../../../utils/dayType';
 import { dayVwapOf, vwapNum, vwapSigma } from '../../../utils/dayVwap';
 import type { MapKind } from '../../../utils/mapSettlement';
@@ -496,24 +496,8 @@ export function failedNumbers(id: StationId, coin: string, now: number): LayoutN
 
 // ───────────────────────── wejścia ze świec i migawek ─────────────────────────
 
-/** Profile zamkniętych dób UTC ze świec 1h (doba tylko z kompletem 24 świec), rosnąco. */
-function dayProfiles(c1h: readonly Candle[], now: number, step: number): { day: number; end: number; poc: number; vah: number; val: number }[] {
-  const byDay = new Map<number, Candle[]>();
-  for (const c of c1h) {
-    const d = utcDayStart(c.t);
-    if (d + DAY > now) continue;
-    const a = byDay.get(d);
-    if (a) a.push(c);
-    else byDay.set(d, [c]);
-  }
-  const out: { day: number; end: number; poc: number; vah: number; val: number }[] = [];
-  for (const [day, list] of [...byDay].sort((a, b) => a[0] - b[0])) {
-    if (list.length < 24) continue;
-    const p = profile(toVBars(list), step);
-    if (p) out.push({ day, end: day + DAY, ...p });
-  }
-  return out;
-}
+/** Profile zamkniętych dób UTC ze świec 1h (doba tylko z kompletem 24 świec), rosnąco — `utils/auction`. */
+const dayProfiles = utcDayProfiles;
 
 /** Value area wczorajszej doby UTC ze świec 1h. */
 export function prevDayOf(c1h: readonly Candle[], now: number, step: number): Got<{ day: number; vah: number; val: number }> {

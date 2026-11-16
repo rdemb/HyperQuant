@@ -23,6 +23,21 @@ Zmiany serwera do tagu v2.8.0 (projekt 60, R1–R5, Q5–Q8, M7). Działają po 
 - **Przycinanie całej gałęzi historii** (R5): dni spoza okna znikają we wszystkich katalogach, także ETH, SOL i HYPE po zdjęciu z listy; pusty katalog rynku jest usuwany.
 - **Rynki serwera powiadomień z konfiguracji** (M7): BTC, złoto i S&P 500 zamiast BTC, ETH, SOL i HYPE. Alarm na ETH, SOL i HYPE dzwoni tylko przy otwartej stronie. Skrzynka alarmów wdraża się też po zmianie `src/config/deskMarkets.ts`.
 - `nyseSession.ts` i `underlyingCore.ts`: sesja NYSE i stan rynku bazowego bez importów, więc serwer czyta je natywnie; strona bez zmian.
+### Wysiłek a wynik v2: ruch świecy wobec ruchu oczekiwanego z λ Kyle’a (2026-11-16)
+<!-- co-nowego: grupa=wykres | pl=Nowy wskaźnik Wysiłek a wynik: o ile odchyleń ruch świecy różnił się od ruchu, jakiego oczekiwałoby bieżące λ Kyle’a przy jej agresji | en=New Effort vs result indicator: by how many deviations a candle’s move differed from the move the current Kyle’s λ would expect for its aggression -->
+
+#### Dodane
+- **Wysiłek a wynik** (grupa „Presja”, MODEL; Pionier, Fabio runda 2, F-C1; u Fabio „law of effort and results”): dla zamkniętej świecy w całości objętej taśmą ruch od otwarcia do zamknięcia (pb) minus ruch oczekiwany z prostej OLS na poprzednich świecach (y = a + λ·x, x — przepływ agresora w mln USD), w odchyleniach reszt prostej. Przy przewadze kupna prosta świec z przewagą kupna, przy sprzedaży — sprzedaży, gdy ich λ przekracza swój próg szumu; bez λ ponad progiem R² „—: brak mierzalnego wpływu”. Pasmo zwykłości p10–p90. Testy: ruch zgodny z λ ≈ 0, ruch mniejszy ujemny, większy dodatni; strona wybiera swoje λ; na danych bez wpływu wynik w ≤ 10% okien; na SIM ze znanym λ |wynik| > 2 w 2–9% świec.
+### Najbliższe poziomy: lista poziomów wokół ceny w W sesji i Przed sesją (2026-11-16)
+<!-- co-nowego: grupa=wykres | pl=Nowy panel Najbliższe poziomy: co jest najbliżej ceny, jak daleko w procentach i w ATR 5m oraz ile likwidacji leży po drodze | en=New Nearest levels panel: what lies closest to the price, how far in percent and in 5m ATR, and how much liquidation sits on the way -->
+
+#### Dodane
+- **Panel „Najbliższe poziomy”** (rekomendacje Pioniera, pkt 3) pod wykresem W sesji i na górze kontekstu Przed sesją, dla rynku wykresu: do 6 poziomów nad ceną i 6 pod nią, posortowanych od najbliższego, w drabince wokół ceny. Przy każdym odległość w % i w ATR(14) świec 5m oraz paliwo: USD likwidacji z mapy skanera między ceną a poziomem (longi i shorty razem, te same granice co paliwo ±1% Czwórki).
+- Poziomy liczone tymi samymi funkcjami co linie na wykresie (test równości odległości z panelu i z linii): PDH i PDL (`dayLevels`), VWAP doby i pasma ±1σ, ±2σ (ostatni punkt linii VWAP), IB bieżącej sesji (`initialBalances`), największy klaster likwidacji po każdej stronie (`liqLevels`), granice stożka 90% na 1 h (ta sama prognoza dziennika co stożek). POC, VAH i VAL wczorajszej doby UTC jak w nagłówku Mapy dnia. Dodatkowo szczyt i dołek sesji azjatyckiej (świece 1m, na wykresie tej linii nie ma) i mediana cen wejścia Uwięzionych, osobno longów i shortów (mapa wejść skanera).
+- Plakietki: LIVE przy poziomach z ceny, świec i VWAP; MODEL przy klastrach, Uwięzionych i stożku, z pokryciem open interest i chwilą stanu mapy w legendzie. Poziom bez danych trafia na listę „Bez liczby” z powodem (np. rynek HIP-3 bez skanera: klastry, Uwięzieni, stożek i paliwo „—”); mapa starsza niż 10 min daje „—” z jej wiekiem. Opis, bez kierunku i bez porad.
+
+#### Zmienione
+- Wybór prognozy stożka i kwantyl stożka (`coneForecastOf`, `coneQuantile`) oraz profile dób UTC ze świec 1h (`utcDayProfiles`) przeniesione do `src/utils` (bez modułów wykresu), żeby panel i wykres liczyły z jednej funkcji; zachowanie wykresu i nagłówka Mapy dnia bez zmian.
 
 ### Fabio: Effort tylko z taśmy, profil swingu z taśmy, IVB 30/60 min i czas dostępności stref (2026-11-16)
 <!-- co-nowego: grupa=wykres | pl=Strefy i pudełka Effort liczą deltę tylko z nagranej taśmy, a pod kursorem widać, od kiedy strefa była znana; nowy wskaźnik IVB z zakresem pierwszych 30 albo 60 minut od otwarcia Nowego Jorku | en=Effort zones and boxes take delta only from the recorded tape, and under the cursor you can see since when a zone was known; a new IVB indicator shows the range of the first 30 or 60 minutes after the New York open -->
