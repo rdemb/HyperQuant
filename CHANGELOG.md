@@ -16,6 +16,17 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 - **Ranking LVN według trwałości topologicznej** (`lvnNodes` zamiast `lvnBins`): do 3 minimów najgłębszych wobec niższego z dwóch otaczających maksimów, a nie 3 najniższych; kolejność w legendzie od najtrwalszego. Test: minimum najniższe (5), ale z garbem 8 obok, wypada z trójki na rzecz dolin o trwałości 80, 60 i 10.
 - Testy: wyraźny profil dwugarbny daje LVN w dolinie z pewnością ≥ 0,9; na zaszumionym profilu jednogarbnym LVN z szumu mają pewność < 0,7 w ≥ 80% ziaren. Na płaskim profilu z szumem 3 z 15 LVN z szumu przeszły próg: losowanie pojedynczych świec nie oddaje tego, że sąsiednie świece handlują przy podobnych cenach (zapisane w opisie wskaźnika).
 
+### Najbliższe poziomy: lista poziomów wokół ceny w W sesji i Przed sesją (2026-11-16)
+<!-- co-nowego: grupa=wykres | pl=Nowy panel Najbliższe poziomy: co jest najbliżej ceny, jak daleko w procentach i w ATR 5m oraz ile likwidacji leży po drodze | en=New Nearest levels panel: what lies closest to the price, how far in percent and in 5m ATR, and how much liquidation sits on the way -->
+
+#### Dodane
+- **Panel „Najbliższe poziomy”** (rekomendacje Pioniera, pkt 3) pod wykresem W sesji i na górze kontekstu Przed sesją, dla rynku wykresu: do 6 poziomów nad ceną i 6 pod nią, posortowanych od najbliższego, w drabince wokół ceny. Przy każdym odległość w % i w ATR(14) świec 5m oraz paliwo: USD likwidacji z mapy skanera między ceną a poziomem (longi i shorty razem, te same granice co paliwo ±1% Czwórki).
+- Poziomy liczone tymi samymi funkcjami co linie na wykresie (test równości odległości z panelu i z linii): PDH i PDL (`dayLevels`), VWAP doby i pasma ±1σ, ±2σ (ostatni punkt linii VWAP), IB bieżącej sesji (`initialBalances`), największy klaster likwidacji po każdej stronie (`liqLevels`), granice stożka 90% na 1 h (ta sama prognoza dziennika co stożek). POC, VAH i VAL wczorajszej doby UTC jak w nagłówku Mapy dnia. Dodatkowo szczyt i dołek sesji azjatyckiej (świece 1m, na wykresie tej linii nie ma) i mediana cen wejścia Uwięzionych, osobno longów i shortów (mapa wejść skanera).
+- Plakietki: LIVE przy poziomach z ceny, świec i VWAP; MODEL przy klastrach, Uwięzionych i stożku, z pokryciem open interest i chwilą stanu mapy w legendzie. Poziom bez danych trafia na listę „Bez liczby” z powodem (np. rynek HIP-3 bez skanera: klastry, Uwięzieni, stożek i paliwo „—”); mapa starsza niż 10 min daje „—” z jej wiekiem. Opis, bez kierunku i bez porad.
+
+#### Zmienione
+- Wybór prognozy stożka i kwantyl stożka (`coneForecastOf`, `coneQuantile`) oraz profile dób UTC ze świec 1h (`utcDayProfiles`) przeniesione do `src/utils` (bez modułów wykresu), żeby panel i wykres liczyły z jednej funkcji; zachowanie wykresu i nagłówka Mapy dnia bez zmian.
+
 ### Fabio: Effort tylko z taśmy, profil swingu z taśmy, IVB 30/60 min i czas dostępności stref (2026-11-16)
 <!-- co-nowego: grupa=wykres | pl=Strefy i pudełka Effort liczą deltę tylko z nagranej taśmy, a pod kursorem widać, od kiedy strefa była znana; nowy wskaźnik IVB z zakresem pierwszych 30 albo 60 minut od otwarcia Nowego Jorku | en=Effort zones and boxes take delta only from the recorded tape, and under the cursor you can see since when a zone was known; a new IVB indicator shows the range of the first 30 or 60 minutes after the New York open -->
 
