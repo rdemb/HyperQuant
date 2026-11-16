@@ -93,7 +93,7 @@ export const en: LessonsContent = {
       checkpoints: [
         {
           context:
-            "It is 13:30. Since midnight UTC price has been rotating between 81,300 and 81,800 USD. VWAP has barely moved (81,627), and the day's value area, the range holding 70% of the volume, fits within 400 dollars (81,360–81,760).",
+            "It is 13:30. Since 08:00 UTC price has been rotating between 81,300 and 81,770 USD. VWAP has barely moved (81,627), and the day's value area, the range holding 70% of the volume, fits within 400 dollars (81,360–81,760).",
           questions: [
             {
               prompt: 'How would you describe this morning?',
@@ -119,7 +119,7 @@ export const en: LessonsContent = {
               pick: {
                 hint: 'Mark the price on the chart: below it, the continuation thesis no longer makes sense.',
                 good: "Good. Below the low of the drop (82,200) and below VWAP the thesis loses its meaning: if buyers are defending the day's average price, price should not stay below it. The invalidation is close, so a mistake costs little, and the position size can be calculated from that distance.",
-                ok: 'Defensible, but wide. A return into the morning range (below 81,800) really does mean the breakout failed, but the risk is two to three times larger. For the same dollar risk the position has to be correspondingly smaller.',
+                ok: 'Defensible, but wide. A return into the morning range (below 81,770) really does mean the breakout failed, but the risk is two to three times larger. For the same dollar risk the position has to be correspondingly smaller.',
                 tight: 'Too tight. That is the middle of normal swings after a breakout, and the low of the drop (82,200) is lower. Noise will hit such a level before the market says anything about the thesis.',
                 wide: "Too wide. Below the morning range nothing is left of this scenario's logic, and the risk grows several times over for no benefit.",
               },
