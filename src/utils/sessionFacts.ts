@@ -1,14 +1,16 @@
 /**
  * Fakty sesji Londynu albo NY ze świec 1m — jedno źródło dla nagłówka układu Rozliczenie i kart Rozliczenia sesji Po sesji:
- * zakres z minutami ekstremów, IB (pierwsza godzina) i pierwsze wyjście z niego, zamknięcie, value area 70% (`profile`)
- * tej i poprzedniej sesji tego samego typu. Oraz sesja w toku na żywo (`sessionNowOf`: nagłówek Kokpitu i Otwarcia
+ * zakres z minutami ekstremów, IB (pierwsza godzina) i pierwsze wyjście z niego, zamknięcie, value area 70% tej
+ * i poprzedniej sesji tego samego typu z jednego źródła wartości (`valueReference`, jak pasek Rama dnia: taśma albo świece
+ * 5m; bez źródła ze sklepu — świece 5m złożone ze świec 1m, jak serwer MCP). Oraz sesja w toku na żywo (`sessionNowOf`: nagłówek Kokpitu i Otwarcia
  * aukcji, serwer MCP), typ dnia z faktów (`dayTypeOf`) i oczekiwany zakres ze świec 1h z powodem braku (`expectedFrom`). Bez modułów
  * wykresu (i18n tutaj, nie w `sessionDay`).
  */
 import { tr } from '../i18n';
 import { fmtDayTime, fmtDm, fmtHm } from '../charts/pro/core/time';
 import type { Candle } from '../charts/pro/hl/parse';
-import { type VBar, extremeTouches, profile, profileStep, sessionVwap, toVBars } from './auction';
+import { type VBar, extremeTouches, sessionVwap, toVBars } from './auction';
+import { VALUE_MS, type ValueRef, type ValueSource, toFiveMinutes, valueReference } from '../charts/pro/core/valueReference';
 import { type DayType, classifyDay } from './dayType';
 import {
   type TradeSession,
@@ -44,12 +46,19 @@ export interface SessionFacts {
   ibDone: boolean;
   /** Pierwsza minuta po IB z ceną poza nim; null — bez wybicia. */
   breakAt: number | null;
-  /** Koszyk profilu (USD). */
-  step: number;
-  va: { vah: number; val: number } | null;
-  /** Poprzednia sesja tego samego typu i jej value area; null — świece 1m jej nie obejmują. */
+  /** Value area sesji dotąd z jednego źródła wartości; null — świece 5m nie obejmują 90% sesji. */
+  va: ValueRef | null;
+  /** Poprzednia sesja tego samego typu i jej value area; null — świece 5m nie obejmują 90% tamtej sesji. */
   prev: TradeSession;
-  prevVa: { vah: number; val: number } | null;
+  prevVa: ValueRef | null;
+}
+
+/**
+ * Źródło wartości ze świec 1m (rosnąco) bez taśmy: świece 5m złożone z minut (szczyt, dołek, suma wolumenu) — te same co
+ * świece 5m Hyperliquid, gdy minuty są kompletne. Serwer MCP i karta bez magazynu wykresu liczą tak samo.
+ */
+export function minuteValueSource(bars1m: readonly VBar[]): ValueSource {
+  return { bars: toFiveMinutes(bars1m.map((b) => ({ t: b.time, l: b.low, h: b.high, v: b.volume }))), ms: VALUE_MS };
 }
 
 /** Sesja do rozliczenia w nagłówku: w toku albo ostatnia zamknięta. */
@@ -66,8 +75,11 @@ function windowBars(bars: readonly VBar[], from: number, to: number, now: number
   return list.length > 0 && list.length >= COVERAGE * Math.ceil((end - from) / MIN) ? list : null;
 }
 
-/** Fakty sesji `s` w chwili `now` ze świec 1m (rosnąco, najlepiej od otwarcia poprzedniej sesji tego samego typu). */
-export function sessionFacts(bars1m: readonly VBar[], s: TradeSession, now: number): Got<SessionFacts> {
+/**
+ * Fakty sesji `s` w chwili `now` ze świec 1m (rosnąco, najlepiej od otwarcia poprzedniej sesji tego samego typu); value
+ * area z jednego źródła `value` (magazyn wykresu: świece 5m z taśmą), a bez niego ze świec 5m złożonych z tych minut.
+ */
+export function sessionFacts(bars1m: readonly VBar[], s: TradeSession, now: number, value?: ValueSource): Got<SessionFacts> {
   const bars = windowBars(bars1m, s.start, s.end, now);
   const ib = bars ? bars.filter((b) => b.time < s.ibEnd) : [];
   const name = TRADE_SESSION_NAME[s.id];
@@ -92,11 +104,10 @@ export function sessionFacts(bars1m: readonly VBar[], s: TradeSession, now: numb
   const ibLo = Math.min(...ib.map((b) => b.low));
   const brk = bars.find((b) => b.time >= s.ibEnd && (b.high > ibHi || b.low < ibLo));
   const close = bars[bars.length - 1].close;
-  const step = profileStep(close);
   const prev = previousSameSession(s);
-  const prevBars = windowBars(bars1m, prev.start, prev.end, now);
-  const va = profile(bars, step);
-  const pv = prevBars ? profile(prevBars, step) : null;
+  const src = value ?? minuteValueSource(bars1m);
+  const va = valueReference('session', s.start, src, now);
+  const pv = valueReference('session', prev.start, src, now);
   return {
     s,
     hi,
@@ -108,10 +119,9 @@ export function sessionFacts(bars1m: readonly VBar[], s: TradeSession, now: numb
     ibLo,
     ibDone: now >= s.ibEnd,
     breakAt: brk ? brk.time : null,
-    step,
-    va: va ? { vah: va.vah, val: va.val } : null,
+    va,
     prev,
-    prevVa: pv ? { vah: pv.vah, val: pv.val } : null,
+    prevVa: pv,
   };
 }
 
@@ -125,7 +135,10 @@ export function dayTypeOf(f: SessionFacts): Got<Exclude<DayType, 'unknown'>> {
   return t === 'unknown' ? { why: tr('zakres IB zerowy albo brak liczb', 'zero IB range or missing numbers') } : t;
 }
 
-/** Poprzednia sesja tego samego typu: profil wolumenu (POC i value area 70%, koszyki `PROFILE_STEP`), ekstrema i ich słabość. */
+/**
+ * Poprzednia sesja tego samego typu: profil wolumenu (POC i value area 70% z jednego źródła wartości, koszyki 5 pb, na
+ * świecach 5m złożonych z minut), ekstrema i ich słabość.
+ */
 export interface PrevSessionProfile {
   poc: number;
   vah: number;
@@ -148,17 +161,18 @@ export function prevSessionProfile(bars1m: readonly VBar[], s: TradeSession): Go
     const pn = `${TRADE_SESSION_NAME[p0.id]} ${fmtDm(p0.start)}`;
     return { why: tr(`Świece 1m nie obejmują poprzedniej sesji ${pn} (min. 95% minut)`, `The 1m candles do not cover the previous session ${pn} (min. 95% of minutes)`) };
   }
-  const p = profile(bars);
+  // Wartość z jednego źródła (świece 5m z tych minut); sesja zamknięta, więc chwila po jej końcu
+  const p = valueReference('session', p0.start, minuteValueSource(bars), p0.end);
   const t = extremeTouches(bars, POOR_WINDOW_MS);
   if (!p || !t) return { why: tr('Brak wolumenu w świecach poprzedniej sesji', 'No volume in the candles of the previous session') };
-  return { ...p, high: t.high, low: t.low, poorHigh: t.hiTouches >= 2, poorLow: t.loTouches >= 2 };
+  return { poc: p.poc, vah: p.vah, val: p.val, high: t.high, low: t.low, poorHigh: t.hiTouches >= 2, poorLow: t.loTouches >= 2 };
 }
 
 /** Powód braku migracji VA (ten sam w nagłówku i na karcie); null — obie value area są. */
 export function vaMissing(f: SessionFacts): string | null {
   const pn = `${TRADE_SESSION_NAME[f.prev.id]} ${fmtDm(f.prev.start)}`;
-  if (!f.prevVa) return tr(`Świece 1m nie obejmują poprzedniej sesji ${pn} (min. 95% minut)`, `The 1m candles do not cover the previous session ${pn} (min. 95% of minutes)`);
-  if (!f.va) return tr('Brak wolumenu w świecach sesji', 'No volume in the session candles');
+  if (!f.prevVa) return tr(`Świece 5m nie obejmują 90% poprzedniej sesji ${pn}`, `The 5m candles do not cover 90% of the previous session ${pn}`);
+  if (!f.va) return tr('Świece 5m nie obejmują 90% sesji dotąd albo brak w nich wolumenu', 'The 5m candles do not cover 90% of the session so far, or they have no volume');
   return null;
 }
 

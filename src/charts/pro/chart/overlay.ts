@@ -346,6 +346,8 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
   valueOf: ((kind: ValueKind, start: number) => ValueRef | null) | null = null;
   /** Wartość ostatniego zamkniętego okresu z ostatniej sceny (plakietka warstwy: z taśmy LIVE, ze świec MODEL). */
   periodValue: ValueRef | null = null;
+  /** Na ekranie są okresy z POC i value area z profilu świec wykresu (poza zasięgiem jednego źródła). */
+  periodFallback = false;
   /** Zakresy początkowe do rysowania (bieżąca i poprzednia sesja, `selectIbs`). */
   private ibDraws: IbDraw[] = [];
   /** Po każdej scenie: liczba obiektów zakresu początkowego na ekranie (pomiar układu czyta ją z wykresu). */
@@ -613,6 +615,7 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
     } else {
       this.periodCache.clear();
       this.periodValue = null;
+      this.periodFallback = false;
       this.onPeriods?.({ objects: 0, area: 0 });
     }
     if (t.showDevPoc && sc.periodProfile && step > 0) this.sceneDeveloping(s, bars, sc.periodProfile, step, visFrom, visTo, X, Y);
@@ -843,7 +846,8 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
   ): number {
     const ms = this.ms;
     const cache = new Map<number, PeriodCache>();
-    const items: { from: number; to: number; complete: boolean; pocPx: number; val: number; vah: number; p: VolumeProfile }[] = [];
+    // `own` — POC i value area z profilu świec wykresu (okres poza zasięgiem jednego źródła wartości)
+    const items: { from: number; to: number; complete: boolean; pocPx: number; val: number; vah: number; p: VolumeProfile; own: boolean }[] = [];
     let last: ValueRef | null = null;
     for (const r of periodRanges(bars, mode)) {
       const hit = this.periodCache.get(r.start);
@@ -859,8 +863,8 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
       if (v?.complete) last = v;
       items.push(
         v
-          ? { from: r.from, to: r.to, complete: r.complete, pocPx: v.poc, val: v.val, vah: v.vah, p }
-          : { from: r.from, to: r.to, complete: r.complete, pocPx: (p.lo + p.poc + 0.5) * p.step, val: (p.lo + p.vaLo) * p.step, vah: (p.lo + p.vaHi + 1) * p.step, p }
+          ? { from: r.from, to: r.to, complete: r.complete, pocPx: v.poc, val: v.val, vah: v.vah, p, own: false }
+          : { from: r.from, to: r.to, complete: r.complete, pocPx: (p.lo + p.poc + 0.5) * p.step, val: (p.lo + p.vaLo) * p.step, vah: (p.lo + p.vaHi + 1) * p.step, p, own: true }
       );
     }
     this.periodCache = cache;
@@ -873,16 +877,19 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
       bars[bars.length - 1].candle.c
     );
     let objects = 0;
+    let fallback = false;
     for (let k = items.length - 1; k >= 0; k--) {
-      const { from, to, pocPx, val, vah, p } = items[k];
+      const { from, to, pocPx, val, vah, p, own } = items[k];
       const x0 = edge(bars[from].t);
       const x1 = edge(bars[to].t + ms);
       const yPoc = Y(pocPx);
       if (nearest.has(k)) {
         objects++;
+        fallback ||= own;
         s.hlines.push({ x0: Math.max(0, x1), x1: W, y: yPoc, color: K.nPocLine, dash: DASH.none });
       }
       if (bars[to].t + ms <= visFrom || bars[from].t >= visTo) continue;
+      fallback ||= own;
       s.hlines.push({ x0, x1, y: yPoc, color: K.spPocLine, dash: DASH.none });
       objects += 2;
       if (k < full) {
@@ -903,6 +910,7 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
         s.rects.push({ x: x0, y: ya, w: Math.max(1, (v / p.max) * pw), h: Math.max(1, yb - ya - gap), color });
       }
     }
+    this.periodFallback = fallback;
     return objects;
   }
 

@@ -125,10 +125,12 @@ function levels(ctx: AuctionContext, price: number | null): Level[] {
     const h1 = ctx.today?.prev1h;
     out.push({ label: tr('High poprz. sesji', 'Prev. session high'), px: p.high, tone: 'prev', note: h1?.poorHigh ? tr('słaby szczyt', 'poor high') : undefined });
     out.push({ label: tr('Low poprz. sesji', 'Prev. session low'), px: p.low, tone: 'prev', note: h1?.poorLow ? tr('słabe dno', 'poor low') : undefined });
+    // VA (wolumen) z jednego źródła wartości na świecach 5m z minut, bez taśmy: reguła plakietki wartości — MODEL
+    const va = tr('MODEL · przybliżenie ze świec', 'MODEL · approximation from candles');
     out.push(
-      { label: tr('VAH poprz. sesji', 'Prev. session VAH'), px: p.vah, tone: 'prev' },
-      { label: tr('POC poprz. sesji', 'Prev. session POC'), px: p.poc, tone: 'prev' },
-      { label: tr('VAL poprz. sesji', 'Prev. session VAL'), px: p.val, tone: 'prev' }
+      { label: tr('VAH poprz. sesji', 'Prev. session VAH'), px: p.vah, tone: 'prev', note: va },
+      { label: tr('POC poprz. sesji', 'Prev. session POC'), px: p.poc, tone: 'prev', note: va },
+      { label: tr('VAL poprz. sesji', 'Prev. session VAL'), px: p.val, tone: 'prev', note: va }
     );
   }
   if (price !== null) out.push({ label: tr('Cena', 'Price'), px: price, tone: 'price' });

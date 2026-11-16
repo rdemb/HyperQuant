@@ -8,7 +8,8 @@ import { WAIT_TEXT } from '../../../utils/sessionText';
 import { fmtPx } from './layout';
 import type { StationId } from './stations';
 import { profileStep, toVBars } from '../../../utils/auction';
-import { CANDLE_METHOD, type ValueRef, type ValueSource, valueBadge, valueMethodText, valueNote, valueReference } from '../core/valueReference';
+import { CANDLE_METHOD, type ValueRef, valueBadge, valueMethodText, valueNote } from '../core/valueReference';
+import { NAKED_HOUR_DAYS, NAKED_VALUE_DAYS, type NakedPocs, pocBadge, pocMethod, pocSource } from '../core/nakedPoc';
 import { vaMigration } from '../../../utils/dayType';
 import { dayVwapOf, vwapNum, vwapSigma } from '../../../utils/dayVwap';
 import type { MapKind } from '../../../utils/mapSettlement';
@@ -33,7 +34,7 @@ import {
   missingWhy as whyOf,
   pctOf,
 } from '../../../utils/sessionText';
-import { DASH, fmtFixed, fmtPct, fmtSigned } from '../../../ui/format';
+import { DASH, fmtFixed, fmtPct, fmtSigned, plForm } from '../../../ui/format';
 import { tr } from '../../../i18n';
 import { BTC_ONLY_NOTE, BLOG_ONLY_WHY, NO_SCANNER_NOTE } from '../../../utils/marketCaps';
 import { capsOf, marketOf, noScannerWhyOf, usdScaleOf } from '../../../state/markets';
@@ -101,7 +102,8 @@ export interface LayoutInputs {
   /** VA wczorajszej doby UTC z jednego źródła wartości (`valueReference`). */
   prevDay?: Got<ValueRef>;
   /** Najbliższy cenie nietknięty POC zamkniętej doby z jednego źródła wartości. */
-  nakedPoc?: Got<{ day: number; px: number; ref: ValueRef }>;
+  /** Nagie POC dób warstwami źródeł (jedno źródło wartości, archiwum 1m, świece 1h), najbliższe cenie. */
+  nakedPoc?: Got<NakedPocs>;
   liq?: Got<{ px: number; ntlUsd: number; side: 'long' | 'short'; asOf: number }>;
   cost?: Got<{ ask: number; bid: number; at: number }>;
   twap?: Got<{ share: number; buy: number; sell: number }>;
@@ -226,17 +228,24 @@ function vaEdgeNum(x: LayoutInputs, edge: 'vah' | 'val'): LayoutNumber {
 function nakedPocNum(x: LayoutInputs): LayoutNumber {
   const px = pxOf(x.coin);
   const label = tr('Nagi POC', 'Naked POC');
-  const n = val(x.nakedPoc);
+  const r = val(x.nakedPoc);
   const p = val(x.price);
-  if (!n || p === null) return dash(label, 'LIVE', whyOf(x.nakedPoc, x.price));
+  if (!r || p === null) return dash(label, 'LIVE', whyOf(x.nakedPoc, x.price));
+  const n = r.list[0];
   const dist = distPct(n.px, p);
+  const badge = pocBadge(n);
+  const prefix = badge === 'MODEL' ? `MODEL · ${pocMethod(n)}: ` : '';
+  const days = (k: number) => tr(`${k} ${plForm(k, 'doba', 'doby', 'dób')}`, `${k} ${k === 1 ? 'day' : 'days'}`);
+  // Każdy POC z wiekiem i plakietką źródła
+  const list = r.list.map((q) => `${px(q.px)} (${fmtPct(distPct(q.px, p), 2)}, ${days(q.age)}, ${pocBadge(q)} · ${pocSource(q)})`).join('; ');
+  const pending = r.pending > 0 ? tr(` Archiwum 1m dla ${days(r.pending)} jeszcze się wczytuje.`, ` The 1m archive for ${days(r.pending)} is still loading.`) : '';
   return {
     label,
     value: fmtPct(dist, 2),
-    badge: valueBadge(n.ref),
+    badge,
     hint: tr(
-      `${valuePrefix(n.ref)}Najbliższy cenie POC zamkniętej doby UTC, którego cena potem nie dotknęła: ${px(n.px)} z doby ${utcDm(n.day)}, ${fmtPct(Math.abs(dist), 2, false)} ${side(dist)}. Doby z ostatnich ${NAKED_DAYS} dni. ${valueMethodText(n.ref)}`,
-      `${valuePrefix(n.ref)}The POC of a closed UTC day nearest to the price that price has not touched since: ${px(n.px)} from ${utcDm(n.day)}, ${fmtPct(Math.abs(dist), 2, false)} ${side(dist)}. Days from the last ${NAKED_DAYS} days. ${valueMethodText(n.ref)}`
+      `${prefix}Najbliższy cenie POC zamkniętej doby UTC, którego cena potem nie dotknęła: ${px(n.px)} z doby ${utcDm(n.day)}, ${fmtPct(Math.abs(dist), 2, false)} ${side(dist)}. Nietknięte POC (najwyżej ${r.list.length} najbliższych z ${r.days} dób): ${list}. Źródła według wieku doby: do ${NAKED_VALUE_DAYS} dób jedno źródło wartości (taśma albo świece 5m), starsze od 19.10.2026 archiwum świec 1m (tylko BTC), reszta do ${NAKED_HOUR_DAYS} dób świece 1h; ta sama funkcja profilu (value area 70%, koszyki 5 pb).${pending}`,
+      `${prefix}The POC of a closed UTC day nearest to the price that price has not touched since: ${px(n.px)} from ${utcDm(n.day)}, ${fmtPct(Math.abs(dist), 2, false)} ${side(dist)}. Untouched POCs (at most ${r.list.length} nearest of ${r.days} days): ${list}. Sources by the day's age: up to ${NAKED_VALUE_DAYS} days the single value source (tape or 5m candles), older ones from 19.10.2026 the 1m candle archive (BTC only), the rest up to ${NAKED_HOUR_DAYS} days 1h candles; the same profile function (70% value area, 5 bp bins).${pending}`
     ),
   };
 }
@@ -413,9 +422,6 @@ function dayTypeNum(x: LayoutInputs): LayoutNumber {
   };
 }
 
-/** Źródło value area faktów Rozliczenia (`sessionFacts`): świece 1m bez taśmy. */
-const REVIEW_VA_SOURCE = 'candles' as const;
-
 function migrationNum(x: LayoutInputs): LayoutNumber {
   const px = pxOf(x.coin);
   const label = tr('Migracja VA', 'VA migration');
@@ -425,17 +431,16 @@ function migrationNum(x: LayoutInputs): LayoutNumber {
   if (missing || !r.va || !r.prevVa) return dash(label, 'LIVE', missing ?? WAIT_TEXT);
   const m = vaMigration(r.va, r.prevVa);
   if (m === 'unknown') return dash(label, 'LIVE', tr('Value area bez liczb', 'Value area without numbers'));
-  // Reguła plakietki wartości: z taśmy LIVE, ze świec MODEL. Fakty Rozliczenia liczą value area ze świec 1m (wolumen
-  // rozłożony równo na zakres), więc dziś to zawsze przybliżenie ze świec
-  const badge = valueBadge({ source: REVIEW_VA_SOURCE }, { source: REVIEW_VA_SOURCE });
+  // Reguła plakietki wartości: obie value area z taśmy — LIVE, inaczej MODEL „przybliżenie ze świec”
+  const badge = valueBadge(r.va, r.prevVa);
   const prefix = badge === 'MODEL' ? `MODEL · ${CANDLE_METHOD}: ` : '';
   return {
     label,
     value: VA_MIGRATION_LABEL[m],
     badge,
     hint: tr(
-      `${prefix}Value area 70% sesji ${sessionName(r.s)} ${px(r.va.val)}–${px(r.va.vah)} wobec poprzedniej sesji ${sessionName(r.s)} ${px(r.prevVa.val)}–${px(r.prevVa.vah)}; profile ze świec 1m, wolumen świecy rozłożony równo na jej zakres (te same co na karcie Rozliczenia sesji).`,
-      `${prefix}The ${sessionName(r.s)} session 70% value area ${px(r.va.val)}–${px(r.va.vah)} against the previous ${sessionName(r.s)} session ${px(r.prevVa.val)}–${px(r.prevVa.vah)}; profiles from 1m candles, candle volume spread evenly over its range (the same as on the Session review card).`
+      `${prefix}VA (wolumen) 70% sesji ${sessionName(r.s)} ${px(r.va.val)}–${px(r.va.vah)} (${valueNote(r.va)}) wobec poprzedniej sesji ${sessionName(r.s)} ${px(r.prevVa.val)}–${px(r.prevVa.vah)} (${valueNote(r.prevVa)}); te same co na karcie Rozliczenia sesji. ${valueMethodText(r.va)}`,
+      `${prefix}The ${sessionName(r.s)} session 70% VA (volume) ${px(r.va.val)}–${px(r.va.vah)} (${valueNote(r.va)}) against the previous ${sessionName(r.s)} session ${px(r.prevVa.val)}–${px(r.prevVa.vah)} (${valueNote(r.prevVa)}); the same as on the Session review card. ${valueMethodText(r.va)}`
     ),
   };
 }
@@ -508,30 +513,6 @@ export function failedNumbers(id: StationId, coin: string, now: number): LayoutN
 }
 
 // ───────────────────────── wejścia ze świec i migawek ─────────────────────────
-
-/** Doby nagich POC (jak `NAKED_POC_DAYS` wejść nagłówka). */
-const NAKED_DAYS = 14;
-
-/**
- * Najbliższy cenie POC zamkniętej doby UTC (jedno źródło wartości: taśma albo świece 5m), którego późniejsze świece nie
- * dotknęły; doby, dla których źródło ma co najmniej 90% świec.
- */
-export function nakedPocOf(src: ValueSource, now: number, price: number): Got<{ day: number; px: number; ref: ValueRef }> {
-  if (src.bars.length === 0) return { why: tr('Czekam na świece 5m', 'Waiting for 5m candles') };
-  if (!(price > 0)) return { why: tr('Brak ceny', 'No price') };
-  const today = utcDayStart(now);
-  let days = 0;
-  let best: { day: number; px: number; ref: ValueRef } | null = null;
-  for (let d = utcDayStart(src.bars[0].t); d < today; d += DAY) {
-    const r = valueReference('day', d, src, now);
-    if (!r) continue;
-    days++;
-    const touched = src.bars.some((b) => b.t >= d + DAY && b.l <= r.poc && r.poc <= b.h);
-    if (touched) continue;
-    if (!best || Math.abs(r.poc - price) < Math.abs(best.px - price)) best = { day: d, px: r.poc, ref: r };
-  }
-  return best ?? { why: tr(`Brak nagiego POC w ${days} dobach ze świec 5m`, `No naked POC in ${days} days of 5m candles`) };
-}
 
 /** Najbliższy cenie z klastrów likwidacji rysowanych na wykresie (`liqLevels`). */
 export function liqNearestOf(levels: readonly LiqLevel[], price: number, asOf: number): Got<{ px: number; ntlUsd: number; side: 'long' | 'short'; asOf: number }> {

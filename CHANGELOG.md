@@ -4,6 +4,15 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Jedno źródło wartości, etap 2: nagie POC warstwami, Rozliczenie i serwer MCP (2026-11-16)
+<!-- co-nowego: grupa=wykres | pl=Nagi POC sięga do ok. 200 dób i pokazuje 6 najbliższych z wiekiem i źródłem, a Rozliczenie i serwer MCP liczą value area tą samą funkcją co pasek Rama dnia | en=The naked POC reaches back about 200 days and lists the 6 nearest with their age and source, and the Session review and the MCP server compute the value area with the same function as the Day frame bar -->
+
+#### Zmienione
+- **Nagie POC warstwami według wieku doby** (decyzja Pioniera; `core/nakedPoc.ts`): do 14 dób jedno źródło wartości (taśma albo świece 5m), od 15 dób do początku archiwum świec 1m (19.10.2026) — świece 5m złożone ze świec 1m archiwum skanera (gałąź `archive`, tylko BTC; `store/archiveMinutes.ts`, pobierane tylko dla dób, których zakresu cena potem nie objęła), starsze do ok. 200 dób — świece 1h, MODEL „przybliżenie z 1h”. Nagłówek Mapy dnia pokazuje najbliższy, a w podpowiedzi do 6 nietkniętych POC najbliższych cenie z wiekiem i plakietką źródła. Sprawdzone na danych 5, 8, 12 i 14.11.2026: POC ze świec 5m złożonych z archiwum 1m = POC ze świec 5m Hyperliquid (0 koszyków różnicy).
+- **Rozliczenie i serwer MCP z jednego źródła wartości**: fakty sesji (`sessionFacts`, karta Rozliczenia, nagłówek układu Rozliczenie, `session_review` MCP) i profil poprzedniej sesji (`prevSessionProfile`, Kontekst aukcji Przed sesją, `market_brief` MCP) liczą VAH, VAL i POC przez `valueReference` (koszyki 5 pb zamiast 10 USD). W aplikacji ze świec 5m z taśmą, bez magazynu (serwer MCP) ze świec 5m złożonych ze świec 1m; test zgodności karty aplikacji i odpowiedzi MCP na jednej sesji. Migracja VA: obie value area z taśmy — LIVE, inaczej MODEL „przybliżenie ze świec”; poziomy poprzedniej sesji w `market_brief` mają teraz plakietkę MODEL (schemat narzędzi bez zmian).
+- **Profile okresów w legendzie**: gdy na ekranie są okresy sprzed zasięgu świec 5m (POC i value area z profilu świec wykresu), plakietka MODEL „profil ze świec 1h, przybliżenie” (z interwałem wykresu), wyraźnie inne źródło niż jedno źródło wartości.
+- Value area z jednego źródła nazywamy w podpowiedziach „VA (wolumen)”.
+
 ### Jedno źródło wartości doby i sesji; liczniki Ramy dnia od otwarcia sesji (2026-11-16)
 <!-- co-nowego: grupa=wykres | pl=Wczorajsze VAH, VAL i POC są teraz te same w pasku Rama dnia, panelu Najbliższe poziomy, nagłówku Mapy dnia i na Profilach okresów; z taśmy LIVE, ze świec MODEL, a liczniki przyjęcia liczą od otwarcia sesji | en=Yesterday's VAH, VAL and POC are now the same in the Day frame bar, the Nearest levels panel, the Day map header and Period profiles; LIVE from the tape, MODEL from candles, and the acceptance counters run from the session open -->
 

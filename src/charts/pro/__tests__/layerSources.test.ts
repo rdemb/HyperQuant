@@ -257,18 +257,28 @@ describe('Profile okresów: plakietka ze źródła wartości (reguła wartości:
   });
 
   it('ostatni zamknięty okres z taśmy — LIVE; ze świec albo bez wartości — MODEL „przybliżenie ze świec”', () => {
-    expect(layerBadge('showPeriodProfiles', { coin: 'BTC', now: NOW, value: v('tape', 0.96) })).toMatchObject({ tone: 'live', text: 'LIVE' });
-    const c = layerBadge('showPeriodProfiles', { coin: 'BTC', now: NOW, value: v('candles', 0.4) });
+    const one = (last: ReturnType<typeof v> | null) => ({ last, fallbackMs: null });
+    expect(layerBadge('showPeriodProfiles', { coin: 'BTC', now: NOW, value: one(v('tape', 0.96)) })).toMatchObject({ tone: 'live', text: 'LIVE' });
+    const c = layerBadge('showPeriodProfiles', { coin: 'BTC', now: NOW, value: one(v('candles', 0.4)) });
     expect(c).toMatchObject({ tone: 'model', text: 'MODEL' });
     expect(c.hint).toMatch(/^MODEL · przybliżenie ze świec: ostatni zamknięty okres \(doba UTC 02\.11\)/);
-    expect(layerBadge('showPeriodProfiles', { coin: 'BTC', now: NOW, value: null }).text).toBe('MODEL');
+    expect(c.hint).toContain('VA (wolumen) 70%');
+    expect(layerBadge('showPeriodProfiles', { coin: 'BTC', now: NOW, value: one(null) }).text).toBe('MODEL');
     // Bez pola `value` — plakietka stała z tabeli źródeł
     expect(layerBadge('showPeriodProfiles', { coin: 'BTC', now: NOW }).text).toBe(LAYER_SOURCE.showPeriodProfiles);
   });
 
+  it('okresy z profilu świec wykresu na ekranie: MODEL „profil ze świec 1h, przybliżenie” (inne źródło), nawet przy taśmie w nowszych', () => {
+    const b = layerBadge('showPeriodProfiles', { coin: 'BTC', now: NOW, value: { last: v('tape', 0.97), fallbackMs: 3_600_000 } });
+    expect(b).toMatchObject({ tone: 'model', text: 'MODEL' });
+    expect(b.hint).toMatch(/^MODEL · profil ze świec 1h, przybliżenie: okresy sprzed zasięgu świec 5m \(14 dób\)/);
+    expect(b.hint).toContain('Nowsze okresy z jednego źródła wartości');
+    expect(layerBadge('showPeriodProfiles', { coin: 'BTC', now: NOW, value: { last: null, fallbackMs: 15 * 60_000 } }).hint).toMatch(/^MODEL · profil ze świec 15m, przybliżenie/);
+  });
+
   it('legenda bierze wartość okresów z wykresu', () => {
     const s = { ...DEFAULT_SETTINGS, ...LAYERS_OFF, ...NO_FLOW, showPeriodProfiles: true, indicators: [] };
-    const chips = legendChips(s, { coin: 'BTC', now: NOW, intervalMs: M5, scan: {}, value: { showPeriodProfiles: v('candles', 0.2) } });
+    const chips = legendChips(s, { coin: 'BTC', now: NOW, intervalMs: M5, scan: {}, value: { showPeriodProfiles: { last: v('candles', 0.2), fallbackMs: null } } });
     expect(chips.map((c) => [c.key, c.text])).toEqual([['showPeriodProfiles', 'MODEL']]);
   });
 });

@@ -119,7 +119,8 @@ describe('reviewRows: rozliczenie zamkniętej sesji Londynu z mapą', () => {
   it('wiersze w kolejności: typ dnia, migracja VA, wynik IB, zakres, mapa, likwidacje, stożek, kohorty', () => {
     expect(rows.map((r) => [r.id, r.label, r.value, r.badge])).toEqual([
       ['dayType', 'Typ dnia', 'trendowy', 'MODEL'],
-      ['vaMigration', 'Migracja VA', 'wyżej', 'LIVE'],
+      // Bez taśmy (świece 5m złożone z minut): reguła plakietki wartości — MODEL „przybliżenie ze świec”
+      ['vaMigration', 'Migracja VA', 'wyżej', 'MODEL'],
       ['ib', 'Wynik IB', 'w górę · 2,3×', 'LIVE'],
       ['range', 'Zakres / oczekiwany · profil × poziom', '80%', 'MODEL'],
       ['map', `Mapa dnia ${fmtDayTime(PUB, NOW)}`, '2/4 dotknięte', 'LIVE'],
@@ -183,9 +184,9 @@ describe('reviewRows: rozliczenie zamkniętej sesji Londynu z mapą', () => {
     expect(ny.detail).toContain(`niedotknięte do ${fmtHm(NOW)}`);
   });
 
-  it('VA i IB z 1m sesji: value area z profilu 70% (auction.profile) wyżej niż poprzedni Londyn', () => {
-    expect(row(rows, 'vaMigration').hint).toMatch(/Value area 70% sesji Londyn/);
-    expect(row(rows, 'vaMigration').hint).toContain('świec 1m');
+  it('VA z jednego źródła wartości (świece 5m z minut, bez taśmy: MODEL) wyżej niż poprzedni Londyn; IB z 1m sesji', () => {
+    expect(row(rows, 'vaMigration').hint).toMatch(/^MODEL · przybliżenie ze świec: VA \(wolumen\) 70% sesji Londyn/);
+    expect(row(rows, 'vaMigration').hint).toContain('Przybliżenie ze świec 5m');
     expect(row(rows, 'ib').hint).toContain(fmtHm(L.ibEnd));
   });
 });

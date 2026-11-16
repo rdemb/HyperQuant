@@ -10,7 +10,6 @@ import {
   failedNumbers,
   layoutNumbers,
   liqNearestOf,
-  nakedPocOf,
   profileStep,
   rvolOf,
   sessionNowOf,
@@ -197,7 +196,14 @@ describe('nagłówek układu: trzy liczby', () => {
   it('Mapa dnia: odległość do VAH i VAL wczoraj, najbliższy nagi POC; z taśmy LIVE, ze świec MODEL „przybliżenie ze świec”', () => {
     const d = at(2026, 11, 2, 0);
     const prevDay = ref(d, 105_420, 104_160);
-    const nakedPoc = { day: d - DAY, px: 110_000, ref: ref(d - DAY, 110_500, 109_500, 'candles', 110_000) };
+    const nakedPoc = {
+      list: [
+        { day: d - DAY, px: 110_000, age: 2, layer: 'value' as const, ref: ref(d - DAY, 110_500, 109_500, 'candles', 110_000) },
+        { day: d - 40 * DAY, px: 95_000, age: 41, layer: '1h' as const, ref: ref(d - 40 * DAY, 95_500, 94_500, 'candles', 95_000) },
+      ],
+      days: 41,
+      pending: 0,
+    };
     const n = layoutNumbers('day-map', { coin: 'BTC', now: NOW, price: 105_000, prevDay, nakedPoc });
     expect(n.map((x) => [x.label, x.value, x.badge])).toEqual([
       ['VAH wczoraj', '+0,40%', 'LIVE'],
@@ -205,7 +211,10 @@ describe('nagłówek układu: trzy liczby', () => {
       ['Nagi POC', '+4,76%', 'MODEL'],
     ]);
     expect(n[0].hint).toContain('Profil wolumenu z taśmy Hyperliquid (98% wolumenu okresu nagrane');
-    expect(n[2].hint).toMatch(/^MODEL · przybliżenie ze świec \(przybliżenie, taśma 30%\): /);
+    expect(n[2].hint).toMatch(/^MODEL · przybliżenie ze świec: /);
+    // Każdy POC z wiekiem i plakietką źródła
+    expect(n[2].hint).toContain('2 doby, MODEL · przybliżenie, taśma 30%');
+    expect(n[2].hint).toContain('41 dób, MODEL · przybliżenie z 1h');
     const fromCandles = layoutNumbers('day-map', { coin: 'BTC', now: NOW, price: 105_000, prevDay: ref(d, 105_420, 104_160, 'candles') });
     expect(fromCandles[0]).toMatchObject({ value: '+0,40%', badge: 'MODEL' });
     expect(fromCandles[0].hint).toMatch(/^MODEL · przybliżenie ze świec/);
@@ -250,22 +259,26 @@ describe('nagłówek układu: trzy liczby', () => {
       loAt: NY.start,
       breakAt: NY.ibEnd,
       close: 100_650,
-      step: 10,
-      va: { vah: 100_600, val: 100_350 },
+      // Value area z jednego źródła: obie z taśmy (LIVE)
+      va: ref(NY.start, 100_600, 100_350),
       prev: previousSameSession(NY),
-      prevVa: { vah: 100_200, val: 99_800 },
+      prevVa: ref(previousSameSession(NY).start, 100_200, 99_800),
     };
     const pub = at(2026, 11, 3, 7, 5);
     const mapHits = { s: NY, kind: 'dzien' as const, publishedAt: pub, touched: 3, total: 9, complete: true, from: pub, to: NY.end };
     const n = layoutNumbers('review', { coin: 'BTC', now: NOW, review, mapHits });
     expect(n.map((x) => [x.label, x.value, x.badge, x.note ?? null])).toEqual([
       ['Typ dnia · NY w toku', 'trendowy', 'MODEL', null],
-      ['Migracja VA', 'wyżej', 'MODEL', null],
+      ['Migracja VA', 'wyżej', 'LIVE', null],
       ['Mapa: dotknięte', '3/9', 'LIVE', null],
     ]);
     expect(n[0].hint).toMatch(/^MODEL · Dalton/);
     // Value area Rozliczenia ze świec 1m (bez taśmy): reguła plakietki wartości — MODEL „przybliżenie ze świec”
-    expect(n[1].hint).toMatch(/^MODEL · przybliżenie ze świec: Value area 70% sesji NY/);
+    expect(n[1].hint).toMatch(/^VA \(wolumen\) 70% sesji NY .* \(taśma 98%\)/);
+    // Poprzednia sesja ze świec (taśma poniżej 90%): MODEL „przybliżenie ze świec”
+    const candles = layoutNumbers('review', { coin: 'BTC', now: NOW, review: { ...review, prevVa: ref(previousSameSession(NY).start, 100_200, 99_800, 'candles') } })[1];
+    expect(candles).toMatchObject({ value: 'wyżej', badge: 'MODEL' });
+    expect(candles.hint).toMatch(/^MODEL · przybliżenie ze świec: VA \(wolumen\) 70% sesji NY/);
     expect(n[2].hint).toMatch(/^Poziomy dotknięte 3\/9: Mapa dnia .*, sesja NY 03\.11, od wpisu do teraz/);
     // Telefon: krótsze podpisy, „w toku” zostaje
     expect(n.map((x) => x.short)).toEqual(['NY w toku', 'VA', 'Mapa']);
@@ -336,29 +349,6 @@ describe('liczby nagłówka ze świec i migawek', () => {
     expect(profileStep(100_000)).toBe(10);
     expect(profileStep(3_500)).toBe(0.5);
     expect(profileStep(150)).toBe(0.02);
-  });
-
-  /** Doba świec 5m: 287 świec w szerokim zakresie i jedna z dużym wolumenem przy `poc`. */
-  const day5 = (d: number, lo: number, hi: number, poc: number): ValueBar[] =>
-    Array.from({ length: 288 }, (_, k) => (k === 144 ? { t: d + k * 5 * MIN, l: poc - 4, h: poc + 4, v: 5000 } : { t: d + k * 5 * MIN, l: lo, h: hi, v: 1 }));
-
-  it('nakedPocOf: najbliższy cenie nietknięty POC zamkniętej doby z jednego źródła wartości (świece 5m)', () => {
-    const today = at(2026, 11, 3, 0);
-    const bars = [
-      ...day5(today - 3 * DAY, 97_900, 98_100, 98_000),
-      ...day5(today - 2 * DAY, 109_900, 110_100, 110_000),
-      ...day5(today - DAY, 104_900, 105_100, 105_000),
-      ...Array.from({ length: 16 * 12 }, (_, k) => ({ t: today + k * 5 * MIN, l: 104_950, h: 105_050, v: 1 })),
-    ];
-    const src = { bars, ms: 5 * MIN };
-    // POC wczoraj (~105 000) dotknięty dziś, POC 98 000 i 110 000 nagie; bliżej ceny 105 000 jest 110 000
-    const naked = nakedPocOf(src, NOW, 105_000);
-    if ('why' in naked) throw new Error(naked.why);
-    expect(naked.day).toBe(today - 2 * DAY);
-    expect(naked.ref).toEqual(valueReference('day', today - 2 * DAY, src, NOW));
-    expect(naked.px).toBe(naked.ref.poc);
-    expect(Math.abs(naked.px - 110_000)).toBeLessThanOrEqual(110_000 * 5e-4);
-    expect(nakedPocOf({ bars: [], ms: 5 * MIN }, NOW, 105_000)).toMatchObject({ why: expect.any(String) });
   });
 
   it('liqNearestOf, twapShareOf, whaleBalanceOf', () => {
