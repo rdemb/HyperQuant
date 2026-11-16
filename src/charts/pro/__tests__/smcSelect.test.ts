@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_SMC_PARAMS, type SBar, smcStructure } from '../core/smcStructure';
-import { SMC_LIMITS, SMC_OBJECTS_MAX, SMC_PHONE_LIMITS, selectSmc, smcObjects } from '../chart/smcSelect';
+import { SMC_LIMITS, SMC_OBJECTS_MAX, SMC_PHONE_LIMITS, selectSmc, smcObjects, smcWindowMs } from '../chart/smcSelect';
 
 /** Wybór rysunku SMC: limity obiektów w trybach „bieżące” i „historia 24 h”, telefon, premium i discount, bez wglądu w przyszłość. */
 
@@ -178,5 +178,31 @@ describe('wybór bez wglądu w przyszłość', () => {
       expect(r.pivots.length).toBeGreaterThan(0);
       for (const p of r.pivots) expect(p.known).toBe(bars[p.idx + (p.scale === 'internal' ? internalLen : swingLen)].t + MS);
     }
+  });
+});
+
+describe('SMC na wyższych interwałach: okna max(24 h, 24 świece), życie luki max(24 h, 100 świec)', () => {
+  const H = 3_600_000;
+  it('do 1 h okno 24 h bez zmian; 4H 4 doby; 1D 24 doby', () => {
+    expect(smcWindowMs(5 * 60_000)).toBe(24 * H);
+    expect(smcWindowMs(H)).toBe(24 * H);
+    expect(smcWindowMs(4 * H)).toBe(96 * H);
+    expect(smcWindowMs(24 * H)).toBe(24 * 24 * H);
+  });
+
+  it('luka FVG na 4H żyje 100 świec, na 5m 24 h', () => {
+    const gap = (ms: number) => {
+      const t0 = Date.UTC(2026, 9, 1);
+      // trzy świece z luką w górę na trzeciej, potem spokojne świece nad luką
+      const rows: [number, number, number, number][] = [];
+      for (let i = 0; i < 30; i++) rows.push([100, 101, 99, 100]);
+      rows.push([100, 101, 99.5, 100.8], [100.8, 104, 100.6, 103.8], [103.8, 106, 103, 105.5]);
+      for (let i = 0; i < 5; i++) rows.push([105.5, 106.5, 105, 106]);
+      const bars = rows.map(([o, h, l, c], i) => ({ t: t0 + i * ms, o, h, l, c }));
+      const f = smcStructure(bars, ms).fvgs.find((x) => x.dir === 1);
+      return f ? f.expiresAt - f.known : null;
+    };
+    expect(gap(4 * H)).toBe(100 * 4 * H);
+    expect(gap(5 * 60_000)).toBe(24 * H);
   });
 });

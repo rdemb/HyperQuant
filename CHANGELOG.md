@@ -13,6 +13,12 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 - **Profile okresów w legendzie**: gdy na ekranie są okresy sprzed zasięgu świec 5m (POC i value area z profilu świec wykresu), plakietka MODEL „profil ze świec 1h, przybliżenie” (z interwałem wykresu), wyraźnie inne źródło niż jedno źródło wartości.
 - Value area z jednego źródła nazywamy w podpowiedziach „VA (wolumen)”.
 
+### Struktura i płynność (SMC+HL) także na 4H i wyższych interwałach (2026-11-16)
+<!-- co-nowego: grupa=wykres | pl=Struktura i płynność (SMC+HL) działa teraz na każdym interwale, także 4H i 1D, z oknami liczonymi w świecach | en=Structure & Liquidity (SMC+HL) now works on every interval, including 4H and 1D, with windows counted in candles -->
+
+#### Zmienione
+- **SMC na każdym interwale** (zgłoszenie Rafała: „nie działa na wyższych interwałach, np. 4H”): warstwa miała limit do 1 h, a okna elementów były w czasie (24 h to na 4H tylko 6 świec). Teraz bez limitu interwału; okno BOS, CHoCH, sweepów i trybu historii = max(24 h, 24 świece) (do 1 h bez zmian, 4H — 4 doby, 1D — 24 doby), a luka FVG żyje max(24 h, 100 świec) (Pionier, `smc-hl.md` §7.1). Pivot i filtr 1 ATR bez zmian, na interwale wykresu. Testy: okna dla 5m, 1h, 4H i 1D; życie luki na 4H (100 świec) i 5m (24 h); legenda na 4H.
+
 ### Fabio: LVN v2: głębokość i test szumu pomiaru, bloki 15 min, obszary LVA i profile okresów (2026-11-16)
 <!-- co-nowego: grupa=wykres | pl=LVN pokazują głębokość doliny i wartość p wobec szumu pomiaru (symulacja dopasowana do profilu), szerokie doliny są rysowane jako pasma LVA, a LVN widać też na profilach sesji i dób | en=LVN show the valley depth and a p-value against measurement noise (a simulation matched to the profile), wide valleys are drawn as LVA bands, and LVN also appear on session and day profiles -->
 
