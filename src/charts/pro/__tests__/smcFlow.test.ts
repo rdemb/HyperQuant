@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SMC_ABSORPTION_Z, type SmcFlowBar, breakFlow, fvgFlow, obFlow } from '../chart/smcFlow';
-import { TAG_H, layoutTags } from '../chart/smcLayer';
+import { TAG_H, layoutTags } from '../chart/tagColumn';
 
 const MS = 60_000;
 

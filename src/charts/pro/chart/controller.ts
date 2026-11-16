@@ -57,7 +57,8 @@ import { Hip4Layer, Hip4Source, outcomeLevels } from './hip4Layer';
 import { PbRangeLayer, PbStyle, PbZone } from './pbRangeLayer';
 import { EffortLayer, type EffortStyle } from './effortLayer';
 import { IvbLayer, type IvbStyle } from './ivbLayer';
-import { SMC_TAG_GAP_PX, type SmcHigherFeed, SmcLayer, type SmcStyle } from './smcLayer';
+import { type SmcHigherFeed, SmcLayer, type SmcStyle } from './smcLayer';
+import { TAG_GAP_PX } from './tagColumn';
 import { pickHtf } from '../core/smcMtf';
 import type { Candle } from '../hl/parse';
 import { seriesCandles } from './layoutInputs';
@@ -1030,12 +1031,12 @@ export class ProChartController {
 
   /** Odstęp najnowszej świecy od osi ceny (px): stały, a z mapą ciepła powiększony o drabinę DOM. */
   private rightGap(): number {
-    return RIGHT_GAP_PX + Math.max(this.coneGap(), this.smcGap());
+    return RIGHT_GAP_PX + Math.max(this.coneGap(), this.tagGap());
   }
 
-  /** SMC na komputerze: miejsce za ostatnią świecą na kolumnę podpisów stref przy osi ceny (nie zasłania świec). */
-  private smcGap(): number {
-    return this.smcStyle() && !this.phone ? SMC_TAG_GAP_PX : 0;
+  /** SMC albo Strefy Effort na komputerze: miejsce za ostatnią świecą na kolumnę podpisów stref przy osi (nie zasłania świec). */
+  private tagGap(): number {
+    return (this.smcStyle() || this.effortStyle()) && !this.phone ? TAG_GAP_PX : 0;
   }
 
   /** Miejsce na część stożka za ostatnią świecą przy bieżącym odstępie świec, najwyżej trzecia część szerokości wykresu. */

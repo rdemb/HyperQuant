@@ -91,16 +91,16 @@ describe('legenda', () => {
   });
 
   it('bez taśmy: strefa A i pudełko „—, brak taśmy” zamiast przybliżenia', () => {
-    expect(text({ ...sel, untaped: { zones: 2, box: null } })).toBe('strefy: 2 pod ceną · 1 nad ceną (dalej 3) · A: —, brak taśmy przy 2 krańcach · pudełko: kupno, 4 świece temu · taśma 32 z 32');
-    expect(text({ ...sel, untaped: { zones: 1, box: asOf - MS } })).toBe('strefy: 2 pod ceną · 1 nad ceną (dalej 3) · A: —, brak taśmy przy 1 krańcu · pudełko: —, brak taśmy, 1 świeca temu · taśma 32 z 32');
+    expect(text({ ...sel, untaped: { zones: 2, box: null } })).toBe('strefy: 2 pod ceną · 1 nad ceną (dalej 3) · absorpcja: —, brak taśmy przy 2 krańcach · pudełko: kupno, 4 świece temu · taśma 32 z 32');
+    expect(text({ ...sel, untaped: { zones: 1, box: asOf - MS } })).toBe('strefy: 2 pod ceną · 1 nad ceną (dalej 3) · absorpcja: —, brak taśmy przy 1 krańcu · pudełko: —, brak taśmy, 1 świeca temu · taśma 32 z 32');
     // Luka starsza niż ostatnia seria: legenda mówi o serii
     expect(text({ ...sel, untaped: { zones: 0, box: asOf - 5 * MS } })).toContain('pudełko: kupno, 4 świece temu');
     expect(text({ ...sel, boxes: [], untaped: { zones: 0, box: asOf } })).toContain('pudełko: —, brak taśmy, ostatnia świeca');
   });
 
-  it('czas dostępności pod krzyżem nad pasmem: „strefa A znana od …, 25 min po krańcu”, z profilem swingu przy D', () => {
+  it('czas dostępności pod krzyżem nad pasmem: „strefa absorpcji znana od …, 25 min po krańcu”, z profilem swingu przy D', () => {
     const hover = { t: T0 + 10 * MS, p: 99.5 };
-    expect(text(sel, MS, hover)).toContain(`· strefa A znana od ${fmtHm(T0 + 6 * MS)}, 25 min po krańcu`);
+    expect(text(sel, MS, hover)).toContain(`· strefa absorpcji znana od ${fmtHm(T0 + 6 * MS)}, 25 min po krańcu`);
     // Poza pasmem (cena albo czas przed powstaniem) bez dopisku
     expect(text(sel, MS, { t: T0 + 10 * MS, p: 101.5 })).not.toContain('znana od');
     expect(text(sel, MS, { t: T0 + 4 * MS, p: 99.5 })).not.toContain('znana od');
@@ -114,8 +114,8 @@ describe('legenda', () => {
       ],
     };
     const s = text({ ...sel, bands: [d] }, MS, hover);
-    expect(s).toContain(`· strefa D znana od ${fmtHm(T0 + 6 * MS)}, 2 h 15 min po krańcu · profil swingu: POC 99, VA 98–99,5, LVN (węzeł) 98,5 · głębokość 62% · p = 0,03 · test wobec losowych ścieżek: w przygotowaniu · przybliżenie: taśma 40%`);
-    expect(s).toContain(`· strefa F znana od ${fmtHm(T0 + 7 * MS)}, na zamknięciu przebicia`);
+    expect(s).toContain(`· strefa dyskonta swingu znana od ${fmtHm(T0 + 6 * MS)}, 2 h 15 min po krańcu · profil swingu: POC 99, VA 98–99,5, LVN (węzeł) 98,5 · głębokość 62% · p = 0,03 · test wobec losowych ścieżek: w przygotowaniu · przybliżenie: taśma 40%`);
+    expect(s).toContain(`· strefa zmiany roli znana od ${fmtHm(T0 + 7 * MS)}, na zamknięciu przebicia`);
     const tape = { ...d, known: [{ ...d.known[0], profile: { ...PROF, tapeShare: 1 } }] };
     expect(text({ ...sel, bands: [tape] }, MS, hover)).toContain('profil swingu: POC 99, VA 98–99,5 · z taśmy');
     const candles = { ...d, known: [{ ...d.known[0], profile: { ...PROF, tapeShare: 0 } }] };
@@ -182,11 +182,11 @@ describe('wpis w rejestrze', () => {
       'jego świeca i 19 świec przed nią mają deltę z taśmy',
       'z ostatnich 32 świec ma taśmę',
       'delta tylko z taśmy, bez przybliżenia ze świecy',
-      'bez niej strefy A nie ma, a legenda pokazuje przy A brak wartości z powodem „brak taśmy”',
+      'bez niej strefy A nie ma, a legenda pokazuje przy absorpcji brak wartości z powodem „brak taśmy”',
       'bez taśmy pudełka nie ma',
       'wolumen transakcji na każdej cenie z taśmy',
       'wtedy profil to przybliżenie',
-      'strefa A znana od 10:25, 25 min po krańcu',
+      'strefa absorpcji znana od 10:25, 25 min po krańcu',
       'najbliższe ostatniemu zamknięciu',
       'od świecy, na której zamknięciu strefa powstała',
       'w 52% przypadków, tak jak losowy poziom',
@@ -252,5 +252,16 @@ describe('karta wskaźnika w oknie ustawień (plan 59, F2)', () => {
     expect(html).toContain('data-karta-wskaznika');
     expect(html).toContain(card.claim);
     expect(html).toContain(STATUS_LABEL[card.status]);
+  });
+});
+
+describe('podpisy przy osi (zamiast liter A, D, F w rogu pasma)', () => {
+  it('rodzaje słowami, bez powtórzeń, przebita z dopiskiem; pudełka ze stroną agresora', async () => {
+    const { bandTag, boxTag } = await import('../chart/effortLayer');
+    expect(bandTag(['absorption'], false)).toBe('absorpcja');
+    expect(bandTag(['absorption', 'discount', 'absorption'], false)).toBe('absorpcja + dyskonto swingu');
+    expect(bandTag(['flip'], true)).toBe('zmiana roli · przebita');
+    expect(boxTag(1)).toBe('Effort: agresja kupna');
+    expect(boxTag(-1)).toBe('Effort: agresja sprzedaży');
   });
 });

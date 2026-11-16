@@ -4,6 +4,13 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Strefy Effort z podpisami słowami przy osi ceny (2026-11-16)
+<!-- co-nowego: grupa=wykres | pl=Strefy Effort opisane słowami przy osi ceny zamiast liter A, D i F | en=Effort zones labelled in words at the price axis instead of the letters A, D and F -->
+- Rodzaj strefy opisuje podpis w kolumnie przy osi ceny: „absorpcja”, „dyskonto swingu”, „zmiana roli”, pasmo kilku stref łącznie, a przebita z dopiskiem „przebita”. Litery w rogu pasma zniknęły.
+- Seria pudełek ma podpis ze stroną agresora („Effort: agresja kupna” albo „agresja sprzedaży”).
+- Przy widocznych Strefach Effort wykres zostawia miejsce na podpisy za ostatnią świecą, tak jak przy SMC; kolumna podpisów jest wspólna dla obu wskaźników.
+- Opis pod krzyżem mówi „strefa absorpcji znana od…” zamiast „strefa A”.
+
 ### Czytelny SMC z potwierdzeniami z taśmy HL (2026-11-16)
 <!-- co-nowego: grupa=wykres | pl=SMC czytelniej: mniej stref, kolory rodzajów, podpisy przy osi, linijka premium i discount oraz potwierdzenia z taśmy | en=Clearer SMC: fewer zones, kind colours, labels at the axis, a premium and discount ruler and tape confirmations -->
 - Mniej i bliżej ceny: po 2 OB i 2 luki na kierunek (obie skale razem), po 1 EQH i EQL, 4 etykiety swingów; OB pokryty w co najmniej połowie przez bliższy odpada, wyższy interwał najwyżej 2 luki i 1 OB na kierunek.

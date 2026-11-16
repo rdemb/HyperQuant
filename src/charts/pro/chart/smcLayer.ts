@@ -14,6 +14,7 @@ import { SMC_ACCEPT_BARS, type BreakFlow, type FvgFlow, type ObFlow, type SmcFoo
 import { SMC_OBJECTS_MAX, SMC_PHONE_OBJECTS_MAX, type ObMitigation, type SmcObView, type SmcSelection, overlapShare, selectSmc, trimSmc, smcObjects, smcWindowText } from './smcSelect';
 import { type SmcMtfSelection, selectSmcMtf, smcMtfObjects } from './smcMtfSelect';
 import { MONO, PRO, rgba } from './theme';
+import { type Tag, drawTags } from './tagColumn';
 import { type ValueRef, valueBadge } from '../core/valueReference';
 
 /** Wartość doby względem potwierdzonego zakresu swingowego. */
@@ -424,14 +425,6 @@ interface Line {
   below?: boolean;
 }
 
-/** Podpis w kolumnie przy osi ceny (na wysokości elementu, bez nakładania się). */
-interface Tag {
-  y: number;
-  text: string;
-  ink: string;
-  dim: boolean;
-}
-
 interface Scene {
   zones: Zone[];
   lines: Line[];
@@ -447,35 +440,9 @@ interface Scene {
 const emptyScene = (): Scene => ({ zones: [], lines: [], ticks: [], labels: [], tags: [], tagX: 0, ruler: null });
 const EMPTY: Scene = emptyScene();
 
-/** Miejsce za ostatnią świecą na kolumnę podpisów (kontroler dodaje je do odstępu osi czasu, gdy SMC jest widoczny). */
-export const SMC_TAG_GAP_PX = 72;
-
 /** Linijka premium i discount: szerokość i odstęp od stref. */
 const RULER_W = 5;
 const RULER_GAP = 4;
-/** Podpis w kolumnie: wysokość pigułki i odstęp. */
-export const TAG_H = 14;
-const TAG_GAP = 2;
-
-/**
- * Układ kolumny podpisów: od góry w kolejności wysokości, każdy co najmniej `TAG_H + TAG_GAP` pod poprzednim, a gdy
- * dół wychodzi poza panel — cofnięcie w górę od dołu. Zwraca środki pigułek (ta sama kolejność co `ys`).
- */
-export function layoutTags(ys: readonly number[], height: number): number[] {
-  const step = TAG_H + TAG_GAP;
-  const order = ys.map((y, i) => [y, i] as const).sort((a, b) => a[0] - b[0]);
-  const placed = order.map(([y]) => y);
-  for (let k = 0; k < placed.length; k++) placed[k] = Math.max(placed[k], k > 0 ? placed[k - 1] + step : TAG_H / 2);
-  let limit = height - TAG_H / 2;
-  for (let k = placed.length - 1; k >= 0; k--) {
-    if (placed[k] > limit) placed[k] = limit;
-    limit = placed[k] - step;
-  }
-  const out = new Array<number>(ys.length);
-  order.forEach(([, i], k) => (out[i] = placed[k]));
-  return out;
-}
-
 /** Liczba zamkniętych świec (koniec ≤ `now`). */
 function closedCount(bars: readonly SmcSourceBar[], ms: number, now: number): number {
   let n = bars.length;
@@ -627,35 +594,7 @@ export class SmcLayer implements ISeriesPrimitive<Time> {
               ctx.fill();
             }
           }
-          // Kolumna podpisów: pigułki na tle wykresu, bez nakładania się
-          if (sc.tags.length) {
-            ctx.font = `600 9.5px ${MONO}`;
-            ctx.textBaseline = 'middle';
-            const ys = layoutTags(
-              sc.tags.map((t) => t.y),
-              mediaSize.height
-            );
-            sc.tags.forEach((t, i) => {
-              const w = Math.ceil(ctx.measureText(t.text).width) + 9;
-              const x0 = sc.tagX - w;
-              const y0 = Math.round(ys[i] - TAG_H / 2);
-              const k = t.dim ? 0.45 : 1;
-              ctx.fillStyle = rgba(PRO.bg, 0.82);
-              ctx.fillRect(x0, y0, w, TAG_H);
-              ctx.fillStyle = rgba(t.ink, 0.95 * k * a);
-              ctx.fillRect(x0, y0, 2, TAG_H);
-              // Podpis przesunięty z wysokości elementu: kreska do niej przy krawędzi kolumny
-              if (Math.abs(ys[i] - t.y) > 3) {
-                ctx.strokeStyle = rgba(t.ink, 0.5 * k * a);
-                ctx.lineWidth = 1;
-                ctx.beginPath();
-                ctx.moveTo(sc.tagX + 1.5, Math.round(ys[i]) + 0.5);
-                ctx.lineTo(sc.tagX + 1.5, Math.round(t.y) + 0.5);
-                ctx.stroke();
-              }
-              ctx.fillText(t.text, x0 + 5, y0 + TAG_H / 2 + 0.5);
-            });
-          }
+          drawTags(ctx, sc.tags, sc.tagX, mediaSize.height, a);
         }),
     };
     this.views = [
