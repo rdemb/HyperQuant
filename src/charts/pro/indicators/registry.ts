@@ -69,7 +69,8 @@ export type IndicatorId =
   | 'pbrange'
   | 'effort'
   | 'ivb'
-  | 'twap';
+  | 'twap'
+  | 'premium';
 
 /**
  * Rodzaj wskaźnika: trend, momentum, zmienność, poziomy; `hyperquant` — wskaźniki, których nie ma w TradingView (z danych
@@ -152,6 +153,13 @@ export interface FlowBar {
 export interface FlowContext {
   /** OI w chwili `t` z próbki nie starszej niż `maxAgeMs` (domyślnie i najwyżej 3 min); null — brak. */
   oiAt(t: number, maxAgeMs?: number): number | null;
+  /**
+   * Premia HL wobec spotu (pb, pole `premium` activeAssetCtx z cen wpływu) w [from, to): średnia odczytów ważona czasem,
+   * odczyt ważny najwyżej 60 s (`core/premium`); null — brak odczytu (próbki tylko od otwarcia strony, bez powtórki).
+   */
+  premium?(from: number, to: number): number | null;
+  /** Jak `premium`, ale (mark − oracle) / oracle w pb (seria pomocnicza). */
+  markOracle?(from: number, to: number): number | null;
   book(): readonly BookFrame[];
   /** Migawki arkusza bez agregacji ceny (rosnąco po czasie): tylko od otwarcia strony. */
   exactBook(): readonly BookFrame[];
@@ -2299,6 +2307,38 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
       }
     },
   },
+  {
+    id: 'premium',
+    short: tr('Premia', 'Premium'),
+    name: tr('Premia HL wobec spotu', 'HL premium over spot'),
+    hint: tr(
+      'Linia to premia kontraktu na Hyperliquid wobec ceny oracle w punktach bazowych, średnia w świecy: pole „premium” Hyperliquid, liczone z cen, po których dałoby się kupić albo sprzedać kwotę referencyjną (ta sama wielkość, z której HL liczy finansowanie). Oracle to ważona mediana cen spot z giełd scentralizowanych, a na rynkach HIP-3 cena instrumentu bazowego od wydawcy rynku. Dodatnia — arkusz kontraktu stoi wyżej niż spot, ujemna — niżej, zero — oracle mieści się między cenami wpływu. W legendzie pomocniczo mark − oracle. Kropkowane linie to pasmo zwykłości p10–p90: wartość między nimi to zwykły stan',
+      'The line is the Hyperliquid contract’s premium over the oracle price in basis points, averaged over the candle: Hyperliquid’s “premium” field, computed from the prices at which the reference amount could be bought or sold (the same quantity HL derives funding from). The oracle is a weighted median of spot prices from centralised exchanges, and on HIP-3 markets the underlying’s price from the market deployer. Positive: the contract’s book sits above spot, negative: below, zero: the oracle lies between the impact prices. The legend also shows mark − oracle. The dotted lines are the usual band p10–p90: a value between them is the ordinary state'
+    ),
+    group: 'hyperquant',
+    aliases: 'premia premium basis baza mark oracle wyrocznia spot perp kontrakt lewar leverage hip-3 hip3 pogon chase',
+    warmup: () => 0,
+    convention: tr(
+      'Tego wskaźnika nie ma w TradingView: liczony z kanału activeAssetCtx Hyperliquid. Według dokumentacji Hyperliquid premium = (max(impact_bid − oracle, 0) − max(oracle − impact_ask, 0)) / oracle, gdzie impact_bid i impact_ask to średnie ceny sprzedaży i kupna kwoty referencyjnej z arkusza (20 000 USDC na BTC, 6 000 USDC na innych rynkach), a oracle to ważona mediana cen spot giełd scentralizowanych, odświeżana co ok. 3 s; z tej wielkości HL liczy finansowanie. Pomocnicza wartość w legendzie to (mark − oracle) / oracle. Wartość świecy to średnia ważona czasem trwania każdego odczytu w świecy (bieżąca: do teraz), bo pojedynczy odczyt skacze o krok ceny; odczyt liczy się najwyżej 60 s, dłuższa przerwa to luka. Krok ceny (5 cyfr znaczących) to najmniejsza widoczna zmiana: dla BTC ok. 0,15 pb. Na rynkach desku HIP-3 poza notowaniami rynku bazowego (weekend, przerwa dzienna, święto) oracle to cena platformy, więc te świece nie mają wartości.',
+      'TradingView has no such indicator: it is computed from the Hyperliquid activeAssetCtx channel. According to the Hyperliquid documentation premium = (max(impact_bid − oracle, 0) − max(oracle − impact_ask, 0)) / oracle, where impact_bid and impact_ask are the average prices for selling and buying the reference amount from the book (20,000 USDC for BTC, 6,000 USDC on other markets), and the oracle is a weighted median of centralised-exchange spot prices, refreshed about every 3 s; HL derives funding from this quantity. The auxiliary value in the legend is (mark − oracle) / oracle. The candle value is the mean weighted by how long each reading lasted (the current candle: up to now), because a single reading jumps by a price step; a reading counts for at most 60 s, a longer pause is a gap. The price step (5 significant figures) is the smallest visible change: about 0.15 bp for BTC. On the desk HIP-3 markets, outside the underlying’s trading hours (weekend, daily break, holiday) the oracle is the platform price, so those candles have no value.'
+    ),
+    memoryNote: tr(
+      'Wartość ma tylko świeca z odczytami od otwarcia strony: historia taśmy z serwera ma cenę mark i OI, ale nie premii ani oracle, więc premii sprzed otwarcia strony ani w powtórce nie ma. Świeca nie zależy od innych świec. Pasmo zwykłości pojawia się od 200 świec z wartością, na 1m po ok. 3 h 20 min od otwarcia strony.',
+      'Only a candle with readings since the page opened has a value: the server tape history has the mark price and OI but neither the premium nor the oracle, so there is no premium from before the page opened or in a replay. A candle does not depend on other candles. The usual band appears from 200 candles with a value, on 1m about 3 h 20 min after the page opened.'
+    ),
+    pane: 'own',
+    params: [],
+    plots: [{ title: tr('pb', 'bp') }, { hidden: true, title: 'mark − oracle' }],
+    levels: [0],
+    format: 'fixed1',
+    usualBand: {},
+    flow: (b, ms, ctx, out) => {
+      const t = b.candle.t;
+      const to = Math.min(t + ms, ctx.now);
+      out[0] = ctx.premium?.(t, to) ?? Number.NaN;
+      out[1] = ctx.markOracle?.(t, to) ?? Number.NaN;
+    },
+  },
 ];
 
 /** Wskaźniki usunięte z rejestru (przybliżenia wolumenu); zapis z którymś z nich uruchamia jednorazową informację. */
@@ -2310,7 +2350,7 @@ export const REMOVED_INDICATORS: readonly string[] = ['obv', 'cmf', 'mfi', 'netv
  */
 export const MENU_GROUPS = [
   { id: 'presja', label: tr('Kto naciska i czy cena ustępuje', 'Who is pushing and does price give way'), ids: ['absorption', 'effres', 'ofi', 'kyle', 'oiflow'] },
-  { id: 'sklad', label: tr('Kto stoi za ruchem', 'Who is behind the move'), ids: ['breadth', 'repeat', 'makers', 'ordersize', 'twap', 'hawkes'] },
+  { id: 'sklad', label: tr('Kto stoi za ruchem', 'Who is behind the move'), ids: ['breadth', 'repeat', 'makers', 'ordersize', 'twap', 'hawkes', 'premium'] },
   { id: 'ruch', label: tr('Kiedy ruch i ile kosztuje wejście', 'When the market moves and what entry costs'), ids: ['rvol', 'regime', 'slippage', 'cone'] },
   { id: 'poziomy', label: tr('Poziomy i rynki prognoz', 'Levels and prediction markets'), ids: ['pbrange', 'effort', 'ivb', 'outcomes'] },
 ] as const satisfies readonly { id: string; label: string; ids: readonly IndicatorId[] }[];
@@ -2396,6 +2436,7 @@ const FAMILY_COLOR: Partial<Record<IndicatorId, string>> = {
   cone: '#9085E9',
   repeat: '#5CE4D5',
   ordersize: '#5CE4D5',
+  premium: '#5CE4D5',
   slippage: '#B4C6DB',
   pbrange: '#E0A045',
   effort: '#E0A045',
