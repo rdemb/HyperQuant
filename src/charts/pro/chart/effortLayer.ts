@@ -1,8 +1,9 @@
 import type { IChartApiBase, IPrimitivePaneRenderer, IPrimitivePaneView, ISeriesApi, ISeriesPrimitive, Logical, SeriesAttachedParameter, SeriesType, Time } from 'lightweight-charts';
 import { tr } from '../../../i18n';
 import { numLang } from '../../../ui/format';
-import { DEFAULT_EFFORT_PARAMS, type EffortResult, type Side, type SwingProfile, type VBar, effortZones, swingLvnConfidence } from '../core/effortZones';
-import { LVN_MIN_CONFIDENCE } from '../core/lvnConfidence';
+import { DEFAULT_EFFORT_PARAMS, type EffortResult, type Side, type SwingLvnTest, type SwingProfile, type VBar, effortZones, swingLvnTest } from '../core/effortZones';
+import { shownLvn } from '../core/lvn';
+import { PATHS_PENDING, lvnLabel } from './lvnText';
 import type { FootprintBar } from '../core/footprintBar';
 import { fmtDayTime } from '../core/time';
 import { fmtDuration } from '../draw/model';
@@ -129,29 +130,31 @@ function candlesAgo(t: number, asOf: number, ms: number): string {
   return ago === 0 ? tr('ostatnia świeca', 'the last candle') : tr(`${ago} ${pl(ago, 'świeca', 'świece', 'świec')} temu`, `${ago} ${ago === 1 ? 'candle' : 'candles'} ago`);
 }
 
-/** Pewność LVN profilu swingu (w kolejności `p.lvn`); null — nieznana. */
-export type LvnConfidenceOf = (p: SwingProfile) => readonly number[] | null;
-
-const pct = (c: number) => numLang(String(Math.round(c * 100)));
+/** Testy LVN profilu swingu (w kolejności `p.lvn`) albo za mało świec; null — nieznane. */
+export type LvnTestOf = (p: SwingProfile) => SwingLvnTest | null;
 
 /**
- * LVN profilu swingu z pewnością bootstrapową: tylko z pewnością ≥ 70% (najtrwalsze pierwsze), poniżej progu sama
- * liczba odrzuconych (hipoteza zerowa: szum profilu); bez pewności „—” z powodem.
+ * LVN profilu swingu po testach: tylko z filtrem położenia i p ≤ 0,05 wobec szumu pomiaru (najtrwalsze pierwsze),
+ * węzeł jako „LVN (węzeł) cena”, szeroka dolina jako „LVA (obszar) od–do”, z głębokością względną i p; pozostałe tylko
+ * liczbą („w granicach szumu”); test wobec losowych ścieżek w przygotowaniu; bez testu „—” z powodem.
  */
-export function lvnText(p: SwingProfile, conf: readonly number[] | null, fmt: (p: number) => string): string {
+export function lvnText(p: SwingProfile, t: SwingLvnTest | null, fmt: (p: number) => string): string {
   if (p.lvn.length === 0) return '';
-  if (!conf) return tr(', LVN: —, pewność nieznana', ', LVN: —, confidence unknown');
-  const kept = p.lvn.map((l, i) => ({ px: l.px, c: conf[i] ?? 0 })).filter((l) => l.c >= LVN_MIN_CONFIDENCE);
-  const cut = p.lvn.length - kept.length;
-  const min = pct(LVN_MIN_CONFIDENCE);
-  if (kept.length === 0) return tr(`, LVN: —, pewność < ${min}% (${cut})`, `, LVN: —, confidence < ${min}% (${cut})`);
-  const pl = kept.map((l) => `${fmt(l.px)} · pewność ${pct(l.c)}%`).join('; ');
-  const en = kept.map((l) => `${fmt(l.px)} · confidence ${pct(l.c)}%`).join('; ');
-  return tr(`, LVN ${pl}${cut > 0 ? `; ${cut} poniżej ${min}%` : ''}`, `, LVN ${en}${cut > 0 ? `; ${cut} below ${min}%` : ''}`);
+  if (!t) return tr(', LVN: —, test nieznany', ', LVN: —, test unknown');
+  if ('short' in t) {
+    const { have, need } = t.short;
+    return tr(`, LVN: —, za mało świec do testu (${have} z ${need})`, `, LVN: —, too few candles for a test (${have} of ${need})`);
+  }
+  const all = p.lvn.map((l, i) => ({ ...l, ...t.tests[i] }));
+  const kept = shownLvn(all);
+  const cut = all.length - kept.length;
+  if (kept.length === 0) return tr(`, LVN: —, w granicach szumu pomiaru (${cut})`, `, LVN: —, within measurement noise (${cut})`);
+  const rest = cut > 0 ? tr(`; ${cut} w granicach szumu`, `; ${cut} within noise`) : '';
+  return `, ${kept.map((l) => lvnLabel(l, false, false, fmt)).join('; ')}${rest} · ${PATHS_PENDING}`;
 }
 
-/** Profil swingu strefy D: POC, VA, LVN z pewnością i plakietka źródła (z taśmy albo przybliżenie ze świec). */
-function profileText(p: SwingProfile, fmt: (p: number) => string, conf: readonly number[] | null): string {
+/** Profil swingu strefy D: POC, VA, LVN po testach i plakietka źródła (z taśmy albo przybliżenie ze świec). */
+function profileText(p: SwingProfile, fmt: (p: number) => string, conf: SwingLvnTest | null): string {
   const lvn = lvnText(p, conf, fmt);
   const src =
     p.tapeShare >= 1
@@ -166,7 +169,7 @@ function profileText(p: SwingProfile, fmt: (p: number) => string, conf: readonly
  * Czas dostępności strefy: od kiedy była znana (zamknięcie świecy powstania) i ile po zamknięciu świecy krańca, żeby
  * pasma rysowanego od krańca nie brać za wiedzę z chwili krańca; F powstaje na zamknięciu przebicia.
  */
-function knownText(k: ZoneKnown, mark: string, asOf: number, fmt: (p: number) => string, conf: LvnConfidenceOf): LegendPart[] {
+function knownText(k: ZoneKnown, mark: string, asOf: number, fmt: (p: number) => string, conf: LvnTestOf): LegendPart[] {
   const at = fmtDayTime(k.at, asOf);
   const text =
     k.kind === 'flip'
@@ -190,7 +193,7 @@ function bandAt(sel: EffortSelection, hover: { t: number; p: number }, ms: numbe
 /**
  * Opis w legendzie z wyboru: pasma po stronach z liczbą dalszych, krańce bez oceny strefy A, ostatnia seria pudełek
  * (albo nowsza świeca bez taśmy) i świece z taśmą wśród 32 ostatnich; w trybie „Historia” liczby obrysów. Krzyż nad
- * pasmem dopisuje czas dostępności jego stref (i profil swingu D z pewnością LVN z `lvnConf`). Powyżej 1 h powód braku,
+ * pasmem dopisuje czas dostępności jego stref (i profil swingu D z LVN po testach z `lvnConf`). Powyżej 1 h powód braku,
  * bez zamkniętych świec — czekanie.
  */
 export function effortLegend(
@@ -199,7 +202,7 @@ export function effortLegend(
   asOf: number,
   hover: { t: number; p: number } | null = null,
   fmt: (p: number) => string = (p) => numLang(String(p)),
-  lvnConf: LvnConfidenceOf = () => null
+  lvnConf: LvnTestOf = () => null
 ): LegendPart[] {
   if (ms > MAX_TF) return [{ text: tr('—, interwał do 1 h', '—, intervals up to 1 h'), color: PRO.ink3 }];
   if (!sel) return [{ text: tr('czekam na świece…', 'waiting for candles…'), color: PRO.ink3 }];
@@ -257,12 +260,12 @@ export class EffortLayer implements ISeriesPrimitive<Time> {
   private srcMs = 0;
   private vbars: VBar[] = [];
   private result: EffortResult | null = null;
-  /** Pewność LVN profili swingu liczona leniwie pod kursorem, raz na profil (nowy wynik — nowe profile). */
-  private lvnConf = new WeakMap<SwingProfile, readonly number[]>();
-  private readonly lvnConfOf: LvnConfidenceOf = (p) => {
+  /** Testy LVN profili swingu liczone leniwie pod kursorem, raz na profil (nowy wynik — nowe profile). */
+  private lvnConf = new WeakMap<SwingProfile, SwingLvnTest>();
+  private readonly lvnConfOf: LvnTestOf = (p) => {
     let c = this.lvnConf.get(p);
     if (!c) {
-      c = swingLvnConfidence(this.vbars, p);
+      c = swingLvnTest(this.vbars, p, this.srcMs);
       this.lvnConf.set(p, c);
     }
     return c;
