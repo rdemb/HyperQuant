@@ -1851,7 +1851,7 @@ export class ProChartController {
           : def.pbRanges
             ? this.pb.legend(x.color)
             : def.effortZones
-              ? this.effort.legend()
+              ? this.effort.legend(this.hoverTime !== null && this.hoverPrice !== null ? { t: this.hoverTime, p: this.hoverPrice } : null, this.indFormat('price'))
               : short
                 ? [{ text: `—, ${short}`, color: PRO.ink3 }]
                 : vs.flatMap((v, p) => {

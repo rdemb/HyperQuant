@@ -1,4 +1,4 @@
-import { DEFAULT_EFFORT_PARAMS, type EffortResult, type EffortZone, type Side, type VBar, type ZoneKind } from '../core/effortZones';
+import { DEFAULT_EFFORT_PARAMS, type EffortResult, type EffortZone, type Side, type SwingProfile, type VBar, type ZoneKind } from '../core/effortZones';
 
 /**
  * Co rysuje warstwa „Strefy absorpcji i pudełka Effort” w chwili `asOf` (ostatnia zamknięta świeca, w powtórce świeca
@@ -12,9 +12,12 @@ import { DEFAULT_EFFORT_PARAMS, type EffortResult, type EffortZone, type Side, t
  * - Przebita: sam obrys przez 6 świec od przebicia, najnowsza, tylko na komputerze, tylko strefa uzbrojona przed
  *   przebiciem (inna nigdy nie była pasmem), bez niej w miejscu strefy po zmianie roli.
  * - Pudełka: kolejne pudełka strony (najwyżej 3 świece odstępu) to jedna seria; rysowana ostatnia seria strony, gdy jej
- *   ostatnia świeca ma najwyżej 12 świec (telefon: nowsza z dwóch). Pudełko tylko wtedy, gdy jego świeca i 19 świec
- *   przed nią mają deltę z taśmy: próg agresji to średnia |delty| z 20 świec, a przybliżona delta w tym oknie zmieniałaby
- *   zestaw pudełek po doczytaniu taśmy.
+ *   ostatnia świeca ma najwyżej 12 świec (telefon: nowsza z dwóch). Pudełka bez taśmy nie powstają już w modelu
+ *   (świeca i 19 przed nią z taśmą), więc wybór ich nie filtruje.
+ * - Luki bez taśmy (`untaped`): strefy A z ostatnich 12 h (tyle żyje strefa) i najnowsza luka pudełka z 12 świec — do
+ *   legendy jako „—, brak taśmy”.
+ * - Czas dostępności (`known`): każda strefa pasma jest znana od zamknięcia świecy powstania, z opóźnieniem od zamknięcia
+ *   świecy krańca (przy F od przebicia: 0).
  * - Tryb „Historia”: wszystkie strefy znane w chwili `asOf` i wszystkie serie pudełek, samymi obrysami.
  *
  * Wybór zależy tylko od świec do `asOf`: ta sama chwila daje ten sam rysunek niezależnie od głębokości historii
@@ -26,10 +29,8 @@ import { DEFAULT_EFFORT_PARAMS, type EffortResult, type EffortZone, type Side, t
 export const BROKEN_BARS = 6;
 /** Pudełko starsze niż tyle świec nie jest rysowane; w prawo od serii krawędzie do tylu świec. */
 export const BOX_RECENT = 12;
-/** Okno średniej |delty| modelu (próg agresji pudełka): tyle świec z taśmą do i z świecą pudełka. */
-const TAPE_WINDOW = DEFAULT_EFFORT_PARAMS.smaLen;
-/** Odcinek taśmy w legendzie: 12 świec pudełek i okno średniej przed nimi. */
-export const TAPE_SPAN = BOX_RECENT + TAPE_WINDOW;
+/** Odcinek taśmy w legendzie: 12 świec pudełek i okno średniej |delty| modelu (20 świec) przed nimi. */
+export const TAPE_SPAN = BOX_RECENT + DEFAULT_EFFORT_PARAMS.smaLen;
 const MERGE_GAP_ATR = 0.25;
 const MERGE_MAX_ATR = 1.5;
 const SERIES_GAP = 3;
@@ -48,6 +49,15 @@ export interface EffortBand {
   kinds: ZoneKind[];
   /** Krańce swingów stref pasma: krótka kreska na cenie krańca i jego świecy. */
   extremes: { t: number; p: number }[];
+  /** Strefy pasma (rosnąco po cenie): od kiedy znane (zamknięcie świecy powstania), ile po zamknięciu świecy krańca, profil D. */
+  known: ZoneKnown[];
+}
+
+export interface ZoneKnown {
+  kind: ZoneKind;
+  at: number;
+  lag: number;
+  profile?: SwingProfile;
 }
 
 export interface EffortBoxSeries {
@@ -68,6 +78,8 @@ export interface EffortSelection {
   far: { demand: number; supply: number };
   /** Ile z ostatnich `TAPE_SPAN` (32) zamkniętych świec ma deltę z taśmy. */
   tapeRecent: number;
+  /** Bez taśmy: krańce bez oceny strefy A z ostatnich 12 h i świeca najnowszej luki pudełka z 12 świec (null — brak). */
+  untaped: { zones: number; box: number | null };
   history: boolean;
 }
 
@@ -93,7 +105,14 @@ function indexAt(bars: readonly VBar[], t: number): number {
 
 const extremeOf = (z: EffortZone) => ({ t: z.from, p: z.side === 1 ? z.lo : z.hi });
 
-function bandOf(zs: readonly EffortZone[], end: number | null): EffortBand {
+/** Strefa znana od zamknięcia świecy powstania; opóźnienie od zamknięcia świecy krańca (`from`) to createdAt − from. */
+function knownOf(z: EffortZone, ms: number): ZoneKnown {
+  const k: ZoneKnown = { kind: z.kind, at: z.createdAt + ms, lag: z.createdAt - z.from };
+  if (z.profile) k.profile = z.profile;
+  return k;
+}
+
+function bandOf(zs: readonly EffortZone[], end: number | null, ms: number): EffortBand {
   const sorted = [...zs].sort((a, b) => a.lo - b.lo || a.id - b.id);
   const kinds = [...new Set(sorted.map((z) => z.kind))];
   return {
@@ -105,11 +124,12 @@ function bandOf(zs: readonly EffortZone[], end: number | null): EffortBand {
     mark: kinds.map((k) => MARK[k]).join('·'),
     kinds,
     extremes: sorted.map(extremeOf),
+    known: sorted.map((z) => knownOf(z, ms)),
   };
 }
 
 /** Pasma strony: łączenie stref nakładających się albo bliższych niż 0,25 ATR, o ile pasmo ma najwyżej 1,5 ATR. */
-function merge(zs: readonly EffortZone[], atr: number): EffortBand[] {
+function merge(zs: readonly EffortZone[], atr: number, ms: number): EffortBand[] {
   const sorted = [...zs].sort((a, b) => a.lo - b.lo || a.id - b.id);
   const groups: EffortZone[][] = [];
   let lo = 0;
@@ -125,25 +145,17 @@ function merge(zs: readonly EffortZone[], atr: number): EffortBand[] {
     lo = z.lo;
     hi = z.hi;
   }
-  return groups.map((g) => bandOf(g, null));
+  return groups.map((g) => bandOf(g, null, ms));
 }
 
 const distance = (b: EffortBand, close: number) => (close >= b.lo && close <= b.hi ? 0 : Math.min(Math.abs(close - b.lo), Math.abs(close - b.hi)));
 
-/** Serie pudełek z taśmą do chwili `asOf`, rosnąco po czasie, osobno dla stron. */
-function boxSeries(r: EffortResult, bars: readonly VBar[], ms: number, asOf: number): EffortBoxSeries[] {
-  // Świece, które same i 19 świec przed nimi mają deltę z taśmy (cała średnia |delty| progu z taśmy)
-  const tape = new Set<number>();
-  let run = 0;
-  for (const b of bars) {
-    if (b.t > asOf) break;
-    run = b.delta !== null ? run + 1 : 0;
-    if (run >= TAPE_WINDOW) tape.add(b.t);
-  }
+/** Serie pudełek do chwili `asOf`, rosnąco po czasie, osobno dla stron. */
+function boxSeries(r: EffortResult, ms: number, asOf: number): EffortBoxSeries[] {
   const out: EffortBoxSeries[] = [];
   const open = new Map<Side, EffortBoxSeries>();
   for (const b of [...r.boxes].sort((a, c) => a.t - c.t)) {
-    if (b.t > asOf || !tape.has(b.t)) continue;
+    if (b.t > asOf) continue;
     const cur = open.get(b.side);
     if (cur && b.t - cur.last <= SERIES_GAP * ms) {
       cur.last = b.t;
@@ -161,15 +173,21 @@ function boxSeries(r: EffortResult, bars: readonly VBar[], ms: number, asOf: num
 
 export function selectEffort(r: EffortResult, bars: readonly VBar[], ms: number, asOf: number, o: EffortSelectOptions): EffortSelection {
   const i = indexAt(bars, asOf);
-  const empty: EffortSelection = { bands: [], broken: null, boxes: [], far: { demand: 0, supply: 0 }, tapeRecent: 0, history: o.history };
+  const empty: EffortSelection = { bands: [], broken: null, boxes: [], far: { demand: 0, supply: 0 }, tapeRecent: 0, untaped: { zones: 0, box: null }, history: o.history };
   if (i < 0) return empty;
   let tapeRecent = 0;
   for (let k = Math.max(0, i - TAPE_SPAN + 1); k <= i; k++) if (bars[k].delta !== null) tapeRecent++;
+  const untaped = { zones: 0, box: null as number | null };
+  for (const g of r.untaped) {
+    if (g.t > asOf) continue;
+    if (g.kind === 'absorption' && asOf - g.t <= DEFAULT_EFFORT_PARAMS.zoneMaxAgeMs) untaped.zones++;
+    if (g.kind === 'box' && asOf - g.t <= BOX_RECENT * ms && (untaped.box === null || g.t > untaped.box)) untaped.box = g.t;
+  }
   const known = r.zones.filter((z) => z.createdAt <= asOf);
-  const series = boxSeries(r, bars, ms, asOf);
+  const series = boxSeries(r, ms, asOf);
 
   if (o.history) {
-    return { ...empty, tapeRecent, bands: known.map((z) => bandOf([z], z.to !== null && z.to <= asOf ? z.to : null)), boxes: series };
+    return { ...empty, tapeRecent, untaped, bands: known.map((z) => bandOf([z], z.to !== null && z.to <= asOf ? z.to : null, ms)), boxes: series };
   }
 
   const close = bars[i].c;
@@ -181,7 +199,8 @@ export function selectEffort(r: EffortResult, bars: readonly VBar[], ms: number,
   for (const side of [1, -1] as const) {
     const list = merge(
       active.filter((z) => z.side === side),
-      Number.isFinite(atr) ? atr : 0
+      Number.isFinite(atr) ? atr : 0,
+      ms
     ).sort((a, b) => distance(a, close) - distance(b, close) || b.start - a.start);
     bands.push(...list.slice(0, k));
     if (side === 1) far.demand = Math.max(0, list.length - k);
@@ -194,7 +213,7 @@ export function selectEffort(r: EffortResult, bars: readonly VBar[], ms: number,
       .filter((z) => z.end === 'broken' && z.to !== null && z.to <= asOf && asOf - z.to < BROKEN_BARS * ms && z.armedAt !== null && z.armedAt <= z.to)
       .sort((a, b) => (b.to as number) - (a.to as number) || b.id - a.id)[0];
     const flipHere = recent && bands.some((b) => b.kinds.includes('flip') && b.lo < recent.hi && b.hi > recent.lo);
-    if (recent && !flipHere) broken = bandOf([recent], recent.to);
+    if (recent && !flipHere) broken = bandOf([recent], recent.to, ms);
   }
 
   const recentBoxes = ([1, -1] as const)
@@ -202,5 +221,5 @@ export function selectEffort(r: EffortResult, bars: readonly VBar[], ms: number,
     .filter((s): s is EffortBoxSeries => !!s && asOf - s.last <= BOX_RECENT * ms);
   const boxes = o.phone && recentBoxes.length > 1 ? [recentBoxes.reduce((a, b) => (b.last > a.last ? b : a))] : recentBoxes;
 
-  return { bands, broken, boxes, far, tapeRecent, history: false };
+  return { bands, broken, boxes, far, tapeRecent, untaped, history: false };
 }

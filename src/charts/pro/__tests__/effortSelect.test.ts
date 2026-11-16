@@ -1,6 +1,6 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { type EffortBox, type EffortResult, type EffortZone, type Side, type VBar, effortZones } from '../core/effortZones';
+import { type EffortBox, type EffortGap, type EffortResult, type EffortZone, type Side, type VBar, effortZones } from '../core/effortZones';
 import { BROKEN_BARS, TAPE_SPAN, effortRects, selectEffort } from '../chart/effortSelect';
 
 const MS = 5 * 60_000;
@@ -18,7 +18,7 @@ function zone(side: Side, lo: number, hi: number, o: Partial<EffortZone> = {}): 
 }
 
 function result(zones: EffortZone[], boxes: EffortBox[], n: number): EffortResult {
-  return { zones, boxes, vwap: new Float64Array(n), proxyShare: 0, series: { delta: new Float64Array(n), smaV: new Float64Array(n), smaD: new Float64Array(n), atr: new Float64Array(n).fill(ATR) } };
+  return { zones, boxes, vwap: new Float64Array(n), untaped: [], series: { delta: new Float64Array(n), smaV: new Float64Array(n), smaD: new Float64Array(n), atr: new Float64Array(n).fill(ATR) } };
 }
 
 const at = (i: number) => T0 + i * MS;
@@ -78,8 +78,34 @@ describe('wybór stref i pudełek do rysowania (effortSelect)', () => {
     expect(s.boxes).toHaveLength(1);
     expect(s.boxes[0]).toMatchObject({ side: 1, from: at(40), last: at(43), lo: 988, hi: 999, cells: [at(40), at(41), at(43)] });
     expect(selectEffort(result([], [bx(40)], 60), b, MS, at(53), { phone: false, history: false }).boxes).toEqual([]);
-    const noTape = bars(60, 1000, false);
-    expect(selectEffort(result([], [bx(40)], 60), noTape, MS, at(45), { phone: false, history: false }).boxes).toEqual([]);
+  });
+
+  it('luki bez taśmy: strefy A z ostatnich 12 h i najnowsza luka pudełka z ostatnich 12 świec', () => {
+    const b = bars(200);
+    const gaps: EffortGap[] = [
+      { kind: 'absorption', side: 1, from: at(10), t: at(15) },
+      { kind: 'absorption', side: -1, from: at(150), t: at(155) },
+      { kind: 'box', side: 1, t: at(170), from: at(170) },
+      { kind: 'box', side: -1, t: at(186), from: at(186) },
+      { kind: 'absorption', side: 1, from: at(190), t: at(195) },
+    ];
+    const sel = (i: number) => selectEffort({ ...result([], [], 200), untaped: gaps }, b, MS, at(i), { phone: false, history: false }).untaped;
+    // Chwila 190: luka A z 155 (strefa żyłaby jeszcze), z 15 — ponad 12 h temu; luka z 195 jeszcze nieznana
+    expect(sel(190)).toEqual({ zones: 1, box: at(186) });
+    // Luka pudełka widoczna jak pudełko: najwyżej 12 świec
+    expect(sel(198)).toEqual({ zones: 2, box: at(186) });
+    expect(sel(199)).toEqual({ zones: 2, box: null });
+    expect(sel(169)).toEqual({ zones: 1, box: null });
+  });
+
+  it('czas dostępności: strefa znana od zamknięcia świecy powstania, z opóźnieniem od zamknięcia świecy krańca', () => {
+    const b = bars(40);
+    const zs = [zone(1, 980, 985, { from: at(3), createdAt: at(8) }), zone(1, 986, 989, { kind: 'flip', from: at(20), createdAt: at(20) })];
+    const s = selectEffort(result(zs, [], 40), b, MS, at(39), { phone: false, history: false });
+    expect(s.bands[0].known).toEqual([
+      { kind: 'absorption', at: at(9), lag: 5 * MS },
+      { kind: 'flip', at: at(21), lag: 0 },
+    ]);
   });
 
   it('pudełka: jedna seria na stronę (ostatnia), na telefonie nowsza z dwóch; legenda liczy świece z taśmą', () => {
@@ -180,6 +206,20 @@ describe('effortSelect na nagranych dobach', () => {
     // Pierwsze przeliczenie bez taśmy, drugie po jej doczytaniu — wynik tylko z ostatnich danych
     selectEffort(effortZones(noTape, MS), noTape, MS, X, { phone: false, history: false });
     expect(selectEffort(effortZones(all, MS), all, MS, X, { phone: false, history: false })).toEqual(selectEffort(full, all, MS, X, { phone: false, history: false }));
+  });
+
+  it('nagrane doby bez taśmy: rdzeń nie daje pudełek ani stref A (same luki), strefy D zostają z profilem ze świec', () => {
+    const noTape = all.map((b) => ({ ...b, delta: null }));
+    const r = effortZones(noTape, MS);
+    // Z taśmą (61 z 926 świec) są pudełka; dawniej przybliżenie ze świecy dawało ich 80 bez taśmy
+    expect(full.boxes.length).toBeGreaterThan(0);
+    expect(r.boxes).toEqual([]);
+    expect(r.zones.filter((z) => z.kind === 'absorption')).toEqual([]);
+    expect(r.untaped.filter((g) => g.kind === 'box').length).toBeGreaterThan(0);
+    expect(r.untaped.filter((g) => g.kind === 'absorption').length).toBeGreaterThan(0);
+    const d = r.zones.filter((z) => z.kind === 'discount');
+    expect(d.length).toBeGreaterThan(0);
+    for (const z of d) expect(z.profile?.tapeShare).toBe(0);
   });
 
   it('pudełko tylko z taśmą na swojej świecy i 19 przed nią: taśma w ostatnich 12 świecach — 0 pudełek, w ostatnich 32 — jak pełna', () => {

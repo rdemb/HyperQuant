@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { tradeSessionOn } from '../../../utils/sessionDay';
-import { DEFAULT_EFFORT_PARAMS, type EffortParams, type VBar, absorbsAt, aggressionAt, deltaOf, effortZones, valueArea } from '../core/effortZones';
+import { DEFAULT_EFFORT_PARAMS, type EffortParams, type VBar, absorbsAt, aggressionAt, effortZones, swingProfile } from '../core/effortZones';
 
 /**
  * Strefy absorpcji i dyskonta swingu oraz pudełka Effort na syntetycznych świecach 5m w sesji NY: strefa powstaje
@@ -40,31 +40,75 @@ const SCENARIO: Row[] = [
   [102.5, 102.6, 99.8, 100, 15, -8],
 ];
 
+/** Świeca z taśmą: cały wolumen transakcji na podanych cenach (wiersze co 0,5 USD), połowa kupno, połowa sprzedaż. */
+function taped(b: VBar, at: [price: number, vol: number][]): VBar {
+  const tick = 0.5;
+  const lo = Math.round(Math.min(...at.map(([p]) => p)) / tick);
+  const hi = Math.round(Math.max(...at.map(([p]) => p)) / tick);
+  const buy = new Float64Array(hi - lo + 1);
+  const sell = new Float64Array(hi - lo + 1);
+  for (const [p, v] of at) {
+    buy[Math.round(p / tick) - lo] += v / 2;
+    sell[Math.round(p / tick) - lo] += v / 2;
+  }
+  return { ...b, delta: b.delta ?? 0, tape: { tick, lo, buy, sell } };
+}
+
 describe('delta i profil', () => {
-  it('delta z taśmy bez zmian; bez taśmy przybliżenie: wolumen × (2·położenie zamknięcia − 1)', () => {
-    expect(deltaOf({ t: 0, o: 1, h: 2, l: 0, c: 1, v: 10, delta: -4 })).toBe(-4);
-    expect(deltaOf({ t: 0, o: 1, h: 2, l: 0, c: 1.5, v: 10, delta: null })).toBeCloseTo(5);
-    expect(deltaOf({ t: 0, o: 1, h: 1, l: 1, c: 1, v: 10, delta: null })).toBe(0);
+  it('delta tylko z taśmy: świeca bez taśmy ma w serii NaN, a średnia |delty| istnieje tylko przy taśmie w całym oknie', () => {
+    const rows = SCENARIO.map((r, i) => (i === 8 ? ([r[0], r[1], r[2], r[3], r[4], null] as Row) : r));
+    const r = effortZones(mk(rows), MS, P);
+    for (const s of [r.vwap, r.series.delta, r.series.smaV, r.series.smaD, r.series.atr]) expect(s).toHaveLength(19);
+    expect(Number.isNaN(r.series.delta[8])).toBe(true);
+    expect(r.series.delta[7]).toBe(-3);
+    // Okno 5 świec: świece 8–12 mają w oknie świecę bez taśmy, więc bez średniej (nie przybliżenie)
+    expect([4, 5, 6, 7].map((i) => Number.isFinite(r.series.smaD[i]))).toEqual([true, true, true, true]);
+    for (let i = 8; i <= 12; i++) expect(Number.isNaN(r.series.smaD[i]), `świeca ${i}`).toBe(true);
+    // Świece 9–13 z taśmą: |delta| 4, 4, 2, 3, 4
+    expect(r.series.smaD[13]).toBeCloseTo((4 + 4 + 2 + 3 + 4) / 5, 12);
+    // Średnie i ATR bez wartości przed pełnym oknem (5 świec)
+    expect(Number.isNaN(r.series.atr[3])).toBe(true);
+    expect(r.series.atr[4]).toBeCloseTo(1, 12);
+    expect(r.series.smaV[4]).toBeCloseTo(10, 12);
   });
 
-  it('value area: 70% wolumenu wokół POC', () => {
+  it('value area: 70% wolumenu wokół POC; bez taśmy cały profil ze świec (przybliżenie)', () => {
     const bars = mk([
       [100, 101, 100, 101, 10],
       [101, 102, 101, 102, 80],
       [102, 103, 102, 103, 10],
     ]);
-    expect(valueArea(bars, 0, 2, 3, 0.7)).toEqual({ val: 101, vah: 102 });
+    expect(swingProfile(bars, 0, 2, 3, 0.7)).toMatchObject({ val: 101, vah: 102, poc: 101.5, tapeShare: 0 });
   });
 
-  it('udział świec z deltą przybliżoną ze świecy i serie dla każdej świecy', () => {
-    const rows = SCENARIO.map((r, i) => (i % 4 === 0 ? ([r[0], r[1], r[2], r[3], r[4], null] as Row) : r));
-    const r = effortZones(mk(rows), MS, P);
-    expect(r.proxyShare).toBeCloseTo(5 / 19, 12);
-    for (const s of [r.vwap, r.series.delta, r.series.smaV, r.series.smaD, r.series.atr]) expect(s).toHaveLength(19);
-    // Średnie i ATR bez wartości przed pełnym oknem (5 świec)
-    expect(Number.isNaN(r.series.atr[3])).toBe(true);
-    expect(r.series.atr[4]).toBeCloseTo(1, 12);
-    expect(r.series.smaV[4]).toBeCloseTo(10, 12);
+  it('profil z taśmy: wolumen transakcji na każdej cenie, a ze świec tylko tam, gdzie taśmy brak (przykład Astry: 0–7 a 9–10)', () => {
+    // Świeca 0: zakres 0–7, wolumen 28; świeca 1: zakres 0–10, wolumen 70, na taśmie cały przy cenie 9,5
+    const candles: VBar[] = [
+      { t: 0, o: 7, h: 7, l: 0, c: 0.5, v: 28, delta: null },
+      { t: MS, o: 0.5, h: 10, l: 0, c: 9.5, v: 70, delta: null },
+    ];
+    // Same świece: wolumen rozłożony równo na zakres, VA 0–7
+    expect(swingProfile(candles, 0, 1, 10, 0.7)).toMatchObject({ val: 0, vah: 7, tapeShare: 0 });
+    // Obie z taśmą (świeca 0 handlowana przy 0,5): VA 9–10, POC 9,5
+    const both = [taped(candles[0], [[0.5, 28]]), taped(candles[1], [[9.5, 70]])];
+    expect(swingProfile(both, 0, 1, 10, 0.7)).toMatchObject({ val: 9, vah: 10, poc: 9.5, tapeShare: 1 });
+    // Taśma tylko w świecy 1: świeca 0 ze świecy (przybliżenie), udział taśmy 70 z 98
+    const mixed = swingProfile([candles[0], both[1]], 0, 1, 10, 0.7)!;
+    expect(mixed).toMatchObject({ val: 9, vah: 10, poc: 9.5 });
+    expect(mixed.tapeShare).toBeCloseTo(70 / 98, 12);
+  });
+
+  it('LVN profilu swingu: dolina między dwoma szczytami wolumenu wewnątrz value area', () => {
+    // Dwa garby wolumenu (ceny 101–103 i 109–111) i dolina przy 106 na taśmie jednej świecy 100–112
+    const vol: [number, number][] = [];
+    for (let p = 100; p <= 112; p += 0.5) vol.push([p, p === 106 ? 0.5 : Math.abs(p - 106) <= 1.5 ? 2 : Math.abs(p - 106) <= 4 ? 10 : 6]);
+    const bars = [taped({ t: 0, o: 100, h: 112, l: 100, c: 112, v: 0, delta: 0 }, vol)];
+    const prof = swingProfile(bars, 0, 0, 24, 0.9)!;
+    expect(prof.lvn).toHaveLength(1);
+    expect(prof.lvn[0]).toBeGreaterThan(105);
+    expect(prof.lvn[0]).toBeLessThan(107);
+    expect(prof.lvn[0]).toBeGreaterThan(prof.val);
+    expect(prof.lvn[0]).toBeLessThan(prof.vah);
   });
 });
 
@@ -124,6 +168,19 @@ describe('strefa absorpcji', () => {
     expect(effortZones(mk(rows), MS, P).zones.filter((z) => z.side === 1)).toHaveLength(1);
   });
 
+  it('kraniec bez taśmy (świeca krańca albo sąsiednia): strefy A nie ma, jest luka „brak taśmy” z chwilą potwierdzenia', () => {
+    const rows = SCENARIO.map((r, i) => (i === 8 ? ([r[0], r[1], r[2], r[3], r[4], null] as Row) : r));
+    const bars = mk(rows);
+    const r = effortZones(bars.slice(0, 11), MS, P);
+    expect(r.zones).toEqual([]);
+    expect(r.untaped.filter((g) => g.kind === 'absorption')).toEqual([{ kind: 'absorption', side: 1, from: bars[8].t, t: bars[10].t }]);
+    // Świeca bez taśmy poza oknami średniej świec krańca i sąsiednich (7–9): strefa jak w pełnym nagraniu
+    const earlier = SCENARIO.map((r, i) => (i === 2 ? ([r[0], r[1], r[2], r[3], r[4], null] as Row) : r));
+    const ok = effortZones(mk(earlier).slice(0, 11), MS, P);
+    expect(ok.zones.map((z) => z.kind)).toEqual(['absorption']);
+    expect(ok.untaped.filter((g) => g.kind === 'absorption')).toEqual([]);
+  });
+
   it('dołek bez dużego wolumenu ani delty nie daje strefy', () => {
     const quiet = SCENARIO.map((r) => [r[0], r[1], r[2], r[3], 10, 0] as Row);
     expect(effortZones(mk(quiet), MS, P).zones).toEqual([]);
@@ -175,9 +232,12 @@ describe('strefa dyskonta swingu', () => {
     const z = r.zones[0];
     expect(z).toMatchObject({ side: 1, kind: 'discount', from: bars[7].t, createdAt: bars[14].t, lo: 98, to: null, armedAt: bars[14].t });
     // VAL profilu świec od dołka (7) do szczytu (12), wysokość od 0,15 do 1 ATR z dołka swingu
-    const va = valueArea(bars, 7, 12, DEFAULT_EFFORT_PARAMS.profileBins, 0.7)!;
+    const va = swingProfile(bars, 7, 12, DEFAULT_EFFORT_PARAMS.profileBins, 0.7)!;
     const a = r.series.atr[7];
     expect(z.hi).toBeCloseTo(98 + Math.min(a, Math.max(0.15 * a, va.val - 98)), 12);
+    // Profil swingu przy strefie (VAH, VAL, POC, LVN); bez taśmy cały ze świec, czyli przybliżenie
+    expect(z.profile).toEqual(va);
+    expect(z.profile!.tapeShare).toBe(0);
     // Swing 5,6 przy ATR ok. 1,19 to mniej niż 5 ATR: przy takim progu strefy nie ma
     expect(effortZones(bars, MS, { ...p, swingMinAtr: 5 }).zones).toEqual([]);
   });
@@ -203,16 +263,32 @@ describe('pudełka Effort', () => {
     expect(r.boxes[0].hi).toBe(100.2);
   });
 
-  it('bez taśmy: zamknięcie w górnych 30% zakresu i wolumen ponad 1,2 × średnia', () => {
-    const base: Row[] = Array.from({ length: 12 }, () => FLAT);
-    const box = (v: number, d: number | null) => effortZones(mk([...base, [100, 101.5, 99.9, 101.4, v, d]]), MS, P).boxes;
-    const tape = box(30, 20);
-    expect(tape).toHaveLength(1);
-    expect(tape[0]).toMatchObject({ side: 1, t: NY.start + 12 * MS, lo: 99.9, stacked: false });
-    expect(tape[0].hi).toBeCloseTo(100.7, 12);
-    expect(box(30, null)).toHaveLength(1);
-    // Wolumen 12 przy średniej 10,4: poniżej 1,2 × średnia
-    expect(box(12, null)).toEqual([]);
+  it('bez taśmy na świecy albo w oknie średniej |delty|: 0 pudełek na rdzeniu, a świeca jako luka „brak taśmy”', () => {
+    const base: Row[] = Array.from({ length: 12 }, () => [100, 100.5, 99.5, 100, 10, 1] as Row);
+    const run = (d: number | null, gapAt = -1) => effortZones(mk([...base.map((r, i) => (i === gapAt ? ([r[0], r[1], r[2], r[3], r[4], null] as Row) : r)), [100, 101.5, 99.9, 101.4, 30, d]]), MS, P);
+    const tape = run(20);
+    expect(tape.boxes).toHaveLength(1);
+    expect(tape.boxes[0]).toMatchObject({ side: 1, t: NY.start + 12 * MS, lo: 99.9, stacked: false });
+    expect(tape.boxes[0].hi).toBeCloseTo(100.7, 12);
+    expect(tape.untaped).toEqual([]);
+    // Ta sama świeca bez taśmy: dawniej pudełko z przybliżenia, teraz brak pudełka i luka tej świecy
+    const none = run(null);
+    expect(none.boxes).toEqual([]);
+    expect(none.untaped).toEqual([{ kind: 'box', side: 1, t: NY.start + 12 * MS, from: NY.start + 12 * MS }]);
+    // Świeca z taśmą, ale w oknie średniej (5 świec) jedna bez taśmy: próg nieznany, więc też luka
+    const window = run(20, 9);
+    expect(window.boxes).toEqual([]);
+    expect(window.untaped.map((g) => g.kind)).toEqual(['box']);
+    // Luka poza oknem: pudełko wraca
+    expect(run(20, 7).boxes).toHaveLength(1);
+  });
+
+  it('na nagraniu bez taśmy rdzeń nie daje ani jednego pudełka ani strefy A', () => {
+    const noTape = mk(SCENARIO).map((b) => ({ ...b, delta: null }));
+    const r = effortZones(noTape, MS, P);
+    expect(r.boxes).toEqual([]);
+    expect(r.zones.filter((z) => z.kind === 'absorption')).toEqual([]);
+    expect(r.untaped.length).toBeGreaterThan(0);
   });
 
   it('ta sama świeca pod VWAP sesji nie daje pudełka kupna', () => {
