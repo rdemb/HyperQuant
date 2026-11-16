@@ -91,6 +91,7 @@ export const DayFrameBar: React.FC<{ store: ProStore; narrow: boolean; minutes: 
   const chips = frameChips(input, minutes);
   const frame = input.frame !== undefined && !isAbsent(input.frame) ? input.frame : null;
   const dist = frame && !input.historyWhy ? stateDistribution(frame.history) : [];
+  const minutesSince = frame ? Math.max(0, Math.floor((input.now - frame.anchor.from) / 60_000)) : 0;
   const title = tr('Rama dnia', 'Day frame');
 
   return (
@@ -143,7 +144,10 @@ export const DayFrameBar: React.FC<{ store: ProStore; narrow: boolean; minutes: 
           {dist.length > 0 && frame && (
             <div className="mt-2.5">
               <p className="font-medium text-ink-1">
-                {tr(`Stany o tej porze (${fmtHm(input.now)}) w ${frame.history.n} poprzednich dobach`, `States at this time (${fmtHm(input.now)}) over the previous ${frame.history.n} days`)}
+                {tr(
+                  `Stany ${minutesSince} min po ${frame.anchor.session ? 'otwarciu sesji' : '00:00 UTC'} (${fmtHm(input.now)}) w ${frame.history.n} poprzednich dobach`,
+                  `States ${minutesSince} min after ${frame.anchor.session ? 'the session open' : '00:00 UTC'} (${fmtHm(input.now)}) over the previous ${frame.history.n} days`
+                )}
               </p>
               <ul className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-ink-2">
                 {dist.map((d) => (
@@ -157,8 +161,8 @@ export const DayFrameBar: React.FC<{ store: ProStore; narrow: boolean; minutes: 
           <p className="mt-2.5 text-[10.5px] leading-snug text-ink-3">{FRAME_RULES}</p>
           <p className="mt-1.5 text-[10.5px] leading-snug text-ink-3">
             {tr(
-              `Liczby z danych tego wykresu (${input.coin}), odświeżane co 5 s. LIVE — fakty ze świec Hyperliquid, MODEL — wynik reguły z jej nazwą. To opis, nie rekomendacja.`,
-              `Numbers from this chart's data (${input.coin}), refreshed every 5 s. LIVE is a fact from Hyperliquid candles, MODEL a rule output with its name. A description, not a recommendation.`
+              `Liczby z danych tego wykresu (${input.coin}), odświeżane co 5 s. LIVE — fakty ze świec i taśmy Hyperliquid, MODEL — wynik reguły z jej nazwą albo wartość przybliżona ze świec. To opis, nie rekomendacja.`,
+              `Numbers from this chart's data (${input.coin}), refreshed every 5 s. LIVE is a fact from Hyperliquid candles and tape, MODEL a rule output with its name or a value approximated from candles. A description, not a recommendation.`
             )}
           </p>
         </div>

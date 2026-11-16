@@ -4,6 +4,7 @@ import type { Coverage } from '../core/coverage';
 import { indicatorScope } from '../core/indicators';
 import { fmtDayTime, fmtHm, fromDaily } from '../core/time';
 import { tpoInterval } from '../core/tpo';
+import { CANDLE_METHOD, type ValueRef, valueBadge, valueMethodText, valuePeriodName } from '../core/valueReference';
 import { type HqIndicatorId, indicatorDef } from '../indicators/registry';
 import type { ChartSettings } from './settings';
 import { LAYERS_OFF } from './templates';
@@ -216,12 +217,29 @@ export interface LayerBadge {
 }
 
 /**
- * Plakietka warstwy albo wskaźnika `key` na rynku `coin`; `scan` — migawka skanera albo powód jej braku (warstwy skanera).
- * MODEL i SIM z nazwą metody w podpowiedzi.
+ * Plakietka „Profile okresów” z wartości ostatniego zamkniętego okresu (jedno źródło wartości): POC i value area z taśmy
+ * LIVE, ze świec MODEL „przybliżenie ze świec”; bez wartości (świece 5m w drodze albo okresy poza ich zasięgiem) — MODEL,
+ * bo POC i value area są wtedy z profilu świec wykresu.
  */
-export function layerBadge(key: string, ctx: { coin: string; now: number; scan?: ScanState }): LayerBadge {
+function periodValueBadge(v: ValueRef | null): LayerBadge {
+  if (v && valueBadge(v) === 'LIVE') {
+    return { tone: 'live', text: 'LIVE', hint: tr(`LIVE: POC i value area okresów z taśmy (ostatni zamknięty: ${valuePeriodName(v)}). ${valueMethodText(v)}`, `LIVE: the periods' POC and value area from the tape (last closed: ${valuePeriodName(v)}). ${valueMethodText(v)}`) };
+  }
+  const why = v
+    ? tr(`ostatni zamknięty okres (${valuePeriodName(v)}). ${valueMethodText(v)}`, `the last closed period (${valuePeriodName(v)}). ${valueMethodText(v)}`)
+    : tr('POC i value area z profilu świec wykresu (świece 5m jeszcze w drodze albo okresy poza ich zasięgiem).', 'POC and value area from the chart candle profile (5m candles still loading or the periods are beyond their reach).');
+  return { tone: 'model', text: 'MODEL', hint: `MODEL · ${CANDLE_METHOD}: ${why}` };
+}
+
+/**
+ * Plakietka warstwy albo wskaźnika `key` na rynku `coin`; `scan` — migawka skanera albo powód jej braku (warstwy skanera);
+ * `value` — wartość ostatniego zamkniętego okresu „Profili okresów” (brak pola — plakietka stała). MODEL i SIM z nazwą
+ * metody w podpowiedzi.
+ */
+export function layerBadge(key: string, ctx: { coin: string; now: number; scan?: ScanState; value?: ValueRef | null }): LayerBadge {
   const missing = missingOn(key, ctx.coin);
   if (missing) return missing;
+  if (key === 'showPeriodProfiles' && ctx.value !== undefined) return periodValueBadge(ctx.value);
   const src = LAYER_SOURCE[key] ?? 'LIVE';
   if (SCANNER.has(key)) {
     const scan = ctx.scan ?? { why: WAIT_TEXT };
@@ -317,12 +335,13 @@ export interface LayerChip extends LayerBadge {
  */
 export function legendChips(
   s: Pick<ChartSettings, keyof typeof LAYERS_OFF | 'indicators' | 'stackedMin'> & Partial<Pick<ChartSettings, 'view' | 'showDelta' | 'showCvd'>>,
-  x: { coin: string; now: number; intervalMs: number; scan: Partial<Record<string, ScanState>> }
+  x: { coin: string; now: number; intervalMs: number; scan: Partial<Record<string, ScanState>>; value?: Partial<Record<string, ValueRef | null>> }
 ): LayerChip[] {
   const out: LayerChip[] = [];
   for (const key of Object.keys(LAYERS_OFF) as (keyof typeof LAYERS_OFF)[]) {
     if (s[key] !== true || !drawn(s, key, x.intervalMs)) continue;
-    out.push({ key, label: LAYER_LABEL[key], ...layerBadge(key, { coin: x.coin, now: x.now, scan: x.scan[key] }) });
+    const value = x.value && key in x.value ? x.value[key] : undefined;
+    out.push({ key, label: LAYER_LABEL[key], ...layerBadge(key, { coin: x.coin, now: x.now, scan: x.scan[key], value }) });
   }
   // Źródło świec i paneli przepływu (plan 59, E5): footprint, Delta i CVD liczone z taśmy Hyperliquid na żywo
   if (s.view === 'footprint') out.push({ key: 'footprint', label: 'Footprint', ...layerBadge('footprint', { coin: x.coin, now: x.now }) });

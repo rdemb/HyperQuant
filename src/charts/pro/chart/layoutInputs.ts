@@ -26,8 +26,6 @@ import {
   isAbsent,
   liqNearestOf,
   nakedPocOf,
-  prevDayOf,
-  profileStep,
   rvolOf,
   sessionNowOf,
   toVBars,
@@ -38,14 +36,18 @@ import type { StationId } from './stations';
 import { tr } from '../../../i18n';
 import { capsOf, marketOf } from '../../../state/markets';
 import { deskMarketOf } from '../../../config/deskMarkets';
-import { PERIOD_MS, dayFrame, ivbCalendarOf, toBar5 } from '../core/dayFrame';
+import { type FrameRef, PERIOD_MS, dayFrame, ivbCalendarOf, toBar5 } from '../core/dayFrame';
+import type { TapeRows } from '../core/effortZones';
 import { utcDayStart } from '../core/sessions';
+import { VALUE_MS, type ValueRef, type ValueSource, valueReference } from '../core/valueReference';
+import { dayProfileOf, requestDayProfiles } from '../store/dayProfiles';
 import type { FrameInput } from './dayFrameText';
 
 /**
  * Wejścia liczb nagłówka układu z magazynu rynku wykresu i migawek skanera (czytane co kilka sekund przez LayoutHeader).
- * Tylko to, czego układ potrzebuje: świece 1m, 5m albo 1h (seria wczytuje się przy pierwszym użyciu, nieudane wczytanie
- * ponawiamy co 30 s), arkusz, taśma. Magazyn opisany strukturalnie, więc test podaje atrapę.
+ * Tylko to, czego układ potrzebuje: świece 1m, 5m (z taśmą: jedno źródło wartości) albo 1h (seria wczytuje się przy
+ * pierwszym użyciu, nieudane wczytanie ponawiamy co 30 s), arkusz, taśma. Magazyn opisany strukturalnie, więc test podaje
+ * atrapę.
  */
 
 /** Seria świec magazynu (CandleSeries). */
@@ -57,6 +59,8 @@ export interface InputSeries {
   historyExhausted?: boolean;
   /** Ostatnie doczytanie starszej strony się nie udało; seria ponawia je po 30 s. */
   olderFailed?: boolean;
+  /** Świece z footprintem taśmy (`complete` — świeca w całości nagrana); bez metody — bez taśmy. */
+  bars?(): readonly { t: number; fp: TapeRows | null; complete: boolean }[];
 }
 
 /** Część magazynu rynku (ProStore), z której liczymy liczby nagłówka. */
@@ -72,6 +76,8 @@ export interface InputStore {
   orders: { range(from: number, to: number): readonly { notional: number; side: Side; zero?: true }[] };
   /** Kontekst rynku z WebSocket (ceny impact do spreadu Czwórki na rynkach bez skanera) */
   ctx?: { markPx: number; midPx: number; impactPxs?: [number, number] | null } | null;
+  /** Powiadomienie odbiorców o nowych danych (magazyn wykresu); z nim pobieramy pliki taśmy zamkniętych dób. */
+  bump?(): void;
 }
 
 /** Migawki skanera z wykresu (ProChart). */
@@ -176,6 +182,57 @@ function mapHitsOf(store: InputStore, blog: InputScan['blog'], s: TradeSession, 
   return { s, kind: map.kind, publishedAt: map.publishedAt, touched: r.levels.filter((l) => l.touchedAt !== null).length, total: r.levels.length, complete: r.complete, from: w.from, to };
 }
 
+const hasBump = (s: InputStore): s is InputStore & { bump(): void } => typeof s.bump === 'function';
+
+/**
+ * Pliki taśmy zamkniętych dób z serwera (profil doby rejestratora, 7 dób) dla magazynu wykresu, pobierane przy pierwszym
+ * pytaniu; magazyn bez powiadomień (atrapa w teście) — bez plików.
+ */
+export function dayTapeOf(store: InputStore): ValueSource['dayTape'] {
+  if (!hasBump(store)) return undefined;
+  return (day) => {
+    requestDayProfiles(store, day);
+    const p = dayProfileOf(store, day);
+    return p ? { day: p.day, tick: p.tick, lo: p.lo, buy: p.buy, sell: p.sell, minuteVol: p.mv } : null;
+  };
+}
+
+/** Źródło wartości ze świec 5m `c5` od `from`: footprint świec w całości nagranych i pliki taśmy dób. */
+export function valueSourceFrom(store: InputStore, c5: readonly Candle[], from: number): ValueSource {
+  const tape = new Map<number, TapeRows>();
+  for (const b of store.series('5m').bars?.() ?? []) if (b.t >= from && b.complete && b.fp) tape.set(b.t, b.fp);
+  const bars = [];
+  for (const c of c5) if (c.t >= from) bars.push({ t: c.t, l: c.l, h: c.h, v: c.v, tape: tape.get(c.t) ?? null });
+  return { bars, ms: VALUE_MS, dayTape: dayTapeOf(store) };
+}
+
+/**
+ * Jedno źródło wartości z magazynu rynku: świece 5m od `from` (doczytywane jak na wykresie) z taśmą. Świece w drodze —
+ * undefined; nieudane pobranie — powód.
+ */
+export function valueSourceOf(store: InputStore, from: number, now: number): Got<ValueSource> | undefined {
+  const c5 = candlesFrom(store, '5m', from, now);
+  if (c5 === undefined || isAbsent(c5)) return c5;
+  return valueSourceFrom(store, c5, from);
+}
+
+/** Powód braku wczorajszej wartości przy za małej liczbie świec 5m. */
+export const prevValueWhy = (): string => tr('Świece 5m nie obejmują 90% wczorajszej doby UTC', "The 5m candles do not cover 90% of yesterday's UTC day");
+
+/**
+ * VAH, VAL i POC wczorajszej doby UTC z jednego źródła (`valueReference`) — te same liczby w pasku „Rama dnia”, panelu
+ * „Najbliższe poziomy” i nagłówku Mapy dnia.
+ */
+export function prevDayValueOf(store: InputStore, now: number): Got<ValueRef> | undefined {
+  const day = utcDayStart(now);
+  const src = valueSourceOf(store, day - DAY, now);
+  if (src === undefined || isAbsent(src)) return src;
+  return valueReference('day', day - DAY, src, now) ?? { why: prevValueWhy() };
+}
+
+/** Nagie POC Mapy dnia: profile dób z tylu ostatnich dób świec 5m (ok. 4 000 świec, w limicie 5 000 świec API). */
+export const NAKED_POC_DAYS = 14;
+
 /**
  * Historia świec 30m paska „Rama dnia” w dobach: 70 dób kontekstu stanu z dobą VA przed nimi oraz 60 dób szerokości IVB
  * z 15 dobami ATR przed nimi (ok. 3 650 świec, w limicie 5000 świec API).
@@ -183,11 +240,12 @@ function mapHitsOf(store: InputStore, blog: InputScan['blog'], s: TradeSession, 
 export const FRAME_HISTORY_DAYS = 76;
 
 /**
- * Wejście paska „Rama dnia” z magazynu rynku: świece 5m od wczoraj 00:00 UTC (VA wczoraj, stan doby, IVB) i 30m z 76 dób
- * (kontekst stanu i szerokości IVB), doczytywane jak na wykresie. Świece w drodze — `frame` undefined; nieudane pobranie
- * historii 30m — rama bez częstości i percentyla, z powodem.
+ * Wejście paska „Rama dnia” z magazynu rynku: świece 5m od wczoraj 00:00 UTC z taśmą (jedno źródło wartości: VA wczoraj
+ * i dziś; stan od otwarcia sesji, IVB) i 30m z 76 dób (kontekst stanu i szerokości IVB), doczytywane jak na wykresie.
+ * `ref` — odniesienie wartości (domyślnie wczorajsza doba UTC, opcjonalnie ta sama sesja wczoraj). Świece w drodze —
+ * `frame` undefined; nieudane pobranie historii 30m — rama bez częstości i percentyla, z powodem.
  */
-export function frameInputOf(store: InputStore, minutes: number): FrameInput {
+export function frameInputOf(store: InputStore, minutes: number, ref: FrameRef = 'day'): FrameInput {
   const now = store.serverNow();
   const coin = store.coin;
   const m = marketOf(coin);
@@ -198,7 +256,15 @@ export function frameInputOf(store: InputStore, minutes: number): FrameInput {
   const c30 = candlesFrom(store, '30m', day - FRAME_HISTORY_DAYS * DAY, now);
   if (c30 === undefined) return { ...base, frame: undefined };
   const cal = ivbCalendarOf(coin, deskMarketOf(coin)?.underlying ?? null, m?.class);
-  const frame = dayFrame({ b5: toBar5(c5, 5 * 60_000, now), c30: isAbsent(c30) ? [] : toBar5(c30, PERIOD_MS, now), now, cal, minutes });
+  const frame = dayFrame({
+    b5: toBar5(c5, 5 * 60_000, now),
+    src: valueSourceFrom(store, c5, day - DAY),
+    c30: isAbsent(c30) ? [] : toBar5(c30, PERIOD_MS, now),
+    now,
+    cal,
+    minutes,
+    ref,
+  });
   return { ...base, frame, historyWhy: isAbsent(c30) ? c30.why : null };
 }
 
@@ -226,14 +292,11 @@ export function readInputs(id: StationId, store: InputStore, scan: InputScan, ha
     x.rvol = c1h === undefined || isAbsent(c1h) ? pass(c1h) : rvolOf(c1h, now);
   }
   if (id === 'day-map') {
-    const c1h = seriesCandles(store, '1h', now);
-    if (c1h === undefined || isAbsent(c1h) || !(lp > 0)) {
-      x.prevDay = x.nakedPoc = pass(c1h);
-    } else {
-      const step = profileStep(lp);
-      x.prevDay = prevDayOf(c1h, now, step);
-      x.nakedPoc = nakedPocOf(c1h, now, lp, step);
-    }
+    // VA wczoraj z jednego źródła (jak pasek Rama dnia i panel Najbliższe poziomy), nagie POC z profili dób świec 5m
+    x.prevDay = prevDayValueOf(store, now);
+    const src = valueSourceOf(store, utcDayStart(now) - NAKED_POC_DAYS * DAY, now);
+    if (src === undefined || isAbsent(src)) x.nakedPoc = pass(src);
+    else if (lp > 0) x.nakedPoc = nakedPocOf(src, now, lp);
   }
   if (id === 'fuel') {
     const ls = liqScan(scan.liq);
