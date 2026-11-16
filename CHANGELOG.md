@@ -9,6 +9,11 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 #### Naprawione
 - **Histogram cen wejścia** (Przed sesją, kontrola przed kampanią): stały lewy margines 48 px ucinał podpisy osi „$100,0 mln”–„$300,0 mln” przy 390 i 720 px. Margines liczony teraz z najdłuższego podpisu (pismo stałej szerokości 10 px). `ui:check` dostał plik `entry-map/BTC.json` z danych stałych i sprawdza przy 390 i 720 px, że żaden podpis rysunku nie wychodzi poza jego krawędź (przed poprawką: 3 ucięte przy obu szerokościach).
+### Lekcje: zakres poranka w ćwiczeniu „Wybicie na otwarciu NY” (2026-11-16)
+<!-- co-nowego: ukryj -->
+
+#### Naprawione
+- **Wybicie na otwarciu NY** (kontrola faktów przed kampanią): tekst mówił „od północy cena krąży między 81 300 a 81 800 USD”, a od północy świece wycinka sięgają 81 171–82 250. Ten zakres mają świece od 10:00 (81 300–81 770), więc teraz „Od 10:00 … między 81 300 a 81 770 USD”; wersja angielska „Since 08:00 UTC”, a odpowiedź przy wyborze poziomu „pod 81 770”. Ćwiczenie i oceny bez zmian. Test `lessonNumbers.test.ts` sprawdza liczby tekstu z danymi wycinka.
 
 ### Lekcje: godzina dołka w ćwiczeniu „Dzień równowagi” (2026-11-15)
 <!-- co-nowego: ukryj -->
