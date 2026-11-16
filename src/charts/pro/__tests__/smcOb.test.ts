@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_SMC_PARAMS, SMC_OB_LIFE_CANDLES, type SBar, type SmcOb, smcStructure } from '../core/smcStructure';
-import { SMC_LIMITS, SMC_OBJECTS_MAX, SMC_PHONE_LIMITS, selectSmc, smcObjects } from '../chart/smcSelect';
+import { SMC_LIMITS, SMC_OB_OVERLAP, SMC_OBJECTS_MAX, SMC_PHONE_LIMITS, overlapShare, selectSmc, smcObjects } from '../chart/smcSelect';
 
 /**
  * Bloki zleceń (OB, etap S1, smc-hl.md §1.5 i §7): ostatnia świeca przeciwna przed przełamaniem z impulsem ≥ 1,5 ATR,
@@ -222,21 +222,23 @@ describe('OB: wybór i limity', () => {
     expect(s.active.ob).toBe(1);
   });
 
-  it('najwyżej 3 na skalę i typ, najbliższe cenie; łącznie ≤ 25 obiektów w obu trybach', () => {
-    expect(SMC_LIMITS.ob).toBe(3);
+  it('najwyżej 2 aktywne na kierunek (obie skale razem), najbliższe cenie, bez wzajemnego pokrycia ≥ 50%; łącznie ≤ 25 obiektów', () => {
+    expect(SMC_LIMITS.ob).toBe(2);
     let cut = 0;
     for (const asOf of asOfs) {
       for (const history of [false, true]) {
         for (const mitigation of ['close', 'wick'] as const) {
           const s = selectSmc(r, bars, asOf, { phone: false, history, mitigation });
-          for (const scale of ['internal', 'swing'] as const)
-            for (const dir of [1, -1] as const) {
-              const g = s.obs.filter((v) => v.o.scale === scale && v.o.dir === dir);
-              expect(g.length).toBeLessThanOrEqual(3);
-              // Aktywne najpierw, według bliskości ostatniego zamknięcia
-              const d = g.filter((v) => !v.ended).map((v) => (s.close >= v.o.lo && s.close <= v.o.hi ? 0 : Math.min(Math.abs(s.close - v.o.lo), Math.abs(s.close - v.o.hi))));
-              expect(d).toEqual([...d].sort((a, b) => a - b));
-            }
+          for (const dir of [1, -1] as const) {
+            const g = s.obs.filter((v) => v.o.dir === dir);
+            const act = g.filter((v) => !v.ended);
+            expect(act.length).toBeLessThanOrEqual(2);
+            expect(g.length).toBeLessThanOrEqual(history ? 3 : 2);
+            // Aktywne najpierw, według bliskości ostatniego zamknięcia, i bez pokrycia z bliższym
+            const d = act.map((v) => (s.close >= v.o.lo && s.close <= v.o.hi ? 0 : Math.min(Math.abs(s.close - v.o.lo), Math.abs(s.close - v.o.hi))));
+            expect(d).toEqual([...d].sort((a, b) => a - b));
+            for (let k = 1; k < act.length; k++) for (let j = 0; j < k; j++) expect(overlapShare(act[j].o, act[k].o)).toBeLessThan(SMC_OB_OVERLAP);
+          }
           expect(smcObjects(s)).toBeLessThanOrEqual(SMC_OBJECTS_MAX);
           for (const v of s.obs) {
             expect(v.o.known).toBeLessThanOrEqual(asOf);

@@ -180,16 +180,16 @@ describe('limity wyższego interwału', () => {
   const m = smcMtf(aggregate(ltf, H4), H4, ltf[ltf.length - 1].t + M15, params);
   const asOfs = ltf.map((b) => b.t + M15);
 
-  it('najwyżej 3 FVG najbliższe zamknięciu i 1 linia przełamania; telefon: tylko najbliższa FVG', () => {
-    expect(SMC_MTF_LIMITS).toEqual({ fvg: 3, obPerDir: 2, breaks: 1 });
+  it('najwyżej 2 FVG najbliższe zamknięciu i 1 linia przełamania; telefon: tylko najbliższa FVG', () => {
+    expect(SMC_MTF_LIMITS).toEqual({ fvg: 2, obPerDir: 1, breaks: 1 });
     expect(SMC_MTF_PHONE_LIMITS).toEqual({ fvg: 1, obPerDir: 0, breaks: 0 });
     let full = 0;
     for (let i = 0; i < ltf.length; i += 7) {
       const s = selectSmcMtf(m, asOfs[i], ltf[i].c, OPEN);
-      expect(s.fvgs.length).toBeLessThanOrEqual(3);
+      expect(s.fvgs.length).toBeLessThanOrEqual(2);
       expect(s.breaks.length).toBeLessThanOrEqual(1);
-      expect(s.fvgs.length).toBe(Math.min(3, s.active.fvg));
-      if (s.fvgs.length === 3) full++;
+      expect(s.fvgs.length).toBe(Math.min(2, s.active.fvg));
+      if (s.fvgs.length === 2) full++;
       const p = selectSmcMtf(m, asOfs[i], ltf[i].c, { phone: true, room: 25 });
       expect(p.breaks).toEqual([]);
       expect(p.fvgs.map((v) => v.f.id)).toEqual(s.fvgs.slice(0, 1).map((v) => v.f.id));
@@ -200,12 +200,12 @@ describe('limity wyższego interwału', () => {
   it('łączny limit: przy braku miejsca najpierw odpadają dalsze FVG, potem linia, na końcu najbliższa FVG', () => {
     const i = asOfs.findIndex((t, k) => {
       const s = selectSmcMtf(m, t, ltf[k].c, OPEN);
-      return s.fvgs.length === 3 && s.breaks.length === 1;
+      return s.fvgs.length === 2 && s.breaks.length === 1;
     });
     expect(i).toBeGreaterThan(0);
     const sel = (room: number) => selectSmcMtf(m, asOfs[i], ltf[i].c, { phone: false, room });
     const all = sel(25);
-    expect(smcMtfObjects(all)).toBe(4);
+    expect(smcMtfObjects(all)).toBe(3);
     expect(smcMtfObjects(sel(3))).toBe(3);
     expect(sel(3).breaks).toEqual(all.breaks);
     expect(sel(2).fvgs.map((v) => v.f.id)).toEqual([all.fvgs[0].f.id]);
@@ -216,12 +216,12 @@ describe('limity wyższego interwału', () => {
     expect(smcMtfObjects(sel(-3))).toBe(0);
   });
 
-  it('OB (wejście gotowe na etap S1): po 2 aktywne najbliższe na typ, tylko znane do chwili wyboru', () => {
+  it('OB (wejście gotowe na etap S1): po 1 aktywnym najbliższym na typ, tylko znane do chwili wyboru', () => {
     const asOf = T0 + 10 * H4;
     const z = (id: number, dir: 1 | -1, lo: number, known = T0, endAt: number | null = null): SmcMtfZone => ({ id, dir, lo, hi: lo + 1, known, endAt });
     const obs = [z(1, 1, 90), z(2, 1, 95), z(3, 1, 97), z(4, -1, 110), z(5, -1, 104), z(6, -1, 102, asOf + 1), z(7, 1, 98, T0, asOf), z(8, -1, 103)];
     const s = selectSmcMtf(m, asOf, 100, OPEN, obs);
-    expect(s.obs.map((x) => x.id)).toEqual([3, 8, 2, 5]);
+    expect(s.obs.map((x) => x.id)).toEqual([3, 8]);
     expect(s.active.ob).toBe(6);
     expect(selectSmcMtf(m, asOf, 100, { phone: true, room: 25 }, obs).obs).toEqual([]);
   });

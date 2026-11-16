@@ -10,7 +10,8 @@ import type { Candle } from '../hl/parse';
 import { effortResult } from '../indicators/registry';
 import { logicalOfTime } from './overlay';
 import { type SmcRateElement, loadSmcRates, smcRatesHover, smcRatesLine } from './smcRates';
-import { SMC_OBJECTS_MAX, SMC_PHONE_OBJECTS_MAX, type ObMitigation, type SmcObView, type SmcSelection, selectSmc, trimSmc, smcObjects, smcWindowText } from './smcSelect';
+import { SMC_ACCEPT_BARS, type BreakFlow, type FvgFlow, type ObFlow, type SmcFootprint, breakFlow, dirArrow, fvgFlow, obFlow } from './smcFlow';
+import { SMC_OBJECTS_MAX, SMC_PHONE_OBJECTS_MAX, type ObMitigation, type SmcObView, type SmcSelection, overlapShare, selectSmc, trimSmc, smcObjects, smcWindowText } from './smcSelect';
 import { type SmcMtfSelection, selectSmcMtf, smcMtfObjects } from './smcMtfSelect';
 import { MONO, PRO, rgba } from './theme';
 import { type ValueRef, valueBadge } from '../core/valueReference';
@@ -70,7 +71,7 @@ export interface SmcHigherView {
 export interface SmcSourceBar {
   t: number;
   candle: Candle;
-  fp?: { delta: number } | null;
+  fp?: SmcFootprint | null;
   complete?: boolean;
 }
 
@@ -132,8 +133,26 @@ const NO_TAPE = (): SmcCandleTape => ({ delta: null, fc1: null, fc1Why: null, vo
 
 /** Bez górnej granicy interwału: okna liczone są w max(24 h, 24 świece) (`smcWindowMs`). */
 export const SMC_MAX_TF = Number.POSITIVE_INFINITY;
-/** Kolory rodzajów elementów (bez kolorów kupna i sprzedaży). */
-export const SMC_INK = { structure: PRO.nakedPoc, fvg: PRO.level, eq: PRO.levelSoft, ob: PRO.indSecond } as const;
+/**
+ * Kolory rodzajów elementów (bez kolorów kupna i sprzedaży, żeby nie sugerować strony): struktura szara, OB fiolet,
+ * FVG bursztyn, płynność (EQH, EQL, sweepy) morski, połowy zakresu: premium różane, discount oliwkowe. Rodzaj widać od
+ * razu po kolorze, kierunek ruchu, po którym element powstał, mówi strzałka w podpisie.
+ */
+export const SMC_INK = {
+  structure: PRO.nakedPoc,
+  fvg: PRO.level,
+  eq: PRO.smcLiquidity,
+  ob: PRO.smcOb,
+  premium: PRO.smcPremium,
+  discount: PRO.smcDiscount,
+} as const;
+
+/** Potwierdzenia z taśmy dla wybranych elementów (klucz: id elementu; null — brak pełnej taśmy albo za wcześnie). */
+export interface SmcFlowView {
+  ob: Map<number, ObFlow>;
+  fvg: Map<number, FvgFlow | null>;
+  brk: Map<number, BreakFlow | null>;
+}
 
 type LegendPart = { text: string; color: string };
 
@@ -194,8 +213,39 @@ function obText(v: SmcObView, mode: ObMitigation, at: (t: number) => string, fmt
   return out;
 }
 
+/** Taśma przy OB: absorpcja w świecy OB i POC tej świecy z taśmy. */
+function obFlowText(x: ObFlow, fmt: (p: number) => string): string {
+  const abs =
+    x.absorption === null
+      ? tr('absorpcja —: brak delty albo F-C1', 'absorption —: no delta or F-C1')
+      : x.absorption
+        ? tr('absorpcja: tak (delta przeciw impulsowi, cena ruszyła mniej, niż „kupiła” agresja)', 'absorption: yes (delta against the impulse, price moved less than the aggression paid for)')
+        : tr('absorpcja: nie', 'absorption: no');
+  const poc = x.poc === null ? tr('POC świecy —: brak pełnej taśmy', 'candle POC —: no full tape') : tr(`POC świecy z taśmy ${fmt(x.poc)} LIVE (kreska w strefie)`, `candle POC from the tape ${fmt(x.poc)} LIVE (line in the zone)`);
+  return tr(`· potwierdzenie z taśmy (eksperymentalne): ${abs} · ${poc}`, `· tape confirmation (experimental): ${abs} · ${poc}`);
+}
+
+/** Taśma w luce FVG: udział i gęstość wolumenu środkowej świecy w luce. */
+function fvgFlowText(x: FvgFlow | null): string {
+  if (!x) return tr('· taśma w luce: —, brak pełnej taśmy świecy luki', '· tape in the gap: —, no full tape for the gap candle');
+  const d = numLang(x.density.toFixed(2));
+  return x.thin
+    ? tr(`· taśma w luce: ${pct(x.share)}% wolumenu świecy, gęstość ${d}× średniej LIVE: pusta (eksperymentalne)`, `· tape in the gap: ${pct(x.share)}% of the candle volume, density ${d}× average LIVE: thin (experimental)`)
+    : tr(`· taśma w luce: ${pct(x.share)}% wolumenu świecy, gęstość ${d}× średniej LIVE`, `· tape in the gap: ${pct(x.share)}% of the candle volume, density ${d}× average LIVE`);
+}
+
+/** Przyjęcie przełamania: zamknięcia i wolumen taśmy za poziomem w świecach po przełamaniu. */
+function acceptText(x: BreakFlow | null): string {
+  const n = SMC_ACCEPT_BARS;
+  if (!x) return tr(`· przyjęcie: —, ${n} świece po przełamaniu jeszcze się nie zamknęły`, `· acceptance: —, the ${n} candles after the break have not closed yet`);
+  const closes = tr(`${x.closes} z ${n} zamknięć za poziomem`, `${x.closes} of ${n} closes beyond the level`);
+  const vol = x.share === null ? tr('wolumen —: brak pełnej taśmy', 'volume —: no full tape') : tr(`${pct(x.share)}% wolumenu taśmy za poziomem LIVE`, `${pct(x.share)}% of tape volume beyond the level LIVE`);
+  const verdict = x.accepted === null ? '' : x.accepted ? tr(': z przyjęciem ✓', ': accepted ✓') : tr(': bez przyjęcia', ': not accepted');
+  return `· ${tr('przyjęcie', 'acceptance')}: ${closes}, ${vol}${verdict}`;
+}
+
 /** Element pod krzyżem: opis z chwilą „znany od”. Kolejność: etykieta, sweep, przełamanie, EQ, OB, FVG. */
-function hoverText(sel: SmcSelection, hover: { t: number; p: number }, ms: number, fmt: (p: number) => string, coin: string, tape: (idx: number) => SmcCandleTape): LegendPart[] {
+function hoverText(sel: SmcSelection, hover: { t: number; p: number }, ms: number, fmt: (p: number) => string, coin: string, tape: (idx: number) => SmcCandleTape, flow: SmcFlowView | null): LegendPart[] {
   const rates = (el: SmcRateElement) => smcRatesHover(ms, coin, el);
   const atr = Number.isFinite(sel.atr) && sel.atr > 0 ? sel.atr : 0;
   const near = (p: number, k: number) => Math.abs(hover.p - p) <= k * atr;
@@ -216,7 +266,8 @@ function hoverText(sel: SmcSelection, hover: { t: number; p: number }, ms: numbe
   for (const b of sel.breaks) {
     if (hover.t < b.swingKnown - ms || hover.t >= b.t + ms || !near(b.level, 0.15)) continue;
     const where = b.dir === 1 ? tr('nad szczytem', 'above the high') : tr('pod dołkiem', 'below the low');
-    return [{ text: tr(`· ${b.kind} (${scaleText(b.scale)}): zamknięcie ${where} ${fmt(b.level)}, znany od ${at(b.known)}`, `· ${b.kind} (${scaleText(b.scale)}): close ${where} ${fmt(b.level)}, known from ${at(b.known)}`), color: ink }, ...rates(`${b.kind}_${b.scale}`)];
+    const acc = flow ? [{ text: acceptText(flow.brk.get(b.id) ?? null), color: ink }] : [];
+    return [{ text: tr(`· ${b.kind} (${scaleText(b.scale)}): zamknięcie ${where} ${fmt(b.level)}, znany od ${at(b.known)}`, `· ${b.kind} (${scaleText(b.scale)}): close ${where} ${fmt(b.level)}, known from ${at(b.known)}`), color: ink }, ...acc, ...rates(`${b.kind}_${b.scale}`)];
   }
   for (const { e } of sel.eqs) {
     if (hover.t < e.t || (e.endAt !== null && hover.t >= e.endAt) || !near(e.level, 0.15)) continue;
@@ -229,14 +280,16 @@ function hoverText(sel: SmcSelection, hover: { t: number; p: number }, ms: numbe
     if (hover.t < o.t || (v.endAt !== null && hover.t >= v.endAt) || hover.p < o.lo || hover.p > o.hi) continue;
     // Świeca OB (znacznik) albo strefa od świecy przełamania
     if (hover.t >= o.t + ms && hover.t < o.breakT) continue;
-    return obText(v, sel.mitigation, at, fmt, tape);
+    const own = flow?.ob.get(o.id);
+    return [...obText(v, sel.mitigation, at, fmt, tape), ...(own ? [{ text: obFlowText(own, fmt), color: ink }] : [])];
   }
   for (const v of sel.fvgs) {
     const f = v.f;
     if (hover.t < f.t || (v.endAt !== null && hover.t >= v.endAt) || hover.p < f.lo || hover.p > f.hi) continue;
     const kind = f.dir === 1 ? tr('luka po ruchu w górę', 'gap after a move up') : tr('luka po ruchu w dół', 'gap after a move down');
     const ce = v.ce ? tr('dotknięcie środka luki (CE)', 'gap midpoint touched (CE)') : tr('bez dotknięcia środka luki (CE)', 'gap midpoint not touched (CE)');
-    return [{ text: tr(`· FVG (${kind}) ${fmt(f.lo)}–${fmt(f.hi)}: wypełnienie ${pct(v.fill)}%, ${ce}, znana od ${at(f.known)}`, `· FVG (${kind}) ${fmt(f.lo)}–${fmt(f.hi)}: ${pct(v.fill)}% filled, ${ce}, known from ${at(f.known)}`), color: ink }, ...rates('FVG')];
+    const thin = flow ? [{ text: fvgFlowText(flow.fvg.get(f.id) ?? null), color: ink }] : [];
+    return [{ text: tr(`· FVG (${kind}) ${fmt(f.lo)}–${fmt(f.hi)}: wypełnienie ${pct(v.fill)}%, ${ce}, znana od ${at(f.known)}`, `· FVG (${kind}) ${fmt(f.lo)}–${fmt(f.hi)}: ${pct(v.fill)}% filled, ${ce}, known from ${at(f.known)}`), color: ink }, ...thin, ...rates('FVG')];
   }
   return [];
 }
@@ -300,7 +353,8 @@ export function smcLegend(
   hover: { t: number; p: number } | null = null,
   fmt: (p: number) => string = (p) => numLang(String(p)),
   tape: (idx: number) => SmcCandleTape = NO_TAPE,
-  higher: SmcHigherView | null = null
+  higher: SmcHigherView | null = null,
+  flow: SmcFlowView | null = null
 ): LegendPart[] {
   if (ms > SMC_MAX_TF) return [{ text: tr('—, interwał do 1 h', '—, intervals up to 1 h'), color: PRO.ink3 }];
   if (!sel || !Number.isFinite(sel.close)) return [{ text: tr('czekam na świece…', 'waiting for candles…'), color: PRO.ink3 }];
@@ -321,12 +375,19 @@ export function smcLegend(
   if (higher) out.push(higherText(higher, ms));
   out.push(...smcRatesLine(ms, coin));
   if (hover) {
-    const own = hoverText(sel, hover, ms, fmt, coin, tape);
+    const own = hoverText(sel, hover, ms, fmt, coin, tape, flow);
     const atr = Number.isFinite(sel.atr) && sel.atr > 0 ? sel.atr : 0;
     out.push(...(own.length > 0 || !higher?.sel ? own : higherHover(higher.sel, atr, hover, fmt)));
   }
   return out;
 }
+
+/** Klucz podpisów: strzałka i potwierdzenia z taśmy (eksperymentalne, bez częstości bazowych). */
+export const SMC_KEY = (): string =>
+  tr(
+    '· klucz: ↑ ↓ ruch, po którym element powstał (opis przeszłości) · absorpcja, pusta, ✓ przyjęcie: potwierdzenia z taśmy HL, eksperymentalne, bez częstości bazowych · kreska w OB: POC świecy z taśmy · linijka przy osi: premium, równowaga, discount',
+    '· key: ↑ ↓ the move that created the element (describes the past) · absorption, thin, ✓ acceptance: HL tape confirmations, experimental, no base rates · line in an OB: candle POC from the tape · ruler at the axis: premium, equilibrium, discount'
+  );
 
 interface Rect {
   x0: number;
@@ -335,21 +396,85 @@ interface Rect {
   y1: number;
 }
 
-interface Scene {
-  fvgs: (Rect & { text: string; dim: boolean; mid: number })[];
-  /** Strefa OB od świecy przełamania i obrys samej świecy OB (znacznik). */
-  obs: (Rect & { text: string; dim: boolean; mark: Rect | null })[];
-  eqs: { x0: number; x1: number; y: number; text: string; dim: boolean; ticks: { x0: number; x1: number; y: number }[] }[];
-  breaks: { x0: number; x1: number; y: number; text: string; dashed: boolean }[];
-  sweeps: { x0: number; x1: number; y: number }[];
-  labels: { x: number; y: number; text: string; above: boolean; bold: boolean }[];
-  pd: { zones: (Rect & { text: string })[] } | null;
-  /** Wyższy interwał: strefy (FVG, OB) obrysem przerywanym i linia ostatniego przełamania. */
-  higher: { zones: (Rect & { text: string; ink: string; mid: number | null })[]; breaks: { x0: number; x1: number; y: number; text: string }[] };
+/** Strefa (OB, FVG, wyższy interwał): wypełnienie, obrys, kreska w środku (CE albo POC z taśmy) i znacznik świecy OB. */
+interface Zone extends Rect {
+  ink: string;
+  /** Krycie wypełnienia (0 — bez wypełnienia). */
+  fill: number;
+  border: 'solid' | 'dashed' | null;
+  dim: boolean;
+  /** Cała luka FVG, gdy część jest już wypełniona: cienki obrys kropkowany. */
+  ghost: Rect | null;
+  mid: { y: number; dash: number[] } | null;
+  mark: Rect | null;
 }
 
-const emptyScene = (): Scene => ({ fvgs: [], obs: [], eqs: [], breaks: [], sweeps: [], labels: [], pd: null, higher: { zones: [], breaks: [] } });
+/** Linia poziomu; `text` — podpis nad środkiem linii (BOS, CHoCH, sweep). */
+interface Line {
+  x0: number;
+  x1: number;
+  y: number;
+  ink: string;
+  alpha: number;
+  width: number;
+  dash: number[];
+  text: string | null;
+  bold: boolean;
+  /** Podpis pod linią (sweep dołka), inaczej nad nią. */
+  below?: boolean;
+}
+
+/** Podpis w kolumnie przy osi ceny (na wysokości elementu, bez nakładania się). */
+interface Tag {
+  y: number;
+  text: string;
+  ink: string;
+  dim: boolean;
+}
+
+interface Scene {
+  zones: Zone[];
+  lines: Line[];
+  ticks: { x0: number; x1: number; y: number; ink: string }[];
+  labels: { x: number; y: number; text: string; above: boolean; bold: boolean }[];
+  tags: Tag[];
+  /** Prawa krawędź kolumny podpisów. */
+  tagX: number;
+  /** Linijka zakresu swingowego przy osi: odcinki premium, równowaga, discount i znacznik ostatniego zamknięcia. */
+  ruler: { x: number; segs: { y0: number; y1: number; ink: string; on: boolean }[]; at: number | null } | null;
+}
+
+const emptyScene = (): Scene => ({ zones: [], lines: [], ticks: [], labels: [], tags: [], tagX: 0, ruler: null });
 const EMPTY: Scene = emptyScene();
+
+/** Miejsce za ostatnią świecą na kolumnę podpisów (kontroler dodaje je do odstępu osi czasu, gdy SMC jest widoczny). */
+export const SMC_TAG_GAP_PX = 72;
+
+/** Linijka premium i discount: szerokość i odstęp od stref. */
+const RULER_W = 5;
+const RULER_GAP = 4;
+/** Podpis w kolumnie: wysokość pigułki i odstęp. */
+export const TAG_H = 14;
+const TAG_GAP = 2;
+
+/**
+ * Układ kolumny podpisów: od góry w kolejności wysokości, każdy co najmniej `TAG_H + TAG_GAP` pod poprzednim, a gdy
+ * dół wychodzi poza panel — cofnięcie w górę od dołu. Zwraca środki pigułek (ta sama kolejność co `ys`).
+ */
+export function layoutTags(ys: readonly number[], height: number): number[] {
+  const step = TAG_H + TAG_GAP;
+  const order = ys.map((y, i) => [y, i] as const).sort((a, b) => a[0] - b[0]);
+  const placed = order.map(([y]) => y);
+  for (let k = 0; k < placed.length; k++) placed[k] = Math.max(placed[k], k > 0 ? placed[k - 1] + step : TAG_H / 2);
+  let limit = height - TAG_H / 2;
+  for (let k = placed.length - 1; k >= 0; k--) {
+    if (placed[k] > limit) placed[k] = limit;
+    limit = placed[k] - step;
+  }
+  const out = new Array<number>(ys.length);
+  order.forEach(([, i], k) => (out[i] = placed[k]));
+  return out;
+}
 
 /** Liczba zamkniętych świec (koniec ≤ `now`). */
 function closedCount(bars: readonly SmcSourceBar[], ms: number, now: number): number {
@@ -359,6 +484,15 @@ function closedCount(bars: readonly SmcSourceBar[], ms: number, now: number): nu
 }
 
 const toSBar = (b: SmcSourceBar): SBar => ({ t: b.t, o: b.candle.o, h: b.candle.h, l: b.candle.l, c: b.candle.c });
+
+/** Potwierdzenia z taśmy dla elementów wyboru (tylko wybranych; zawsze ze świec zamkniętych do `asOf`). */
+export function smcFlowOf(sel: SmcSelection, bars: readonly SmcSourceBar[], ms: number): SmcFlowView {
+  const out: SmcFlowView = { ob: new Map(), fvg: new Map(), brk: new Map() };
+  for (const v of sel.obs) out.ob.set(v.o.id, obFlow(bars, v.o, candleTape(bars, v.o.idx)));
+  for (const v of sel.fvgs) out.fvg.set(v.f.id, fvgFlow(bars, v.f));
+  for (const b of sel.breaks) out.brk.set(b.id, breakFlow(bars, b, ms, sel.asOf));
+  return out;
+}
 
 export class SmcLayer implements ISeriesPrimitive<Time> {
   private chart: IChartApiBase<Time> | null = null;
@@ -377,6 +511,8 @@ export class SmcLayer implements ISeriesPrimitive<Time> {
   private sbars: SBar[] = [];
   private result: SmcResult | null = null;
   private sel: SmcSelection | null = null;
+  /** Potwierdzenia z taśmy dla elementów wyboru (liczone raz na wybór). */
+  private flow: SmcFlowView | null = null;
   /** Wyższy interwał: świece z magazynu, wybór, model (przeliczany tylko po zmianie zamkniętych świec) i wybór elementów. */
   private feed: SmcHigherFeed | null = null;
   private pick: HtfPick | null = null;
@@ -397,36 +533,21 @@ export class SmcLayer implements ISeriesPrimitive<Time> {
         target.useMediaCoordinateSpace(({ context: ctx }) => {
           const st = this.style;
           if (!st) return;
-          for (const f of this.scene.fvgs) {
-            if (f.dim) continue;
-            ctx.fillStyle = rgba(SMC_INK.fvg, 0.12 * st.alpha);
-            ctx.fillRect(f.x0, f.y0, f.x1 - f.x0, f.y1 - f.y0);
-          }
-          for (const o of this.scene.obs) {
-            if (o.dim) continue;
-            ctx.fillStyle = rgba(SMC_INK.ob, 0.14 * st.alpha);
-            ctx.fillRect(o.x0, o.y0, o.x1 - o.x0, o.y1 - o.y0);
-          }
-          const pd = this.scene.pd;
-          if (pd) {
-            for (const zone of pd.zones) {
-              ctx.fillStyle = rgba(SMC_INK.structure, (zone.text === 'EQ' ? 0.16 : 0.07) * st.alpha);
-              ctx.fillRect(zone.x0, zone.y0, zone.x1 - zone.x0, zone.y1 - zone.y0);
-              ctx.fillStyle = rgba(SMC_INK.structure, 0.85 * st.alpha);
-              ctx.font = `10px ${MONO}`;
-              ctx.fillText(zone.text, zone.x0 + 4, (zone.y0 + zone.y1) / 2);
-            }
+          for (const z of this.scene.zones) {
+            if (!(z.fill > 0)) continue;
+            ctx.fillStyle = rgba(z.ink, z.fill * st.alpha);
+            ctx.fillRect(z.x0, z.y0, z.x1 - z.x0, z.y1 - z.y0);
           }
         }),
     };
     const front: IPrimitivePaneRenderer = {
       draw: (target) =>
-        target.useMediaCoordinateSpace(({ context: ctx }) => {
+        target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
           const st = this.style;
           if (!st) return;
-          const a = Math.max(0.35, 0.85 * st.alpha);
-          const ink = (c: string, dim: boolean) => rgba(c, dim ? 0.4 * a : a);
-          const crisp = (v: number, w: number) => Math.round(v) + (w % 2 ? 0.5 : 0);
+          const sc = this.scene;
+          const a = Math.max(0.35, 0.9 * st.alpha);
+          const crisp = (v: number, w: number) => Math.round(v) + (Math.round(w) % 2 ? 0.5 : 0);
           const hline = (x0: number, x1: number, y: number, w: number) => {
             ctx.lineWidth = w;
             ctx.beginPath();
@@ -434,106 +555,106 @@ export class SmcLayer implements ISeriesPrimitive<Time> {
             ctx.lineTo(Math.round(x1), crisp(y, w));
             ctx.stroke();
           };
-          ctx.font = `600 9px ${MONO}`;
-          for (const f of this.scene.fvgs) {
-            const c = ink(SMC_INK.fvg, f.dim);
-            ctx.strokeStyle = c;
+          const box = (r: Rect) => ctx.strokeRect(crisp(r.x0, 1), crisp(r.y0, 1), Math.round(r.x1 - r.x0), Math.round(r.y1 - r.y0));
+          // Strefy: obrys, cała luka, kreska środka, znacznik świecy OB
+          for (const z of sc.zones) {
+            const k = z.dim ? 0.4 * a : a;
             ctx.lineWidth = 1;
-            ctx.strokeRect(crisp(f.x0, 1), crisp(f.y0, 1), Math.round(f.x1 - f.x0), Math.round(f.y1 - f.y0));
-            // Środek luki (CE): krótka przerywana kreska
-            ctx.setLineDash([2, 3]);
-            hline(f.x0, f.x1, f.mid, 1);
-            ctx.setLineDash([]);
-            if (f.x1 - Math.max(f.x0, 0) > 40) {
-              ctx.fillStyle = c;
-              ctx.textBaseline = 'top';
-              ctx.fillText(f.text, Math.max(f.x0, 0) + 3, f.y0 + 2);
+            if (z.border) {
+              ctx.strokeStyle = rgba(z.ink, 0.75 * k);
+              ctx.setLineDash(z.border === 'dashed' ? [4, 3] : []);
+              box(z);
             }
-          }
-          for (const o of this.scene.obs) {
-            const c = ink(SMC_INK.ob, o.dim);
-            ctx.strokeStyle = c;
-            ctx.lineWidth = 1;
-            ctx.strokeRect(crisp(o.x0, 1), crisp(o.y0, 1), Math.round(o.x1 - o.x0), Math.round(o.y1 - o.y0));
-            if (o.mark) {
+            if (z.ghost) {
+              ctx.strokeStyle = rgba(z.ink, 0.35 * k);
+              ctx.setLineDash([1, 3]);
+              box(z.ghost);
+            }
+            if (z.mid) {
+              ctx.strokeStyle = rgba(z.ink, 0.85 * k);
+              ctx.setLineDash(z.mid.dash);
+              hline(z.x0, z.x1, z.mid.y, 1);
+            }
+            if (z.mark) {
+              ctx.strokeStyle = rgba(z.ink, 0.6 * k);
               ctx.setLineDash([2, 2]);
-              ctx.strokeRect(crisp(o.mark.x0, 1), crisp(o.mark.y0, 1), Math.round(o.mark.x1 - o.mark.x0), Math.round(o.mark.y1 - o.mark.y0));
-              ctx.setLineDash([]);
+              ctx.lineWidth = 1;
+              box(z.mark);
             }
-            if (o.x1 - Math.max(o.x0, 0) > 40) {
-              ctx.fillStyle = c;
-              ctx.textBaseline = 'top';
-              ctx.fillText(o.text, Math.max(o.x0, 0) + 3, o.y0 + 2);
-            }
-          }
-          for (const e of this.scene.eqs) {
-            const c = ink(SMC_INK.eq, e.dim);
-            ctx.strokeStyle = c;
-            ctx.setLineDash([1, 3]);
-            hline(e.x0, e.x1, e.y, st.width);
             ctx.setLineDash([]);
-            for (const t of e.ticks) hline(t.x0, t.x1, t.y, Math.max(1, st.width));
-            if (e.x1 - Math.max(e.x0, 0) > 30) {
-              ctx.fillStyle = c;
-              ctx.textBaseline = 'bottom';
-              ctx.fillText(e.text, Math.max(e.x0, 0) + 3, e.y - 2);
-            }
           }
-          const grey = ink(SMC_INK.structure, false);
-          ctx.strokeStyle = grey;
-          ctx.fillStyle = grey;
-          for (const b of this.scene.breaks) {
-            if (b.dashed) ctx.setLineDash([4, 3]);
-            hline(b.x0, b.x1, b.y, Math.max(1, st.width - 1));
-            ctx.setLineDash([]);
-            ctx.textBaseline = 'bottom';
-            ctx.textAlign = 'center';
-            if (b.x1 - b.x0 > 24) ctx.fillText(b.text, (Math.max(b.x0, 0) + b.x1) / 2, b.y - 2);
-            ctx.textAlign = 'left';
-          }
-          for (const s of this.scene.sweeps) {
-            hline(s.x0, s.x1, s.y, 2);
-            ctx.textBaseline = 'bottom';
-            ctx.fillText('sweep', Math.max(s.x0, 0), s.y - 2);
-          }
+          // Linie: przełamania, sweepy, EQ, zakres, poziomy D/W/M, wyższy interwał
           ctx.textAlign = 'center';
-          for (const l of this.scene.labels) {
-            ctx.font = `${l.bold ? 700 : 500} ${l.bold ? 10 : 9}px ${MONO}`;
+          ctx.textBaseline = 'bottom';
+          for (const l of sc.lines) {
+            ctx.strokeStyle = rgba(l.ink, l.alpha * a);
+            ctx.setLineDash(l.dash);
+            hline(l.x0, l.x1, l.y, l.width);
+            ctx.setLineDash([]);
+            if (l.text && l.x1 - Math.max(l.x0, 0) > 24) {
+              ctx.font = `${l.bold ? 700 : 600} 9px ${MONO}`;
+              ctx.fillStyle = rgba(l.ink, Math.min(1, l.alpha * a + 0.1));
+              ctx.textBaseline = l.below ? 'top' : 'bottom';
+              ctx.fillText(l.text, (Math.max(l.x0, 0) + l.x1) / 2, l.below ? l.y + 3 : l.y - 2);
+            }
+          }
+          for (const t of sc.ticks) {
+            ctx.strokeStyle = rgba(t.ink, a);
+            hline(t.x0, t.x1, t.y, 2);
+          }
+          // Etykiety swingów (skala swingowa wyraźniej)
+          for (const l of sc.labels) {
+            ctx.font = `${l.bold ? 700 : 500} ${l.bold ? 10 : 8}px ${MONO}`;
+            ctx.fillStyle = rgba(SMC_INK.structure, l.bold ? a : 0.6 * a);
             ctx.textBaseline = l.above ? 'bottom' : 'top';
             ctx.fillText(l.text, l.x, l.above ? l.y - 3 : l.y + 3);
           }
           ctx.textAlign = 'left';
-          // Wyższy interwał: przygaszony obrys przerywany i podpis interwału, bez wypełnienia
-          const h = this.scene.higher;
-          ctx.font = `600 9px ${MONO}`;
-          for (const z of h.zones) {
-            const c = rgba(z.ink, 0.6 * a);
-            ctx.strokeStyle = c;
-            ctx.lineWidth = 1;
-            ctx.setLineDash([5, 3]);
-            ctx.strokeRect(crisp(z.x0, 1), crisp(z.y0, 1), Math.round(z.x1 - z.x0), Math.round(z.y1 - z.y0));
-            if (z.mid !== null) {
-              ctx.setLineDash([2, 4]);
-              hline(z.x0, z.x1, z.mid, 1);
+          // Linijka premium i discount przy osi ceny i znacznik ostatniego zamknięcia
+          const rl = sc.ruler;
+          if (rl) {
+            for (const g of rl.segs) {
+              ctx.fillStyle = rgba(g.ink, (g.on ? 0.95 : 0.45) * a);
+              ctx.fillRect(rl.x, g.y0, RULER_W, Math.max(1, g.y1 - g.y0));
             }
-            ctx.setLineDash([]);
-            if (z.x1 - Math.max(z.x0, 0) > 52) {
-              ctx.fillStyle = c;
-              ctx.textBaseline = 'bottom';
-              ctx.fillText(z.text, Math.max(z.x0, 0) + 3, z.y1 - 2);
+            if (rl.at !== null) {
+              ctx.fillStyle = rgba(PRO.ink1, a);
+              ctx.beginPath();
+              ctx.moveTo(rl.x - 1, rl.at);
+              ctx.lineTo(rl.x - 6, rl.at - 4);
+              ctx.lineTo(rl.x - 6, rl.at + 4);
+              ctx.closePath();
+              ctx.fill();
             }
           }
-          const hg = rgba(SMC_INK.structure, 0.6 * a);
-          ctx.strokeStyle = hg;
-          ctx.fillStyle = hg;
-          for (const b of h.breaks) {
-            ctx.setLineDash([6, 4]);
-            hline(b.x0, b.x1, b.y, Math.max(1, st.width - 1));
-            ctx.setLineDash([]);
-            ctx.textBaseline = 'top';
-            ctx.textAlign = 'right';
-            if (b.x1 - Math.max(b.x0, 0) > 40) ctx.fillText(b.text, b.x1 - 3, b.y + 2);
-            ctx.textAlign = 'left';
+          // Kolumna podpisów: pigułki na tle wykresu, bez nakładania się
+          if (sc.tags.length) {
+            ctx.font = `600 9.5px ${MONO}`;
+            ctx.textBaseline = 'middle';
+            const ys = layoutTags(
+              sc.tags.map((t) => t.y),
+              mediaSize.height
+            );
+            sc.tags.forEach((t, i) => {
+              const w = Math.ceil(ctx.measureText(t.text).width) + 9;
+              const x0 = sc.tagX - w;
+              const y0 = Math.round(ys[i] - TAG_H / 2);
+              const k = t.dim ? 0.45 : 1;
+              ctx.fillStyle = rgba(PRO.bg, 0.82);
+              ctx.fillRect(x0, y0, w, TAG_H);
+              ctx.fillStyle = rgba(t.ink, 0.95 * k * a);
+              ctx.fillRect(x0, y0, 2, TAG_H);
+              // Podpis przesunięty z wysokości elementu: kreska do niej przy krawędzi kolumny
+              if (Math.abs(ys[i] - t.y) > 3) {
+                ctx.strokeStyle = rgba(t.ink, 0.5 * k * a);
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(sc.tagX + 1.5, Math.round(ys[i]) + 0.5);
+                ctx.lineTo(sc.tagX + 1.5, Math.round(t.y) + 0.5);
+                ctx.stroke();
+              }
+              ctx.fillText(t.text, x0 + 5, y0 + TAG_H / 2 + 0.5);
+            });
           }
         }),
     };
@@ -657,6 +778,7 @@ export class SmcLayer implements ISeriesPrimitive<Time> {
       const candidate = selectSmcMtf(this.mtf, asOf, this.sel.close, { phone: true, room: 1 });
       if (candidate.fvgs.length) trimSmc(this.sel, cap - 1);
     }
+    this.flow = this.sel ? smcFlowOf(this.sel, this.src, this.srcMs) : null;
     const base = this.sel ? smcObjects(this.sel) : 0;
     // Wyższy interwał w tej samej chwili, w tym, co zostaje z łącznego limitu obiektów
     this.hsel = this.mtf && this.sel ? selectSmcMtf(this.mtf, asOf, this.sel.close, { phone: this.phone, room: cap - base }) : null;
@@ -682,66 +804,139 @@ export class SmcLayer implements ISeriesPrimitive<Time> {
     const xb = ts.logicalToCoordinate(1 as Logical);
     if (xa === null || xb === null || !(xb > xa)) return;
     const sp = xb - xa;
-    const right = chart.paneSize(0).width - this.rightInset;
-    const x = (t: number) => Math.min(right, xa + (logicalOfTime(bars, t, ms) - 0.5) * sp);
+    const pane = chart.paneSize(0);
+    const right = pane.width - this.rightInset;
+    const sc = this.scene;
+    // Linijka premium i discount zajmuje skraj przy osi; strefy i linie kończą się przed nią
+    const zr = sel.pd ? right - RULER_W - RULER_GAP : right;
+    sc.tagX = zr - 3;
+    const x = (t: number) => Math.min(zr, xa + (logicalOfTime(bars, t, ms) - 0.5) * sp);
     const y = (p: number) => series.priceToCoordinate(p);
     const rect = (x0: number, x1: number, hi: number, lo: number): Rect | null => {
-      if (x1 < 0 || x0 >= right) return null;
+      if (x1 < 0 || x0 >= zr) return null;
       const ya = y(hi);
       const yb = y(lo);
       return ya === null || yb === null ? null : { x0, x1, y0: Math.min(ya, yb), y1: Math.max(ya, yb) };
     };
-    const sc = this.scene;
+    const tag = (yy: number | null, text: string, ink: string, dim = false) => {
+      if (yy !== null && yy >= 0 && yy <= pane.height) sc.tags.push({ y: yy, text, ink, dim });
+    };
+    const flow = this.flow;
+    const hs = this.hsel;
+    const label = hs?.label ?? '';
+    // Strefa wykresu w strefie wyższego interwału (≥ 50% wspólnej wysokości): dopisek „+4H” zamiast osobnego podpisu
+    const htfZones: { lo: number; hi: number }[] = hs ? [...hs.obs, ...hs.fvgs.map((v) => v.f)] : [];
+    const claimed = new Set<number>();
+    const inHtf = (z: { lo: number; hi: number }): string => {
+      const k = htfZones.findIndex((h) => overlapShare(h, z) >= 0.5);
+      if (k < 0) return '';
+      claimed.add(k);
+      return ` +${label}`;
+    };
+
+    // FVG połączona z OB (≥ 50% wspólnej wysokości, ten sam kierunek): jedna strefa OB z dopiskiem „+FVG”
+    const merged = new Map<number, number>();
     for (const v of sel.fvgs) {
-      const f = v.f;
-      const r = rect(x(f.t), v.endAt === null ? right : x(v.endAt), f.hi, f.lo);
-      const ym = y(fvgMid(f));
-      if (!r || ym === null) continue;
-      sc.fvgs.push({ ...r, mid: ym, dim: v.ended !== null, text: `FVG ${pct(v.fill)}%${v.ce ? ' · CE' : ''}` });
+      if (v.ended) continue;
+      const ob = sel.obs.find((w) => !w.ended && w.o.dir === v.f.dir && overlapShare(w.o, v.f) >= 0.5);
+      if (ob) merged.set(v.f.id, ob.o.id);
     }
+    const withFvg = new Set(merged.values());
+
     for (const v of sel.obs) {
       const o = v.o;
       // Strefa od świecy przełamania (od niej OB jest znany), obrys samej świecy OB jako znacznik
-      const r = rect(x(o.breakT), v.endAt === null ? right : x(v.endAt), o.hi, o.lo);
+      const r = rect(x(o.breakT), v.endAt === null ? zr : x(v.endAt), o.hi, o.lo);
       if (!r) continue;
-      const scale = o.scale === 'swing' ? tr('swing.', 'swing') : tr('wewn.', 'int.');
-      const state = v.state === 'touched' ? tr(' · dotknięty', ' · touched') : v.state === 'mitigated' ? tr(' · zmitygowany', ' · mitigated') : v.state === 'expired' ? tr(' · wygasł', ' · expired') : '';
-      sc.obs.push({ ...r, dim: v.ended, mark: rect(x(o.t), x(o.t + ms), o.hi, o.lo), text: `OB ${scale}${state}` });
+      const touched = v.state === 'touched';
+      const swing = o.scale === 'swing';
+      const fl = flow?.ob.get(o.id);
+      const poc = fl?.poc ?? null;
+      const yPoc = poc !== null && poc >= o.lo && poc <= o.hi ? y(poc) : null;
+      sc.zones.push({
+        ...r,
+        ink: SMC_INK.ob,
+        fill: v.ended ? 0 : touched ? 0.08 : swing ? 0.2 : 0.14,
+        border: v.ended || touched ? 'dashed' : swing ? 'solid' : null,
+        dim: v.ended,
+        ghost: null,
+        mid: yPoc === null ? null : { y: yPoc, dash: [] },
+        mark: rect(x(o.t), x(o.t + ms), o.hi, o.lo),
+      });
+      const extra = `${fl?.absorption ? tr(' absorpcja', ' absorption') : ''}${withFvg.has(o.id) ? ' +FVG' : ''}${inHtf(o)}`;
+      tag((r.y0 + r.y1) / 2, `OB${dirArrow(o.dir)}${extra}`, SMC_INK.ob, v.ended || touched);
+    }
+    for (const v of sel.fvgs) {
+      const f = v.f;
+      if (merged.has(f.id)) continue;
+      // Rysujemy to, co z luki zostało: wypełnienie idzie od strony ceny
+      const w = f.hi - f.lo;
+      const left = v.ended ? { lo: f.lo, hi: f.hi } : f.dir === 1 ? { lo: f.lo, hi: f.hi - v.fill * w } : { lo: f.lo + v.fill * w, hi: f.hi };
+      const x1 = v.endAt === null ? zr : x(v.endAt);
+      const r = rect(x(f.t), x1, left.hi, left.lo);
+      if (!r) continue;
+      const ym = y(fvgMid(f));
+      sc.zones.push({
+        ...r,
+        ink: SMC_INK.fvg,
+        fill: v.ended ? 0 : 0.15,
+        border: v.ended ? 'dashed' : null,
+        dim: v.ended !== null,
+        ghost: v.fill > 0.02 && !v.ended ? rect(x(f.t), x1, f.hi, f.lo) : null,
+        // Środek luki (CE), dopóki cena go nie dotknęła
+        mid: !v.ce && ym !== null ? { y: ym, dash: [2, 3] } : null,
+        mark: null,
+      });
+      const thin = flow?.fvg.get(f.id)?.thin ? tr(' pusta', ' thin') : '';
+      tag((r.y0 + r.y1) / 2, `FVG${dirArrow(f.dir)}${thin}${inHtf(f)}`, SMC_INK.fvg, v.ended !== null);
     }
     for (const v of sel.eqs) {
       const e = v.e;
       const ye = y(e.level);
       const x0 = x(e.t);
-      const x1 = e.endAt === null ? right : x(e.endAt);
-      if (ye === null || x1 < 0 || x0 >= right) continue;
-      const ticks = [e.a, e.b].flatMap((q) => {
+      const x1 = e.endAt === null ? zr : x(e.endAt);
+      if (ye === null || x1 < 0 || x0 >= zr) continue;
+      sc.lines.push({ x0, x1, y: ye, ink: SMC_INK.eq, alpha: v.ended ? 0.4 : 0.9, width: Math.max(1, st.width), dash: [1, 3], text: null, bold: false });
+      for (const q of [e.a, e.b]) {
         const yq = y(q.price);
-        return yq === null ? [] : [{ x0: x(q.t), x1: x(q.t + ms), y: yq }];
-      });
-      sc.eqs.push({ x0, x1, y: ye, dim: v.ended, text: e.dir === 1 ? 'EQH' : 'EQL', ticks });
+        if (yq !== null) sc.ticks.push({ x0: x(q.t), x1: x(q.t + ms), y: yq, ink: SMC_INK.eq });
+      }
+      tag(ye, e.dir === 1 ? 'EQH' : 'EQL', SMC_INK.eq, v.ended);
     }
     for (const b of sel.breaks) {
       const yb = y(b.level);
       // Od świecy, na której zamknięciu swing był znany, do świecy przełamania
       const x0 = x(b.swingKnown - ms);
       const x1 = x(b.t + ms);
-      if (yb === null || x1 < 0 || x0 >= right) continue;
-      sc.breaks.push({ x0, x1, y: yb, text: b.kind, dashed: b.kind === 'CHoCH' });
+      if (yb === null || x1 < 0 || x0 >= zr) continue;
+      const swing = b.scale === 'swing';
+      const ok = flow?.brk.get(b.id)?.accepted ? ' ✓' : '';
+      sc.lines.push({
+        x0,
+        x1,
+        y: yb,
+        ink: SMC_INK.structure,
+        alpha: swing ? 0.95 : 0.65,
+        width: swing ? 2 : 1,
+        dash: b.kind === 'CHoCH' ? [5, 3] : swing ? [] : [2, 3],
+        text: `${b.kind}${ok}`,
+        bold: b.kind === 'CHoCH',
+      });
     }
     for (const s of sel.sweeps) {
       const ys = y(s.level);
       const x0 = x(s.t);
       const x1 = x(s.returnT + ms);
-      if (ys === null || x1 < 0 || x0 >= right) continue;
-      sc.sweeps.push({ x0, x1, y: ys });
+      if (ys === null || x1 < 0 || x0 >= zr) continue;
+      sc.lines.push({ x0, x1, y: ys, ink: SMC_INK.eq, alpha: 0.95, width: 2, dash: [], text: 'sweep', bold: false, below: s.dir === -1 });
     }
     for (const s of sel.labels) {
       const yl = y(s.price);
       const xc = x(s.t) + sp / 2;
-      if (yl === null || xc < 0 || xc >= right) continue;
+      if (yl === null || xc < 0 || xc >= zr) continue;
       sc.labels.push({ x: xc, y: yl, text: s.label ?? '', above: s.dir === 1, bold: s.scale === 'swing' });
     }
-    const available = Math.max(0, (this.phone ? SMC_PHONE_OBJECTS_MAX : SMC_OBJECTS_MAX) - smcObjects(sel) - (this.hsel ? smcMtfObjects(this.hsel) : 0));
+    const available = Math.max(0, (this.phone ? SMC_PHONE_OBJECTS_MAX : SMC_OBJECTS_MAX) - smcObjects(sel) - (hs ? smcMtfObjects(hs) : 0));
     let extra = 0;
     for (const period of prevPeriodsOf(st.periods ?? 0, ms)) {
       const level = prevHighLow(this.daily, period, sel.asOf);
@@ -749,37 +944,61 @@ export class SmcLayer implements ISeriesPrimitive<Time> {
       const names = PREV_NAMES[period];
       for (const [price, text] of [[level.hi, names[0]], [level.lo, names[1]]] as const) {
         const yp = y(price);
-        if (yp !== null) sc.breaks.push({ x0: x(level.to), x1: right, y: yp, text, dashed: true });
+        if (yp === null) continue;
+        sc.lines.push({ x0: x(level.to), x1: zr, y: yp, ink: PRO.ink2, alpha: 0.55, width: 1, dash: [6, 4], text: null, bold: false });
+        tag(yp, text, PRO.ink2);
       }
       extra += 2;
     }
-    this.onObjects?.(smcObjects(sel) + (this.hsel ? smcMtfObjects(this.hsel) : 0) + extra);
+    this.onObjects?.(smcObjects(sel) + (hs ? smcMtfObjects(hs) : 0) + extra);
+    // Zakres swingowy: linijka przy osi, szczyt i dołek z oceną (słaby — ten, który trend ma przełamać), linia równowagi
     if (sel.pd) {
       const pd = sel.pd;
-      const zones: (Rect & { text: string })[] = [];
-      for (const [hi, lo, text] of [[pd.hi, pd.eqHi, 'Premium'], [pd.eqHi, pd.eqLo, 'EQ'], [pd.eqLo, pd.lo, 'Discount']] as const) {
-        const r = rect(x(pd.known), right, hi, lo);
-        if (r) zones.push({ ...r, text });
+      const yh = y(pd.hi);
+      const yl = y(pd.lo);
+      const ye1 = y(pd.eqHi);
+      const ye0 = y(pd.eqLo);
+      if (yh !== null && yl !== null && ye1 !== null && ye0 !== null) {
+        const yc = y(sel.close);
+        sc.ruler = {
+          x: right - RULER_W - 1,
+          segs: [
+            { y0: yh, y1: ye1, ink: SMC_INK.premium, on: pd.zone === 'premium' },
+            { y0: ye1, y1: ye0, ink: SMC_INK.structure, on: pd.zone === 'equilibrium' },
+            { y0: ye0, y1: yl, ink: SMC_INK.discount, on: pd.zone === 'discount' },
+          ],
+          at: yc !== null && pd.pct >= 0 && pd.pct <= 1 ? yc : null,
+        };
+        const trend = sel.state.swing;
+        const hiText = trend === 'up' ? tr('słaby szczyt', 'weak high') : trend === 'down' ? tr('mocny szczyt', 'strong high') : tr('szczyt zakresu', 'range high');
+        const loText = trend === 'down' ? tr('słaby dołek', 'weak low') : trend === 'up' ? tr('mocny dołek', 'strong low') : tr('dołek zakresu', 'range low');
+        sc.lines.push({ x0: x(pd.hiT), x1: zr, y: yh, ink: SMC_INK.premium, alpha: 0.6, width: 1, dash: [1, 2], text: null, bold: false });
+        sc.lines.push({ x0: x(pd.loT), x1: zr, y: yl, ink: SMC_INK.discount, alpha: 0.6, width: 1, dash: [1, 2], text: null, bold: false });
+        const yEq = y((pd.eqHi + pd.eqLo) / 2);
+        if (yEq !== null) sc.lines.push({ x0: x(pd.known), x1: zr, y: yEq, ink: SMC_INK.structure, alpha: 0.45, width: 1, dash: [6, 4], text: null, bold: false });
+        tag(yh, hiText, SMC_INK.premium);
+        tag((yh + ye1) / 2, 'Premium', SMC_INK.premium, pd.zone !== 'premium');
+        tag((ye0 + yl) / 2, 'Discount', SMC_INK.discount, pd.zone !== 'discount');
+        tag(yl, loText, SMC_INK.discount);
       }
-      sc.pd = { zones };
     }
-    // Wyższy interwał: od zamknięcia świecy wyższego interwału, która element potwierdza (`known`), nigdy wcześniej
-    const hs = this.hsel;
+    // Wyższy interwał: od zamknięcia świecy wyższego interwału, która element potwierdza (`known`), nigdy wcześniej;
+    // obrys przerywany bez wypełnienia; podpis tylko, gdy żadna strefa wykresu go nie przejęła („+4H”)
     if (!hs) return;
-    for (const z of hs.obs) {
-      const r = rect(x(z.known), right, z.hi, z.lo);
-      if (r) sc.higher.zones.push({ ...r, ink: SMC_INK.fvg, mid: null, text: `${hs.label} OB` });
-    }
-    for (const v of hs.fvgs) {
-      const f = v.f;
-      const r = rect(x(f.known), right, f.hi, f.lo);
-      if (r) sc.higher.zones.push({ ...r, ink: SMC_INK.fvg, mid: y(fvgMid(f)), text: `${hs.label} FVG ${pct(v.fill)}%${v.ce ? ' · CE' : ''}` });
-    }
+    const hz = (lo: number, hi: number, known: number, ink: string, mid: number | null, text: string, k: number) => {
+      const r = rect(x(known), zr, hi, lo);
+      if (!r) return;
+      sc.zones.push({ ...r, ink, fill: 0, border: 'dashed', dim: false, ghost: null, mid: mid === null ? null : { y: mid, dash: [2, 4] }, mark: null });
+      if (!claimed.has(k)) tag((r.y0 + r.y1) / 2, text, ink);
+    };
+    hs.obs.forEach((z, k) => hz(z.lo, z.hi, z.known, SMC_INK.ob, null, `${label} OB${dirArrow(z.dir)}`, k));
+    hs.fvgs.forEach((v, k) => hz(v.f.lo, v.f.hi, v.f.known, SMC_INK.fvg, v.ce ? null : y(fvgMid(v.f)), `${label} FVG${dirArrow(v.f.dir)}`, hs.obs.length + k));
     for (const b of hs.breaks) {
       const yb = y(b.level);
       const x0 = x(b.known);
-      if (yb === null || x0 >= right) continue;
-      sc.higher.breaks.push({ x0, x1: right, y: yb, text: `${hs.label} ${b.kind}` });
+      if (yb === null || x0 >= zr) continue;
+      sc.lines.push({ x0, x1: zr, y: yb, ink: SMC_INK.structure, alpha: 0.6, width: Math.max(1, st.width - 1), dash: [6, 4], text: null, bold: false });
+      tag(yb, `${label} ${b.kind}`, SMC_INK.structure);
     }
   }
 
@@ -794,7 +1013,8 @@ export class SmcLayer implements ISeriesPrimitive<Time> {
   /** Opis w legendzie (z ostatniego wyboru); krzyż nad elementem dopisuje, od kiedy był znany. */
   legend(hover: { t: number; p: number } | null, fmt: (p: number) => string, coin: string): LegendPart[] {
     const src = this.src;
-    const out = smcLegend(this.sel, this.ms, coin, hover, fmt, (idx) => candleTape(src, idx), this.higher());
+    const out = smcLegend(this.sel, this.ms, coin, hover, fmt, (idx) => candleTape(src, idx), this.higher(), this.flow);
+    if (this.sel) out.push({ text: SMC_KEY(), color: PRO.ink3 });
     if (this.sel?.pd) out.push({ text: `· ${smcValueContext(this.sel.pd, this.valueOf?.(this.sel.asOf - 1) ?? null)}`, color: PRO.ink2 });
     if (this.sel) for (const period of prevPeriodsOf(this.styleOf()?.periods ?? 0, this.ms)) {
       const level = prevHighLow(this.daily, period, this.sel.asOf);

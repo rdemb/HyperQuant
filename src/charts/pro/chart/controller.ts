@@ -57,7 +57,7 @@ import { Hip4Layer, Hip4Source, outcomeLevels } from './hip4Layer';
 import { PbRangeLayer, PbStyle, PbZone } from './pbRangeLayer';
 import { EffortLayer, type EffortStyle } from './effortLayer';
 import { IvbLayer, type IvbStyle } from './ivbLayer';
-import { type SmcHigherFeed, SmcLayer, type SmcStyle } from './smcLayer';
+import { SMC_TAG_GAP_PX, type SmcHigherFeed, SmcLayer, type SmcStyle } from './smcLayer';
 import { pickHtf } from '../core/smcMtf';
 import type { Candle } from '../hl/parse';
 import { seriesCandles } from './layoutInputs';
@@ -721,8 +721,12 @@ export class ProChartController {
     this.ivb.setRightInset(px);
     this.smc.setRightInset(px);
     this.blog.setRightInset(px);
-    this.chart.timeScale().applyOptions({ rightOffsetPixels: this.rightGap() });
+    this.gapApplied = this.rightGap();
+    this.chart.timeScale().applyOptions({ rightOffsetPixels: this.gapApplied });
   }
+
+  /** Odstęp za ostatnią świecą ustawiony ostatnio na osi czasu. */
+  private gapApplied = RIGHT_GAP_PX;
 
   private domShown(): boolean {
     return this.settings.showHeatmap && !this.phone;
@@ -1026,7 +1030,12 @@ export class ProChartController {
 
   /** Odstęp najnowszej świecy od osi ceny (px): stały, a z mapą ciepła powiększony o drabinę DOM. */
   private rightGap(): number {
-    return RIGHT_GAP_PX + this.coneGap();
+    return RIGHT_GAP_PX + Math.max(this.coneGap(), this.smcGap());
+  }
+
+  /** SMC na komputerze: miejsce za ostatnią świecą na kolumnę podpisów stref przy osi ceny (nie zasłania świec). */
+  private smcGap(): number {
+    return this.smcStyle() && !this.phone ? SMC_TAG_GAP_PX : 0;
   }
 
   /** Miejsce na część stożka za ostatnią świecą przy bieżącym odstępie świec, najwyżej trzecia część szerokości wykresu. */
@@ -1652,7 +1661,7 @@ export class ProChartController {
     if (this.coneShown()) {
       this.applyDomInset();
       this.scrollToNow();
-    }
+    } else if (this.rightGap() !== this.gapApplied) this.applyDomInset();
     const ahead = Math.max(0, ...this.indShown.flatMap((x) => indicatorDef(x.id).plots.map((p) => plotShift(x, p))));
     const ts = this.chart.timeScale();
     const fit = ts.width() / (3 * ahead);
