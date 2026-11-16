@@ -19,7 +19,7 @@ describe.each(['pl', 'en'] as const)('karty wskaźników (%s)', (lang) => {
     vi.resetModules();
     const { indicatorCard, STATUS_LABEL } = await import('../indicators/cards');
     const ids = [...menuEntries('front'), ...menuEntries('classic')].map((d) => d.id);
-    expect(ids.length).toBe(22);
+    expect(ids.length).toBe(24);
     for (const id of ids) {
       const c = indicatorCard(id);
       expect(c.claim.length, id).toBeGreaterThanOrEqual(20);

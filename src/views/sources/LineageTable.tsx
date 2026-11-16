@@ -70,16 +70,16 @@ export const GROUPS: { title: string; rows: Row[] }[] = [
       },
       {
         metric: tr(
-          'Wskaźniki na wykresie (W sesji): VWAP ±σ, profil wolumenu, PDH/PDL, IB, klastry likwidacji',
-          'Chart indicators (In session): VWAP ±σ, volume profile, PDH/PDL, IB, liquidation clusters'
+          'Wskaźniki na wykresie (W sesji): VWAP ±σ, profil wolumenu, PDH/PDL, IB, IVB, klastry likwidacji',
+          'Chart indicators (In session): VWAP ±σ, volume profile, PDH/PDL, IB, IVB, liquidation clusters'
         ),
         source: tr(
           'Hyperliquid API: candleSnapshot (świece interwału i dzienne), taśma WS trades; mapa likwidacji skanera HyperQuant',
           'Hyperliquid API: candleSnapshot (timeframe and daily candles), WS trades tape; the HyperQuant scanner liquidation map'
         ),
         method: tr(
-          'VWAP = Σ v·(H+L+C)/3 / Σ v ze świec 1m od 00:00 UTC lub od otwarcia sesji (na świecach dziennych ze świec 5m od poniedziałku), więc ta sama wartość na każdym interwale; dzień sprzed historii świec 1m ze świec wykresu; σ ważone wolumenem; profil widocznego zakresu: świeca z pełnej taśmy po cenach transakcji, pozostałe równomiernie na zakres H–L, value area 70% wokół POC; PDH, PDL i otwarcie dnia ze świec dziennych; IB = zakres pierwszej godziny sesji, rozszerzenia 1,5× i 2×; klastry = kubełki mapy łączone w przedziały ~0,25% ceny, 3 największe ≥ 1 mln USD po każdej stronie ceny',
-          'VWAP = Σ v·(H+L+C)/3 / Σ v from 1m candles from 00:00 UTC or from the session open (on daily candles from 5m candles from Monday), so the same value on every timeframe; a day older than the 1m candle history from the chart candles; volume-weighted σ; visible-range profile: a candle with the full tape at trade prices, others spread evenly over the H–L range, 70% value area around the POC; PDH, PDL and daily open from daily candles; IB = range of the first hour of the session, 1.5× and 2× extensions; clusters = map buckets merged into ~0.25% price bands, the 3 largest ≥ USD 1M on each side of the price'
+          'VWAP = Σ v·(H+L+C)/3 / Σ v ze świec 1m od 00:00 UTC lub od otwarcia sesji (na świecach dziennych ze świec 5m od poniedziałku), więc ta sama wartość na każdym interwale; dzień sprzed historii świec 1m ze świec wykresu; σ ważone wolumenem; profil widocznego zakresu: świeca z pełnej taśmy po cenach transakcji, pozostałe równomiernie na zakres H–L, value area 70% wokół POC; PDH, PDL i otwarcie dnia ze świec dziennych; IB = zakres pierwszej godziny sesji, rozszerzenia 1,5× i 2×; IVB = zakres pierwszych 30 albo 60 min od otwarcia NY (09:30 czasu nowojorskiego według kalendarza) z zamkniętych świec; klastry = kubełki mapy łączone w przedziały ~0,25% ceny, 3 największe ≥ 1 mln USD po każdej stronie ceny',
+          'VWAP = Σ v·(H+L+C)/3 / Σ v from 1m candles from 00:00 UTC or from the session open (on daily candles from 5m candles from Monday), so the same value on every timeframe; a day older than the 1m candle history from the chart candles; volume-weighted σ; visible-range profile: a candle with the full tape at trade prices, others spread evenly over the H–L range, 70% value area around the POC; PDH, PDL and daily open from daily candles; IB = range of the first hour of the session, 1.5× and 2× extensions; IVB = range of the first 30 or 60 min from the NY open (09:30 New York time by the calendar) from closed candles; clusters = map buckets merged into ~0.25% price bands, the 3 largest ≥ USD 1M on each side of the price'
         ),
         kinds: ['LIVE', 'MODEL'],
         refresh: tr('na żywo (świece) · mapa likwidacji co minutę', 'live (candles) · liquidation map every minute'),

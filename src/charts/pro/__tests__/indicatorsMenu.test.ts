@@ -6,10 +6,10 @@ import { DROPPED_NOTICE_KEY, parseSettings, startSettings } from '../chart/setti
 
 // Grupy według pytań tradera (plan 59, G1)
 const GROUPS = [
-  ['presja', ['absorption', 'ofi', 'oiflow']],
+  ['presja', ['absorption', 'ofi', 'kyle', 'oiflow']],
   ['sklad', ['breadth', 'repeat', 'makers', 'ordersize', 'twap', 'hawkes']],
   ['ruch', ['rvol', 'regime', 'slippage', 'cone']],
-  ['poziomy', ['pbrange', 'effort', 'outcomes']],
+  ['poziomy', ['pbrange', 'effort', 'ivb', 'outcomes']],
 ] as const;
 const FRONT = GROUPS.flatMap(([, ids]) => ids) as string[];
 const SECOND: string[] = [];

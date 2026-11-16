@@ -4,6 +4,7 @@ import { t975 } from '../../../utils/tQuantile';
 import type { BookFrame } from '../core/book';
 import type { MakerSplit } from '../core/makers';
 import { DEFAULT_EFFORT_PARAMS } from '../core/effortZones';
+import { IVB_DEFAULT, IVB_WINDOWS } from '../core/ivb';
 import { PB_EVIDENCE } from '../chart/pbSelect';
 import { type Branching, MIN_EVENTS, fitBranching } from '../core/hawkes';
 import { fitBranchingLater, inBackground } from '../core/hawkesWorker';
@@ -51,6 +52,7 @@ export type IndicatorId =
   | 'oiflow'
   | 'absorption'
   | 'ofi'
+  | 'kyle'
   | 'regime'
   | 'ordersize'
   | 'cone'
@@ -63,6 +65,7 @@ export type IndicatorId =
   | 'outcomes'
   | 'pbrange'
   | 'effort'
+  | 'ivb'
   | 'twap';
 
 /**
@@ -79,6 +82,8 @@ export interface ParamDef {
   max: number;
   step: number;
   def: number;
+  /** Tylko te wartości (wybór z listy zamiast pola liczbowego, np. okno IVB 30 albo 60 min). */
+  options?: readonly number[];
 }
 
 export type Params = Readonly<Record<string, number>>;
@@ -250,6 +255,8 @@ export interface IndicatorDef {
   pbRanges?: true;
   /** Strefy absorpcji i pudełka Effort ze świec wykresu (warstwa na wykresie ceny i opis w legendzie): bez wartości świec i bez plotów. */
   effortZones?: true;
+  /** IVB: zakres otwarcia NY ze świec wykresu (warstwa na wykresie ceny i opis w legendzie): bez wartości świec i bez plotów. */
+  ivb?: true;
   /** Tyle świec przed lewą krawędzią widoku potrzeba danych z serwera (okno poprzednich świec: absorpcja, OFI). */
   lookback?(p: Params): number;
   /**
@@ -387,6 +394,51 @@ export const OFI_MAX_GAP = 12_000;
 export function ofiMinR2(n: number): number {
   const t = t975(n - 2);
   return (t * t) / (t * t + n - 2);
+}
+
+export type KyleFit = { lambda: number; r2: number; floor: number; n: number; shown: number; buy: number | null; sell: number | null };
+
+/** OLS y = a + b·x na parach (bez NaN); null przy < `min` parach albo bez zmienności x lub y. */
+function olsPairs(xs: Float64Array, ys: Float64Array, n: number, keep: (x: number) => boolean, min: number) {
+  let m = 0;
+  let sx = 0;
+  let sy = 0;
+  let sxx = 0;
+  let sxy = 0;
+  let syy = 0;
+  for (let i = 0; i < n; i++) {
+    const x = xs[i];
+    const y = ys[i];
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !keep(x)) continue;
+    m++;
+    sx += x;
+    sy += y;
+    sxx += x * x;
+    sxy += x * y;
+    syy += y * y;
+  }
+  if (m < min) return null;
+  const cxx = sxx - (sx * sx) / m;
+  const cxy = sxy - (sx * sy) / m;
+  const cyy = syy - (sy * sy) / m;
+  if (!(cxx > 0) || !(cyy > 0)) return null;
+  return { beta: cxy / cxx, r2: (cxy * cxy) / (cxx * cyy), m };
+}
+
+/**
+ * λ Kyle’a (Pionier, nowy LVL §3.1): nachylenie regresji zwrotu świecy (pb) na podpisany przepływ agresora (mln USD)
+ * w ostatnich świecach z pełną taśmą. Pokazywane dopiero powyżej progu szumu R² dla liczby świec (t² / (t² + n − 2),
+ * test nachylenia 5%, jak w OFI); osobno λ kupna i λ sprzedaży (świece z przewagą jednej strony, od 15 świec).
+ */
+export function kyleFit(xs: Float64Array, ys: Float64Array, n: number): KyleFit | null {
+  const all = olsPairs(xs, ys, n, () => true, 20);
+  if (!all) return null;
+  const floor = ofiMinR2(all.m);
+  const side = (keep: (x: number) => boolean) => {
+    const f = olsPairs(xs, ys, n, keep, 15);
+    return f && f.r2 >= ofiMinR2(f.m) ? f.beta : null;
+  };
+  return { lambda: all.beta, r2: all.r2, floor, n: all.m, shown: all.r2 >= floor ? all.beta : Number.NaN, buy: side((x) => x > 0), sell: side((x) => x < 0) };
 }
 
 /** Najlepsze kwotowania migawki (kubełki najbliższej agregacji); null bez obu stron. */
@@ -1488,6 +1540,60 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
     },
   },
   {
+    id: 'kyle',
+    short: 'λ',
+    name: tr('λ Kyle’a: ile cenę rusza milion agresji', 'Kyle’s λ: how far a million of aggression moves price'),
+    hint: tr(
+      'Linia to λ: o ile punktów bazowych ruszała się cena na każdy 1 mln USD przepływu agresora (kupno minus sprzedaż) w ostatnich świecach z pełną taśmą. Wysokie λ — rynek jest „cienki”, ta sama delta przesuwa cenę dalej; niskie — rynek przyjmuje agresję. W legendzie R² z progiem szumu, λ osobno dla kupna i sprzedaży (asymetria wpływu) i ruch oczekiwany przy przepływie bieżącej świecy',
+      'The line is λ: how many basis points price moved per 1 M USD of aggressor flow (buying minus selling) over the recent candles with full tape. High λ: a “thin” market, the same delta moves price further; low: the market absorbs aggression. The legend shows R² with its noise floor, λ for buying and selling separately (impact asymmetry) and the move expected for the current candle’s flow'
+    ),
+    group: 'hyperquant',
+    aliases: 'kyle lambda lambda wplyw impact price impact sztywnosc plynnosc illiquidity amihud przeplyw agresor flow',
+    warmup: () => 0,
+    convention: tr(
+      'Tego wskaźnika nie ma w TradingView: liczony z nagranej taśmy Hyperliquid (Kyle 1985; w praktyce regresja zwrotu na podpisany przepływ, jak u Hasbroucka). Dla każdej świecy w całości objętej taśmą: x — delta agresorów razy cena zamknięcia, w mln USD; y — zwrot świecy od otwarcia do zamknięcia, w pb. λ to nachylenie OLS y na x (z wyrazem wolnym) w poprzednich świecach z wartością w liczbie „Długość”, bez bieżącej świecy. Linia pojawia się dopiero, gdy R² przekracza próg szumu dla liczby świec (t² / (t² + n − 2), test nachylenia na poziomie 5%); poniżej „—”. λ kupna i sprzedaży to te same regresje na świecach z przewagą kupna albo sprzedaży (od 15 świec), każda ze swoim progiem. Na danych z losowym znakiem przepływu λ pokazuje się w nie więcej niż ok. 5% okien (test). To miara z cen transakcji, nie ze środka arkusza.',
+      'TradingView has no such indicator: it is computed from the recorded Hyperliquid tape (Kyle 1985; in practice a regression of returns on signed flow, as in Hasbrouck). For every candle fully covered by the tape: x is the aggressor delta times the close, in M USD; y is the candle return from open to close, in bp. λ is the OLS slope of y on x (with an intercept) over the previous candles with a value, “Length” of them, excluding the current candle. The line appears only when R² exceeds the noise floor for the number of candles (t² / (t² + n − 2), a 5% slope test); below it, “—”. Buying and selling λ are the same regressions on candles dominated by buying or selling (from 15 candles), each with its own floor. On data with a random flow sign, λ shows in no more than about 5% of windows (tested). It is measured on trade prices, not on the book mid.'
+    ),
+    memoryNote: tr(
+      'Wartość zależy od ostatnich świec w liczbie „Długość”, w całości objętych taśmą (świece z luką się pomija), bez bieżącej świecy. Brak wartości, dopóki nie ma 20 takich świec, i gdy wpływ nie odróżnia się od szumu.',
+      'The value depends on the last “Length” candles fully covered by the tape (candles with a gap are skipped), excluding the current one. No value until there are 20 such candles, or when the impact does not stand out from noise.'
+    ),
+    pane: 'own',
+    params: [{ key: 'length', label: tr('Długość', 'Length'), min: 20, max: 300, step: 1, def: 60 }],
+    lookback: (p) => p.length,
+    plots: [
+      { title: tr('λ pb/1 mln', 'λ bp/1 M') },
+      { hidden: true, title: 'R²', format: 'fixed2' },
+      { hidden: true, title: tr('próg szumu R²', 'R² noise floor'), format: 'fixed2' },
+      { hidden: true, title: tr('λ kupna', 'buy λ'), format: 'fixed2' },
+      { hidden: true, title: tr('λ sprzedaży', 'sell λ'), format: 'fixed2' },
+      { hidden: true, title: tr('oczek. pb', 'exp. bp'), format: 'fixed1' },
+    ],
+    levels: [0],
+    format: 'fixed2',
+    usualBand: {},
+    sample: {
+      span: (p) => p.length,
+      point: (b, xy) => {
+        // Tylko świeca w całości objęta nagraniem: część taśmy dałaby część przepływu
+        const fp = b.complete ? b.fp : null;
+        if (!fp || !(b.candle.o > 0)) return false;
+        xy[0] = (fp.delta * b.candle.c) / 1e6;
+        xy[1] = ((b.candle.c - b.candle.o) / b.candle.o) * 1e4;
+        return true;
+      },
+      create: () => (x, _y, xs, ys, out) => {
+        const f = kyleFit(xs, ys, xs.length);
+        out[0] = f ? f.shown : Number.NaN;
+        out[1] = f ? f.r2 : Number.NaN;
+        out[2] = f ? f.floor : Number.NaN;
+        out[3] = f?.buy ?? Number.NaN;
+        out[4] = f?.sell ?? Number.NaN;
+        out[5] = f && Number.isFinite(f.shown) ? f.shown * x : Number.NaN;
+      },
+    },
+  },
+  {
     id: 'regime',
     usualBand: {},
     short: tr('Reżim', 'Regime'),
@@ -2022,8 +2128,8 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
     aliases: 'absorpcja absorption effort pudelka boxes strefy zones pod nad below above dyskonto discount swing vwap valentini fabio intraday flip pivot delta nasdaq',
     warmup: () => 0,
     convention: tr(
-      `Tego wskaźnika nie ma w TradingView. To rekonstrukcja HyperQuant stref i pudełek z modelu intraday Fabio Valentiniego pokazanego w jego filmie (youtu.be/HUYBdYnXUNc): jego wskaźnik „Nasdaq Effort” ma zamknięty kod, więc reguły i progi są nasze, nie jego. Liczone ze świec wykresu. Strefa absorpcji: dołek albo szczyt swingu (pivot: ${EF.pivotLen} świec po obu stronach, więc strefa powstaje ${EF.pivotLen} świec po krańcu), przy którym świeca krańca albo sąsiednia miała wolumen ponad ${efNum(EF.absVolMult)} × średnia z ${EF.smaLen} świec albo deltę przeciwną ponad ${efNum(EF.absDeltaMult)} × średnia |delty| i zamknęła się w połowie zakresu dalszej od krańca (albo następna świeca zamknęła się w drugą stronę za jej przeciwnym krańcem); prostokąt od krańca do drugiej strony korpusu tej świecy, wysokość od ${efNum(EF.zoneMinAtr)} do ${efNum(EF.zoneMaxAtr)} ATR (Wilder, ${EF.atrLen} świec). Strefa dyskonta swingu: po swingu co najmniej ${efNum(EF.swingMinAtr)} ATR od jego krańca do VAL (swing wzrostowy, strefa pod ceną) albo VAH (swing spadkowy, strefa nad ceną) profilu wolumenu swingu (value area ${Math.round(EF.valueArea * 100)}%, ${EF.profileBins} przedziały), z tym samym ograniczeniem wysokości. Strefa przebita już przed powstaniem nie jest rysowana, a nowa strefa, która nakłada się ponad połowę (niższej z dwóch) na aktywną strefę tej samej strony, nie powstaje. Strefa jest uzbrojona, gdy cena odejdzie od niej o ${efNum(EF.departAtr)} ATR, i żyje ${EF.zoneMaxAgeMs / 3_600_000} h od powstania albo do pierwszego zamknięcia za nią; przebicie z agresją (wolumen albo delta jak przy absorpcji) i zamknięciem po złej stronie VWAP sesji zmienia jej rolę w tym samym miejscu. Znaczniki w rogu: A absorpcja, D dyskonto swingu, F zmiana roli; strefa pod ceną w kolorze poziomów, nad ceną w jego jaśniejszym odcieniu, a pudełka w kolorze strony agresora (strona transakcji, nie zalecenie). Na wykresie tylko strefy aktywne i uzbrojone: strefy jednej strony, które się nakładają albo dzieli je mniej niż 0,25 ATR, to jedno pasmo (najwyżej 1,5 ATR, znacznik łączony, np. A·D), a na każdą stronę rysowane są najwyżej 2 pasma najbliższe ostatniemu zamknięciu (na telefonie 1; dalsze liczy legenda). Pasmo zaczyna się od świecy, na której zamknięciu strefa powstała; kraniec swingu oznacza krótka kreska. Strefa przebita zostaje samym obrysem przez 6 świec (najnowsza, nie na telefonie), wygasła znika. Pudełko Effort: świeca kierunkowa z deltą w swoją stronę ponad ${efNum(EF.effortDeltaMult)} × średnia |delty| z ${EF.smaLen} świec, której szczyt (dołek) wybija ${EF.effortBreakout} poprzednie świece, zamknięta po właściwej stronie VWAP sesji (Londyn, NY, w godzinach azjatyckich doba UTC); od dołka do połowy korpusu (kupno) albo od połowy korpusu do szczytu (sprzedaż). Kolejne pudełka jednej strony (najwyżej 3 świece odstępu) to jedna seria, wypełniona tylko na swoich świecach, z krawędziami w prawo do ${EF.boxExtend} świec; rysowana jest ostatnia seria każdej strony, jeśli skończyła się najwyżej ${EF.boxExtend} świec temu (na telefonie nowsza z dwóch). Pudełko tylko wtedy, gdy jego świeca i 19 świec przed nią mają deltę z taśmy (nagrane w całości; próg agresji to średnia |delty| z 20 świec), więc zamknięta świeca nie zmienia go po doczytaniu taśmy; strefy liczą deltę świecy bez taśmy w przybliżeniu (wolumen × położenie zamknięcia w zakresie), a legenda mówi, ile z ostatnich 32 świec ma taśmę. Tryb „Historia” w ustawieniach rysuje samymi obrysami wszystkie strefy i serie pudełek. W 2026 r. strefa utrzymała się po pierwszym dotknięciu w 52% przypadków, tak jak losowy poziom w tej samej odległości (BTC 5m, n 9 281): strefy opisują, gdzie rynek przyjął agresję, i nie przewidują odbicia.`,
-      `TradingView has no such indicator. It is HyperQuant’s reconstruction of the zones and boxes of Fabio Valentini’s intraday model shown in his video (youtu.be/HUYBdYnXUNc): his “Nasdaq Effort” indicator is closed source, so the rules and thresholds are ours, not his. Computed from the chart candles. Absorption zone: a swing low or high (pivot: ${EF.pivotLen} candles on each side, so the zone appears ${EF.pivotLen} candles after the extreme) where the extreme candle or a neighbour had volume above ${EF.absVolMult} × the ${EF.smaLen}-candle average or an opposing delta above ${EF.absDeltaMult} × the average |delta| and closed in the half of its range away from the extreme (or the next candle closed the other way beyond its opposite end); the rectangle runs from the extreme to the far side of that candle’s body, ${EF.zoneMinAtr} to ${EF.zoneMaxAtr} ATR high (Wilder, ${EF.atrLen} candles). Swing discount zone: after a swing of at least ${EF.swingMinAtr} ATR, from its extreme to the VAL (up swing, zone below the price) or VAH (down swing, zone above the price) of the swing’s volume profile (${Math.round(EF.valueArea * 100)}% value area, ${EF.profileBins} bins), with the same height limits. A zone already broken before it appears is not drawn, and a new zone overlapping an active zone of the same side by more than half (of the smaller one) does not appear. A zone is armed once the price has moved ${EF.departAtr} ATR away from it, and it lives ${EF.zoneMaxAgeMs / 3_600_000} h from its creation or until the first close beyond it; a break with aggression (volume or delta as for absorption) and a close on the wrong side of the session VWAP flips its role in the same place. Corner marks: A absorption, D swing discount, F flipped; a zone below the price in the level colour, above it in a lighter shade, and the boxes in the aggressor side colour (the side of the trade, not a recommendation). The chart shows only active, armed zones: zones of one side that overlap or are less than 0.25 ATR apart form one band (at most 1.5 ATR high, a combined mark such as A·D), and each side shows at most the 2 bands nearest the last close (1 on a phone; the legend counts the farther ones). A band starts at the candle on whose close the zone appeared; a short tick marks the swing extreme. A broken zone stays as an outline for 6 candles (the newest one, not on a phone); an expired zone disappears. Effort box: a directional candle with delta its own way above ${EF.effortDeltaMult} × the ${EF.smaLen}-candle average |delta|, whose high (low) breaks the previous ${EF.effortBreakout} candles, closed on the right side of the session VWAP (London, NY, the UTC day during Asian hours); from the low to the middle of the body (buying) or from the middle of the body to the high (selling). Consecutive boxes of one side (at most 3 candles apart) form one series, filled only on its own candles, with edges to the right for up to ${EF.boxExtend} candles; the latest series of each side is drawn if it ended at most ${EF.boxExtend} candles ago (on a phone the newer of the two). A box needs tape delta on its candle and the 19 candles before it (fully recorded; the aggression threshold is the 20-candle average |delta|), so a closed candle does not change its box once the tape loads; zones approximate the delta of a candle without the tape (volume × the close position within the range), and the legend says how many of the last 32 candles have the tape. The “History” mode in the settings draws all zones and box series as outlines. In 2026 a zone held after the first touch in 52% of cases, just like a random level at the same distance (BTC 5m, n 9,281): zones describe where the market absorbed aggression and do not predict a bounce.`
+      `Tego wskaźnika nie ma w TradingView. To rekonstrukcja HyperQuant stref i pudełek z modelu intraday Fabio Valentiniego pokazanego w jego filmie (youtu.be/HUYBdYnXUNc): jego wskaźnik „Nasdaq Effort” ma zamknięty kod, więc reguły i progi są nasze, nie jego. Liczone ze świec wykresu i taśmy; delta tylko z taśmy, bez przybliżenia ze świecy. Strefa absorpcji: dołek albo szczyt swingu (pivot: ${EF.pivotLen} świec po obu stronach, więc strefa powstaje ${EF.pivotLen} świec po krańcu), przy którym świeca krańca albo sąsiednia miała wolumen ponad ${efNum(EF.absVolMult)} × średnia z ${EF.smaLen} świec albo deltę przeciwną ponad ${efNum(EF.absDeltaMult)} × średnia |delty| i zamknęła się w połowie zakresu dalszej od krańca (albo następna świeca zamknęła się w drugą stronę za jej przeciwnym krańcem); prostokąt od krańca do drugiej strony korpusu tej świecy, wysokość od ${efNum(EF.zoneMinAtr)} do ${efNum(EF.zoneMaxAtr)} ATR (Wilder, ${EF.atrLen} świec). Strefa absorpcji wymaga taśmy na świecy krańca, obu sąsiednich i w oknie ich średniej |delty|; bez niej strefy A nie ma, a legenda pokazuje przy A brak wartości z powodem „brak taśmy” i liczbą takich krańców z ostatnich ${EF.zoneMaxAgeMs / 3_600_000} h. Strefa dyskonta swingu: po swingu co najmniej ${efNum(EF.swingMinAtr)} ATR od jego krańca do VAL (swing wzrostowy, strefa pod ceną) albo VAH (swing spadkowy, strefa nad ceną) profilu wolumenu swingu (value area ${Math.round(EF.valueArea * 100)}%, ${EF.profileBins} przedziały), z tym samym ograniczeniem wysokości; profil to wolumen transakcji na każdej cenie z taśmy, a świeca bez taśmy wnosi swój wolumen rozłożony równo na zakres (wtedy profil to przybliżenie). Strefa przebita już przed powstaniem nie jest rysowana, a nowa strefa, która nakłada się ponad połowę (niższej z dwóch) na aktywną strefę tej samej strony, nie powstaje. Strefa jest uzbrojona, gdy cena odejdzie od niej o ${efNum(EF.departAtr)} ATR, i żyje ${EF.zoneMaxAgeMs / 3_600_000} h od powstania albo do pierwszego zamknięcia za nią; przebicie z agresją (wolumen albo delta z taśmy jak przy absorpcji; bez taśmy sam wolumen) i zamknięciem po złej stronie VWAP sesji zmienia jej rolę w tym samym miejscu. Znaczniki w rogu: A absorpcja, D dyskonto swingu, F zmiana roli; strefa pod ceną w kolorze poziomów, nad ceną w jego jaśniejszym odcieniu, a pudełka w kolorze strony agresora (strona transakcji, nie zalecenie). Na wykresie tylko strefy aktywne i uzbrojone: strefy jednej strony, które się nakładają albo dzieli je mniej niż 0,25 ATR, to jedno pasmo (najwyżej 1,5 ATR, znacznik łączony, np. A·D), a na każdą stronę rysowane są najwyżej 2 pasma najbliższe ostatniemu zamknięciu (na telefonie 1; dalsze liczy legenda). Pasmo zaczyna się od świecy, na której zamknięciu strefa powstała; kraniec swingu oznacza krótka kreska. Strefa przebita zostaje samym obrysem przez 6 świec (najnowsza, nie na telefonie), wygasła znika. Pudełko Effort: świeca kierunkowa z deltą w swoją stronę ponad ${efNum(EF.effortDeltaMult)} × średnia |delty| z ${EF.smaLen} świec, której szczyt (dołek) wybija ${EF.effortBreakout} poprzednie świece, zamknięta po właściwej stronie VWAP sesji (Londyn, NY, w godzinach azjatyckich doba UTC); od dołka do połowy korpusu (kupno) albo od połowy korpusu do szczytu (sprzedaż). Kolejne pudełka jednej strony (najwyżej 3 świece odstępu) to jedna seria, wypełniona tylko na swoich świecach, z krawędziami w prawo do ${EF.boxExtend} świec; rysowana jest ostatnia seria każdej strony, jeśli skończyła się najwyżej ${EF.boxExtend} świec temu (na telefonie nowsza z dwóch). Pudełko tylko wtedy, gdy jego świeca i 19 świec przed nią mają deltę z taśmy (nagrane w całości; próg agresji to średnia |delty| z 20 świec), więc zamknięta świeca nie zmienia go po doczytaniu taśmy; bez taśmy pudełka nie ma, a legenda pokazuje przy pudełku brak wartości z powodem „brak taśmy” i mówi, ile z ostatnich 32 świec ma taśmę. Krzyż nad pasmem dopisuje w legendzie, od kiedy strefa była znana (zamknięcie świecy powstania) i ile po zamknięciu świecy krańca, np. „strefa A znana od 10:25, 25 min po krańcu”, żeby pasma nie brać za wiedzę z chwili krańca; przy strefie D także profil swingu (POC, VA, LVN) z plakietką „z taśmy” albo „przybliżenie”. Tryb „Historia” w ustawieniach rysuje samymi obrysami wszystkie strefy i serie pudełek. W 2026 r. strefa utrzymała się po pierwszym dotknięciu w 52% przypadków, tak jak losowy poziom w tej samej odległości (BTC 5m, n 9 281): strefy opisują, gdzie rynek przyjął agresję, i nie przewidują odbicia.`,
+      `TradingView has no such indicator. It is HyperQuant’s reconstruction of the zones and boxes of Fabio Valentini’s intraday model shown in his video (youtu.be/HUYBdYnXUNc): his “Nasdaq Effort” indicator is closed source, so the rules and thresholds are ours, not his. Computed from the chart candles and the tape; delta only from the tape, never approximated from the candle. Absorption zone: a swing low or high (pivot: ${EF.pivotLen} candles on each side, so the zone appears ${EF.pivotLen} candles after the extreme) where the extreme candle or a neighbour had volume above ${EF.absVolMult} × the ${EF.smaLen}-candle average or an opposing delta above ${EF.absDeltaMult} × the average |delta| and closed in the half of its range away from the extreme (or the next candle closed the other way beyond its opposite end); the rectangle runs from the extreme to the far side of that candle’s body, ${EF.zoneMinAtr} to ${EF.zoneMaxAtr} ATR high (Wilder, ${EF.atrLen} candles). An absorption zone needs the tape on the extreme candle, both neighbours and the window of their average |delta|; without it there is no A zone, and the legend shows no value for A with the reason “no tape” and the number of such extremes in the last ${EF.zoneMaxAgeMs / 3_600_000} h. Swing discount zone: after a swing of at least ${EF.swingMinAtr} ATR, from its extreme to the VAL (up swing, zone below the price) or VAH (down swing, zone above the price) of the swing’s volume profile (${Math.round(EF.valueArea * 100)}% value area, ${EF.profileBins} bins), with the same height limits; the profile is the traded volume at each price from the tape, and a candle without the tape adds its volume spread evenly over its range (the profile is then an approximation). A zone already broken before it appears is not drawn, and a new zone overlapping an active zone of the same side by more than half (of the smaller one) does not appear. A zone is armed once the price has moved ${EF.departAtr} ATR away from it, and it lives ${EF.zoneMaxAgeMs / 3_600_000} h from its creation or until the first close beyond it; a break with aggression (volume or tape delta as for absorption; volume only without the tape) and a close on the wrong side of the session VWAP flips its role in the same place. Corner marks: A absorption, D swing discount, F flipped; a zone below the price in the level colour, above it in a lighter shade, and the boxes in the aggressor side colour (the side of the trade, not a recommendation). The chart shows only active, armed zones: zones of one side that overlap or are less than 0.25 ATR apart form one band (at most 1.5 ATR high, a combined mark such as A·D), and each side shows at most the 2 bands nearest the last close (1 on a phone; the legend counts the farther ones). A band starts at the candle on whose close the zone appeared; a short tick marks the swing extreme. A broken zone stays as an outline for 6 candles (the newest one, not on a phone); an expired zone disappears. Effort box: a directional candle with delta its own way above ${EF.effortDeltaMult} × the ${EF.smaLen}-candle average |delta|, whose high (low) breaks the previous ${EF.effortBreakout} candles, closed on the right side of the session VWAP (London, NY, the UTC day during Asian hours); from the low to the middle of the body (buying) or from the middle of the body to the high (selling). Consecutive boxes of one side (at most 3 candles apart) form one series, filled only on its own candles, with edges to the right for up to ${EF.boxExtend} candles; the latest series of each side is drawn if it ended at most ${EF.boxExtend} candles ago (on a phone the newer of the two). A box needs tape delta on its candle and the 19 candles before it (fully recorded; the aggression threshold is the 20-candle average |delta|), so a closed candle does not change its box once the tape loads; without the tape there is no box, the legend shows no value for the box with the reason “no tape” and says how many of the last 32 candles have the tape. With the crosshair over a band the legend adds when each zone became known (the close of the candle it appeared on) and how long after the close of the extreme candle, e.g. “zone A known from 10:25, 25 min after the extreme”, so a band is not mistaken for knowledge at the time of the extreme; for a D zone also the swing profile (POC, VA, LVN) badged “from the tape” or “approximation”. The “History” mode in the settings draws all zones and box series as outlines. In 2026 a zone held after the first touch in 52% of cases, just like a random level at the same distance (BTC 5m, n 9,281): zones describe where the market absorbed aggression and do not predict a bounce.`
     ),
     memoryNote: tr(
       'Liczone od nowa po każdej zamkniętej świecy wykresu, od początku wczytanej historii; wynik dla świecy zależy tylko od świec do niej, więc historia się nie przerysowuje, a świeca w trakcie nie wchodzi. Na interwałach do 1 h, na każdym rynku, także w powtórce.',
@@ -2034,6 +2140,31 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
     plots: [],
     format: 'price',
     effortZones: true,
+  },
+  {
+    id: 'ivb',
+    short: 'IVB',
+    name: tr('IVB: zakres otwarcia NY', 'IVB: New York opening range'),
+    hint: tr(
+      'Zakres ceny pierwszych 30 albo 60 minut od otwarcia giełdy w Nowym Jorku (09:30 czasu nowojorskiego według kalendarza, czyli 15:30 czasu polskiego, a w tygodniach rozjazdu zmiany czasu 14:30), osobno od IB: prostokąt okna z zamkniętych świec, po oknie linie szczytu i dołka do końca sesji NY',
+      'The price range of the first 30 or 60 minutes after the New York stock exchange opens (09:30 New York time by the calendar, i.e. 15:30 Polish time, or 14:30 in the weeks when the clock changes are out of step), separate from the IB: a box of the window from closed candles, after the window lines at its high and low until the end of the NY session'
+    ),
+    group: 'hyperquant',
+    aliases: 'ivb otwarcie open opening nowy jork new york ny zakres range okno window fabio valentini deepm ib',
+    warmup: () => 0,
+    convention: tr(
+      `Tego wskaźnika nie ma w TradingView. Okno IVB jak w modelu IVB z dokumentacji Deep-M, z którego korzysta Fabio Valentini: zakres ceny od otwarcia giełdy w Nowym Jorku (09:30 czasu nowojorskiego) przez ${IVB_WINDOWS.join(' albo ')} minut, domyślnie ${IVB_DEFAULT}; wybór w parametrach. Otwarcie liczone z kalendarza stref czasowych (czas letni w USA i w Europie zmienia się w różnych tygodniach), więc w czasie polskim to 15:30, a w marcu i na przełomie października i listopada 14:30; nie stała godzina. IVB jest osobne od warstwy Initial balance (pierwsza godzina każdej sesji). Świeca należy do okna, gdy się w nim zaczyna, i liczy się dopiero po zamknięciu, więc w trakcie okna prostokąt rośnie z każdą zamkniętą świecą („w budowie” w legendzie), a linie szczytu i dołka zaczynają się dopiero na końcu okna, gdy zakres jest znany, i sięgają do końca sesji NY (00:00 UTC). Rysowana jest tylko bieżąca sesja NY: poza nią legenda podaje najbliższe otwarcie. Na interwałach do 30m (świece godzinowe nie zaczynają się o otwarciu). Sprawdzianu poziomów IVB wobec losowego poziomu jeszcze nie ma: to opis miejsca, nie prognoza wybicia.`,
+      `TradingView has no such indicator. The IVB window follows the IVB model in the Deep-M documentation used by Fabio Valentini: the price range from the New York stock exchange open (09:30 New York time) for ${IVB_WINDOWS.join(' or ')} minutes, ${IVB_DEFAULT} by default; choose it in the inputs. The open comes from the time-zone calendar (daylight saving time changes in different weeks in the US and in Europe), so in Polish time it is 15:30, and 14:30 in March and around the turn of October and November; not a fixed hour. The IVB is separate from the Initial balance layer (the first hour of every session). A candle belongs to the window if it starts in it and counts only once closed, so during the window the box grows with every closed candle (“building” in the legend), and the high and low lines start only at the end of the window, when the range is known, and run to the end of the NY session (00:00 UTC). Only the current NY session is drawn: outside it the legend gives the next open. On intervals up to 30m (hourly candles do not start at the open). The IVB levels have not yet been checked against a random level: they describe a place, not a forecast of a breakout.`
+    ),
+    memoryNote: tr(
+      'Liczone od nowa po każdej świecy wykresu z samej bieżącej sesji NY; świeca w trakcie nie wchodzi. Na interwałach do 30m, na każdym rynku, także w powtórce.',
+      'Recomputed after every chart candle from the current NY session only; the forming candle is not used. On intervals up to 30m, on every market, also in replay.'
+    ),
+    pane: 'price',
+    params: [{ key: 'minutes', label: tr('Okno od otwarcia NY (min)', 'Window from the NY open (min)'), min: 30, max: 60, step: 30, def: IVB_DEFAULT, options: IVB_WINDOWS }],
+    plots: [],
+    format: 'price',
+    ivb: true,
   },
   {
     id: 'twap',
@@ -2102,10 +2233,10 @@ export const REMOVED_INDICATORS: readonly string[] = ['obv', 'cmf', 'mfi', 'netv
  * Kolejność grup i wskaźników to kolejność menu.
  */
 export const MENU_GROUPS = [
-  { id: 'presja', label: tr('Kto naciska i czy cena ustępuje', 'Who is pushing and does price give way'), ids: ['absorption', 'ofi', 'oiflow'] },
+  { id: 'presja', label: tr('Kto naciska i czy cena ustępuje', 'Who is pushing and does price give way'), ids: ['absorption', 'ofi', 'kyle', 'oiflow'] },
   { id: 'sklad', label: tr('Kto stoi za ruchem', 'Who is behind the move'), ids: ['breadth', 'repeat', 'makers', 'ordersize', 'twap', 'hawkes'] },
   { id: 'ruch', label: tr('Kiedy ruch i ile kosztuje wejście', 'When the market moves and what entry costs'), ids: ['rvol', 'regime', 'slippage', 'cone'] },
-  { id: 'poziomy', label: tr('Poziomy i rynki prognoz', 'Levels and prediction markets'), ids: ['pbrange', 'effort', 'outcomes'] },
+  { id: 'poziomy', label: tr('Poziomy i rynki prognoz', 'Levels and prediction markets'), ids: ['pbrange', 'effort', 'ivb', 'outcomes'] },
 ] as const satisfies readonly { id: string; label: string; ids: readonly IndicatorId[] }[];
 const HQ_IDS: readonly IndicatorId[] = MENU_GROUPS.flatMap((g) => g.ids);
 /** Identyfikator wskaźnika z grup menu (plakietki źródeł: każdy musi mieć źródło). */
@@ -2244,7 +2375,7 @@ export const swatchColor = (x: IndicatorInstance): string => {
 
 /** Czy kolor instancji coś zmienia na wykresie (inaczej okno stylu go nie pokazuje). */
 export const usesInstanceColor = (def: IndicatorDef): boolean =>
-  !!(def.forecast || def.outcomes || def.pbRanges || def.band) || def.plots.some((p) => !p.hidden && !p.hist && p.color === undefined);
+  !!(def.forecast || def.outcomes || def.pbRanges || def.ivb || def.band) || def.plots.some((p) => !p.hidden && !p.hist && p.color === undefined);
 
 /** Podpis w legendzie i na liście: skrót, parametry i interwał spoza wykresu („EMA 21”, „BB 20 2,5”, „RSI 14 1h”). */
 export function indicatorLabel(x: IndicatorInstance): string {
@@ -2257,14 +2388,14 @@ export function indicatorLabel(x: IndicatorInstance): string {
  * wskaźnik przesunięty o świece wykresu (Ichimoku) i wskaźnik z danych spoza świec (taśma, otwarte pozycje).
  */
 export const tfAllowed = (def: IndicatorDef): boolean =>
-  !def.period && !def.fit && !def.flow && !def.series && !def.sample && !def.forecast && !def.outcomes && !def.pbRanges && !def.effortZones && !def.plots.some((p) => p.shift);
+  !def.period && !def.fit && !def.flow && !def.series && !def.sample && !def.forecast && !def.outcomes && !def.pbRanges && !def.effortZones && !def.ivb && !def.plots.some((p) => p.shift);
 
 /** Interwał wskaźnika: znany identyfikator interwału, a wskaźnik bez parametru „Interwał” go nie ma. */
 const tfOk = (def: IndicatorDef, tf: unknown): tf is string => tfAllowed(def) && INTERVALS.some((iv) => iv.id === tf && iv.ms !== MONTH);
 
-/** Wartość parametru w zakresie (przy kroku 1 liczba całkowita). */
+/** Wartość parametru w zakresie (przy kroku 1 liczba całkowita, przy liście wartości jedna z nich). */
 export const paramOk = (v: unknown, p: ParamDef): v is number =>
-  typeof v === 'number' && v >= p.min && v <= p.max && (p.step < 1 || Number.isInteger(v));
+  typeof v === 'number' && v >= p.min && v <= p.max && (p.step < 1 || Number.isInteger(v)) && (!p.options || p.options.includes(v));
 
 /** Parametry z walidacją: brakujący albo spoza zakresu → domyślny. */
 export function parseParams(def: IndicatorDef, raw: unknown): Params {

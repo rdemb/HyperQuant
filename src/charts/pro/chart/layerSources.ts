@@ -72,6 +72,7 @@ const SOURCES = {
   slippage: 'LIVE',
   rvol: 'MODEL',
   ofi: 'LIVE',
+  kyle: 'MODEL',
   ordersize: 'LIVE',
   // „Więcej z HyperQuant”
   cone: 'MODEL',
@@ -82,6 +83,8 @@ const SOURCES = {
   pbrange: 'MODEL',
   // Strefy i pudełka z reguł modelu na świecach i delcie taśmy (opis rynku, nie sygnały)
   effort: 'MODEL',
+  // Zakres otwarcia NY wprost ze świec Hyperliquid (okno z kalendarza, bez modelu)
+  ivb: 'LIVE',
 } as const satisfies Record<SourceKey, LayerSource>;
 
 /** Źródło każdej warstwy `show*` (na wykresie ceny i panele pod nim) i każdego wskaźnika z warstw menu front i second. */
@@ -100,6 +103,10 @@ const METHOD_HINT: Record<ModelKey, string> = {
     'MODEL · Theil–Sen: zwykły ruch ceny przy takiej delcie z prostej Theila–Sena na poprzednich świecach, odchylenie w jednostkach MAD',
     'MODEL · Theil–Sen: the usual price move for such a delta from a Theil–Sen line over previous candles, the deviation in MAD units'
   ),
+  kyle: tr(
+    'MODEL · OLS z progiem szumu: nachylenie zwrotu świecy na podpisany przepływ agresora (pb na 1 mln USD), pokazane tylko powyżej progu R² dla liczby świec',
+    'MODEL · OLS with a noise floor: the slope of the candle return on signed aggressor flow (bp per 1 M USD), shown only above the R² floor for the number of candles'
+  ),
   rvol: tr('MODEL · mediana 20 dni: wolumen wobec mediany tej samej godziny UTC z 20 dni', 'MODEL · 20-day median: volume against the median of the same UTC hour over 20 days'),
   cone: tr(
     'MODEL · HAR: przedziały z modelu zmienności log-HAR z FHS, prognozy z dziennika desku (Po sesji)',
@@ -116,8 +123,8 @@ const METHOD_HINT: Record<ModelKey, string> = {
     "MODEL · Nill's method rules on 5m candles: P/b zones and weekly and daily profile levels; a description of structure, without entry places"
   ),
   effort: tr(
-    'MODEL · reguły modelu intraday Valentiniego: strefy absorpcji i dyskonta swingu oraz pudełka Effort z delty taśmy (bez taśmy przybliżonej ze świecy); to nie wskazania wejścia',
-    "MODEL · Valentini's intraday model rules: absorption and swing discount zones and effort boxes from the tape delta (approximated from the candle without the tape); not entry cues"
+    'MODEL · reguły modelu intraday Valentiniego: strefy absorpcji i pudełka Effort tylko z delty taśmy (bez taśmy brak wartości z powodem), strefy dyskonta z profilu swingu z taśmy (ze świec tylko jako przybliżenie); to nie wskazania wejścia',
+    "MODEL · Valentini's intraday model rules: absorption zones and effort boxes from the tape delta only (no value with a reason without the tape), swing discount zones from the swing profile of the tape (from candles only as an approximation); not entry cues"
   ),
 };
 
@@ -152,6 +159,10 @@ export const LIVE_NOTE: Record<string, string> = {
   showLiq: tr(
     ' Klastry: 3 największe przedziały około 0,25% ceny z każdej strony, od 1 mln USD.',
     ' Clusters: the 3 largest bins of about 0.25% of the price on each side, from USD 1M.'
+  ),
+  ivb: tr(
+    ' Okno od otwarcia NY (09:30 czasu nowojorskiego według kalendarza) z zamkniętych świec wykresu.',
+    ' The window from the NY open (09:30 New York time by the calendar) from closed chart candles.'
   ),
 };
 
