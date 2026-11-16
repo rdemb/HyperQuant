@@ -15,6 +15,7 @@ import type { LiqTapeState } from '../state/useLiqTape';
 import type { VBar } from './auction';
 import { COHORTS, COHORT_LABEL, type CohortId } from './cohorts';
 import { vaMigration } from './dayType';
+import { CANDLE_METHOD, type ValueSource, valueBadge, valueMethodText, valueNote } from '../charts/pro/core/valueReference';
 import { mapWindow, settleRange } from './mapSettlement';
 import { type TradeSession, currentTradeSession, lastClosedSessions, nextTradeSession, rangeBudget } from './sessionDay';
 import { type SessionFacts, dayTypeOf, sessionFacts, vaMissing } from './sessionFacts';
@@ -67,8 +68,13 @@ export interface ReviewInputs {
   s: TradeSession;
   inProgress: boolean;
   now: number;
-  /** Świece 1m BTC rosnąco, od otwarcia poprzedniej sesji tego samego typu (migracja VA). */
+  /** Świece 1m BTC rosnąco, od otwarcia poprzedniej sesji tego samego typu. */
   bars1m: Got<readonly VBar[]> | undefined;
+  /**
+   * Jedno źródło wartości do migracji VA (magazyn wykresu: świece 5m z taśmą od otwarcia poprzedniej sesji); bez niego —
+   * świece 5m złożone ze świec 1m (bez taśmy, jak serwer MCP).
+   */
+  value?: ValueSource;
   maps: BlogMapsState;
   /** Oczekiwany zakres sesji (MODEL „profil × poziom”, ta sama liczba co budżet zakresu na żywo). */
   expected: Got<Expected> | undefined;
@@ -100,7 +106,7 @@ const absent = (id: ReviewRowId, label: string, badge: ReviewRow['badge'], why: 
 function factsOf(x: ReviewInputs): Got<SessionFacts> | undefined {
   const all = x.bars1m;
   if (all === undefined || isAbsent(all)) return all;
-  return sessionFacts(all, x.s, x.now);
+  return sessionFacts(all, x.s, x.now, x.value);
 }
 
 /** Ostatnia minuta zamkniętej sesji (powtórka pokazuje całą sesję); sesja w toku — bez linku, wykres na żywo jest wyżej. */
@@ -138,15 +144,18 @@ function vaRow(x: ReviewInputs, f: Got<SessionFacts> | undefined): ReviewRow {
   const pn = `${name(f.prev)} ${fmtDm(f.prev.start)}`;
   const m = vaMigration(f.va, f.prevVa);
   if (m === 'unknown') return no(tr('Value area bez liczb', 'Value area without numbers'));
+  // Reguła plakietki wartości: obie value area z taśmy — LIVE, inaczej MODEL „przybliżenie ze świec”
+  const badge = valueBadge(f.va, f.prevVa);
+  const prefix = badge === 'MODEL' ? `MODEL · ${CANDLE_METHOD}: ` : '';
   return {
     id: 'vaMigration',
     key: 'vaMigration',
     label,
     value: VA_MIGRATION_LABEL[m],
-    badge: 'LIVE',
+    badge,
     hint: tr(
-      `Value area 70% sesji ${name(x.s)} ${fmtPx(f.va.val)}–${fmtPx(f.va.vah)} wobec poprzedniej sesji ${pn} ${fmtPx(f.prevVa.val)}–${fmtPx(f.prevVa.vah)}; profile wolumenu ze świec 1m (koszyk ${amt(f.step)} USD).`,
-      `The ${name(x.s)} session 70% value area ${fmtPx(f.va.val)}–${fmtPx(f.va.vah)} against the previous session ${pn} ${fmtPx(f.prevVa.val)}–${fmtPx(f.prevVa.vah)}; volume profiles from 1m candles (bin ${amt(f.step)} USD).`
+      `${prefix}VA (wolumen) 70% sesji ${name(x.s)} ${fmtPx(f.va.val)}–${fmtPx(f.va.vah)} (${valueNote(f.va)}) wobec poprzedniej sesji ${pn} ${fmtPx(f.prevVa.val)}–${fmtPx(f.prevVa.vah)} (${valueNote(f.prevVa)}). ${valueMethodText(f.va)}`,
+      `${prefix}The ${name(x.s)} session 70% VA (volume) ${fmtPx(f.va.val)}–${fmtPx(f.va.vah)} (${valueNote(f.va)}) against the previous session ${pn} ${fmtPx(f.prevVa.val)}–${fmtPx(f.prevVa.vah)} (${valueNote(f.prevVa)}). ${valueMethodText(f.va)}`
     ),
     scope: 'session',
     replayAt: sessionEnd(x),

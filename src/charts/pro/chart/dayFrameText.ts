@@ -125,8 +125,8 @@ function valueChip(x: FrameInput): FrameChip {
     badge,
     value: `${lab}${share}`,
     hint: tr(
-      `${method}Value area 70% ${today} ${px(v.today.val)}–${px(v.today.vah)} wobec ${refName(p)} ${px(p.val)}–${px(p.vah)} (POC ${px(p.poc)}): ${lab}; ${pctOf(v.overlap)} dzisiejszej VA leży we wczorajszej. Jedno źródło wartości (koszyki 5 pb, jak panel „Najbliższe poziomy” i nagłówek Mapy dnia): dziś ${valueNote(v.today)}, wczoraj ${valueNote(p)}.`,
-      `${method}The 70% value area ${today} ${px(v.today.val)}–${px(v.today.vah)} against ${refName(p)} ${px(p.val)}–${px(p.vah)} (POC ${px(p.poc)}): ${lab}; ${pctOf(v.overlap)} of today's VA lies within yesterday's. The single value source (5 bp bins, like the “Nearest levels” panel and the Day map header): today ${valueNote(v.today)}, yesterday ${valueNote(p)}.`
+      `${method}VA (wolumen) 70% ${today} ${px(v.today.val)}–${px(v.today.vah)} wobec ${refName(p)} ${px(p.val)}–${px(p.vah)} (POC ${px(p.poc)}): ${lab}; ${pctOf(v.overlap)} dzisiejszej VA leży we wczorajszej. Jedno źródło wartości (koszyki 5 pb, jak panel „Najbliższe poziomy” i nagłówek Mapy dnia): dziś ${valueNote(v.today)}, wczoraj ${valueNote(p)}.`,
+      `${method}The 70% VA (volume) ${today} ${px(v.today.val)}–${px(v.today.vah)} against ${refName(p)} ${px(p.val)}–${px(p.vah)} (POC ${px(p.poc)}): ${lab}; ${pctOf(v.overlap)} of today's VA lies within yesterday's. The single value source (5 bp bins, like the “Nearest levels” panel and the Day map header): today ${valueNote(v.today)}, yesterday ${valueNote(p)}.`
     ),
   };
 }

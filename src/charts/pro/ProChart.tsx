@@ -811,7 +811,7 @@ export const ProChart: React.FC<{
           showBlogMap: blogMapScan(blogMaps, pickMap(blogMaps.maps, store.serverNow(), settings.blogMapId)),
         },
         // Profile okresów: plakietka ze źródła wartości ostatniego zamkniętego okresu (taśma LIVE, świece MODEL)
-        value: { showPeriodProfiles: ctrlRef.current?.periodValue() ?? null },
+        value: { showPeriodProfiles: ctrlRef.current?.periodValue() ?? { last: null, fallbackMs: null } },
       });
   // Lista „Warstwy”: włączone warstwy i ukryte okiem w tej sesji; w powtórce plakietka „nagranie” zamiast źródła na żywo
   const menuChips: LayerChip[] = [

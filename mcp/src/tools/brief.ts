@@ -12,7 +12,8 @@ import type { Candle } from '../../../src/charts/pro/hl/parse';
 import { tr } from '../../../src/i18n';
 import { pickMap } from '../../../src/utils/blogMaps';
 import { DASH, fmtPrice } from '../../../src/ui/format';
-import { PROFILE_STEP, VA_PCT, toVBars } from '../../../src/utils/auction';
+import { VA_PCT, toVBars } from '../../../src/utils/auction';
+import { CANDLE_METHOD, VALUE_BIN_BP } from '../../../src/charts/pro/core/valueReference';
 import { dayVwapOf, vwapSigma } from '../../../src/utils/dayVwap';
 import {
   type FourId,
@@ -245,20 +246,23 @@ function blogLevels(fm: Fetched<BlogMapsCut>, now: number, siteBase: string, not
   return m.levels.map((l) => ({ ...guardedLabel(l.label), price: num(l.price, 'price', 'LIVE', { note: BLOG_LEVEL_NOTE }), from: 'blog' as const }));
 }
 
-/** VAH, POC i VAL poprzedniej sesji tego samego typu co sesja kontekstu (`prevSessionProfile`, jak Kontekst aukcji). */
+/**
+ * VAH, POC i VAL poprzedniej sesji tego samego typu co sesja kontekstu (`prevSessionProfile`, jak Kontekst aukcji): jedno
+ * źródło wartości strony na świecach 5m złożonych ze świec 1m, bez taśmy — więc MODEL „przybliżenie ze świec”.
+ */
 function vaLevels(c1: Got<Candle[]>, ctx: TradeSession): BriefLevel[] {
   const prev = previousSameSession(ctx);
   const pp = isAbsent(c1) ? c1 : prevSessionProfile(toVBars(c1), ctx);
   const name = TRADE_SESSION_NAME[prev.id];
   const pct = Math.round(VA_PCT * 100);
   const note = tr(
-    `profil wolumenu poprzedniej sesji ${name} ${iso(prev.start)}–${iso(prev.end)} ze świec 1m Hyperliquid (koszyki ${PROFILE_STEP} USD, value area ${pct}%)`,
-    `volume profile of the previous ${name} session ${iso(prev.start)}–${iso(prev.end)} from Hyperliquid 1m candles (${PROFILE_STEP} USD buckets, ${pct}% value area)`
+    `profil wolumenu poprzedniej sesji ${name} ${iso(prev.start)}–${iso(prev.end)} ze świec 5m złożonych ze świec 1m Hyperliquid (wolumen świecy rozłożony równo na jej zakres, koszyki ${VALUE_BIN_BP} pb, value area ${pct}%), ta sama funkcja co strona`,
+    `volume profile of the previous ${name} session ${iso(prev.start)}–${iso(prev.end)} from 5m candles built from Hyperliquid 1m candles (candle volume spread evenly over its range, ${VALUE_BIN_BP} bp bins, ${pct}% value area), the same function as the site`
   );
   return (['vah', 'poc', 'val'] as const).map((k) => ({
     label: VA_LABEL[k],
     labelWhy: null,
-    price: isAbsent(pp) ? num(null, 'price', 'LIVE', { why: pp.why }) : num(pp[k], 'price', 'LIVE', { note }),
+    price: isAbsent(pp) ? num(null, 'price', 'MODEL', { why: pp.why, method: CANDLE_METHOD }) : num(pp[k], 'price', 'MODEL', { method: CANDLE_METHOD, note }),
     from: k,
   }));
 }
