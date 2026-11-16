@@ -4,6 +4,16 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Fabio: Effort tylko z taśmy, profil swingu z taśmy, IVB 30/60 min i czas dostępności stref (2026-11-16)
+<!-- co-nowego: grupa=wykres | pl=Strefy i pudełka Effort liczą deltę tylko z nagranej taśmy, a pod kursorem widać, od kiedy strefa była znana; nowy wskaźnik IVB z zakresem pierwszych 30 albo 60 minut od otwarcia Nowego Jorku | en=Effort zones and boxes take delta only from the recorded tape, and under the cursor you can see since when a zone was known; a new IVB indicator shows the range of the first 30 or 60 minutes after the New York open -->
+
+#### Zmienione
+- **Effort: delta tylko z taśmy** (plan Pioniera §2.2, punkt 1): świeca bez pełnej taśmy nie ma już delty z przybliżenia `wolumen × (2 × położenie zamknięcia − 1)` (Astra pokazała +60 z przybliżenia wobec −80 z taśmy). Strefa A (świeca krańca, obie sąsiednie i okno ich średniej |delty|) i pudełko bez taśmy nie powstają w samym modelu (`effortZones`), a nie tylko w wyborze do rysowania; legenda pokazuje „A: —, brak taśmy przy N krańcach” i „pudełko: —, brak taśmy”. Przebicie zmieniające rolę strefy bez taśmy liczy sam wolumen. Na nagranych dobach przy lekcjach (61 z 926 świec z taśmą) bez taśmy: 0 pudełek i 0 stref A wobec 80 pudełek z przybliżenia wcześniej.
+- **Effort: profil swingu z taśmy** (punkt 2): VAH, VAL, POC i LVN swingu strefy D z wolumenu transakcji na każdej cenie (wiersze footprintu), ze świecy (wolumen rozłożony na zakres) tylko tam, gdzie taśmy brak; pod kursorem profil z plakietką „z taśmy” albo „przybliżenie: taśma N%”. Test z przykładem Astry: ze świec VA 0–7, z taśmy 9–10. LVN liczone tą samą regułą co w profilu P/b (`lvnBins`).
+- **Effort: czas dostępności stref** (punkt 4): krzyż nad pasmem dopisuje w legendzie np. „strefa A znana od 10:25, 25 min po krańcu” (F: „na zamknięciu przebicia”), żeby rysunku od krańca nie brać za wiedzę z chwili krańca.
+
+#### Dodane
+- **Wskaźnik IVB** (punkt 3, grupa „Poziomy i rynki prognoz”): zakres pierwszych 30 albo 60 minut od otwarcia giełdy w Nowym Jorku, domyślnie 30, wybór z listy w parametrach; osobno od warstwy Initial balance (60 min). Otwarcie z kalendarza (09:30 czasu nowojorskiego, czyli 15:30 czasu polskiego, a w tygodniach rozjazdu zmiany czasu 14:30), nie stała godzina. Tylko zamknięte świece, prostokąt rośnie w trakcie okna, linie szczytu i dołka od końca okna do końca sesji NY, najwyżej 3 obiekty; poza sesją NY „—” z najbliższym otwarciem. Źródło LIVE (świece), sprawdzianu wobec losowego poziomu jeszcze nie ma (zapisane w opisie i na karcie).
 ### λ Kyle’a: ile cenę rusza milion USD agresji (2026-11-16)
 <!-- co-nowego: grupa=wykres | pl=Nowy wskaźnik λ Kyle’a w grupie Presja: o ile punktów bazowych cena ruszała się na każdy 1 mln USD przepływu agresora, osobno dla kupna i sprzedaży, z progiem szumu | en=New Kyle’s λ indicator in the Pressure group: how many basis points price moved per 1 M USD of aggressor flow, separately for buying and selling, with a noise floor -->
 

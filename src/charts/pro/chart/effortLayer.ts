@@ -1,9 +1,12 @@
 import type { IChartApiBase, IPrimitivePaneRenderer, IPrimitivePaneView, ISeriesApi, ISeriesPrimitive, Logical, SeriesAttachedParameter, SeriesType, Time } from 'lightweight-charts';
 import { tr } from '../../../i18n';
 import { numLang } from '../../../ui/format';
-import { DEFAULT_EFFORT_PARAMS, type EffortResult, type Side, type VBar, effortZones } from '../core/effortZones';
+import { DEFAULT_EFFORT_PARAMS, type EffortResult, type Side, type SwingProfile, type VBar, effortZones } from '../core/effortZones';
+import type { FootprintBar } from '../core/footprintBar';
+import { fmtDayTime } from '../core/time';
+import { fmtDuration } from '../draw/model';
 import type { Candle } from '../hl/parse';
-import { type EffortSelection, TAPE_SPAN, effortRects, selectEffort } from './effortSelect';
+import { type EffortBand, type EffortSelection, TAPE_SPAN, type ZoneKnown, effortRects, selectEffort } from './effortSelect';
 import { logicalOfTime } from './overlay';
 import { MONO, PRO, rgba } from './theme';
 
@@ -23,11 +26,11 @@ export interface EffortStyle {
   history?: boolean;
 }
 
-/** Świeca wykresu z taśmą (ProBar): delta agresorów z footprintu i czy świeca jest w całości nagrana. */
+/** Świeca wykresu z taśmą (ProBar): delta agresorów i wiersze cen z footprintu oraz czy świeca jest w całości nagrana. */
 export interface EffortSourceBar {
   t: number;
   candle: Candle;
-  fp: { delta: number } | null;
+  fp: Pick<FootprintBar, 'delta' | 'tick' | 'lo' | 'buy' | 'sell'> | null;
   complete: boolean;
 }
 
@@ -86,8 +89,23 @@ function closedCount(bars: readonly EffortSourceBar[], ms: number, now: number):
   return n;
 }
 
-/** Świeca modelu: delta z footprintu tylko przy świecy w całości nagranej, inaczej null (model przybliża ją ze świecy). */
-const toVBar = (b: EffortSourceBar): VBar => ({ t: b.t, o: b.candle.o, h: b.candle.h, l: b.candle.l, c: b.candle.c, v: b.candle.v, delta: b.complete && b.fp ? b.fp.delta : null });
+/**
+ * Świeca modelu: delta i wiersze cen (profil swingu) z footprintu tylko przy świecy w całości nagranej, inaczej null —
+ * brak taśmy, bez przybliżenia delty ze świecy. Wiersze to te same tablice footprintu (bez kopii).
+ */
+const toVBar = (b: EffortSourceBar): VBar => {
+  const fp = b.complete ? b.fp : null;
+  return {
+    t: b.t,
+    o: b.candle.o,
+    h: b.candle.h,
+    l: b.candle.l,
+    c: b.candle.c,
+    v: b.candle.v,
+    delta: fp ? fp.delta : null,
+    tape: fp ? { tick: fp.tick, lo: fp.lo, buy: fp.buy, sell: fp.sell } : null,
+  };
+};
 
 /** Zamknięte świece wykresu (koniec ≤ `now`) jako świece modelu; świeca w trakcie nie wchodzi. */
 export function closedBars(bars: readonly EffortSourceBar[], ms: number, now: number): VBar[] {
@@ -102,13 +120,68 @@ function pl(n: number, one: string, few: string, many: string): string {
   return d >= 2 && d <= 4 && (dd < 12 || dd > 14) ? few : many;
 }
 
+type LegendPart = { text: string; color: string };
+
+/** „ostatnia świeca” albo „3 świece temu” od świecy `t` do chwili `asOf`. */
+function candlesAgo(t: number, asOf: number, ms: number): string {
+  const ago = Math.max(0, Math.round((asOf - t) / ms));
+  return ago === 0 ? tr('ostatnia świeca', 'the last candle') : tr(`${ago} ${pl(ago, 'świeca', 'świece', 'świec')} temu`, `${ago} ${ago === 1 ? 'candle' : 'candles'} ago`);
+}
+
+/** Profil swingu strefy D: POC, VA, LVN i plakietka źródła (z taśmy albo przybliżenie ze świec). */
+function profileText(p: SwingProfile, fmt: (p: number) => string): string {
+  const lvn = p.lvn.length > 0 ? `, LVN ${p.lvn.map(fmt).join(', ')}` : '';
+  const src =
+    p.tapeShare >= 1
+      ? tr('z taśmy', 'from the tape')
+      : p.tapeShare > 0
+        ? tr(`przybliżenie: taśma ${numLang(String(Math.round(p.tapeShare * 100)))}%`, `approximation: tape ${Math.round(p.tapeShare * 100)}%`)
+        : tr('przybliżenie: ze świec', 'approximation: from candles');
+  return tr(`· profil swingu: POC ${fmt(p.poc)}, VA ${fmt(p.val)}–${fmt(p.vah)}${lvn} · ${src}`, `· swing profile: POC ${fmt(p.poc)}, VA ${fmt(p.val)}–${fmt(p.vah)}${lvn} · ${src}`);
+}
+
 /**
- * Opis w legendzie z wyboru: pasma po stronach z liczbą dalszych, ostatnia seria pudełek i świece z taśmą wśród 12
- * ostatnich; w trybie „Historia” liczby obrysów. Powyżej 1 h powód braku, bez zamkniętych świec — czekanie.
+ * Czas dostępności strefy: od kiedy była znana (zamknięcie świecy powstania) i ile po zamknięciu świecy krańca, żeby
+ * pasma rysowanego od krańca nie brać za wiedzę z chwili krańca; F powstaje na zamknięciu przebicia.
  */
-export function effortLegend(sel: EffortSelection | null, ms: number, asOf: number): { text: string; color: string }[] {
+function knownText(k: ZoneKnown, mark: string, asOf: number, fmt: (p: number) => string): LegendPart[] {
+  const at = fmtDayTime(k.at, asOf);
+  const text =
+    k.kind === 'flip'
+      ? tr(`· strefa ${mark} znana od ${at}, na zamknięciu przebicia`, `· zone ${mark} known from ${at}, at the close of the break`)
+      : tr(`· strefa ${mark} znana od ${at}, ${fmtDuration(k.lag)} po krańcu`, `· zone ${mark} known from ${at}, ${fmtDuration(k.lag)} after the extreme`);
+  const out: LegendPart[] = [{ text, color: PRO.ink2 }];
+  if (k.profile) out.push({ text: profileText(k.profile, fmt), color: PRO.ink2 });
+  return out;
+}
+
+const KIND_MARK = { absorption: 'A', discount: 'D', flip: 'F' } as const;
+
+/** Pasmo pod krzyżem: cena w paśmie, czas od świecy powstania do końca (aktywne — bez końca). */
+function bandAt(sel: EffortSelection, hover: { t: number; p: number }, ms: number): EffortBand | null {
+  for (const b of [...sel.bands, ...(sel.broken ? [sel.broken] : [])]) {
+    if (hover.p >= b.lo && hover.p <= b.hi && hover.t >= b.start && (b.end === null || hover.t < b.end + ms)) return b;
+  }
+  return null;
+}
+
+/**
+ * Opis w legendzie z wyboru: pasma po stronach z liczbą dalszych, krańce bez oceny strefy A, ostatnia seria pudełek
+ * (albo nowsza świeca bez taśmy) i świece z taśmą wśród 32 ostatnich; w trybie „Historia” liczby obrysów. Krzyż nad
+ * pasmem dopisuje czas dostępności jego stref (i profil swingu D). Powyżej 1 h powód braku, bez zamkniętych świec —
+ * czekanie.
+ */
+export function effortLegend(
+  sel: EffortSelection | null,
+  ms: number,
+  asOf: number,
+  hover: { t: number; p: number } | null = null,
+  fmt: (p: number) => string = (p) => numLang(String(p))
+): LegendPart[] {
   if (ms > MAX_TF) return [{ text: tr('—, interwał do 1 h', '—, intervals up to 1 h'), color: PRO.ink3 }];
   if (!sel) return [{ text: tr('czekam na świece…', 'waiting for candles…'), color: PRO.ink3 }];
+  const hovered = hover ? bandAt(sel, hover, ms) : null;
+  const known = hovered ? hovered.known.flatMap((k) => knownText(k, KIND_MARK[k.kind], asOf, fmt)) : [];
   // Taśma na ostatnich 32 świecach: pudełko wymaga taśmy na swojej świecy i 19 przed nią
   const tape = { text: tr(`· taśma ${numLang(String(sel.tapeRecent))} z ${TAPE_SPAN}`, `· tape ${sel.tapeRecent} of ${TAPE_SPAN}`), color: PRO.ink2 };
   if (sel.history) {
@@ -118,6 +191,7 @@ export function effortLegend(sel: EffortSelection | null, ms: number, asOf: numb
       { text: tr(`historia: ${z} ${pl(z, 'strefa', 'strefy', 'stref')}`, `history: ${z} ${z === 1 ? 'zone' : 'zones'}`), color: z > 0 ? PRO.ink1 : PRO.ink2 },
       { text: tr(`· ${b} ${pl(b, 'seria', 'serie', 'serii')} pudełek`, `· ${b} box ${b === 1 ? 'series' : 'series'}`), color: PRO.ink2 },
       tape,
+      ...known,
     ];
   }
   const demand = sel.bands.filter((x) => x.side === 1).length;
@@ -127,18 +201,22 @@ export function effortLegend(sel: EffortSelection | null, ms: number, asOf: numb
     text: tr(`strefy: ${demand} pod ceną · ${supply} nad ceną${far > 0 ? ` (dalej ${far})` : ''}`, `zones: ${demand} below price · ${supply} above price${far > 0 ? ` (${far} farther)` : ''}`),
     color: demand + supply > 0 ? PRO.ink1 : PRO.ink2,
   };
-  if (sel.tapeRecent === 0) return [zones, { text: tr('· pudełka: —, brak taśmy', '· boxes: —, no tape'), color: PRO.ink3 }];
+  // Krańce z ostatnich 12 h, przy których strefy A nie dało się ocenić bez taśmy
+  const n = sel.untaped.zones;
+  const gapA: LegendPart[] =
+    n > 0 ? [{ text: tr(`· A: —, brak taśmy przy ${n} ${n === 1 ? 'krańcu' : 'krańcach'}`, `· A: —, no tape at ${n} swing ${n === 1 ? 'extreme' : 'extremes'}`), color: PRO.ink3 }] : [];
+  if (sel.tapeRecent === 0) return [zones, ...gapA, { text: tr('· pudełka: —, brak taśmy', '· boxes: —, no tape'), color: PRO.ink3 }, ...known];
   const last = sel.boxes.reduce<EffortSelection['boxes'][number] | null>((a, b) => (!a || b.last > a.last ? b : a), null);
-  let box = tr('· pudełko: —', '· box: —');
-  if (last) {
-    const ago = Math.max(0, Math.round((asOf - last.last) / ms));
+  const gapBox = sel.untaped.box;
+  let box: LegendPart = { text: tr('· pudełko: —', '· box: —'), color: PRO.ink2 };
+  if (gapBox !== null && (!last || gapBox > last.last)) {
+    // Nowsza świeca, na której pudełko zależało od agresji bez taśmy: „—” z powodem, nie przybliżenie
+    box = { text: tr(`· pudełko: —, brak taśmy, ${candlesAgo(gapBox, asOf, ms)}`, `· box: —, no tape, ${candlesAgo(gapBox, asOf, ms)}`), color: PRO.ink3 };
+  } else if (last) {
     const side = last.side === 1 ? tr('kupno', 'buying') : tr('sprzedaż', 'selling');
-    box =
-      ago === 0
-        ? tr(`· pudełko: ${side}, ostatnia świeca`, `· box: ${side}, the last candle`)
-        : tr(`· pudełko: ${side}, ${ago} ${pl(ago, 'świeca', 'świece', 'świec')} temu`, `· box: ${side}, ${ago} ${ago === 1 ? 'candle' : 'candles'} ago`);
+    box = { text: tr(`· pudełko: ${side}, ${candlesAgo(last.last, asOf, ms)}`, `· box: ${side}, ${candlesAgo(last.last, asOf, ms)}`), color: PRO.ink2 };
   }
-  return [zones, { text: box, color: PRO.ink2 }, tape];
+  return [zones, ...gapA, box, tape, ...known];
 }
 
 export class EffortLayer implements ISeriesPrimitive<Time> {
@@ -350,10 +428,10 @@ export class EffortLayer implements ISeriesPrimitive<Time> {
     }
   }
 
-  /** Opis w legendzie (z ostatniego wyboru). */
-  legend(): { text: string; color: string }[] {
+  /** Opis w legendzie (z ostatniego wyboru); krzyż nad pasmem (`hover`) dopisuje czas dostępności jego stref. */
+  legend(hover: { t: number; p: number } | null, fmt: (p: number) => string): { text: string; color: string }[] {
     const last = this.vbars[this.vbars.length - 1];
-    return effortLegend(this.sel, this.ms, last ? last.t : this.now);
+    return effortLegend(this.sel, this.ms, last ? last.t : this.now, hover, fmt);
   }
 
   /** Wybór na ostatniej zamkniętej świecy (legenda, testy). */
