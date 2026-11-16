@@ -6,6 +6,7 @@ import {
   PERIOD_MS,
   STATE_DAYS,
   acceptanceAt,
+  counterAnchor,
   dayFrame,
   ivbCalendarOf,
   ivbFrame,
@@ -17,7 +18,8 @@ import {
   valueToday,
 } from '../core/dayFrame';
 import type { Ivb } from '../core/ivb';
-import { type Bar5, dayLevels } from '../core/pbRanges';
+import type { Bar5 } from '../core/pbRanges';
+import { type ValueSource, valueReference } from '../core/valueReference';
 import { tradeSessionOn } from '../../../utils/sessionDay';
 
 const M5 = 5 * 60_000;
@@ -30,6 +32,8 @@ const VA = { val: 100, vah: 110 };
 const bars = (closes: readonly number[], from = D, v = 1): Bar5[] => closes.map((c, i) => ({ t: from + i * M5, o: c, h: c + 0.2, l: c - 0.2, c, v }));
 const rep = (n: number, c: number) => Array<number>(n).fill(c);
 const end = (b: readonly Bar5[]) => b[b.length - 1].t + M5;
+/** Źródło wartości z tych samych świec (bez taśmy). */
+const srcOf = (b: readonly Bar5[]): ValueSource => ({ bars: b.map((x) => ({ t: x.t, l: x.l, h: x.h, v: x.v })), ms: M5 });
 const state = (b: readonly Bar5[], now = end(b)) => {
   const a = acceptanceAt(VA, b, M5, D, now);
   return a ? stateKey(a.state) : null;
@@ -156,24 +160,29 @@ describe('Rama dnia: częstość stanu o tej porze w 60 dobach', () => {
 });
 
 describe('Rama dnia: wartość dziś wobec wczoraj', () => {
-  it('VA wczoraj to `dayLevels` warstwy P/b (te same liczby co na wykresie), stan i wartość liczone od niej', () => {
+  it('VA wczoraj z jednego źródła (`valueReference`, jak panel Najbliższe poziomy), wartość dziś z tego samego źródła', () => {
     const y = bars(rep(288, 100).map((c, i) => c + (i % 12) * 0.5), D - DAY);
     const t = bars([...rep(60, 103), ...rep(24, 112)], D);
     const now = end(t);
-    const f = dayFrame({ b5: [...y, ...t], c30: [], now, cal: { kind: 'daily' } });
-    expect(f.prev).toEqual(dayLevels([...y, ...t], now));
-    expect(f.prev).not.toBeNull();
+    const src = srcOf([...y, ...t]);
+    const f = dayFrame({ b5: [...y, ...t], src, c30: [], now, cal: { kind: 'daily' } });
+    expect(f.prev).toEqual(valueReference('day', D - DAY, src, now));
+    expect(f.prev).toMatchObject({ kind: 'day', from: D - DAY, source: 'candles' });
+    expect(f.ref).toBe('day');
+    // 07:00 UTC 16.11: przed otwarciem Londynu — liczniki od 00:00 UTC
+    expect(f.anchor).toEqual({ from: D, session: null });
     expect(f.acceptance).toEqual(acceptanceAt(f.prev!, [...y, ...t], M5, D, now));
-    expect(f.value).toEqual(valueToday([...y, ...t], M5, now, f.prev!));
+    expect(f.value).toEqual(valueToday(src, now, f.prev!));
+    expect(f.value!.today).toEqual(valueReference('day', now, src, now));
   });
 
-  it('nakładanie: część VA dziś w VA wczoraj, z etykietą migracji', () => {
+  it('nakładanie: część VA dziś w VA wczoraj, z etykietą migracji; mniej niż pół godziny świec — brak', () => {
     const t = bars(rep(12, 108), D);
-    const v = valueToday(t, M5, end(t), { val: 100, vah: 108 })!;
+    const v = valueToday(srcOf(t), end(t), { val: 100, vah: 108 })!;
     expect(v.migration).toBe('overlap-higher');
     expect(v.overlap).toBeGreaterThan(0);
     expect(v.overlap).toBeLessThan(1);
-    expect(valueToday(bars(rep(3, 108)), M5, D + 3 * M5, { val: 100, vah: 108 })).toBeNull();
+    expect(valueToday(srcOf(bars(rep(3, 108))), D + 3 * M5, { val: 100, vah: 108 })).toBeNull();
   });
 
   it('świece wykresu → świece profilu jak warstwa P/b: bez świecy w trakcie, wolumen w USD', () => {
@@ -182,6 +191,77 @@ describe('Rama dnia: wartość dziś wobec wczoraj', () => {
       { t: D + M5, o: 2, h: 2, l: 2, c: 2, v: 5 },
     ];
     expect(toBar5(c, M5, D + M5 + 1)).toEqual([{ t: D, o: 1, h: 2, l: 1, c: 2, v: 6 }]);
+  });
+});
+
+describe('Rama dnia: liczniki od otwarcia sesji (kalendarz sesji, czas letni)', () => {
+  const at = (y: number, mo: number, d: number, h: number, mi = 0) => Date.UTC(y, mo - 1, d, h, mi);
+
+  it('otwarcie Londynu 9:00 w Polsce (zima 08:00 UTC, lato 07:00 UTC), NY 15:30 w Polsce, w tygodniach rozjazdu 14:30', () => {
+    // 16.11.2026 (zima w obu strefach): Londyn 08:00 UTC, NY 14:30 UTC = 15:30 w Polsce
+    expect(counterAnchor(at(2026, 11, 16, 8, 30))).toEqual({ from: at(2026, 11, 16, 8), session: 'london' });
+    expect(counterAnchor(at(2026, 11, 16, 14, 29))).toEqual({ from: at(2026, 11, 16, 8), session: 'london' });
+    expect(counterAnchor(at(2026, 11, 16, 14, 30))).toEqual({ from: at(2026, 11, 16, 14, 30), session: 'ny' });
+    // 1.07.2026 (lato): Londyn 07:00 UTC = 9:00 w Polsce
+    expect(counterAnchor(at(2026, 7, 1, 7, 10))).toEqual({ from: at(2026, 7, 1, 7), session: 'london' });
+    // 10.03.2026: USA już na czasie letnim, Europa jeszcze nie — NY 13:30 UTC = 14:30 w Polsce
+    expect(counterAnchor(at(2026, 3, 10, 13, 45))).toEqual({ from: at(2026, 3, 10, 13, 30), session: 'ny' });
+    // 27.10.2026: Europa już na czasie zimowym, USA jeszcze nie — NY 13:30 UTC = 14:30 w Polsce
+    expect(counterAnchor(at(2026, 10, 27, 13, 45))).toEqual({ from: at(2026, 10, 27, 13, 30), session: 'ny' });
+    // Poza sesjami (00:00 UTC do otwarcia Londynu): od 00:00 UTC
+    expect(counterAnchor(at(2026, 11, 16, 5))).toEqual({ from: D, session: null });
+  });
+
+  it('liczniki od nowa na otwarciu NY: przyjęcie nad w Londynie, po otwarciu NY zamknięcia w VA — „w wartości”, nie „powrót”', () => {
+    const y = bars(rep(288, 100).map((c, i) => c + (i % 12) * 0.5), D - DAY);
+    const london = tradeSessionOn(D, 'london').start;
+    const ny = tradeSessionOn(D, 'ny').start;
+    const t = bars([...rep((london - D) / M5, 102), ...rep((ny - london) / M5, 112), ...rep(12, 102)], D);
+    const all = [...y, ...t];
+    const src = srcOf(all);
+    const inLondon = dayFrame({ b5: all, src, c30: [], now: ny - 30 * 60_000, cal: { kind: 'daily' } });
+    expect(inLondon.anchor).toEqual({ from: london, session: 'london' });
+    expect(stateKey(inLondon.acceptance!.state)).toBe('accepted-up');
+    const inNy = dayFrame({ b5: all, src, c30: [], now: end(t), cal: { kind: 'daily' } });
+    expect(inNy.anchor).toEqual({ from: ny, session: 'ny' });
+    expect(inNy.acceptance).toMatchObject({ state: { kind: 'inside' }, periods: 2, minutesOutside: 0, above: 0 });
+    // Ta sama doba liczona od 00:00 UTC (stara reguła) dałaby powrót do wartości
+    expect(stateKey(acceptanceAt(inNy.prev!, all, M5, D, end(t))!.state)).toBe('return');
+  });
+
+  it('częstość w tej samej minucie od otwarcia tej samej sesji, także przed i po zmianie czasu w USA (10.03.2026)', () => {
+    // Każda doba: pierwsza godzina po otwarciu NY (z kalendarza, 14:30 albo 13:30 UTC) wysoko, reszta 100
+    const now = Date.UTC(2026, 2, 10, 14, 30);
+    const today = Date.UTC(2026, 2, 10);
+    const c30 = Array.from({ length: 72 }, (_, i) => {
+      const d = today - (72 - i) * DAY;
+      const o = tradeSessionOn(d, 'ny').start;
+      return day30(d, (k) => (d + k * PERIOD_MS >= o && d + k * PERIOD_MS < o + 3_600_000 ? 130 : 100));
+    }).flat();
+    const h = stateHistory(c30, now);
+    expect(h.n).toBe(STATE_DAYS);
+    expect(h.counts['accepted-up']).toBe(STATE_DAYS);
+    // Ta sama godzina UTC (13:30–14:30) bez kalendarza sesji trafiłaby przed otwarcie NY w dobach zimowych w USA
+    const fixed = c30.filter((b) => b.t % DAY >= 13.5 * 3_600_000 && b.t % DAY < 14.5 * 3_600_000 && b.t < Date.UTC(2026, 2, 8));
+    expect(fixed.every((b) => b.c === 100)).toBe(true);
+  });
+
+  it('opcja „ta sama sesja wczoraj”: VA wczorajszej sesji NY zamiast doby (nie domyślnie)', () => {
+    const y = bars(rep(288, 100).map((c, i) => c + (i % 12) * 0.5), D - DAY);
+    const ny = tradeSessionOn(D, 'ny').start;
+    const t = bars(rep((ny - D) / M5 + 12, 101), D);
+    const all = [...y, ...t];
+    const src = srcOf(all);
+    const f = dayFrame({ b5: all, src, c30: [], now: end(t), cal: { kind: 'daily' }, ref: 'same-session' });
+    const yNy = tradeSessionOn(D - DAY, 'ny');
+    expect(f.ref).toBe('same-session');
+    expect(f.prev).toMatchObject({ kind: 'session', session: 'ny', from: yNy.start, to: yNy.end });
+    expect(f.prev).toEqual(valueReference('session', yNy.start, src, end(t)));
+    expect(f.value!.today).toMatchObject({ kind: 'session', from: ny });
+    // Poza sesją opcja wraca do doby UTC
+    const asia = dayFrame({ b5: all, src, c30: [], now: D + 3 * 3_600_000, cal: { kind: 'daily' }, ref: 'same-session' });
+    expect(asia.ref).toBe('day');
+    expect(asia.prev).toMatchObject({ kind: 'day', from: D - DAY });
   });
 });
 
@@ -226,7 +306,7 @@ describe('Rama dnia: kontekst IVB (F-A2)', () => {
       const inWin = at >= open && at < open + 30 * 60_000;
       return { t: at, o: 100, h: inWin ? 101.5 : 100.5, l: inWin ? 98.5 : 99.5, c: 100, v: 1 };
     });
-    return { c30, b5: t, now: end(t) };
+    return { c30, b5: t, src: srcOf(t), now: end(t) };
   };
 
   it('szerokość w ATR doby z percentylem wobec 20 sesji tego samego typu (także sprzed zmiany czasu w USA)', () => {
