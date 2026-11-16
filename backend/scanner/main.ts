@@ -299,8 +299,9 @@ async function historyTick(): Promise<void> {
     const now = Date.now();
     let written = 0;
     for (const rec of recorders) written += rec.flush(now);
-    // Luki w danych (projekt 60, Q6): pliki dób `gaps.json`, w spisie pole `gaps`
-    for (const rec of recorders) written += rec.trackGaps(now);
+    // Luki w danych (projekt 60, Q6): pliki dób `gaps.json` (w spisie pole `gaps`). Bez liczenia do `written`: plik luk
+    // w toku zmienia się co takt, a commit i push co 15 s byłyby za częste — luki idą do gałęzi z najbliższą częścią
+    for (const rec of recorders) rec.trackGaps(now);
     // Profile zamkniętych dób (po połączeniu ostatniej godziny doby; po wdrożeniu — po jednej dobie wstecz na takt)
     for (const rec of recorders) written += rec.profiles(now);
     const day = Math.floor(now / DAY_MS);
