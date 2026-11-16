@@ -1,9 +1,10 @@
 /**
  * Wejścia panelu „Najbliższe poziomy” z magazynu rynku wykresu (jak Czwórka i nagłówek układu): świece dzienne magazynu
  * (te same co poziomy dnia na wykresie), świece 1m od 00:00 UTC (VWAP doby, IB, zakres Azji; seria doczytuje starsze
- * strony), 1h (profil wczorajszej doby, jak nagłówek Mapy dnia) i 5m (ATR). Same liczby — w `utils/nearestLevels`.
+ * strony), 5m (ATR) i jedno źródło wartości wczorajszej doby (`prevDayValueOf`, jak pasek Rama dnia i nagłówek Mapy
+ * dnia). Same liczby — w `utils/nearestLevels`.
  */
-import { type InputStore, candlesFrom, seriesCandles } from '../../charts/pro/chart/layoutInputs';
+import { type InputStore, candlesFrom, prevDayValueOf, seriesCandles } from '../../charts/pro/chart/layoutInputs';
 import { utcDayStart } from '../../charts/pro/core/sessions';
 import type { Candle } from '../../charts/pro/hl/parse';
 import { capsOf, marketOf, noScannerWhyOf } from '../../state/markets';
@@ -27,7 +28,7 @@ export function readLevelInputs(store: LevelStore, scan: Pick<LevelInputs, 'liq'
     // Świece dzienne magazyn pobiera raz na dobę UTC; do tego czasu pusta lista
     daily: store.daily.length > 0 ? store.daily : undefined,
     c1m: candlesFrom(store, '1m', utcDayStart(now), now),
-    c1h: seriesCandles(store, '1h', now),
+    prevValue: prevDayValueOf(store, now),
     c5m: seriesCandles(store, '5m', now),
     ...scan,
   };

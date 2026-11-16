@@ -238,3 +238,35 @@ describe('źródła świec i paneli przepływu w legendzie (plan 59, E5)', () =>
     expect(legendChips({ ...DEFAULT_SETTINGS, ...LAYERS_OFF, ...NO_FLOW, indicators: [] }, { coin: 'BTC', now: NOW, intervalMs: M5, scan: {} })).toEqual([]);
   });
 });
+
+describe('Profile okresów: plakietka ze źródła wartości (reguła wartości: taśma LIVE, świece MODEL)', () => {
+  const v = (source: 'tape' | 'candles', tapeShare: number) => ({
+    kind: 'day' as const,
+    from: Date.UTC(2026, 10, 2),
+    to: Date.UTC(2026, 10, 3),
+    poc: 100_000,
+    vah: 100_500,
+    val: 99_500,
+    source,
+    tapeShare,
+    bars: 288,
+    through: Date.UTC(2026, 10, 3),
+    complete: true,
+  });
+
+  it('ostatni zamknięty okres z taśmy — LIVE; ze świec albo bez wartości — MODEL „przybliżenie ze świec”', () => {
+    expect(layerBadge('showPeriodProfiles', { coin: 'BTC', now: NOW, value: v('tape', 0.96) })).toMatchObject({ tone: 'live', text: 'LIVE' });
+    const c = layerBadge('showPeriodProfiles', { coin: 'BTC', now: NOW, value: v('candles', 0.4) });
+    expect(c).toMatchObject({ tone: 'model', text: 'MODEL' });
+    expect(c.hint).toMatch(/^MODEL · przybliżenie ze świec: ostatni zamknięty okres \(doba UTC 02\.11\)/);
+    expect(layerBadge('showPeriodProfiles', { coin: 'BTC', now: NOW, value: null }).text).toBe('MODEL');
+    // Bez pola `value` — plakietka stała z tabeli źródeł
+    expect(layerBadge('showPeriodProfiles', { coin: 'BTC', now: NOW }).text).toBe(LAYER_SOURCE.showPeriodProfiles);
+  });
+
+  it('legenda bierze wartość okresów z wykresu', () => {
+    const s = { ...DEFAULT_SETTINGS, ...LAYERS_OFF, ...NO_FLOW, showPeriodProfiles: true, indicators: [] };
+    const chips = legendChips(s, { coin: 'BTC', now: NOW, intervalMs: M5, scan: {}, value: { showPeriodProfiles: v('candles', 0.2) } });
+    expect(chips.map((c) => [c.key, c.text])).toEqual([['showPeriodProfiles', 'MODEL']]);
+  });
+});

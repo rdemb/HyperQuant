@@ -1,27 +1,32 @@
 import { type VaMigration, vaMigration } from '../../../utils/dayType';
-import { tradeSessionOn } from '../../../utils/sessionDay';
+import { type TradeSessionId, currentTradeSession, previousSameSession, tradeSessionOn } from '../../../utils/sessionDay';
 import { NYSE_CALENDAR, type NyseCalendar, wallStreetAt } from '../../../utils/wallStreet';
 import { type Ivb, IVB_DEFAULT, type IvbState, ivbAt, ivbMinutes } from './ivb';
-import { type Bar5, type Levels, dayLevels, profileLevels } from './pbRanges';
+import { type Bar5, type Levels, profileLevels } from './pbRanges';
 import { utcDayStart } from './sessions';
 import { DAY } from './time';
+import { type ValueKind, type ValueRef, type ValueSource, valueReference } from './valueReference';
 
 /**
  * Rama dnia (Fabio runda 2, krok 1): opis stanu aukcji wobec wczorajszej wartości i IVB, bez słowa o dalszym kierunku.
  *
  * F-A1. Przyjęcie poza wartością (pojęcie akceptacji Daltona; reguła i progi HyperQuant, zamrożone przed oceną):
- * - VA wczoraj = value area 70% doby UTC poprzedniej, ta sama funkcja co poziomy doby wskaźnika Zakresy P/b
- *   (`dayLevels`: świece 5m, koszyki 5 pb), więc liczby są te same co na wykresie;
- * - doba UTC od 00:00 do teraz, tylko zamknięte świece; zamknięcie 30m = zamknięcie ostatniej świecy półgodziny;
+ * - VA wczoraj = value area 70% poprzedniej doby UTC z jednego źródła wartości (`valueReference`: taśma przy ≥ 90%
+ *   wolumenu, inaczej świece 5m; koszyki 5 pb), tej samej co panel „Najbliższe poziomy”, nagłówek Mapy dnia i poziomy
+ *   doby P/b; opcjonalnie (nie domyślnie) VA tej samej sesji wczoraj;
+ * - liczniki (minuty poza VA, udział wolumenu, kolejne zamknięcia 30m) od otwarcia bieżącej sesji (Londyn, NY z kalendarza
+ *   sesji, `currentTradeSession`), od nowa na każdym otwarciu; poza sesjami od 00:00 UTC („poza sesją”); tylko zamknięte
+ *   świece; zamknięcie 30m = zamknięcie ostatniej świecy półgodziny liczonej od otwarcia;
  * - wolumen świecy rozłożony równo na jej zakres, część poza VA liczy się jako wolumen nad albo pod;
- * - przyjęcie nad (pod): ≥ 2 kolejne zamknięcia 30m nad VAH (pod VAL) i ≥ 30% wolumenu doby dotąd nad VAH (pod VAL);
+ * - przyjęcie nad (pod): ≥ 2 kolejne zamknięcia 30m nad VAH (pod VAL) i ≥ 30% wolumenu od otwarcia nad VAH (pod VAL);
  * - próba wyjścia nad (pod): ostatnie zamknięcie świecy nad VAH (pod VAL) bez spełnionego progu przyjęcia;
- * - powrót do wartości: ostatnie zamknięcie w VA po co najmniej jednym zamknięciu 30m poza VA tej doby;
- * - w wartości: ostatnie zamknięcie w VA i żadne zamknięcie 30m tej doby poza VA;
- * - niesklasyfikowane: przyjęcie po obu stronach VA tej samej doby albo ostatnie zamknięcie świecy po przeciwnej stronie
+ * - powrót do wartości: ostatnie zamknięcie w VA po co najmniej jednym zamknięciu 30m poza VA od otwarcia;
+ * - w wartości: ostatnie zamknięcie w VA i żadne zamknięcie 30m od otwarcia poza VA;
+ * - niesklasyfikowane: przyjęcie po obu stronach VA od otwarcia albo ostatnie zamknięcie świecy po przeciwnej stronie
  *   VA niż ostatnie zamknięcie 30m (przejście przez całą wartość w ciągu pół godziny).
- * Kontekst (hipoteza zerowa): ten sam stan o tej samej porze doby UTC w 60 poprzednich dobach, ze świec 30m (VA doby
- * poprzedniej też ze świec 30m — przybliżenie); mniej niż 60 dób z danymi — bez częstości („krótka historia”).
+ * Kontekst (hipoteza zerowa): ten sam stan w tej samej minucie od otwarcia tej samej sesji (poza sesją: o tej samej porze
+ * od 00:00 UTC) w 60 poprzednich dobach, ze świec 30m (VA doby poprzedniej też ze świec 30m — przybliżenie); mniej niż
+ * 60 dób z danymi — bez częstości („krótka historia”).
  *
  * F-A2. Kontekst IVB (okno z `ivbAt`, domyślnie 30 min od otwarcia NY):
  * - status (fakt): w budowie, w środku, wybicie nad albo pod (ostatnie zamknięcie poza zakresem; od zamknięcia pierwszej
@@ -51,9 +56,9 @@ export const IVB_LOOKBACK_DAYS = 60;
 /** ATR doby: średni prawdziwy zakres z tylu dób UTC przed dobą (najmniej ATR_MIN_DAYS pełnych). */
 export const ATR_DAYS = 14;
 export const ATR_MIN_DAYS = 10;
-/** Koszyk profilu jak poziomy doby P/b (`dayLevels`). */
+/** Koszyk profilu jak jedno źródło wartości (`valueReference`). */
 const DAY_BIN_BP = 5;
-/** Doba albo okres z co najmniej tylu świec, ile powinno być (jak `dayLevels`). */
+/** Doba albo okres z co najmniej tylu świec, ile powinno być (jak `valueReference`). */
 const COMPLETE = 0.9;
 /** Wartość dziś: profil z co najmniej pół godziny świec 5m. */
 const TODAY_MIN_MS = 30 * 60_000;
@@ -105,11 +110,23 @@ export interface Acceptance {
   closeAt: number;
 }
 
+/** Początek liczników: otwarcie bieżącej sesji Londynu albo NY; poza sesjami 00:00 UTC (`session` null). */
+export interface CounterAnchor {
+  from: number;
+  session: TradeSessionId | null;
+}
+
+/** Początek liczników w chwili `now` z kalendarza sesji (czas letni z `tradeSessionOn`, bez stałych godzin). */
+export function counterAnchor(now: number): CounterAnchor {
+  const s = currentTradeSession(now);
+  return s ? { from: s.start, session: s.id } : { from: utcDayStart(now), session: null };
+}
+
 /**
- * Stan aukcji doby `day` wobec `va` ze świec `bars` (rosnąco, interwał `ms` dzielący 30 min) zamkniętych do `now`;
- * bez zamkniętej świecy doby — null.
+ * Stan aukcji od chwili `from` (otwarcie sesji albo 00:00 UTC) wobec `va` ze świec `bars` (rosnąco, interwał `ms`
+ * dzielący 30 min) zamkniętych do `now`; półgodziny liczone od `from`; bez zamkniętej świecy od `from` — null.
  */
-export function acceptanceAt(va: Va, bars: readonly Bar5[], ms: number, day: number, now: number): Acceptance | null {
+export function acceptanceAt(va: Va, bars: readonly Bar5[], ms: number, from: number, now: number): Acceptance | null {
   const sideOf = (x: number): Side | 0 => (x > va.vah ? 1 : x < va.val ? -1 : 0);
   let tot = 0;
   let up = 0;
@@ -125,7 +142,7 @@ export function acceptanceAt(va: Va, bars: readonly Bar5[], ms: number, day: num
   const share = (s: Side) => (tot > 0 ? (s > 0 ? up : dn) / tot : 0);
   const accepted = () => runSide !== 0 && run >= ACCEPT_CLOSES && share(runSide) >= ACCEPT_SHARE;
   for (const b of bars) {
-    if (b.t < day || b.t >= day + DAY || b.t + ms > now) continue;
+    if (b.t < from || b.t >= from + DAY || b.t + ms > now) continue;
     const span = b.h - b.l;
     tot += b.v;
     if (span > 0) {
@@ -136,9 +153,9 @@ export function acceptanceAt(va: Va, bars: readonly Bar5[], ms: number, day: num
     if (sideOf(b.c) !== 0) outMs += ms;
     last = b;
     const end = b.t + ms;
-    if ((end - day) % PERIOD_MS !== 0) continue;
+    if ((end - from) % PERIOD_MS !== 0) continue;
     // Świeca zamyka półgodzinę; brak poprzedniej półgodziny (luka w danych) przerywa serię zamknięć
-    const idx = (end - day) / PERIOD_MS;
+    const idx = (end - from) / PERIOD_MS;
     if (idx !== lastIdx + 1) {
       run = 0;
       runSide = 0;
@@ -180,9 +197,9 @@ function byUtcDay(bars: readonly Bar5[]): Map<number, Bar5[]> {
   return m;
 }
 
-/** Profil doby ze świec 30m (koszyki jak `dayLevels`), gdy jest co najmniej 90% półgodzin doby. */
-function va30(list: readonly Bar5[] | undefined): Levels | null {
-  if (!list || list.length < COMPLETE * (DAY / PERIOD_MS)) return null;
+/** Profil okresu ze świec 30m (koszyki jak `valueReference`), gdy jest co najmniej 90% jego półgodzin. */
+function va30(list: readonly Bar5[] | undefined, periods = DAY / PERIOD_MS): Levels | null {
+  if (!list || list.length === 0 || list.length < COMPLETE * periods) return null;
   return profileLevels(
     list.map((b) => b.l),
     list.map((b) => b.h),
@@ -192,36 +209,53 @@ function va30(list: readonly Bar5[] | undefined): Levels | null {
   );
 }
 
+/** Odniesienie wartości: wczorajsza doba UTC (domyślnie) albo ta sama sesja wczoraj (opcja, nie domyślnie). */
+export type FrameRef = 'day' | 'same-session';
+
 export interface StateHistory {
   /** Doby z danymi (najwyżej STATE_DAYS). */
   n: number;
   counts: Record<StateKey, number>;
-  /** Pierwsze pół godziny doby: brak zamkniętej półgodziny do porównania. */
+  /** Pierwsze pół godziny od otwarcia (poza sesją: doby UTC): brak zamkniętej półgodziny do porównania. */
   early: boolean;
 }
 
 const zeroCounts = (): Record<StateKey, number> => Object.fromEntries(STATE_KEYS.map((k) => [k, 0])) as Record<StateKey, number>;
 
 /**
- * Stany o tej samej porze doby UTC co `now` w 60 poprzednich dobach (szukane do 70 dób wstecz) ze świec 30m `c30`:
- * VA doby poprzedniej z jej świec 30m, stan z `acceptanceAt` na półgodzinach zamkniętych do tej samej pory.
+ * Stany w tej samej minucie od otwarcia tej samej sesji co `now` (poza sesją: o tej samej porze od 00:00 UTC) w 60
+ * poprzednich dobach (szukane do 70 dób wstecz) ze świec 30m `c30`: otwarcie każdej doby z kalendarza sesji (czas letni),
+ * VA doby poprzedniej (albo tej samej sesji dzień wcześniej) z jej świec 30m, stan z `acceptanceAt` na półgodzinach
+ * od otwarcia zamkniętych do tej samej minuty. Doba, w której ta minuta wypada już po końcu sesji (krótsza sesja Londynu
+ * w tygodniu rozjazdu czasu), jest pomijana.
  */
-export function stateHistory(c30: readonly Bar5[], now: number): StateHistory {
+export function stateHistory(c30: readonly Bar5[], now: number, ref: FrameRef = 'day'): StateHistory {
   const today = utcDayStart(now);
-  const offset = now - today;
+  const anchor = counterAnchor(now);
+  const offset = now - anchor.from;
   const expected = Math.floor(offset / PERIOD_MS);
   const counts = zeroCounts();
   if (expected === 0) return { n: 0, counts, early: true };
   const days = byUtcDay(c30);
+  const window = (d: number) => (anchor.session ? tradeSessionOn(d, anchor.session) : { start: d, end: d + DAY });
   let n = 0;
   for (let k = 1; k <= STATE_LOOKBACK_DAYS && n < STATE_DAYS; k++) {
     const d = today - k * DAY;
-    const va = va30(days.get(d - DAY));
+    let va: Levels | null;
+    if (ref === 'same-session' && anchor.session) {
+      const p = previousSameSession(tradeSessionOn(d, anchor.session));
+      va = va30(
+        (days.get(utcDayStart(p.start)) ?? []).filter((b) => b.t >= p.start && b.t + PERIOD_MS <= p.end),
+        Math.floor((p.end - p.start) / PERIOD_MS)
+      );
+    } else va = va30(days.get(d - DAY));
     if (!va) continue;
-    const cut = d + offset;
-    const list = (days.get(d) ?? []).filter((b) => b.t + PERIOD_MS <= cut);
+    const w = window(d);
+    const cut = w.start + offset;
+    if (cut > w.end) continue;
+    const list = (days.get(d) ?? []).filter((b) => b.t >= w.start && b.t + PERIOD_MS <= cut);
     if (list.length < COMPLETE * expected) continue;
-    const a = acceptanceAt(va, list, PERIOD_MS, d, cut);
+    const a = acceptanceAt(va, list, PERIOD_MS, w.start, cut);
     if (!a) continue;
     counts[stateKey(a.state)]++;
     n++;
@@ -232,26 +266,20 @@ export function stateHistory(c30: readonly Bar5[], now: number): StateHistory {
 // ───────────────────────── wartość dziś wobec wczoraj ─────────────────────────
 
 export interface ValueToday {
-  today: Va;
+  /** VA okresu dotąd (doba UTC albo, przy odniesieniu do sesji, bieżąca sesja) z jednego źródła. */
+  today: ValueRef;
   migration: VaMigration;
   /** Część VA dziś leżąca w VA wczoraj (0–1). */
   overlap: number;
 }
 
-/** VA doby UTC dotąd (ta sama funkcja profilu co `dayLevels`) wobec VA wczoraj; mniej niż pół godziny świec — null. */
-export function valueToday(b5: readonly Bar5[], ms: number, now: number, prev: Va): ValueToday | null {
-  const day = utcDayStart(now);
-  const list = b5.filter((b) => b.t >= day && b.t + ms <= now);
-  if (list.length * ms < TODAY_MIN_MS) return null;
-  const p = profileLevels(
-    list.map((b) => b.l),
-    list.map((b) => b.h),
-    list.map((b) => b.v),
-    DAY_BIN_BP,
-    false
-  );
-  if (!p) return null;
-  const today = { vah: p.vah, val: p.val };
+/**
+ * VA doby UTC dotąd (albo bieżącej sesji przy `kind` „session”) z jednego źródła wartości wobec VA wczoraj; mniej niż
+ * pół godziny świec — null.
+ */
+export function valueToday(src: ValueSource, now: number, prev: Va, kind: ValueKind = 'day'): ValueToday | null {
+  const today = valueReference(kind, now, src, now);
+  if (!today || today.bars * src.ms < TODAY_MIN_MS) return null;
   const w = today.vah - today.val;
   const common = Math.max(0, Math.min(today.vah, prev.vah) - Math.max(today.val, prev.val));
   return { today, migration: vaMigration(today, prev), overlap: w > 0 ? common / w : today.val >= prev.val && today.vah <= prev.vah ? 1 : 0 };
@@ -428,25 +456,44 @@ export function ivbFrame({ b5, c30, now, cal, minutes: raw = IVB_DEFAULT, nyse =
 
 export interface DayFrame {
   day: number;
-  /** VA wczoraj (`dayLevels`); null — świece 5m nie obejmują 90% wczorajszej doby. */
-  prev: Levels | null;
+  /** Odniesienie użyte w tej chwili (przy „same-session” poza sesją — doba). */
+  ref: FrameRef;
+  /** VA wczoraj z jednego źródła (`valueReference`); null — świece 5m nie obejmują 90% okresu. */
+  prev: ValueRef | null;
   value: ValueToday | null;
+  /** Początek liczników przyjęcia: otwarcie sesji albo 00:00 UTC poza sesją. */
+  anchor: CounterAnchor;
   acceptance: Acceptance | null;
   history: StateHistory;
   ivb: IvbFrame;
 }
 
-/** Rama dnia z zamkniętych świec 5m (od wczoraj 00:00 UTC) i 30m (ok. 80 dób) w chwili `now`. */
-export function dayFrame(x: IvbFrameInput): DayFrame {
+export interface DayFrameInput extends IvbFrameInput {
+  /** Jedno źródło wartości: świece 5m od wczoraj 00:00 UTC z taśmą i pliki taśmy zamkniętych dób. */
+  src: ValueSource;
+  /** Odniesienie (domyślnie wczorajsza doba UTC). */
+  ref?: FrameRef;
+}
+
+/**
+ * Rama dnia z zamkniętych świec 5m (od wczoraj 00:00 UTC), ze źródła wartości i ze świec 30m (ok. 80 dób) w chwili `now`.
+ */
+export function dayFrame(x: DayFrameInput): DayFrame {
   const ms = 5 * 60_000;
   const day = utcDayStart(x.now);
-  const prev = dayLevels(x.b5, x.now);
+  const anchor = counterAnchor(x.now);
+  const ref: FrameRef = x.ref === 'same-session' && anchor.session ? 'same-session' : 'day';
+  const kind: ValueKind = ref === 'same-session' ? 'session' : 'day';
+  const prevAt = ref === 'same-session' && anchor.session ? previousSameSession(tradeSessionOn(day, anchor.session)).start : day - DAY;
+  const prev = valueReference(kind, prevAt, x.src, x.now);
   return {
     day,
+    ref,
     prev,
-    value: prev ? valueToday(x.b5, ms, x.now, prev) : null,
-    acceptance: prev ? acceptanceAt(prev, x.b5, ms, day, x.now) : null,
-    history: stateHistory(x.c30, x.now),
+    value: prev ? valueToday(x.src, x.now, prev, kind) : null,
+    anchor,
+    acceptance: prev ? acceptanceAt(prev, x.b5, ms, anchor.from, x.now) : null,
+    history: stateHistory(x.c30, x.now, ref),
     ivb: ivbFrame(x),
   };
 }

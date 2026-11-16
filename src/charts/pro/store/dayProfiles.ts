@@ -11,6 +11,9 @@ import { type Fetcher, HISTORY_BASE, gzJson } from './serverHistory';
  */
 
 const INDEX_TTL_MS = 10 * 60_000;
+
+/** Część magazynu rynku, której potrzebują profile dób (rynek, zegar, powiadomienie o nowych danych). */
+export type DayProfileStore = Pick<ProStore, 'coin' | 'serverNow' | 'bump'>;
 const defaultFetch: Fetcher = (url) => fetch(url, { cache: 'no-cache', signal: AbortSignal.timeout(20_000) });
 
 export class DayProfiles {
@@ -22,7 +25,7 @@ export class DayProfiles {
   private busy = false;
 
   constructor(
-    private readonly store: ProStore,
+    private readonly store: DayProfileStore,
     private readonly base: string,
     private readonly fetcher: Fetcher = defaultFetch
   ) {}
@@ -78,10 +81,10 @@ export class DayProfiles {
   }
 }
 
-const loaders = new Map<ProStore, DayProfiles>();
+const loaders = new Map<DayProfileStore, DayProfiles>();
 
 /** Profile dób z serwera od chwili `from` dla rynku magazynu; bez adresu danych albo bez dekompresji w przeglądarce — nic. */
-export function requestDayProfiles(store: ProStore, from: number): void {
+export function requestDayProfiles(store: DayProfileStore, from: number): void {
   if (!HISTORY_BASE || typeof DecompressionStream === 'undefined') return;
   let p = loaders.get(store);
   if (!p) loaders.set(store, (p = new DayProfiles(store, HISTORY_BASE)));
@@ -89,6 +92,6 @@ export function requestDayProfiles(store: ProStore, from: number): void {
 }
 
 /** Pobrany profil doby z serwera; null bez niego. */
-export function dayProfileOf(store: ProStore, day: number): DayProfile | null {
+export function dayProfileOf(store: DayProfileStore, day: number): DayProfile | null {
   return loaders.get(store)?.get(day) ?? null;
 }

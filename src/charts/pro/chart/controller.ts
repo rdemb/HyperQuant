@@ -29,6 +29,8 @@ import type { LiqLevel } from '../core/indicators';
 import type { ResetMode } from '../core/sessions';
 import type { CandleSeries, ProBar, ProStore } from '../store/proStore';
 import { requestDayProfiles } from '../store/dayProfiles';
+import type { ValueRef } from '../core/valueReference';
+import { PeriodValues } from './periodValues';
 import { requestHistory } from '../store/serverHistory';
 import { DrawingLayer } from '../draw/layer';
 import { DrawingTools } from '../draw/tools';
@@ -333,6 +335,7 @@ export class ProChartController {
   private releaseVenue: (() => void) | null = null;
   private unsubVenue: (() => void) | null = null;
   private readonly overlay: IndicatorOverlay;
+  private readonly periodValues: PeriodValues;
   private readonly liquidity: LiquidityLayer;
   private readonly drawLayer = new DrawingLayer();
   private readonly countdown = new CountdownLabel();
@@ -453,6 +456,9 @@ export class ProChartController {
     this.drawLayer.tickOf = (p) => store.baseTick(p);
     // Profile okresów i TPO: liczba obiektów i udział pola pod słupkami (pomiar układu czyta je z atrybutów)
     const pct = (x: number) => (x * 100).toFixed(1);
+    // POC i value area profili okresów z jednego źródła wartości (jak pasek Rama dnia)
+    this.periodValues = new PeriodValues(store);
+    this.overlay.valueOf = (kind, start) => this.periodValues.of(kind, start);
     this.overlay.onPeriods = (c) => {
       container.dataset.periodObjects = String(c.objects);
       container.dataset.periodArea = pct(c.area);
@@ -1131,6 +1137,11 @@ export class ProChartController {
   }
 
   /** Aktywna strefa P/b do alarmów z menu wykresu (null — wskaźnik ukryty albo brak ważnej strefy). */
+  /** Wartość ostatniego zamkniętego okresu warstwy „Profile okresów” (plakietka w legendzie: z taśmy LIVE, ze świec MODEL). */
+  periodValue(): ValueRef | null {
+    return this.overlay.periodValue;
+  }
+
   pbZone(): PbZone | null {
     return this.pbStyle() ? this.pb.zone() : null;
   }
@@ -1477,6 +1488,9 @@ export class ProChartController {
     }
     const ms = this.series.interval.ms;
     this.overlay.setMarket(this.store.coin);
+    // Źródło wartości profili okresów (świece 5m z taśmą) tylko przy włączonej warstwie na interwale z profilami okresów
+    // (warunek `indicatorScope().periodProfile`: interwały do 4h, bez budowania obiektu przy każdej świecy)
+    if (this.settings.showPeriodProfiles && ms <= 4 * 3_600_000 && next.length > 0) this.periodValues.update(next[0].t, this.store.serverNow());
     this.overlay.setBars(next, ms, this.store.vwapCandles(this.series.interval), this.store.serverNow());
     this.overlay.setDaily(this.store.daily);
     this.drawLayer.setBars(next, ms);

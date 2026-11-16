@@ -3,7 +3,8 @@
  * w % i w ATR świec 5m oraz paliwem likwidacji między ceną a poziomem. Każdy poziom liczony tą samą funkcją co linia
  * na wykresie albo liczba nagłówka układu (PDH i PDL — `dayLevels`, VWAP doby i pasma σ — `dayVwapOf` jak linia VWAP,
  * IB — `initialBalances`, klastry — `liqLevels`, stożek — `coneForecastOf` i `coneQuantile`, value area wczoraj —
- * `utcDayProfiles` jak nagłówek Mapy dnia), więc odległość w panelu jest odległością linii. Zakres Azji i mediana wejść
+ * jedno źródło wartości `valueReference` jak pasek „Rama dnia” i nagłówek Mapy dnia), więc odległość w panelu jest
+ * odległością linii. Zakres Azji i mediana wejść
  * Uwięzionych na wykresie linii nie mają: liczone tu z tych samych świec 1m i z mapy wejść skanera.
  * Brak danych — poziom na liście „bez liczby” z powodem, nigdy liczba zastępcza. Opis, nie rekomendacja.
  */
@@ -14,7 +15,7 @@ import { type IndicatorBar, dayLevels, initialBalances, liqLevels, sdUsable } fr
 import { SESSION_LABEL, sessionAt, sessionOpens, utcDayStart } from '../charts/pro/core/sessions';
 import { fmtHm } from '../charts/pro/core/time';
 import type { Candle } from '../charts/pro/hl/parse';
-import { profileStep, utcDayProfiles } from './auction';
+import { CANDLE_METHOD, type ValueRef, valueBadge, valueMethodText, valueNote } from '../charts/pro/core/valueReference';
 import { coneForecastOf, coneQuantile } from './cone';
 import { dayVwapOf } from './dayVwap';
 import type { DeskLedgerSummary } from './deskLedger';
@@ -58,7 +59,10 @@ export type LevelId =
 
 export type LevelBadge = 'LIVE' | 'MODEL';
 
-/** Poziom z ceną: podpis, plakietka (LIVE — z ceny i świec, MODEL — skaner i dziennik prognoz) i skąd liczba. */
+/**
+ * Poziom z ceną: podpis, plakietka (LIVE — z ceny, świec i taśmy, MODEL — skaner, dziennik prognoz i value area
+ * przybliżona ze świec) i skąd liczba.
+ */
 export interface Level {
   id: LevelId;
   label: string;
@@ -127,8 +131,8 @@ export interface LevelInputs {
   daily?: Got<readonly Candle[]>;
   /** Świece 1m rosnąco od 00:00 UTC bieżącej doby. */
   c1m?: Got<readonly Candle[]>;
-  /** Świece 1h rosnąco (profil wczorajszej doby UTC, jak nagłówek Mapy dnia). */
-  c1h?: Got<readonly Candle[]>;
+  /** VA wczorajszej doby UTC z jednego źródła wartości (jak pasek Rama dnia i nagłówek Mapy dnia). */
+  prevValue?: Got<ValueRef>;
   /** Świece 5m rosnąco (ATR). */
   c5m?: Got<readonly Candle[]>;
   liq: ScanInput<LiqMap>;
@@ -285,24 +289,23 @@ export function levelsOf(x: LevelInputs): { levels: Level[]; missing: MissingLev
     }
   }
 
-  // POC, VAH i VAL wczorajszej doby UTC ze świec 1h (jak VAH i VAL wczoraj w nagłówku Mapy dnia)
+  // POC, VAH i VAL wczorajszej doby UTC z jednego źródła wartości (te same liczby co pasek Rama dnia i nagłówek Mapy dnia)
   {
-    const c1h = got(x.c1h);
-    const p = got(x.price);
-    const step = p !== null && p > 0 ? profileStep(p) : Number.NaN;
-    let v: Got<{ day: number; poc: number; vah: number; val: number }>;
-    if (!c1h) v = miss(missingWhy(x.c1h));
-    else if (c1h.length === 0) v = miss(tr('Czekam na świece 1h', 'Waiting for 1h candles'));
-    else if (!(step > 0)) v = miss(tr('Brak ceny do profilu', 'No price for the profile'));
-    // Tylko świece wczorajszej doby (profil tej doby ten sam, bez liczenia ok. 200 starszych dób co 2 s)
-    else v = utcDayProfiles(c1h.filter((c) => c.t >= today - DAY && c.t < today), now, step).find((d) => d.day === today - DAY) ?? miss(tr('Świece 1h nie obejmują całej wczorajszej doby UTC', "The 1h candles do not cover all of yesterday's UTC day"));
-    const src = tr('profil wolumenu wczorajszej doby UTC ze świec 1h (value area 70%), jak nagłówek Mapy dnia', "yesterday's UTC-day volume profile from 1h candles (70% value area), like the Day map header");
+    const v = x.prevValue === undefined ? miss(WAIT_TEXT) : x.prevValue;
+    const badge: LevelBadge = isAbsent(v) ? 'LIVE' : valueBadge(v);
+    const prefix = !isAbsent(v) && badge === 'MODEL' ? `MODEL · ${CANDLE_METHOD} (${valueNote(v)}): ` : '';
+    const src = isAbsent(v)
+      ? ''
+      : tr(
+          `profil wolumenu wczorajszej doby UTC, jak pasek „Rama dnia” i nagłówek Mapy dnia. ${valueMethodText(v)}`,
+          `yesterday's UTC-day volume profile, like the “Day frame” bar and the Day map header. ${valueMethodText(v)}`
+        );
     for (const [id, key, name] of [
       ['poc', 'poc', 'POC'],
       ['vah', 'vah', 'VAH'],
       ['val', 'val', 'VAL'],
     ] as const) {
-      add(id, tr(`${name} wczoraj`, `${name} yesterday`), 'LIVE', isAbsent(v) ? v : { px: v[key], hint: `${name} ${px(v[key])}: ${src}.` });
+      add(id, tr(`${name} wczoraj`, `${name} yesterday`), badge, isAbsent(v) ? v : { px: v[key], hint: `${prefix}${name} ${px(v[key])}: ${src}` });
     }
   }
 
