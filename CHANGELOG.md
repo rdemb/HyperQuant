@@ -4,6 +4,12 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Struktura i płynność (SMC+HL) także na 4H i wyższych interwałach (2026-11-16)
+<!-- co-nowego: grupa=wykres | pl=Struktura i płynność (SMC+HL) działa teraz na każdym interwale, także 4H i 1D, z oknami liczonymi w świecach | en=Structure & Liquidity (SMC+HL) now works on every interval, including 4H and 1D, with windows counted in candles -->
+
+#### Zmienione
+- **SMC na każdym interwale** (zgłoszenie Rafała: „nie działa na wyższych interwałach, np. 4H”): warstwa miała limit do 1 h, a okna elementów były w czasie (24 h to na 4H tylko 6 świec). Teraz bez limitu interwału; okno BOS, CHoCH, sweepów i trybu historii = max(24 h, 24 świece) (do 1 h bez zmian, 4H — 4 doby, 1D — 24 doby), a luka FVG żyje max(24 h, 100 świec) (Pionier, `smc-hl.md` §7.1). Pivot i filtr 1 ATR bez zmian, na interwale wykresu. Testy: okna dla 5m, 1h, 4H i 1D; życie luki na 4H (100 świec) i 5m (24 h); legenda na 4H.
+
 ### Jedno źródło wartości doby i sesji; liczniki Ramy dnia od otwarcia sesji (2026-11-16)
 <!-- co-nowego: grupa=wykres | pl=Wczorajsze VAH, VAL i POC są teraz te same w pasku Rama dnia, panelu Najbliższe poziomy, nagłówku Mapy dnia i na Profilach okresów; z taśmy LIVE, ze świec MODEL, a liczniki przyjęcia liczą od otwarcia sesji | en=Yesterday's VAH, VAL and POC are now the same in the Day frame bar, the Nearest levels panel, the Day map header and Period profiles; LIVE from the tape, MODEL from candles, and the acceptance counters run from the session open -->
 

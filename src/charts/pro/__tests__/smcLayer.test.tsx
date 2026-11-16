@@ -56,8 +56,8 @@ describe('legenda SMC', () => {
     expect(text({ t: f.t - MS, p: 100.75 })).not.toContain('FVG (');
   });
 
-  it('powody braku: interwał powyżej 1 h, brak świec', () => {
-    expect(smcLegend(sel, 4 * 3_600_000).map((p) => p.text)).toEqual(['—, interwał do 1 h']);
+  it('każdy interwał (także 4H); powód braku tylko bez świec', () => {
+    expect(smcLegend(sel, 4 * 3_600_000).map((p) => p.text)[0]).toBe('eksperymentalny');
     expect(smcLegend(null, MS).map((p) => p.text)).toEqual(['czekam na świece…']);
   });
 

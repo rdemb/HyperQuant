@@ -22,7 +22,7 @@
  *   Jeden sweep na poziom; zamknięcie za poziomem w świecy knota to też przełamanie (oba zdarzenia zostają).
  * - **FVG:** w świecy i low_i > high_{i−2} (luka [high_{i−2}, low_i] po ruchu w górę) albo lustrzanie, szerokość ≥ 0,1 ATR;
  *   wypełnienie od strony ceny, „wypełniona”, gdy cena przeszła całą lukę; osobno chwila pierwszego dotknięcia środka
- *   luki knotem (CE); wygasa po wypełnieniu albo 24 h od `known`.
+ *   luki knotem (CE); wygasa po wypełnieniu albo po max(24 h, 100 świec) od `known`.
  * - **EQH/EQL:** dwa pivoty skali wewnętrznej tego samego typu (także odrzucone filtrem amplitudy) z różnicą ≤ 0,1 ATR,
  *   oddalone o ≥ 5 świec, bez zamknięcia za poziomem (średnia obu) od pierwszego do potwierdzenia drugiego. Kończy się
  *   zamknięciem za poziomem albo sweepem. Nowy nie powstaje, gdy aktywny tego typu leży w tolerancji.
@@ -73,6 +73,9 @@ export interface SmcParams {
 
 /** Okna pivota do wyboru w parametrach wskaźnika (obie skale). */
 export const SMC_LENS = [3, 5, 10, 20, 50] as const;
+
+/** Życie luki w świecach na wyższych interwałach (Pionier, smc-hl.md §7.1). */
+export const SMC_FVG_LIFE_CANDLES = 100;
 
 export const DEFAULT_SMC_PARAMS: SmcParams = {
   internalLen: 3,
@@ -441,7 +444,8 @@ export function smcStructure(bars: readonly SBar[], ms: number, params: SmcParam
       if (b.l > p2.h && b.l - p2.h >= p.fvgMinAtr * a) gaps.push([1, p2.h, b.l]);
       if (b.h < p2.l && p2.l - b.h >= p.fvgMinAtr * a) gaps.push([-1, b.h, p2.l]);
       for (const [dir, lo, hi] of gaps) {
-        const f: SmcFvg = { id: nextId++, dir, lo, hi, idx: i, t: b.t, known, expiresAt: known + p.fvgLifeMs, filledAt: null, ceAt: null };
+        // Życie luki: max(24 h, 100 świec) (Pionier, smc-hl.md §7.1) — na wyższych interwałach doba to za mało świec
+        const f: SmcFvg = { id: nextId++, dir, lo, hi, idx: i, t: b.t, known, expiresAt: known + Math.max(p.fvgLifeMs, SMC_FVG_LIFE_CANDLES * ms), filledAt: null, ceAt: null };
         res.fvgs.push(f);
         openFvg.push(f);
       }

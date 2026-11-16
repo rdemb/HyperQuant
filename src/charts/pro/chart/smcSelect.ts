@@ -13,6 +13,7 @@ import {
   fvgFill,
   stateAt,
 } from '../core/smcStructure';
+import { tr } from '../../../i18n';
 
 /**
  * Co rysuje warstwa „Struktura i płynność (SMC+HL)” w chwili `asOf` (zamknięcie ostatniej zamkniętej świecy, w powtórce
@@ -36,6 +37,12 @@ export const SMC_PHONE_LIMITS = { fvg: 1, eq: 0, labels: 6, breaks: 3, sweeps: 0
 export const SMC_OBJECTS_MAX = 25;
 /** Okno trybu „historia” oraz zdarzeń (przełamania, sweepy) w trybie „bieżące”. */
 export const SMC_WINDOW_MS = 24 * 3_600_000;
+/** Okno w świecach dla wyższych interwałów: 24 h to na 4H tylko 6 świec, więc okno rośnie do 24 świec interwału. */
+export const SMC_WINDOW_CANDLES = 24;
+/** Okno elementów (BOS, CHoCH, sweepy, historia FVG i EQ): max(24 h, 24 świece) — do 1 h bez zmian. */
+export const smcWindowMs = (ms: number): number => Math.max(SMC_WINDOW_MS, SMC_WINDOW_CANDLES * ms);
+/** Podpis okna: „24 h” do 1 h, wyżej liczba świec. */
+export const smcWindowText = (ms: number): string => (smcWindowMs(ms) === SMC_WINDOW_MS ? tr('24 h', '24 h') : tr(`${SMC_WINDOW_CANDLES} świece`, `${SMC_WINDOW_CANDLES} candles`));
 
 export interface SmcFvgView {
   f: SmcFvg;
@@ -132,7 +139,8 @@ export function selectSmc(r: SmcResult, bars: readonly SBar[], asOf: number, o: 
   const close = bars[i].c;
   out.close = close;
   out.atr = r.atr[i];
-  const recent = (t: number) => t <= asOf && asOf - t < SMC_WINDOW_MS;
+  const win = smcWindowMs(ms);
+  const recent = (t: number) => t <= asOf && asOf - t < win;
 
   // Etykiety: swingi znane i niezastąpione w chwili asOf, od najnowszych; ta sama świeca i typ — jedna (skala swingowa)
   const live = r.swings.filter((s) => s.known <= asOf && (s.supersededAt === null || s.supersededAt > asOf) && s.label !== null);
