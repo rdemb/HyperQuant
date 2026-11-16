@@ -269,6 +269,39 @@ export function createFixtures(root) {
  * Mapa likwidacji BTC dla przebiegu „Start” (teren płynności): kubełki co 100 USD wokół ceny z danych stałych, skupiska
  * longów poniżej i shortów powyżej ceny (kształt syntetyczny, bez danych rynku). Format `LiqMap` z src/utils/liqMap.ts.
  */
+/**
+ * Mapa Uwięzionych (entry-map/BTC.json) w kształcie pliku skanera: słupki do setek milionów USD, żeby podpisy osi
+ * („$120,0 mln”) miały najdłuższy realny format.
+ */
+export function entryMapFixture(now, markPx = 80434) {
+  const step = 200;
+  const side = (from, to, peak) => {
+    const out = [];
+    for (let px = Math.floor(from / step) * step; px <= to; px += step) {
+      const d = Math.abs(px - peak) / 2500;
+      const ntl = 1.6e8 * Math.exp(-d * d) * (0.8 + 0.4 * hash01(px / step));
+      if (ntl > 1e5) out.push({ px, ntlUsd: Math.round(ntl), n: 5 + Math.round(ntl / 4e6) });
+    }
+    return out;
+  };
+  const strona = (ntl, under) => ({ ntlUsd: ntl, underwaterUsd: ntl * under, underwaterShare: under, outsideUsd: ntl * 0.3, liqDistPct: { p25: 11.3, p50: 21.7, p75: 34 } });
+  return {
+    v: 1,
+    coin: 'BTC',
+    asOf: now - 60_000,
+    markPx,
+    stepUsd: step,
+    rangePct: 0.15,
+    longs: side(markPx * 0.85, markPx * 1.15, markPx * 1.04),
+    shorts: side(markPx * 0.85, markPx * 1.15, markPx * 0.97),
+    long: strona(1.27e9, 0.7),
+    short: strona(1.27e9, 0.15),
+    coverage: { positions: 28795, addresses: 50101, scannedBtc: 35414, oiBtc: 36907, share: 0.48 },
+    ageMin: { p50: 581, ntlP50: 2.99 },
+    method: 'fixture',
+  };
+}
+
 export function liqMapFixture(now, markPx = 80434) {
   const step = 100;
   const bump = (px, c, w, h) => h * Math.exp(-(((px - c) / w) ** 2));

@@ -16,7 +16,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { launch, sleep } from './cdp.mjs';
 import { INIT, PROBE, fixtureInit } from './probe.mjs';
-import { DATA_BASE_URL, FIXED_NOW, createFixtures, liqMapFixture, registry } from './fixtures.mjs';
+import { DATA_BASE_URL, FIXED_NOW, createFixtures, entryMapFixture, liqMapFixture, registry } from './fixtures.mjs';
 import { MARTWE_GNIAZDO, PLIKI_APLIKACJI, POMIAR_PUSTEGO, cyfryPozaEtykietami, noweWidoki } from './pustyStan.mjs';
 import { compareBaseline, margin, metricsOf } from './baseline.mjs';
 
@@ -48,6 +48,8 @@ const RETURNING = { 'hq.onboarding.v1': JSON.stringify({ firstAt: PAGE_NOW - 8 *
 let serveRegistry = false;
 /** Mapa likwidacji BTC z danych stałych (teren płynności na Starcie) — tylko w przebiegu „Start”. */
 let serveLiq = false;
+/** Przebieg „Uwięzieni”: plik entry-map/BTC.json z danych stałych. */
+let serveEntry = false;
 
 /**
  * Żądania strony w trybie danych stałych: pliki strony z serwera podglądu (bez danych publicznych z public/data/feeds,
@@ -72,6 +74,7 @@ function fixtureIntercept(fx) {
     if (u.origin === data.origin) {
       if (serveRegistry && u.pathname === `${data.pathname}/markets.json`) return { body: JSON.stringify(registry()) };
       if (serveLiq && u.pathname === `${data.pathname}/liq-map/BTC.json`) return { body: JSON.stringify(liqMapFixture(FIXED_NOW)) };
+      if (serveEntry && u.pathname === `${data.pathname}/entry-map/BTC.json`) return { body: JSON.stringify(entryMapFixture(FIXED_NOW)) };
       return 'fail';
     }
     if (u.hostname === 'api.hyperliquid.xyz' && u.pathname === '/info') {
@@ -387,6 +390,20 @@ const START_VIEWPORTS = [
   ['390', 390, 844, true],
   ['360', 360, 780, true],
 ];
+/** Histogram Uwięzionych (Przed sesją): podpisy osi i stref w całości wewnątrz rysunku, przy 390 i 720 px. */
+const UWIEZIENI_VIEWPORTS = [
+  ['390', 390, 844, true],
+  ['720', 720, 900, false],
+];
+const UWIEZIENI_PROBE = `(() => {
+  const svg = [...document.querySelectorAll('svg[role="img"]')].find((x) => /Rozkład cen wejścia|Distribution of position entry/.test(x.getAttribute('aria-label') || ''));
+  if (!svg) return { svg: false, texts: 0, cut: [] };
+  const b = svg.getBoundingClientRect();
+  const texts = [...svg.querySelectorAll('text')];
+  const cut = texts.filter((t) => { const r = t.getBoundingClientRect(); return r.width > 0 && (r.left < b.left - 0.5 || r.right > b.right + 0.5); }).map((t) => t.textContent.trim());
+  return { svg: true, width: Math.round(b.width), texts: texts.length, cut };
+})()`;
+
 const START_PROBE = `(() => {
   const W = innerWidth;
   const over = (a, b) => a.width > 0 && b.width > 0 && a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1;
@@ -1105,6 +1122,27 @@ async function main() {
     serveLiq = false;
     await page.viewport(1440, 900, false);
 
+    // Uwięzieni: histogram cen wejścia w Przed sesją, podpisy osi nie ucięte (390 i 720 px, dane stałe)
+    report.uwiezieni = {};
+    serveEntry = true;
+    for (const [key, w, h, mobile] of UWIEZIENI_VIEWPORTS) {
+      await page.viewport(w, h, mobile);
+      const [e0, c0] = [page.errors.length, page.consoleErrors.length];
+      await page.go(`${BASE}robots.txt`, 300);
+      await page.ev(`(() => { localStorage.clear(); const s = ${JSON.stringify(RETURNING)}; for (const k in s) localStorage.setItem(k, s[k]); return true; })()`);
+      await page.go(`${BASE}#before`, 500);
+      await sleep(3000);
+      await page.ev(`(async () => { for (let y = 0; y < document.documentElement.scrollHeight; y += 400) { scrollTo(0, y); await new Promise((r) => setTimeout(r, 120)); } return true; })()`);
+      await page.waitFor(`[...document.querySelectorAll('svg[role="img"]')].some((x) => /Rozkład cen wejścia|Distribution of position entry/.test(x.getAttribute('aria-label') || ''))`, 8000).catch(() => undefined);
+      await page.ev(`(() => { const s = [...document.querySelectorAll('svg[role="img"]')].find((x) => /Rozkład cen wejścia|Distribution of position entry/.test(x.getAttribute('aria-label') || '')); s?.scrollIntoView({ block: 'center' }); return true; })()`);
+      await sleep(600);
+      const x = await page.ev(UWIEZIENI_PROBE);
+      await shot(page, `${w}-uwiezieni`);
+      report.uwiezieni[key] = { ...x, errors: page.errors.slice(e0), consoleErrors: page.consoleErrors.slice(c0) };
+    }
+    serveEntry = false;
+    await page.viewport(1440, 900, false);
+
     // Pusty stan: każdy widok nowego wyglądu (src/nowy/widoki.ts) bez API giełdy, danych skanera, strumienia i danych
     // z tej samej strony (lekcje, powtórki) pokazuje „—” z powodem: żadnej cyfry poza elementami [data-etykieta]
     report.pustyStan = {};
@@ -1290,6 +1328,7 @@ async function main() {
     return !!x && x.overflowX <= 0 && x.teren === true && x.nakladanie === 0 && x.rycinyPoza === 0 && x.nan?.length === 0 && x.errors.length === 0 && x.consoleErrors.length === 0;
   };
   r.summary.start = START_VIEWPORTS.every(([key]) => startOk(key));
+  r.summary.uwiezieni = UWIEZIENI_VIEWPORTS.every(([key]) => { const x = r.uwiezieni?.[key]; return !!x?.svg && x.texts > 0 && x.cut.length === 0 && x.errors.length === 0; });
   r.summary.pustyStan = Object.values(r.pustyStan ?? {}).every((x) => x.dlugosc > 0 && x.liczby.length === 0 && x.paski.length === 0);
   const prz = r.przeladowanie;
   r.summary.przeladowanie = !!prz?.plik && prz.loads === 1 && prz.marker === true && prz.alert === true && prz.loadsLater === 1;
@@ -1385,6 +1424,13 @@ async function main() {
   if (r.przeladowanie) {
     const x = r.przeladowanie;
     lines.push(`Przeładowanie po wdrożeniu (zablokowany ${x.plik ?? '—'}): wczytania po błędzie ${x.loads} (po 3 s ${x.loadsLater}), znacznik ${x.marker ? 'tak' : 'nie'}, ekran błędu ${x.alert ? 'tak' : 'nie'} — ${ok(r.summary.przeladowanie)}`);
+  }
+  if (r.uwiezieni) {
+    lines.push(`Uwięzieni, histogram cen wejścia: ${UWIEZIENI_VIEWPORTS.map(([key]) => {
+      const x = r.uwiezieni[key];
+      if (!x) return `${key} —`;
+      return `${key}: ${x.svg ? `${x.texts} podpisów, ucięte ${x.cut.length ? x.cut.join(' | ') : 'brak'}` : 'BRAK RYSUNKU'}${x.errors.length ? `, błędy ${x.errors.length}` : ''}`;
+    }).join('; ')} — ${ok(r.summary.uwiezieni)}`);
   }
   const metrics = metricsOf(r);
   let baseDiff = [];
