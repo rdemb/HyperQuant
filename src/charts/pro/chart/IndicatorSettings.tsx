@@ -10,6 +10,7 @@ import {
   indicatorLabel,
   memoryCandles,
   paramOk,
+  paramText,
   parseParams,
   swatchColor,
   tfAllowed,
@@ -51,10 +52,10 @@ const ParamInput: React.FC<{ p: ParamDef; value: number; onChange: (v: number) =
   // Parametr z listą wartości (okno IVB 30 albo 60 min): wybór zamiast pola liczbowego
   if (p.options)
     return (
-      <select aria-label={p.label} value={value} onChange={(e) => onChange(Number(e.target.value))} className={`${FIELD} w-24`}>
+      <select aria-label={p.label} value={value} onChange={(e) => onChange(Number(e.target.value))} className={`${FIELD} ${p.optionLabels ? 'w-32' : 'w-24'}`}>
         {p.options.map((o) => (
           <option key={o} value={o}>
-            {numLang(String(o))}
+            {paramText(p, o)}
           </option>
         ))}
       </select>
@@ -264,10 +265,10 @@ export const IndicatorSettings: React.FC<{ x: IndicatorInstance; loaded: number;
           </div>
         )}
         {tab === 'params' && def.smc && (
-          // Tryb „historia 24 h”: także luki wypełnione i EQ zakończone w ostatnich 24 h, przygaszone
+          // Tryb „historia 24 h”: także luki wypełnione, EQ zakończone i OB zmitygowane albo wygasłe w ostatnich 24 h, przygaszone
           <label className="flex items-center gap-2 min-h-9 py-1 cursor-pointer text-ink-1">
             <input type="checkbox" checked={x.history === true} onChange={(e) => set({ history: e.target.checked ? true : undefined })} className="w-4 h-4 shrink-0 accent-accent" />
-            {tr('Historia 24 h: także wypełnione luki i zakończone EQ, przygaszone', '24 h history: also filled gaps and ended EQ, dimmed')}
+            {tr('Historia 24 h: także wypełnione luki, zakończone EQ i zmitygowane OB, przygaszone', '24 h history: also filled gaps, ended EQ and mitigated OB, dimmed')}
           </label>
         )}
         {tab === 'style' && (
@@ -384,8 +385,8 @@ export const IndicatorSettings: React.FC<{ x: IndicatorInstance; loaded: number;
                         )
                       : def.smc
                         ? tr(
-                            'Etykiety, linie, luki i równe szczyty opisują kształt ceny, nie miejsca wejścia. Częstości bazowe wobec losowych poziomów nie są jeszcze policzone: wskaźnik jest eksperymentalny.',
-                            'Labels, lines, gaps and equal highs describe the price shape, not entry places. Base rates against random levels are not computed yet: the indicator is experimental.'
+                            'Etykiety, linie, luki i równe szczyty opisują kształt ceny, nie miejsca wejścia. Częstości bazowe z historii prawie nie różnią się od losowych poziomów (liczby w legendzie): wskaźnik jest eksperymentalny.',
+                            'Labels, lines, gaps and equal highs describe the price shape, not entry places. Historical base rates barely differ from random levels (numbers in the legend): the indicator is experimental.'
                           )
                       : def.ivb
                         ? tr(

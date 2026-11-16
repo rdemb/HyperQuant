@@ -29,7 +29,15 @@
  * - **Premium, discount, równowaga** (wybór w `smcSelect`): połowy zakresu od ostatniego szczytu do ostatniego dołka
  *   skali swingowej, z pasem równowagi 47,5–52,5% zakresu.
  *
- * Bloki zleceń (OB) to etap S1, potwierdzenia z danych HL — S3, częstości bazowe — S2: tu ich nie ma. Wynik dla świecy
+ * - **OB (etap S1, smc-hl.md §1.5 i §7):** przełamanie (BOS albo CHoCH) swingu w świecy b; OB to ostatnia świeca przeciwna
+ *   (przy przełamaniu w górę spadkowa, close < open; lustrzanie) między świecą przełamanego swingu a b, więc od niej do b
+ *   są same świece impulsu. Filtr impulsu: zakres świec od OB do b (najwyższy szczyt − najniższy dołek) ≥ 1,5 ATR świecy b,
+ *   inaczej OB nie ma (bez cofania się do wcześniejszej świecy). Strefa: [low, high] świecy OB. Znany od zamknięcia b.
+ *   Po b, na kolejnych świecach: dotknięcie — pierwszy knot w strefie; mitygacja knotem — pierwszy knot za dalszą
+ *   krawędzią; mitygacja zamknięciem — pierwsze zamknięcie za nią (obie chwile zapisane, tryb wybiera `smcSelect`).
+ *   Życie 200 świec od `known` (do mitygacji zamknięciem albo wygaśnięcia).
+ *
+ * Potwierdzenia z danych HL to etap S3, częstości bazowe — S2: tu ich nie ma. Wynik dla świecy
  * zależy tylko od świec do niej: pola stanu (`brokenAt`, `filledAt`, `endAt`…) to chwile zdarzeń, więc stan w dowolnej
  * chwili odczytuje się bez wglądu w przyszłość.
  */
@@ -69,6 +77,8 @@ export interface SmcParams {
   /** Równowaga zakresu swingowego: od … do … zakresu. */
   equilibriumLo: number;
   equilibriumHi: number;
+  /** OB: zakres od świecy OB do świecy przełamania ≥ tyle ATR. */
+  obMinAtr: number;
 }
 
 /** Okna pivota do wyboru w parametrach wskaźnika (obie skale). */
@@ -76,6 +86,8 @@ export const SMC_LENS = [3, 5, 10, 20, 50] as const;
 
 /** Życie luki w świecach na wyższych interwałach (Pionier, smc-hl.md §7.1). */
 export const SMC_FVG_LIFE_CANDLES = 100;
+/** Życie OB w świecach od `known` (Pionier, smc-hl.md §7.1). */
+export const SMC_OB_LIFE_CANDLES = 200;
 
 export const DEFAULT_SMC_PARAMS: SmcParams = {
   internalLen: 3,
@@ -90,6 +102,7 @@ export const DEFAULT_SMC_PARAMS: SmcParams = {
   eqMinBars: 5,
   equilibriumLo: 0.475,
   equilibriumHi: 0.525,
+  obMinAtr: 1.5,
 };
 
 /** Pivot (surowy, przed filtrem amplitudy). `t` — świeca krańca, `known` — zamknięcie świecy potwierdzenia. */
@@ -188,6 +201,39 @@ export interface SmcEq {
   end: 'broken' | 'swept' | null;
 }
 
+/**
+ * Order block. `dir` 1 — po przełamaniu w górę (ostatnia świeca spadkowa, strefa pod ceną), −1 — lustrzanie. Chwile
+ * zdarzeń (null — nie zaszło przed wygaśnięciem) zapisane w obu trybach mitygacji: knot jest zawsze nie później niż zamknięcie.
+ */
+export interface SmcOb {
+  id: number;
+  scale: Scale;
+  dir: Dir;
+  /** Przełamanie, które go kwalifikuje. */
+  kind: BreakKind;
+  breakId: number;
+  /** Świeca OB (strefa = jej [low, high]). */
+  idx: number;
+  t: number;
+  lo: number;
+  hi: number;
+  /** Świeca przełamania i chwila jej zamknięcia (od niej OB jest znany). */
+  breakIdx: number;
+  breakT: number;
+  known: number;
+  /** Zakres od świecy OB do przełamania w ATR świecy przełamania. */
+  impulse: number;
+  expiresAt: number;
+  /** Pierwsze wejście knotem w strefę po świecy przełamania. */
+  touchedAt: number | null;
+  /** Pierwszy knot za dalszą krawędzią strefy (mitygacja knotem) i jego świeca. */
+  wickAt: number | null;
+  wickIdx: number | null;
+  /** Pierwsze zamknięcie za dalszą krawędzią strefy (mitygacja zamknięciem) i jego świeca. */
+  closeAt: number | null;
+  closeIdx: number | null;
+}
+
 export interface SmcStateStep {
   scale: Scale;
   known: number;
@@ -203,6 +249,7 @@ export interface SmcResult {
   sweeps: SmcSweep[];
   fvgs: SmcFvg[];
   eqs: SmcEq[];
+  obs: SmcOb[];
   /** Zmiany stanu struktury (rosnąco po chwili); przed pierwszą stan „mieszana”. */
   states: SmcStateStep[];
 }
@@ -275,7 +322,7 @@ export function smcStructure(bars: readonly SBar[], ms: number, params: SmcParam
   const p = params;
   const n = bars.length;
   const atr = wilderAtr(bars, p.atrLen);
-  const res: SmcResult = { ms, atr, pivots: [], swings: [], breaks: [], sweeps: [], fvgs: [], eqs: [], states: [] };
+  const res: SmcResult = { ms, atr, pivots: [], swings: [], breaks: [], sweeps: [], fvgs: [], eqs: [], obs: [], states: [] };
   const runs: ScaleRun[] = [
     { scale: 'internal', len: p.internalLen, list: [], high: null, low: null, state: 'mixed', lastBreak: 0 },
     { scale: 'swing', len: p.swingLen, list: [], high: null, low: null, state: 'mixed', lastBreak: 0 },
@@ -285,7 +332,50 @@ export function smcStructure(bars: readonly SBar[], ms: number, params: SmcParam
   let openFvg: SmcFvg[] = [];
   let activeEq: SmcEq[] = [];
   let pending: SweepCandidate[] = [];
+  /** OB śledzone (przed mitygacją zamknięciem i wygaśnięciem). */
+  let liveOb: SmcOb[] = [];
   let nextId = 1;
+
+  /**
+   * OB przełamania `br` swingu `s` w świecy i: ostatnia świeca przeciwna po świecy swingu i przed i, z impulsem od niej
+   * do i ≥ `obMinAtr` ATR świecy i; null — brak takiej świecy albo impuls za mały.
+   */
+  const orderBlock = (s: SmcSwing, br: SmcBreak, i: number, a: number): SmcOb | null => {
+    if (!(a > 0)) return null;
+    const dir = s.dir;
+    let k = i - 1;
+    while (k > s.idx && !(dir * (bars[k].c - bars[k].o) < 0)) k--;
+    if (k <= s.idx) return null;
+    let hi = Number.NEGATIVE_INFINITY;
+    let lo = Number.POSITIVE_INFINITY;
+    for (let j = k; j <= i; j++) {
+      hi = Math.max(hi, bars[j].h);
+      lo = Math.min(lo, bars[j].l);
+    }
+    if (!(hi - lo >= p.obMinAtr * a)) return null;
+    const x = bars[k];
+    return {
+      id: nextId++,
+      scale: br.scale,
+      dir,
+      kind: br.kind,
+      breakId: br.id,
+      idx: k,
+      t: x.t,
+      lo: x.l,
+      hi: x.h,
+      breakIdx: i,
+      breakT: br.t,
+      known: br.known,
+      impulse: (hi - lo) / a,
+      expiresAt: br.known + SMC_OB_LIFE_CANDLES * ms,
+      touchedAt: null,
+      wickAt: null,
+      wickIdx: null,
+      closeAt: null,
+      closeIdx: null,
+    };
+  };
 
   const setState = (r: ScaleRun, state: StructureState, known: number) => {
     if (r.state === state) return;
@@ -396,14 +486,39 @@ export function smcStructure(bars: readonly SBar[], ms: number, params: SmcParam
     });
     const levels = sweepLevels();
 
-    // 2. Przełamania zamknięciem i koniec EQ zamknięciem za poziomem
+    // 1a. OB z wcześniejszych świec: dotknięcie (knot w strefie), mitygacja knotem i zamknięciem za dalszą krawędzią
+    liveOb = liveOb.filter((o) => {
+      if (known >= o.expiresAt) return false;
+      const near = o.dir === 1 ? o.hi : o.lo;
+      const far = o.dir === 1 ? o.lo : o.hi;
+      const wick = o.dir === 1 ? b.l : b.h;
+      if (o.touchedAt === null && o.dir * (wick - near) <= 0) o.touchedAt = known;
+      if (o.wickAt === null && o.dir * (wick - far) < 0) {
+        o.wickAt = known;
+        o.wickIdx = i;
+      }
+      if (o.dir * (b.c - far) < 0) {
+        o.closeAt = known;
+        o.closeIdx = i;
+        return false;
+      }
+      return true;
+    });
+
+    // 2. Przełamania zamknięciem (z OB) i koniec EQ zamknięciem za poziomem
     for (const r of runs) {
       for (const s of [r.high, r.low]) {
         if (!s || s.brokenAt !== null || !(s.dir * (b.c - s.price) > 0)) continue;
         s.brokenAt = known;
         const ref: Dir | 0 = r.state === 'up' ? 1 : r.state === 'down' ? -1 : r.lastBreak;
         const kind: BreakKind = ref === 0 || ref === s.dir ? 'BOS' : 'CHoCH';
-        res.breaks.push({ id: nextId++, scale: r.scale, dir: s.dir, kind, level: s.price, swingId: s.id, swingT: s.t, swingKnown: s.known, idx: i, t: b.t, known });
+        const br: SmcBreak = { id: nextId++, scale: r.scale, dir: s.dir, kind, level: s.price, swingId: s.id, swingT: s.t, swingKnown: s.known, idx: i, t: b.t, known };
+        res.breaks.push(br);
+        const ob = orderBlock(s, br, i, a);
+        if (ob) {
+          res.obs.push(ob);
+          liveOb.push(ob);
+        }
         r.lastBreak = s.dir;
         if (kind === 'CHoCH') setState(r, 'mixed', known);
       }
