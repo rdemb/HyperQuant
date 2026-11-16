@@ -4,6 +4,12 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Wysiłek a wynik v2: ruch świecy wobec ruchu oczekiwanego z λ Kyle’a (2026-11-16)
+<!-- co-nowego: grupa=wykres | pl=Nowy wskaźnik Wysiłek a wynik: o ile odchyleń ruch świecy różnił się od ruchu, jakiego oczekiwałoby bieżące λ Kyle’a przy jej agresji | en=New Effort vs result indicator: by how many deviations a candle’s move differed from the move the current Kyle’s λ would expect for its aggression -->
+
+#### Dodane
+- **Wysiłek a wynik** (grupa „Presja”, MODEL; Pionier, Fabio runda 2, F-C1; u Fabio „law of effort and results”): dla zamkniętej świecy w całości objętej taśmą ruch od otwarcia do zamknięcia (pb) minus ruch oczekiwany z prostej OLS na poprzednich świecach (y = a + λ·x, x — przepływ agresora w mln USD), w odchyleniach reszt prostej. Przy przewadze kupna prosta świec z przewagą kupna, przy sprzedaży — sprzedaży, gdy ich λ przekracza swój próg szumu; bez λ ponad progiem R² „—: brak mierzalnego wpływu”. Pasmo zwykłości p10–p90. Testy: ruch zgodny z λ ≈ 0, ruch mniejszy ujemny, większy dodatni; strona wybiera swoje λ; na danych bez wpływu wynik w ≤ 10% okien; na SIM ze znanym λ |wynik| > 2 w 2–9% świec.
+
 ### Fabio: Effort tylko z taśmy, profil swingu z taśmy, IVB 30/60 min i czas dostępności stref (2026-11-16)
 <!-- co-nowego: grupa=wykres | pl=Strefy i pudełka Effort liczą deltę tylko z nagranej taśmy, a pod kursorem widać, od kiedy strefa była znana; nowy wskaźnik IVB z zakresem pierwszych 30 albo 60 minut od otwarcia Nowego Jorku | en=Effort zones and boxes take delta only from the recorded tape, and under the cursor you can see since when a zone was known; a new IVB indicator shows the range of the first 30 or 60 minutes after the New York open -->
 
