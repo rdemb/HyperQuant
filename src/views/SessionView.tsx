@@ -1,6 +1,9 @@
 import React, { Suspense, lazy, useState, useSyncExternalStore } from 'react';
 import type { PhaseId } from '../charts/pro/chart/stations';
+import { capsOf, subscribeMarkets } from '../state/markets';
 import { subscribeHash } from '../state/route';
+import { deskMarketOf, marketLabel } from '../config/deskMarkets';
+import { tr } from '../i18n';
 import { useLiqMap } from '../state/useLiqMap';
 import { HOME_MARKET } from '../utils/marketCaps';
 import { FirstContact } from './session/FirstContact';
@@ -33,19 +36,39 @@ const SessionView: React.FC<{ onPhase?: (phase: PhaseId) => void }> = ({ onPhase
   const replay = useSyncExternalStore(subscribeHash, inReplay);
   // Rynek pierwszego wykresu aktywnej karty (Pulse liczy drabinę i taśmę tego rynku)
   const [coin, setCoin] = useState<Market>(HOME_MARKET);
+  const scanner = useSyncExternalStore(subscribeMarkets, () => capsOf(coin).scanner);
   return (
     <div className="flex flex-col gap-4">
       {!replay && <FirstContact coin={coin} />}
       <Suspense fallback={<div data-wykres-czeka className="min-h-[70dvh] rounded-xl border border-line bg-surface-1" />}>
         <ChartsView phase="session" onPhase={onPhase} onMarket={setCoin} />
       </Suspense>
-      {!replay && (
+      {!replay && scanner && (
         <Suspense fallback={null}>
           <CohortFlowPanel coin={coin} />
           <SessionLiquidations coin={coin} />
         </Suspense>
       )}
+      {!replay && !scanner && <NoScannerNote coin={coin} />}
     </div>
+  );
+};
+
+/**
+ * Rynek bez skanera kont (złoto, S&P 500): zamiast dwóch pustych kart BTC („—, bez skanera”) jedno zdanie, co tu jest
+ * na żywo, a czego nie ma i dlaczego.
+ */
+export const NoScannerNote: React.FC<{ coin: Market }> = ({ coin }) => {
+  const m = deskMarketOf(coin);
+  const pl = m ? m.name.pl.gen : marketLabel(coin);
+  const en = m ? m.name.en : marketLabel(coin);
+  return (
+    <p data-bez-skanera className="rounded-xl border border-line bg-surface-1 p-4 text-sm leading-relaxed text-ink-2">
+      {tr(
+        `Przepływ kohort i zrealizowane likwidacje liczymy tylko dla BTC (skaner kont Hyperliquid). Dla ${pl} masz na żywo taśmę z numerami biorców, arkusz, footprint, deltę i CVD od otwarcia strony. Zapisu taśmy na serwerze dla tego rynku jeszcze nie ma, więc footprint sprzed otwarcia strony pokazuje „—”.`,
+        `Cohort flow and realised liquidations are computed for BTC only (Hyperliquid account scanner). For ${en} you get the live tape with taker numbers, the book, footprint, delta and CVD from when the page opened. The server does not record the tape for this market yet, so footprint before the page opened shows “—”.`
+      )}
+    </p>
   );
 };
 

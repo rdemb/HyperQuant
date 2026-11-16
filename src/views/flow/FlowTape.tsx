@@ -10,6 +10,8 @@ import { fmtHms } from '../../charts/pro/core/time';
 import type { ProStore } from '../../charts/pro/store/proStore';
 import { numLang } from '../../ui/format';
 import { tr } from '../../i18n';
+import { usdScaleOf } from '../../state/markets';
+import { tapeMinUsdOf } from '../../charts/pro/core/tapeFilter';
 import { HelpButton } from '../../ui/HelpButton';
 import { fmtSize } from './Ladder';
 
@@ -69,7 +71,9 @@ export const FlowTape: React.FC<{
   head?: React.ReactNode;
 }> = ({ store, minUsd, sound, bigUsd, pace, selected, highlight, narrow, className, onPick, onMinUsd, onSound, tools, head }) => {
   const recent = store.orders.latest(SCAN);
-  const rows = tapeRows(recent, minUsd, bigUsd, ROWS, store.serverNow());
+  // Próg w skali rynku (złoto, S&P 500: zwykle mniejsze zlecenia niż na BTC; ustawienie jest w skali BTC)
+  const scale = usdScaleOf(store.coin);
+  const rows = tapeRows(recent, tapeMinUsdOf(minUsd, scale), bigUsd, ROWS, store.serverNow());
 
   // Dźwięk: tylko nowe zlecenia od progu dużego (pierwsze renderowanie oznacza zastane jako widziane)
   const seen = useRef<WeakSet<AggressorOrder> | null>(null);
@@ -179,7 +183,7 @@ export const FlowTape: React.FC<{
         >
           {TAPE_MIN_OPTIONS.map((v) => (
             <option key={v} value={v}>
-              {v === 0 ? tr('Wszystkie', 'All') : tr(`od ${compact(v)}`, `${compact(v)}+`)}
+              {v === 0 ? tr('Wszystkie', 'All') : tr(`od ${compact(tapeMinUsdOf(v, scale))}`, `${compact(tapeMinUsdOf(v, scale))}+`)}
             </option>
           ))}
         </select>
