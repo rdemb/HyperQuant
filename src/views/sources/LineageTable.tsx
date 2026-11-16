@@ -857,6 +857,23 @@ export const GROUPS: { title: string; rows: Row[] }[] = [
         ),
       },
       {
+        metric: tr('Najbliższe poziomy (W sesji, Przed sesją)', 'Nearest levels (In session, Pre-session)'),
+        source: tr(
+          'Świece Hyperliquid rynku wykresu (1d, 1h, 5m, 1m), mapa likwidacji i mapa wejść skanera, dziennik prognoz',
+          'Hyperliquid candles of the chart market (1d, 1h, 5m, 1m), the scanner liquidation and entry maps, the forecast ledger'
+        ),
+        method: tr(
+          'Poziomy z tych samych funkcji co linie wykresu: PDH i PDL, VWAP doby z pasmami ±1σ i ±2σ, IB bieżącej sesji, największy klaster likwidacji po każdej stronie, granice przedziału 90% stożka 1 h; value area wczoraj ze świec 1h jak nagłówek Mapy dnia; zakres sesji azjatyckiej ze świec 1m; mediana cen wejścia Uwięzionych ważona wartością. Odległość w % od ceny i w ATR(14) zamkniętych świec 5m; paliwo: USD kubełków mapy likwidacji między ceną a poziomem',
+          'Levels from the same functions as the chart lines: PDH and PDL, day VWAP with ±1σ and ±2σ bands, current-session IB, the largest liquidation cluster on each side, 90% bounds of the 1 h cone; yesterday’s value area from 1h candles like the Day map header; the Asian session range from 1m candles; the value-weighted median entry price of trapped positions. Distance in % of the price and in ATR(14) of closed 5m candles; fuel: USD of liquidation-map buckets between the price and the level'
+        ),
+        kinds: ['LIVE', 'MODEL'],
+        refresh: tr('co 2 s przy zmianach świec, migawki skanera co 2 min', 'every 2 s on candle changes, scanner snapshots every 2 min'),
+        caveat: tr(
+          'Klastry, Uwięzieni i paliwo tylko ze zmierzonej części open interest i tylko na rynkach ze skanerem; mapa starsza niż 10 min daje „—” z wiekiem. Opis poziomów, bez twierdzenia, jak cena przy nich się zachowa.',
+          'Clusters, trapped positions and fuel cover only the measured part of open interest and only markets with the scanner; a map older than 10 min gives “—” with its age. A description of levels with no claim about how price behaves at them.'
+        ),
+      },
+      {
         metric: 'Order blocks',
         source: tr('Świece HL', 'HL candles'),
         method: tr('Świeca impulsu > k·ATR(14), strefa świeża / zmitygowana (Shaakuni)', 'Impulse candle > k·ATR(14), fresh / mitigated zone (Shaakuni)'),

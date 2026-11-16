@@ -102,7 +102,7 @@ function valueChip(x: FrameInput): FrameChip {
     ...base,
     value: `${lab}${share}`,
     hint: tr(
-      `Value area 70% doby UTC dotąd ${px(v.today.val)}–${px(v.today.vah)} wobec wczorajszej ${px(f.prev.val)}–${px(f.prev.vah)} (POC ${px(f.prev.poc)}): ${lab}; ${pctOf(v.overlap)} dzisiejszej VA leży w wczorajszej. Profil wolumenu świec 5m, koszyki 5 pb, jak poziomy doby P/b.`,
+      `Value area 70% doby UTC dotąd ${px(v.today.val)}–${px(v.today.vah)} wobec wczorajszej ${px(f.prev.val)}–${px(f.prev.vah)} (POC ${px(f.prev.poc)}): ${lab}; ${pctOf(v.overlap)} dzisiejszej VA leży we wczorajszej. Profil wolumenu świec 5m, koszyki 5 pb, jak poziomy doby P/b.`,
       `The 70% value area of the UTC day so far ${px(v.today.val)}–${px(v.today.vah)} against yesterday's ${px(f.prev.val)}–${px(f.prev.vah)} (POC ${px(f.prev.poc)}): ${lab}; ${pctOf(v.overlap)} of today's VA lies within yesterday's. Volume profile of 5m candles, 5 bp bins, like the P/b day levels.`
     ),
   };

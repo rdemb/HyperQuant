@@ -1,12 +1,9 @@
 import type { AutoscaleInfo, IChartApiBase, IPrimitivePaneRenderer, IPrimitivePaneView, ISeriesApi, ISeriesPrimitive, Logical, SeriesAttachedParameter, SeriesType, Time } from 'lightweight-charts';
+import { type ConeForecast, coneQuantile } from '../../../utils/cone';
 import { MONO, PRO, rgba } from './theme';
 
-/** Prognoza rozkładu log-zwrotu z dziennika Desku: chwila wydania, cena wtedy i kwantyle na horyzontach (minuty, rosnąco). */
-export interface ConeForecast {
-  t: number;
-  px0: number;
-  horizons: readonly { h: number; taus: readonly number[]; q: readonly number[] }[];
-}
+// Prognoza i kwantyl stożka bez modułów wykresu (utils/cone; też panel „Najbliższe poziomy”) — dawne miejsce eksportu
+export { type ConeForecast, coneQuantile };
 
 /** Szanse dotknięcia poziomów (PDH, PDL, środek dnia) w horyzoncie `h` minut od chwili `t` — z dziennika, z gotowym podpisem. */
 export interface ConeTouch {
@@ -39,27 +36,6 @@ const STEPS = 96;
 /** Tło podpisu (świeca pod tekstem nie miesza się z literami). */
 const LABEL_BG = rgba(PRO.bg, 0.85);
 const LABEL_H = 12;
-
-/**
- * Kwantyl log-zwrotu po `s` minutach od wydania: dokładny na horyzontach dziennika, między nimi (i od zera do pierwszego)
- * liniowo w pierwiastku czasu, jak rozrzut błądzenia losowego. Poza ostatnim horyzontem i bez tego kwantyla — null.
- */
-export function coneQuantile(f: ConeForecast, tau: number, s: number): number | null {
-  let s0 = 0;
-  let q0 = 0;
-  for (const hz of f.horizons) {
-    const k = hz.taus.indexOf(tau);
-    if (k < 0) return null;
-    const q1 = hz.q[k];
-    if (s <= hz.h) {
-      const span = Math.sqrt(hz.h) - Math.sqrt(s0);
-      return span > 0 ? q0 + ((q1 - q0) * (Math.sqrt(Math.max(s, s0)) - Math.sqrt(s0))) / span : q1;
-    }
-    s0 = hz.h;
-    q0 = q1;
-  }
-  return null;
-}
 
 interface Drawn {
   outer: Path2D | null;
