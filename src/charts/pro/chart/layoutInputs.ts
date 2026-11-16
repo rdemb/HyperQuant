@@ -25,7 +25,6 @@ import {
   dayVwapOf,
   isAbsent,
   liqNearestOf,
-  nakedPocOf,
   rvolOf,
   sessionNowOf,
   toVBars,
@@ -41,6 +40,8 @@ import type { TapeRows } from '../core/effortZones';
 import { utcDayStart } from '../core/sessions';
 import { VALUE_MS, type ValueRef, type ValueSource, valueReference } from '../core/valueReference';
 import { dayProfileOf, requestDayProfiles } from '../store/dayProfiles';
+import { archiveMinutesOf } from '../store/archiveMinutes';
+import { NAKED_HOUR_DAYS, NAKED_VALUE_DAYS, nakedPocs } from '../core/nakedPoc';
 import type { FrameInput } from './dayFrameText';
 
 /**
@@ -230,8 +231,11 @@ export function prevDayValueOf(store: InputStore, now: number): Got<ValueRef> | 
   return valueReference('day', day - DAY, src, now) ?? { why: prevValueWhy() };
 }
 
-/** Nagie POC Mapy dnia: profile dób z tylu ostatnich dób świec 5m (ok. 4 000 świec, w limicie 5 000 świec API). */
-export const NAKED_POC_DAYS = 14;
+/**
+ * Nagie POC Mapy dnia, warstwa jednego źródła wartości: profile dób z tylu ostatnich dób świec 5m (ok. 4 000 świec,
+ * w limicie 5 000 świec API); starsze doby z archiwum 1m i świec 1h (`core/nakedPoc.ts`).
+ */
+export const NAKED_POC_DAYS = NAKED_VALUE_DAYS;
 
 /**
  * Historia świec 30m paska „Rama dnia” w dobach: 70 dób kontekstu stanu z dobą VA przed nimi oraz 60 dób szerokości IVB
@@ -294,9 +298,15 @@ export function readInputs(id: StationId, store: InputStore, scan: InputScan, ha
   if (id === 'day-map') {
     // VA wczoraj z jednego źródła (jak pasek Rama dnia i panel Najbliższe poziomy), nagie POC z profili dób świec 5m
     x.prevDay = prevDayValueOf(store, now);
+    // Nagie POC warstwami: do 14 dób jedno źródło (świece 5m z taśmą), starsze z archiwum 1m (BTC) i świec 1h (~200 dób)
     const src = valueSourceOf(store, utcDayStart(now) - NAKED_POC_DAYS * DAY, now);
+    const c1h = candlesFrom(store, '1h', utcDayStart(now) - NAKED_HOUR_DAYS * DAY, now);
     if (src === undefined || isAbsent(src)) x.nakedPoc = pass(src);
-    else if (lp > 0) x.nakedPoc = nakedPocOf(src, now, lp);
+    else if (c1h === undefined) x.nakedPoc = undefined;
+    else if (lp > 0) {
+      const hours = isAbsent(c1h) ? [] : c1h.map((c) => ({ t: c.t, l: c.l, h: c.h, v: c.v }));
+      x.nakedPoc = nakedPocs({ now, price: lp, value: src, hours, minuteDay: archiveMinutesOf(store.coin) });
+    }
   }
   if (id === 'fuel') {
     const ls = liqScan(scan.liq);
@@ -327,9 +337,12 @@ export function readInputs(id: StationId, store: InputStore, scan: InputScan, ha
     // Te same fakty co karta Rozliczenia sesji: świece 1m od otwarcia poprzedniej sesji tego samego typu (migracja VA)
     const { s, inProgress } = reviewSession(now);
     const c1 = candlesFrom(store, '1m', previousSameSession(s).start, now);
+    // Migracja VA z jednego źródła wartości (świece 5m z taśmą, jak karta); bez świec 5m — świece 5m złożone z minut
+    const v = valueSourceOf(store, previousSameSession(s).start, now);
     if (c1 === undefined || isAbsent(c1)) x.review = pass(c1);
+    else if (v === undefined) x.review = undefined;
     else {
-      const f = sessionFacts(toVBars(c1), s, now);
+      const f = sessionFacts(toVBars(c1), s, now, isAbsent(v) ? undefined : v);
       x.review = isAbsent(f) ? f : { ...f, inProgress };
     }
     // Mapy z bloga opisują BTC (inny rynek: liczba mówi „tylko BTC”)

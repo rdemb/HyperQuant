@@ -4,11 +4,21 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Jedno źródło wartości, etap 2: nagie POC warstwami, Rozliczenie i serwer MCP (2026-11-16)
+<!-- co-nowego: grupa=wykres | pl=Nagi POC sięga do ok. 200 dób i pokazuje 6 najbliższych z wiekiem i źródłem, a Rozliczenie i serwer MCP liczą value area tą samą funkcją co pasek Rama dnia | en=The naked POC reaches back about 200 days and lists the 6 nearest with their age and source, and the Session review and the MCP server compute the value area with the same function as the Day frame bar -->
+
+#### Zmienione
+- **Nagie POC warstwami według wieku doby** (decyzja Pioniera; `core/nakedPoc.ts`): do 14 dób jedno źródło wartości (taśma albo świece 5m), od 15 dób do początku archiwum świec 1m (19.10.2026) — świece 5m złożone ze świec 1m archiwum skanera (gałąź `archive`, tylko BTC; `store/archiveMinutes.ts`, pobierane tylko dla dób, których zakresu cena potem nie objęła), starsze do ok. 200 dób — świece 1h, MODEL „przybliżenie z 1h”. Nagłówek Mapy dnia pokazuje najbliższy, a w podpowiedzi do 6 nietkniętych POC najbliższych cenie z wiekiem i plakietką źródła. Sprawdzone na danych 5, 8, 12 i 14.11.2026: POC ze świec 5m złożonych z archiwum 1m = POC ze świec 5m Hyperliquid (0 koszyków różnicy).
+- **Rozliczenie i serwer MCP z jednego źródła wartości**: fakty sesji (`sessionFacts`, karta Rozliczenia, nagłówek układu Rozliczenie, `session_review` MCP) i profil poprzedniej sesji (`prevSessionProfile`, Kontekst aukcji Przed sesją, `market_brief` MCP) liczą VAH, VAL i POC przez `valueReference` (koszyki 5 pb zamiast 10 USD). W aplikacji ze świec 5m z taśmą, bez magazynu (serwer MCP) ze świec 5m złożonych ze świec 1m; test zgodności karty aplikacji i odpowiedzi MCP na jednej sesji. Migracja VA: obie value area z taśmy — LIVE, inaczej MODEL „przybliżenie ze świec”; poziomy poprzedniej sesji w `market_brief` mają teraz plakietkę MODEL (schemat narzędzi bez zmian).
+- **Profile okresów w legendzie**: gdy na ekranie są okresy sprzed zasięgu świec 5m (POC i value area z profilu świec wykresu), plakietka MODEL „profil ze świec 1h, przybliżenie” (z interwałem wykresu), wyraźnie inne źródło niż jedno źródło wartości.
+- Value area z jednego źródła nazywamy w podpowiedziach „VA (wolumen)”.
+
 ### Struktura i płynność (SMC+HL) także na 4H i wyższych interwałach (2026-11-16)
 <!-- co-nowego: grupa=wykres | pl=Struktura i płynność (SMC+HL) działa teraz na każdym interwale, także 4H i 1D, z oknami liczonymi w świecach | en=Structure & Liquidity (SMC+HL) now works on every interval, including 4H and 1D, with windows counted in candles -->
 
 #### Zmienione
 - **SMC na każdym interwale** (zgłoszenie Rafała: „nie działa na wyższych interwałach, np. 4H”): warstwa miała limit do 1 h, a okna elementów były w czasie (24 h to na 4H tylko 6 świec). Teraz bez limitu interwału; okno BOS, CHoCH, sweepów i trybu historii = max(24 h, 24 świece) (do 1 h bez zmian, 4H — 4 doby, 1D — 24 doby), a luka FVG żyje max(24 h, 100 świec) (Pionier, `smc-hl.md` §7.1). Pivot i filtr 1 ATR bez zmian, na interwale wykresu. Testy: okna dla 5m, 1h, 4H i 1D; życie luki na 4H (100 świec) i 5m (24 h); legenda na 4H.
+
 ### Fabio: LVN v2: głębokość i test szumu pomiaru, bloki 15 min, obszary LVA i profile okresów (2026-11-16)
 <!-- co-nowego: grupa=wykres | pl=LVN pokazują głębokość doliny i wartość p wobec szumu pomiaru (symulacja dopasowana do profilu), szerokie doliny są rysowane jako pasma LVA, a LVN widać też na profilach sesji i dób | en=LVN show the valley depth and a p-value against measurement noise (a simulation matched to the profile), wide valleys are drawn as LVA bands, and LVN also appear on session and day profiles -->
 
@@ -22,11 +32,13 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 - **LVN po testach na profilach okresów** (sesja albo doba UTC, warstwa „Profile okresów”): bieżący i poprzedni okres na stałej siatce 5 bp niezależnej od powiększenia, ze świec zamkniętych (świeca z pełną taśmą wnosi wiersze taśmy), liczone po zamknięciu świecy i pamiętane; węzeł linią, obszar pasmem przez szerokość okresu, a w okresie w toku „· profil w budowie”. Opis metody w podpowiedzi plakietki warstwy.
 - **Koszt** (mediana z 15): z rozkładem zerowym już w pamięci swing 300 świec × 40 wierszy ok. 1,3–1,9 ms, tydzień 2016 świec 5m ok. 6–7 ms, sesja 480 świec 1m × 40 wierszy ok. 2–4 ms; rozkład zerowy liczony raz na zestaw parametrów (do 32 w pamięci): swing ok. 18 ms, tydzień ok. 110 ms.
 
+
 ### Blog: filtry rubryk bez przewijania strony w bok na telefonie (2026-11-16)
 <!-- co-nowego: ukryj -->
 
 #### Naprawione
 - **Filtry rubryk na liście wpisów** (przegląd Audytora 16.11): rząd filtrów to `fieldset`, który domyślnie ma `min-inline-size: min-content`, więc przy 360 i 390 px rozpychał stronę do ok. 653 px i cała strona przewijała się w bok. Teraz `min-inline-size: 0`: filtry przewijają się tylko w swoim rzędzie. `ui:check` buduje blog z wpisów w repo i przy 360, 390 i 720 px sprawdza, że strona ma szerokość okna (porównanie z zadaną szerokością, bo w trybie telefonu okno układu rośnie razem z treścią) i że rząd filtrów mieści się w oknie (przed poprawką: 653 px przy 360 i 390).
+
 ### Jedno źródło wartości doby i sesji; liczniki Ramy dnia od otwarcia sesji (2026-11-16)
 <!-- co-nowego: grupa=wykres | pl=Wczorajsze VAH, VAL i POC są teraz te same w pasku Rama dnia, panelu Najbliższe poziomy, nagłówku Mapy dnia i na Profilach okresów; z taśmy LIVE, ze świec MODEL, a liczniki przyjęcia liczą od otwarcia sesji | en=Yesterday's VAH, VAL and POC are now the same in the Day frame bar, the Nearest levels panel, the Day map header and Period profiles; LIVE from the tape, MODEL from candles, and the acceptance counters run from the session open -->
 

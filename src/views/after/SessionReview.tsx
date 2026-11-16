@@ -13,7 +13,7 @@ import { useLiqTape } from '../../state/useLiqTape';
 import type { TradeSession } from '../../utils/sessionDay';
 import { TRADE_SESSION_NAME } from '../../utils/sessionNames';
 import { type ReviewCard, type ReviewRow, reviewCards, reviewRows } from '../../utils/sessionReview';
-import { cardBars1m } from './reviewInputs';
+import { cardBars1m, cardValue } from './reviewInputs';
 import { reviewReplay } from './reviewReplay';
 import { tr } from '../../i18n';
 
@@ -46,7 +46,8 @@ export const SessionReview: React.FC = () => {
     const bars1m = cardBars1m(store, card.s, now);
     // Oczekiwany zakres z chwili otwarcia sesji (świece 1h sprzed niego), ten sam w toku i po zamknięciu
     const expected = sessionExpectedOf(store, card.s);
-    return { card, rows: reviewRows({ s: card.s, inProgress: card.inProgress, now, bars1m, maps, expected, liq, cohorts, ledger }) };
+    const value = cardValue(store, card.s, now);
+    return { card, rows: reviewRows({ s: card.s, inProgress: card.inProgress, now, bars1m, value, maps, expected, liq, cohorts, ledger }) };
   });
   const windowRows = all[0]?.rows.filter((r) => r.scope === 'window') ?? [];
 

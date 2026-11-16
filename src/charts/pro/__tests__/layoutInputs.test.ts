@@ -28,6 +28,22 @@ const SCAN: InputScan = {
 type Spec = { state?: InputSeries['loadState']; list?: Candle[]; exhausted?: boolean; olderFailed?: boolean };
 
 /** Atrapa magazynu rynku: serie świec według interwału, migawka arkusza, taśma; `now` można przesuwać. */
+/** Świece 5m złożone ze świec 1m (jak świece 5m Hyperliquid przy kompletnych minutach). */
+function fives(ones: readonly Candle[]): Candle[] {
+  const out: Candle[] = [];
+  for (const c of ones) {
+    const t = Math.floor(c.t / (5 * MIN)) * 5 * MIN;
+    const last = out[out.length - 1];
+    if (last && last.t === t) {
+      last.h = Math.max(last.h, c.h);
+      last.l = Math.min(last.l, c.l);
+      last.c = c.c;
+      last.v += c.v;
+    } else out.push({ ...c, t });
+  }
+  return out;
+}
+
 function fakeStore(o: { now: number; coin?: string; price?: number; series?: Record<string, Spec>; book?: BookFrame | null }) {
   const loads: Record<string, number> = {};
   const older: Record<string, number[]> = {};
@@ -125,7 +141,9 @@ describe('wejścia nagłówka z magazynu rynku', () => {
     const px = (t: number) => (t < NY.start ? (t < at(2026, 11, 3, 0) ? 99_500 : 100_000) : t < NY.start + 30 * MIN ? 100_005 : t < NY.ibEnd ? 100_295 : 100_690);
     const ones: Candle[] = [];
     for (let t = at(2026, 11, 2, 14, 30); t <= IN_NY; t += MIN) ones.push({ t, o: px(t), h: px(t) + 5, l: px(t) - 5, c: px(t), v: 1, n: 1 });
-    const store = fakeStore({ now: IN_NY, series: { '1m': { list: ones } } });
+    // Bez świec 5m nagłówek czeka (jedno źródło wartości: świece 5m z taśmą), a z nimi liczy migrację VA
+    expect(readInputs('review', fakeStore({ now: IN_NY, series: { '1m': { list: ones } } }), SCAN).review).toBeUndefined();
+    const store = fakeStore({ now: IN_NY, series: { '1m': { list: ones }, '5m': { list: fives(ones) } } });
     const head = layoutNumbers('review', readInputs('review', store, SCAN));
     // Świece 1m od otwarcia poprzedniej sesji NY (migracja VA)
     expect(store.older['1m']).toContain(previousSameSession(NY).start);
@@ -144,7 +162,7 @@ describe('wejścia nagłówka z magazynu rynku', () => {
     expect([head[0].value, head[1].value]).toEqual([card('dayType'), card('vaMigration')]);
     expect([head[0].value, head[1].value]).toEqual(['trendowy', 'wyżej']);
     // Starsze świece 1m nie dotarły: nagłówek czeka albo podaje powód, bez liczby z części danych
-    const partial = (o: Partial<Spec>) => fakeStore({ now: IN_NY, series: { '1m': { list: ones.filter((c) => c.t >= NY.start - 60 * MIN), ...o } } });
+    const partial = (o: Partial<Spec>) => fakeStore({ now: IN_NY, series: { '1m': { list: ones.filter((c) => c.t >= NY.start - 60 * MIN), ...o }, '5m': { list: fives(ones).filter((c) => c.t >= NY.start - 60 * MIN), ...o } } });
     expect(readInputs('review', partial({}), SCAN).review).toBeUndefined();
     expect(readInputs('review', partial({ olderFailed: true }), SCAN).review).toEqual({ why: 'Nie udało się pobrać starszych świec 1m — kolejna próba za ≤ 30 s' });
     expect(layoutNumbers('review', readInputs('review', partial({ exhausted: true }), SCAN))[1]).toMatchObject({ value: '—', hint: expect.stringContaining('poprzedniej sesji') });
@@ -211,7 +229,10 @@ describe('wejścia nagłówka z magazynu rynku', () => {
     }
     const maps = [day3, preNy3, day4];
     const read = (now: number, picked: BlogMap | null) =>
-      readInputs('review', fakeStore({ now, series: { '1m': { list: ones.filter((c) => c.t < now) } } }), { ...SCAN, blog: { state: { status: 'ready', maps }, map: picked } });
+      readInputs('review', fakeStore({ now, series: { '1m': { list: ones.filter((c) => c.t < now) }, '5m': { list: fives(ones.filter((c) => c.t < now)) } } }), {
+        ...SCAN,
+        blog: { state: { status: 'ready', maps }, map: picked },
+      });
 
     it('przed dzisiejszą Mapą dnia i po niej: mapa wczorajszej sesji NY, rozliczona do końca tej sesji', () => {
       for (const [now, picked] of [

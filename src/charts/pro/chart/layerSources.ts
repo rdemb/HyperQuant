@@ -5,6 +5,7 @@ import { indicatorScope } from '../core/indicators';
 import { fmtDayTime, fmtHm, fromDaily } from '../core/time';
 import { tpoInterval } from '../core/tpo';
 import { CANDLE_METHOD, type ValueRef, valueBadge, valueMethodText, valuePeriodName } from '../core/valueReference';
+import { NAKED_VALUE_DAYS } from '../core/nakedPoc';
 import { type HqIndicatorId, indicatorDef } from '../indicators/registry';
 import type { ChartSettings } from './settings';
 import { LAYERS_OFF } from './templates';
@@ -219,17 +220,42 @@ export interface LayerBadge {
 }
 
 /**
- * Plakietka „Profile okresów” z wartości ostatniego zamkniętego okresu (jedno źródło wartości): POC i value area z taśmy
- * LIVE, ze świec MODEL „przybliżenie ze świec”; bez wartości (świece 5m w drodze albo okresy poza ich zasięgiem) — MODEL,
- * bo POC i value area są wtedy z profilu świec wykresu.
+ * Źródło warstwy „Profile okresów”: wartość ostatniego zamkniętego okresu z jednego źródła i interwał świec wykresu, gdy na
+ * ekranie są okresy z profilu świec wykresu (sprzed zasięgu świec 5m); null — wszystkie z jednego źródła.
  */
-function periodValueBadge(v: ValueRef | null): LayerBadge {
+export interface PeriodSource {
+  last: ValueRef | null;
+  fallbackMs: number | null;
+}
+
+/** Interwał świec w podpisie: 1m, 15m, 1h, 4h. */
+const ivName = (ms: number) => (ms >= 3_600_000 ? `${ms / 3_600_000}h` : `${Math.round(ms / 60_000)}m`);
+
+/**
+ * Plakietka „Profile okresów”: okresy z profilu świec wykresu na ekranie — MODEL „profil ze świec 1h, przybliżenie” (inne
+ * źródło niż jedno źródło wartości); inaczej z wartości ostatniego zamkniętego okresu: POC i VA (wolumen) z taśmy LIVE, ze
+ * świec MODEL „przybliżenie ze świec”; bez wartości (świece 5m w drodze) — MODEL.
+ */
+function periodValueBadge(x: PeriodSource): LayerBadge {
+  const v = x.last;
+  const rest = v ? tr(` Nowsze okresy z jednego źródła wartości (ostatni zamknięty: ${valuePeriodName(v)}). ${valueMethodText(v)}`, ` Newer periods from the single value source (last closed: ${valuePeriodName(v)}). ${valueMethodText(v)}`) : '';
+  if (x.fallbackMs !== null) {
+    const iv = ivName(x.fallbackMs);
+    return {
+      tone: 'model',
+      text: 'MODEL',
+      hint: tr(
+        `MODEL · profil ze świec ${iv}, przybliżenie: okresy sprzed zasięgu świec 5m (${NAKED_VALUE_DAYS} dób) mają POC i VA (wolumen) z profilu świec wykresu ${iv} — inne źródło niż pasek Rama dnia i panel Najbliższe poziomy.${rest}`,
+        `MODEL · profile from ${iv} candles, approximation: periods beyond the reach of the 5m candles (${NAKED_VALUE_DAYS} days) take their POC and VA (volume) from the chart's ${iv} candle profile — a different source than the Day frame bar and the Nearest levels panel.${rest}`
+      ),
+    };
+  }
   if (v && valueBadge(v) === 'LIVE') {
-    return { tone: 'live', text: 'LIVE', hint: tr(`LIVE: POC i value area okresów z taśmy (ostatni zamknięty: ${valuePeriodName(v)}). ${valueMethodText(v)}`, `LIVE: the periods' POC and value area from the tape (last closed: ${valuePeriodName(v)}). ${valueMethodText(v)}`) };
+    return { tone: 'live', text: 'LIVE', hint: tr(`LIVE: POC i VA (wolumen) okresów z taśmy (ostatni zamknięty: ${valuePeriodName(v)}). ${valueMethodText(v)}`, `LIVE: the periods' POC and VA (volume) from the tape (last closed: ${valuePeriodName(v)}). ${valueMethodText(v)}`) };
   }
   const why = v
     ? tr(`ostatni zamknięty okres (${valuePeriodName(v)}). ${valueMethodText(v)}`, `the last closed period (${valuePeriodName(v)}). ${valueMethodText(v)}`)
-    : tr('POC i value area z profilu świec wykresu (świece 5m jeszcze w drodze albo okresy poza ich zasięgiem).', 'POC and value area from the chart candle profile (5m candles still loading or the periods are beyond their reach).');
+    : tr('POC i VA (wolumen) z profilu świec wykresu (świece 5m jeszcze w drodze).', 'POC and VA (volume) from the chart candle profile (5m candles still loading).');
   return { tone: 'model', text: 'MODEL', hint: `MODEL · ${CANDLE_METHOD}: ${why}` };
 }
 
@@ -238,7 +264,7 @@ function periodValueBadge(v: ValueRef | null): LayerBadge {
  * `value` — wartość ostatniego zamkniętego okresu „Profili okresów” (brak pola — plakietka stała). MODEL i SIM z nazwą
  * metody w podpowiedzi.
  */
-export function layerBadge(key: string, ctx: { coin: string; now: number; scan?: ScanState; value?: ValueRef | null }): LayerBadge {
+export function layerBadge(key: string, ctx: { coin: string; now: number; scan?: ScanState; value?: PeriodSource }): LayerBadge {
   const missing = missingOn(key, ctx.coin);
   if (missing) return missing;
   if (key === 'showPeriodProfiles' && ctx.value !== undefined) return periodValueBadge(ctx.value);
@@ -337,7 +363,7 @@ export interface LayerChip extends LayerBadge {
  */
 export function legendChips(
   s: Pick<ChartSettings, keyof typeof LAYERS_OFF | 'indicators' | 'stackedMin'> & Partial<Pick<ChartSettings, 'view' | 'showDelta' | 'showCvd'>>,
-  x: { coin: string; now: number; intervalMs: number; scan: Partial<Record<string, ScanState>>; value?: Partial<Record<string, ValueRef | null>> }
+  x: { coin: string; now: number; intervalMs: number; scan: Partial<Record<string, ScanState>>; value?: Partial<Record<string, PeriodSource>> }
 ): LayerChip[] {
   const out: LayerChip[] = [];
   for (const key of Object.keys(LAYERS_OFF) as (keyof typeof LAYERS_OFF)[]) {

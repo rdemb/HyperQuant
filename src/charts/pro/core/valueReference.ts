@@ -79,6 +79,24 @@ export interface ValueRef extends ValuePeriod {
   complete: boolean;
 }
 
+/**
+ * Świece 5m złożone ze świec krótszych (rosnąco; dołek, szczyt, suma wolumenu) — te same co świece 5m Hyperliquid przy
+ * kompletnych minutach, więc profil ze świec 1m (archiwum, serwer MCP) zgadza się z profilem ze świec 5m.
+ */
+export function toFiveMinutes(bars: readonly ValueBar[]): ValueBar[] {
+  const out: ValueBar[] = [];
+  for (const b of bars) {
+    const t = Math.floor(b.t / VALUE_MS) * VALUE_MS;
+    const last = out[out.length - 1];
+    if (last && last.t === t) {
+      last.h = Math.max(last.h, b.h);
+      last.l = Math.min(last.l, b.l);
+      last.v += b.v;
+    } else out.push({ t, l: b.l, h: b.h, v: b.v });
+  }
+  return out;
+}
+
 /** Okres doby UTC albo sesji (`sessionAt`: Azja od 00:00 UTC, Londyn od 08:00 czasu Londynu, NY od 09:30 czasu NY) z chwilą `at`. */
 export function valuePeriod(kind: ValueKind, at: number): ValuePeriod {
   if (kind === 'day') {
@@ -219,12 +237,12 @@ export function valueNote(r: Pick<ValueRef, 'source' | 'tapeShare'>): string {
 export function valueMethodText(r: Pick<ValueRef, 'source' | 'tapeShare'>): string {
   return r.source === 'tape'
     ? tr(
-        `Profil wolumenu z taśmy Hyperliquid (${share(r.tapeShare)} wolumenu okresu nagrane, reszta ze świec 5m), value area 70%, koszyki 5 pb.`,
-        `Volume profile from the Hyperliquid tape (${share(r.tapeShare)} of the period volume recorded, the rest from 5m candles), 70% value area, 5 bp bins.`
+        `Profil wolumenu z taśmy Hyperliquid (${share(r.tapeShare)} wolumenu okresu nagrane, reszta ze świec 5m), VA (wolumen) 70%, koszyki 5 pb.`,
+        `Volume profile from the Hyperliquid tape (${share(r.tapeShare)} of the period volume recorded, the rest from 5m candles), 70% VA (volume), 5 bp bins.`
       )
     : tr(
-        `Przybliżenie ze świec 5m (wolumen świecy rozłożony równo na jej zakres; taśma ${share(r.tapeShare)} wolumenu okresu, mniej niż ${share(TAPE_MIN_SHARE)}), value area 70%, koszyki 5 pb.`,
-        `An approximation from 5m candles (candle volume spread evenly over its range; tape ${share(r.tapeShare)} of the period volume, under ${share(TAPE_MIN_SHARE)}), 70% value area, 5 bp bins.`
+        `Przybliżenie ze świec 5m (wolumen świecy rozłożony równo na jej zakres; taśma ${share(r.tapeShare)} wolumenu okresu, mniej niż ${share(TAPE_MIN_SHARE)}), VA (wolumen) 70%, koszyki 5 pb.`,
+        `An approximation from 5m candles (candle volume spread evenly over its range; tape ${share(r.tapeShare)} of the period volume, under ${share(TAPE_MIN_SHARE)}), 70% VA (volume), 5 bp bins.`
       );
 }
 

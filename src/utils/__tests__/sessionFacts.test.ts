@@ -28,7 +28,9 @@ describe('sessionFacts: jedno źródło faktów sesji (nagłówek Rozliczenia i 
     if ('why' in f) throw new Error(f.why);
     expect(f).toMatchObject({ s: NY, ibHi: 100_020, ibLo: 99_980, hi: 100_620, lo: 99_980, close: 100_600, ibDone: true, breakAt: NY.ibEnd, hiAt: NY.ibEnd, loAt: NY.start });
     expect(f.prev).toEqual(previousSameSession(NY));
-    expect(f.prevVa!.vah).toBeLessThanOrEqual(100_030);
+    // Jedno źródło wartości: koszyki 5 pb (granica VAH tuż nad 100 030), świece 5m złożone z minut, bez taśmy
+    expect(f.prevVa!.vah).toBeLessThanOrEqual(100_031);
+    expect(f.prevVa!.source).toBe('candles');
     expect(f.va!.vah).toBeGreaterThan(100_500);
   });
 

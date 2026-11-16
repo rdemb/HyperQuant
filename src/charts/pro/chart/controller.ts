@@ -30,7 +30,7 @@ import type { LiqLevel } from '../core/indicators';
 import type { ResetMode } from '../core/sessions';
 import type { CandleSeries, ProBar, ProStore } from '../store/proStore';
 import { requestDayProfiles } from '../store/dayProfiles';
-import type { ValueRef } from '../core/valueReference';
+import type { PeriodSource } from './layerSources';
 import { PeriodValues } from './periodValues';
 import { requestHistory } from '../store/serverHistory';
 import { DrawingLayer } from '../draw/layer';
@@ -1155,9 +1155,12 @@ export class ProChartController {
   }
 
   /** Aktywna strefa P/b do alarmów z menu wykresu (null — wskaźnik ukryty albo brak ważnej strefy). */
-  /** Wartość ostatniego zamkniętego okresu warstwy „Profile okresów” (plakietka w legendzie: z taśmy LIVE, ze świec MODEL). */
-  periodValue(): ValueRef | null {
-    return this.overlay.periodValue;
+  /**
+   * Źródło warstwy „Profile okresów” do plakietki w legendzie: wartość ostatniego zamkniętego okresu (z taśmy LIVE, ze świec
+   * MODEL) i interwał świec wykresu, gdy na ekranie są okresy z profilu świec wykresu (poza zasięgiem jednego źródła).
+   */
+  periodValue(): PeriodSource {
+    return { last: this.overlay.periodValue, fallbackMs: this.overlay.periodFallback ? this.series.interval.ms : null };
   }
 
   pbZone(): PbZone | null {

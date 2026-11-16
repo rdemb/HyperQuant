@@ -139,7 +139,8 @@ describe('market_brief', () => {
     const ctx = computeAuctionContext(toVBars(asCandles(M1)), [], NOW);
     expect(ctx.prev).not.toBeNull();
     const va = Object.fromEntries(lv.filter((l) => l.from !== 'blog').map((l) => [l.from, l]));
-    expect(va.vah.price).toMatchObject({ value: ctx.prev!.vah, unit: 'price', badge: 'LIVE' });
+    // Jedno źródło wartości strony bez taśmy (świece 5m z minut): MODEL „przybliżenie ze świec” — ta sama liczba co Kontekst aukcji
+    expect(va.vah.price).toMatchObject({ value: ctx.prev!.vah, unit: 'price', badge: 'MODEL', method: 'przybliżenie ze świec' });
     expect(va.poc.price.value).toBe(ctx.prev!.poc);
     expect(va.val.price.value).toBe(ctx.prev!.val);
     expect(va.vah.label).toBe('VAH poprz. sesji');

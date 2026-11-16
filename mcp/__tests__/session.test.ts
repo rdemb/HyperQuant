@@ -18,6 +18,9 @@ import { dayTypeOf, expectedFrom, sessionFacts } from '../../src/utils/sessionFa
 import { CONE_METHOD, type ReviewInputs, type ReviewRow, reviewRows } from '../../src/utils/sessionReview';
 import { DAY_TYPE_LABEL, type Expected, type Got, isAbsent } from '../../src/utils/sessionText';
 import { BLOCK_MARK, type Envelope, type Num } from '../src/envelope';
+import { cardValue } from '../../src/views/after/reviewInputs';
+import { valueReference } from '../../src/charts/pro/core/valueReference';
+import { fmtPrice } from '../../src/ui/format';
 import { type Bar, DATA_BASE, HL_INFO, HOUR, MAPS_URL, MIN, REAL_LABELS, type Route, asCandles, connect, hlCandles, testSources, walkBars } from './helpers';
 
 // Środa 4.11.2026, czas zimowy: Londyn 08:00–14:30 UTC, NY 14:30–24:00 UTC (IB NY do 15:30); teraz 15:45 — NY w toku po IB
@@ -579,5 +582,55 @@ describe('session_review', () => {
     expect(res.isError).toBe(true);
     expect(JSON.stringify(res.content)).toContain(BLOCK_MARK);
     expect(JSON.stringify(res)).not.toContain('kup-teraz');
+  });
+});
+
+describe('zgodność z aplikacją: value area z jednego źródła wartości', () => {
+  /** Świece 5m z minut (jak świece 5m Hyperliquid przy kompletnych minutach). */
+  const fives = (bars: readonly Bar[]): Bar[] => {
+    const out: Bar[] = [];
+    for (const b of bars) {
+      const t = Math.floor(b.t / (5 * MIN)) * 5 * MIN;
+      const last = out[out.length - 1];
+      if (last && last.t === t) {
+        last.h = Math.max(last.h, b.h);
+        last.l = Math.min(last.l, b.l);
+        last.c = b.c;
+        last.v += b.v;
+      } else out.push({ ...b, t });
+    }
+    return out;
+  };
+  /** Magazyn strony ze świecami 1m i 5m (bez taśmy), jak wykres BTC w przeglądarce. */
+  function appStore(): InputStore {
+    const made: Record<string, InputSeries> = {
+      '1m': { loadState: 'ready', load: async () => undefined, candlesNow: () => upTo(M1, NOW) },
+      '5m': { loadState: 'ready', load: async () => undefined, candlesNow: () => asCandles(fives(M1.filter((b) => b.t <= NOW))) },
+    };
+    return {
+      coin: 'BTC',
+      serverNow: () => NOW,
+      lastPrice: () => 0,
+      series: (id) => made[id],
+      indicatorCandles: (id) => made[id].candlesNow(),
+      exactBook: () => null,
+      zeroKnown: { covers: () => false },
+      orders: { range: () => [] },
+    };
+  }
+
+  it('Londyn 4.11: migracja VA na karcie strony (świece 5m z magazynu) = wiersz session_review (te same VAH i VAL, MODEL bez taśmy)', async () => {
+    const value = cardValue(appStore(), L, NOW);
+    expect(value).toBeDefined();
+    const app = siteRows(L, false, { value }).find((r) => r.id === 'vaMigration')!;
+    const { env } = await call<ReviewData>('session_review', allRoutes(), { args: { session: 'london' } });
+    const tool = env.data.rows.find((r) => r.id === 'vaMigration')!;
+    expect(app.value).not.toBe(DASH);
+    expect(asTool([app])[0]).toEqual(tool);
+    expect(tool.badge).toBe('MODEL');
+    // Te same liczby co wartość sesji w aplikacji (`valueReference` na świecach 5m magazynu)
+    const ref = valueReference('session', L.start, value!, NOW)!;
+    expect(tool.hint).toContain(fmtPrice(ref.val, 0));
+    expect(tool.hint).toContain(fmtPrice(ref.vah, 0));
   });
 });
