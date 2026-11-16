@@ -1,9 +1,9 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { IndicatorSettings } from '../chart/IndicatorSettings';
-import { ZONE_ABOVE, ZONE_BELOW, closedBars, effortLegend, zoneInk } from '../chart/effortLayer';
+import { type LvnConfidenceOf, ZONE_ABOVE, ZONE_BELOW, closedBars, effortLegend, zoneInk } from '../chart/effortLayer';
 import { PRO } from '../chart/theme';
-import { swingProfile } from '../core/effortZones';
+import { type SwingProfile, swingProfile } from '../core/effortZones';
 import { fmtHm } from '../core/time';
 import { IndicatorEngine } from '../indicators/engine';
 import { indicatorDef, indicatorsFromLink, parseIndicators, tfAllowed, usesInstanceColor } from '../indicators/registry';
@@ -15,6 +15,8 @@ import { guardHits } from '../../../utils/safeguards.mjs';
 const MS = 5 * 60_000;
 const HOUR = 3_600_000;
 const T0 = Date.UTC(2026, 10, 4, 15, 0);
+/** Profil swingu D do legendy (bez LVN; testy dopisują swoje). */
+const PROF: SwingProfile = { val: 98, vah: 99.5, poc: 99, lvn: [], tapeShare: 1, src: { from: T0, to: T0, bins: 24, share: 0.7 } };
 
 const ROWS = { tick: 0.5, lo: 198, buy: new Float64Array([1, 2, 3, 4, 2]), sell: new Float64Array([0, 1, 0, 0, 0]) };
 const fpOf = (delta: number) => ({ delta, ...ROWS });
@@ -73,8 +75,8 @@ describe('legenda', () => {
     history: false,
   };
   const fmt = (p: number) => String(p).replace('.', ',');
-  const text = (x: EffortSelection | null, ms = MS, hover: { t: number; p: number } | null = null) =>
-    effortLegend(x, ms, asOf, hover, fmt)
+  const text = (x: EffortSelection | null, ms = MS, hover: { t: number; p: number } | null = null, conf: LvnConfidenceOf = (p) => p.lvn.map(() => 0.84)) =>
+    effortLegend(x, ms, asOf, hover, fmt, conf)
       .map((p) => p.text)
       .join(' ');
 
@@ -107,18 +109,33 @@ describe('legenda', () => {
       mark: 'D·F',
       kinds: ['discount', 'flip'],
       known: [
-        { kind: 'discount', at: T0 + 6 * MS, lag: 135 * 60_000, profile: { val: 98, vah: 99.5, poc: 99, lvn: [98.5], tapeShare: 0.4 } },
+        { kind: 'discount', at: T0 + 6 * MS, lag: 135 * 60_000, profile: { ...PROF, lvn: [{ px: 98.5, bin: 1, persistence: 0.5 }], tapeShare: 0.4 } },
         { kind: 'flip', at: T0 + 7 * MS, lag: 0 },
       ],
     };
     const s = text({ ...sel, bands: [d] }, MS, hover);
-    expect(s).toContain(`· strefa D znana od ${fmtHm(T0 + 6 * MS)}, 2 h 15 min po krańcu · profil swingu: POC 99, VA 98–99,5, LVN 98,5 · przybliżenie: taśma 40%`);
+    expect(s).toContain(`· strefa D znana od ${fmtHm(T0 + 6 * MS)}, 2 h 15 min po krańcu · profil swingu: POC 99, VA 98–99,5, LVN 98,5 · pewność 84% · przybliżenie: taśma 40%`);
     expect(s).toContain(`· strefa F znana od ${fmtHm(T0 + 7 * MS)}, na zamknięciu przebicia`);
-    const tape = { ...d, known: [{ ...d.known[0], profile: { val: 98, vah: 99.5, poc: 99, lvn: [], tapeShare: 1 } }] };
+    const tape = { ...d, known: [{ ...d.known[0], profile: { ...PROF, tapeShare: 1 } }] };
     expect(text({ ...sel, bands: [tape] }, MS, hover)).toContain('profil swingu: POC 99, VA 98–99,5 · z taśmy');
-    const candles = { ...d, known: [{ ...d.known[0], profile: { val: 98, vah: 99.5, poc: 99, lvn: [], tapeShare: 0 } }] };
+    const candles = { ...d, known: [{ ...d.known[0], profile: { ...PROF, tapeShare: 0 } }] };
     expect(text({ ...sel, bands: [candles] }, MS, hover)).toContain('profil swingu: POC 99, VA 98–99,5 · przybliżenie: ze świec');
     expect(guardHits(s)).toEqual([]);
+  });
+
+  it('LVN profilu swingu z pewnością: poniżej 70% nie pokazane, tylko liczba odrzuconych; bez pewności „—” z powodem', () => {
+    const hover = { t: T0 + 10 * MS, p: 99.5 };
+    const lvn = [
+      { px: 98.5, bin: 1, persistence: 0.6 },
+      { px: 99.2, bin: 2, persistence: 0.2 },
+    ];
+    const d: EffortBand = { ...band(1), mark: 'D', kinds: ['discount'], known: [{ kind: 'discount', at: T0 + 6 * MS, lag: 0, profile: { ...PROF, lvn, tapeShare: 1 } }] };
+    const at = (conf: LvnConfidenceOf) => text({ ...sel, bands: [d] }, MS, hover, conf);
+    expect(at(() => [0.91, 0.52])).toContain('profil swingu: POC 99, VA 98–99,5, LVN 98,5 · pewność 91%; 1 poniżej 70% · z taśmy');
+    expect(at(() => [0.91, 0.52])).not.toContain('99,2');
+    expect(at(() => [0.91, 0.7])).toContain('LVN 98,5 · pewność 91%; 99,2 · pewność 70% · z taśmy');
+    expect(at(() => [0.4, 0.52])).toContain('profil swingu: POC 99, VA 98–99,5, LVN: —, pewność < 70% (2) · z taśmy');
+    expect(at(() => null)).toContain('LVN: —, pewność nieznana');
   });
 
   it('powyżej 1 h bez rysowania, z powodem; bez zamkniętych świec — czekanie', () => {

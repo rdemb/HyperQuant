@@ -1,3 +1,4 @@
+import { type LvnLevel, lvnConfidence, lvnNodes, profileOf, unitsBuilder, valueArea } from './lvnConfidence';
 import { utcDayStart, utcWeekStart } from './sessions';
 
 /**
@@ -216,15 +217,17 @@ export interface Levels {
   poc: number;
   vah: number;
   val: number;
-  lvn: number[];
+  /** Do 3 najtrwalszych LVN (malejąco po trwałości) z pewnością bootstrapową; rysowane tylko z pewnością ≥ 70%. */
+  lvn: LvnLevel[];
 }
 
 const VA_SHARE = 0.7;
 
 /**
  * Profil wolumenu: wolumen świecy rozłożony równo na koszyki (log-cena, `binBp` punktów bazowych) między jej minimum
- * a maksimum, obszar wartości 70% rozszerzany od POC o większego sąsiada, LVN = do 3 najgłębszych lokalnych minimów
- * wygładzonego profilu (okno 5 koszyków) wewnątrz obszaru wartości, poniżej 50% POC.
+ * a maksimum, obszar wartości 70% rozszerzany od POC o większego sąsiada, LVN (`lvnNodes`): do 3 najtrwalszych
+ * lokalnych minimów wygładzonego profilu wewnątrz obszaru wartości, poniżej 50% POC, z pewnością z bootstrapu świec
+ * (blok = 1 świeca; profil okresu jest ze świec, bez taśmy).
  */
 export function profileLevels(lo: readonly number[], hi: readonly number[], vol: readonly number[], binBp: number, withLvn: boolean): Levels | null {
   const n = lo.length;
@@ -241,55 +244,21 @@ export function profileLevels(lo: readonly number[], hi: readonly number[], vol:
     i1[i] = Math.floor((Math.log(hi[i]) - base) / step);
     top = Math.max(top, i1[i]);
   }
-  const nb = top + 2;
-  const diff = new Float64Array(nb + 1);
+  const ub = unitsBuilder(top + 2);
   for (let i = 0; i < n; i++) {
     const w = vol[i] / (i1[i] - i0[i] + 1);
-    diff[i0[i]] += w;
-    diff[i1[i] + 1] -= w;
+    for (let k = i0[i]; k <= i1[i]; k++) ub.add(k, w);
+    ub.next();
   }
-  const prof = new Float64Array(nb);
-  let acc = 0;
-  let tot = 0;
-  let poc = 0;
-  for (let k = 0; k < nb; k++) {
-    acc += diff[k];
-    prof[k] = acc;
-    tot += acc;
-    if (acc > prof[poc]) poc = k;
-  }
-  let a = poc;
-  let z = poc;
-  let s = prof[poc];
-  while (s < VA_SHARE * tot) {
-    const up = z + 1 < nb ? prof[z + 1] : -1;
-    const dn = a - 1 >= 0 ? prof[a - 1] : -1;
-    if (up >= dn) s += prof[++z];
-    else s += prof[--a];
-  }
+  const units = ub.done();
+  const prof = profileOf(units);
+  const { poc, a, z } = valueArea(prof, VA_SHARE);
   const edge = (k: number) => Math.exp(base + step * k);
   const mid = (k: number) => Math.sqrt(edge(k) * edge(k + 1));
-  const lvn = withLvn ? lvnBins(prof, a, z, poc).map(mid) : [];
+  const nodes = withLvn ? lvnNodes(prof, a, z, poc) : [];
+  const conf = lvnConfidence(units, VA_SHARE, nodes.map((x) => x.bin));
+  const lvn = nodes.map((x, i) => ({ ...x, px: mid(x.bin), confidence: conf[i] }));
   return { poc: mid(poc), vah: edge(z + 1), val: edge(a), lvn };
-}
-
-/**
- * LVN profilu w koszykach: do 3 najgłębszych lokalnych minimów wygładzonego profilu (średnia 5 koszyków wyśrodkowana na
- * koszyku, zera poza profilem) wewnątrz obszaru wartości [a, z], poniżej 50% wygładzonego POC; rosnąco po koszyku.
- * Wspólne dla profilu okresów P/b i profilu swingu stref Effort.
- */
-export function lvnBins(prof: ArrayLike<number>, a: number, z: number, poc: number): number[] {
-  const nb = prof.length;
-  const sm = new Float64Array(nb);
-  for (let k = 0; k < nb; k++) {
-    let t = 0;
-    for (let j = k - 2; j <= k + 2; j++) if (j >= 0 && j < nb) t += prof[j];
-    sm[k] = t / 5;
-  }
-  const cand: number[] = [];
-  for (let k = a + 2; k < z - 1; k++) if (sm[k] < sm[k - 1] && sm[k] <= sm[k + 1] && sm[k] < 0.5 * sm[poc]) cand.push(k);
-  cand.sort((x, y) => sm[x] - sm[y]);
-  return cand.slice(0, 3).sort((x, y) => x - y);
 }
 
 /** Profil świec z [from, to), gdy jest co najmniej 90% świec okresu. */
