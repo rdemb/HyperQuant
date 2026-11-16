@@ -75,6 +75,8 @@ const SOURCES = {
   kyle: 'MODEL',
   effres: 'MODEL',
   ordersize: 'LIVE',
+  // Pole premium (i pomocniczo mark wobec oracle) wprost z kanału activeAssetCtx (średnia świecy, bez modelu)
+  premium: 'LIVE',
   // „Więcej z HyperQuant”
   cone: 'MODEL',
   outcomes: 'MODEL',
@@ -126,12 +128,12 @@ const METHOD_HINT: Record<ModelKey, string> = {
   regime: tr('MODEL · BOCPD: bayesowskie wykrywanie punktów zmiany na zwrotach świec', 'MODEL · BOCPD: Bayesian change-point detection on candle returns'),
   hawkes: tr('MODEL · Hawkes: proces z jądrem wykładniczym dopasowany metodą największej wiarygodności', 'MODEL · Hawkes: a process with an exponential kernel fitted by maximum likelihood'),
   pbrange: tr(
-    'MODEL · reguły metody Nilla na świecach 5m: strefy P/b i poziomy profilu tygodnia i doby; opis struktury, bez miejsc wejścia',
-    "MODEL · Nill's method rules on 5m candles: P/b zones and weekly and daily profile levels; a description of structure, without entry places"
+    'MODEL · reguły metody Nilla na świecach 5m: strefy P/b i poziomy profilu tygodnia i doby, LVN tylko z pewnością bootstrapową ≥ 70%; opis struktury, bez miejsc wejścia',
+    "MODEL · Nill's method rules on 5m candles: P/b zones and weekly and daily profile levels, LVN only with bootstrap confidence ≥ 70%; a description of structure, without entry places"
   ),
   effort: tr(
-    'MODEL · reguły modelu intraday Valentiniego: strefy absorpcji i pudełka Effort tylko z delty taśmy (bez taśmy brak wartości z powodem), strefy dyskonta z profilu swingu z taśmy (ze świec tylko jako przybliżenie); to nie wskazania wejścia',
-    "MODEL · Valentini's intraday model rules: absorption zones and effort boxes from the tape delta only (no value with a reason without the tape), swing discount zones from the swing profile of the tape (from candles only as an approximation); not entry cues"
+    'MODEL · reguły modelu intraday Valentiniego: strefy absorpcji i pudełka Effort tylko z delty taśmy (bez taśmy brak wartości z powodem), strefy dyskonta z profilu swingu z taśmy (ze świec tylko jako przybliżenie), LVN swingu z pewnością bootstrapową; to nie wskazania wejścia',
+    "MODEL · Valentini's intraday model rules: absorption zones and effort boxes from the tape delta only (no value with a reason without the tape), swing discount zones from the swing profile of the tape (from candles only as an approximation), swing LVN with bootstrap confidence; not entry cues"
   ),
   smc: tr(
     'MODEL · reguły struktury na zamkniętych świecach: pivoty dwóch skal z filtrem 1 ATR, BOS i CHoCH zamknięciem, sweepy, FVG, EQH i EQL, każdy z chwilą „znany od”; eksperymentalny, częstości bazowe jeszcze nie policzone',
@@ -170,6 +172,10 @@ export const LIVE_NOTE: Record<string, string> = {
   showLiq: tr(
     ' Klastry: 3 największe przedziały około 0,25% ceny z każdej strony, od 1 mln USD.',
     ' Clusters: the 3 largest bins of about 0.25% of the price on each side, from USD 1M.'
+  ),
+  premium: tr(
+    ' Pole premium kanału activeAssetCtx od otwarcia strony (serwer nie nagrywa premii ani oracle); na rynkach HIP-3 oracle to cena instrumentu bazowego od wydawcy rynku, a poza notowaniami rynku bazowego świece desku nie mają wartości.',
+    ' The premium field of the activeAssetCtx channel since the page opened (the server records neither the premium nor the oracle); on HIP-3 markets the oracle is the underlying’s price from the market deployer, and outside the underlying’s trading hours desk candles have no value.'
   ),
   ivb: tr(
     ' Okno od otwarcia NY (09:30 czasu nowojorskiego według kalendarza) z zamkniętych świec wykresu.',

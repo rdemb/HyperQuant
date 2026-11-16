@@ -31,7 +31,9 @@ describe('źródła warstw (LIVE, MODEL, SIM)', () => {
   it('modele i symulacja oznaczone jako MODEL i SIM, dane z taśmy i arkusza jako LIVE', () => {
     // P/b bez miejsc wejścia i wyniku na historii (plan 59, C1): reguły na świecach, więc MODEL, nie SIM
     for (const id of ['rvol', 'regime', 'hawkes', 'cone', 'outcomes', 'absorption', 'effort', 'showTpoOi', 'pbrange', 'smc']) expect(LAYER_SOURCE[id], id).toBe('MODEL');
-    for (const id of ['showHeatmap', 'showBubbles', 'showVwap', 'showLiq', 'showWhales', 'twap', 'slippage', 'oiflow']) expect(LAYER_SOURCE[id], id).toBe('LIVE');
+    for (const id of ['showHeatmap', 'showBubbles', 'showVwap', 'showLiq', 'showWhales', 'twap', 'slippage', 'oiflow', 'premium']) expect(LAYER_SOURCE[id], id).toBe('LIVE');
+    // Premia: plakietka LIVE z zastrzeżeniem pokrycia (od otwarcia strony) i oracle rynków HIP-3
+    expect(layerBadge('premium', { coin: 'BTC', now: NOW }).hint).toMatch(/od otwarcia strony.*HIP-3/);
   });
 
   it('podpowiedź plakietki MODEL i SIM nazywa metodę każdego klucza', () => {

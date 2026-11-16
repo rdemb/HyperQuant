@@ -24,6 +24,7 @@ import { DEFAULT_THRESHOLD_USD, autoThreshold } from '../core/clashes';
 import { Ohlc, cvdCandles, cvdLine, cvdRestarts, flipsEmpty, oiChangeLine } from '../core/flow';
 import { deltaPoint, flowLegend, hlDelta } from './flowPoints';
 import { BarStat, VENUE_GROUPS, barStat } from '../core/stats';
+import { PREMIUM_MAX_AGE_MS } from '../core/premium';
 import { rowAt } from '../core/footprintBar';
 import type { LiqLevel } from '../core/indicators';
 import type { ResetMode } from '../core/sessions';
@@ -1547,6 +1548,8 @@ export class ProChartController {
     // Wskaźniki z taśmy, OI i arkusza: odczyt OI jak w panelu ΔOI (starszy niż kilka minut to przerwa w danych)
     const flow = {
       oiAt: (t: number, maxAgeMs = HL_OI_MAX_AGE) => this.store.oi.atWithin(t, Math.min(HL_OI_MAX_AGE, maxAgeMs)),
+      premium: (from: number, to: number) => this.store.premium.meanWithin(from, to, PREMIUM_MAX_AGE_MS),
+      markOracle: (from: number, to: number) => this.store.markOracle.meanWithin(from, to, PREMIUM_MAX_AGE_MS),
       book: () => this.store.book('near')?.list() ?? [],
       exactBook: () => this.store.exactBook()?.list() ?? [],
       orders: (from: number, to: number) => this.store.orders.range(from, to),

@@ -117,7 +117,7 @@ describe('Poziomy profilu wolumenu', () => {
     }
     const lv = profileLevels(lo, hi, vol, 10, true)!;
     expect(lv.lvn.length).toBeGreaterThan(0);
-    for (const p of lv.lvn) {
+    for (const { px: p } of lv.lvn) {
       expect(p).toBeGreaterThan(lo[12]);
       expect(p).toBeLessThan(lo[28]);
     }

@@ -107,6 +107,23 @@ export const GROUPS: { title: string; rows: Row[] }[] = [
       },
       {
         metric: tr(
+          'Pasek „Rama dnia” (W sesji, przy Strefach Effort albo IVB): wartość dziś wobec wczoraj, stan aukcji, status i szerokość IVB',
+          'The “Day frame” bar (In session, with the Effort zones or the IVB): today’s value against yesterday’s, auction state, IVB status and width'
+        ),
+        source: tr('Hyperliquid API: candleSnapshot (świece 5m od wczoraj i 30m z 76 dób)', 'Hyperliquid API: candleSnapshot (5m candles since yesterday and 30m candles over 76 days)'),
+        method: tr(
+          'VA wczoraj jak poziomy doby P/b (profil świec 5m, 70%, koszyki 5 pb); przyjęcie poza wartością według Daltona z progami HyperQuant (≥ 2 zamknięcia 30m i ≥ 30% wolumenu doby po tej samej stronie) i częstość stanu o tej porze w 60 dobach; IVB z okna od otwarcia NY, szerokość w ATR doby z percentylem wobec 20 sesji NY tego samego typu.',
+          'Yesterday’s VA as the P/b day levels (5m candle profile, 70%, 5 bp bins); acceptance outside value after Dalton with HyperQuant thresholds (≥ 2 30m closes and ≥ 30% of the day’s volume on the same side) and the state frequency at this time over 60 days; IVB from the window after the NY open, width in daily ATR with a percentile against 20 NY sessions of the same type.'
+        ),
+        kinds: ['LIVE', 'MODEL'],
+        refresh: tr('co 5 s', 'every 5 s'),
+        caveat: tr(
+          'Historia stanów i VA dób w niej ze świec 30m (przybliżenie); przy krótszej historii liczba bez częstości albo percentyla. Rynek bez sesji regularnej NYSE: IVB „—” z powodem.',
+          'The state history and the VA of its days come from 30m candles (an approximation); with a shorter history the number has no frequency or percentile. A market without a regular NYSE session: IVB “—” with the reason.'
+        ),
+      },
+      {
+        metric: tr(
           'Narzędzia rysowania (W sesji): pomiar, profil zakresu, VWAP zakotwiczony, pozycja',
           'Drawing tools (In session): measure, range profile, anchored VWAP, position'
         ),
@@ -440,6 +457,20 @@ export const GROUPS: { title: string; rows: Row[] }[] = [
         method: tr('Wartości wprost z API; basis = (mark − oracle) / oracle', 'Values straight from the API; basis = (mark − oracle) / oracle'),
         kinds: ['LIVE'],
         refresh: '10–15 s',
+      },
+      {
+        metric: tr('Premia HL wobec spotu (wskaźnik, W sesji)', 'HL premium over spot (indicator, In session)'),
+        source: tr('Hyperliquid WS activeAssetCtx (premium, markPx, oraclePx) od otwarcia strony', 'Hyperliquid WS activeAssetCtx (premium, markPx, oraclePx) since the page opened'),
+        method: tr(
+          'Premia = pole premium Hyperliquid w pb, według dokumentacji HL (max(impact_bid − oracle, 0) − max(oracle − impact_ask, 0)) / oracle przy cenach wpływu 20 000 USDC na BTC (6 000 na innych rynkach); pomocniczo (mark − oracle) / oracle; świeca = średnia odczytów ważona czasem (odczyt ważny najwyżej 60 s); pasmo zwykłości p10–p90 z ostatnich zamkniętych świec; zmiana nie większa niż szum odczytu (p90 zmian minutowych w spokojniejszej połowie godzin, nie mniej niż krok ceny) to „bez zmian”',
+          'Premium = the Hyperliquid premium field in bp, per the HL documentation (max(impact_bid − oracle, 0) − max(oracle − impact_ask, 0)) / oracle at impact prices for 20,000 USDC on BTC (6,000 on other markets); auxiliary (mark − oracle) / oracle; candle = time-weighted mean of readings (a reading is valid for at most 60 s); usual band p10–p90 from recent closed candles; a change no larger than the read noise (p90 of minute changes in the calmer half of the hours, at least one price step) is “no change”'
+        ),
+        kinds: ['LIVE'],
+        refresh: tr('na żywo', 'live'),
+        caveat: tr(
+          'Serwer nagrywa w historii taśmy mark i OI, ale nie premii ani oracle, więc premia jest tylko od otwarcia strony, bez powtórki. Na rynkach HIP-3 oracle to cena instrumentu bazowego od wydawcy rynku, nie spot z giełd; poza notowaniami rynku bazowego świece rynków desku nie mają wartości („—”). Kolejność cen w polu impactPxs nie jest opisana w dokumentacji, więc wskaźnik z niej nie korzysta.',
+          'The server records the mark price and OI in the tape history but neither the premium nor the oracle, so the premium exists only since the page opened, with no replay. On HIP-3 markets the oracle is the underlying’s price from the market deployer, not exchange spot; outside the underlying’s trading hours desk market candles have no value (“—”). The order of prices in the impactPxs field is not documented, so the indicator does not use it.'
+        ),
       },
       {
         metric: tr('Funding Binance / Bybit', 'Binance / Bybit funding'),

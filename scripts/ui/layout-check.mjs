@@ -420,6 +420,36 @@ const UWIEZIENI_PROBE = `(() => {
   return { svg: true, width: Math.round(b.width), texts: texts.length, cut };
 })()`;
 
+/**
+ * Pasek „Rama dnia” (Fabio runda 2, krok 1): Kokpit 5m z zapisem, w którym są Strefy Effort i IVB, przy 390, 720, 1024
+ * i 1440 px: pasek jest, ma cztery liczby w jednej linii (wysokość ≤ 40 px), mieści się w szerokości okna (nadmiar przewija
+ * się w bok wewnątrz paska), strona nie przewija się w bok, bez „NaN” i błędów strony.
+ */
+const RAMA_STORE = {
+  'hq.charts.v1.cockpit': JSON.stringify({
+    coin: 'BTC',
+    interval: '5m',
+    view: 'candles',
+    layersV: 2,
+    indicators: [
+      { iid: 'effort', id: 'effort', params: {}, color: '#E9548D', alpha: 1, width: 1, labels: true, visible: true },
+      { iid: 'ivb', id: 'ivb', params: { minutes: 30 }, color: '#E9548D', alpha: 1, width: 1, labels: true, visible: true },
+    ],
+  }),
+};
+const RAMA_VIEWPORTS = [
+  ['390', 390, 844, true],
+  ['720', 720, 900, false],
+  ['1024', 1024, 768, false],
+  ['1440', 1440, 900, false],
+];
+const RAMA_PROBE = `(() => {
+  const el = document.querySelector('[data-rama-dnia]');
+  if (!el) return { pasek: false };
+  const r = el.getBoundingClientRect();
+  return { pasek: true, left: Math.round(r.left), right: Math.round(r.right), h: Math.round(r.height), vw: document.documentElement.clientWidth, overflowX: document.documentElement.scrollWidth - innerWidth, liczby: el.querySelectorAll('[data-rama-liczba]').length, nan: /NaN|undefined/.test(el.textContent) };
+})()`;
+
 /** Kokpit: okno opisu liczb układu (z „+N” albo z liczby) w całości na ekranie przy 720 i 1024 px. */
 const OPIS_LICZB_VIEWPORTS = [
   ['720', 720, 900, false],
@@ -1004,6 +1034,20 @@ async function main() {
     await shot(page, '390-pb');
     await page.viewport(1440, 900, false);
 
+    // Rama dnia: pasek w jednej linii i w szerokości okna (390, 720, 1024, 1440)
+    report.ramaDnia = {};
+    for (const [key, w, h, mobile] of RAMA_VIEWPORTS) {
+      await page.viewport(w, h, mobile);
+      const [e0, c0] = [page.errors.length, page.consoleErrors.length];
+      await open(page, '#charts', RAMA_STORE);
+      await page.waitFor(`!!document.querySelector('[data-rama-dnia]')`, 15000).catch(() => undefined);
+      await sleep(1000);
+      const x = await page.ev(RAMA_PROBE);
+      await shot(page, `${w}-rama-dnia`);
+      report.ramaDnia[key] = { ...x, errors: page.errors.slice(e0), consoleErrors: page.consoleErrors.slice(c0) };
+    }
+    await page.viewport(1440, 900, false);
+
     // M1: HYPE i xyz:NVDA z rejestrem rynków (1440 bez kolumny DOM, potem 390); tylko w trybie danych stałych
     if (fx) {
       serveRegistry = true;
@@ -1393,6 +1437,10 @@ async function main() {
   };
   r.summary.start = START_VIEWPORTS.every(([key]) => startOk(key));
   r.summary.opisLiczb = OPIS_LICZB_VIEWPORTS.every(([key]) => { const x = r.opisLiczb?.[key]; return !!x?.okno && x.left >= 0 && x.right <= x.vw && x.errors.length === 0; });
+  r.summary.ramaDnia = RAMA_VIEWPORTS.every(([key]) => {
+    const x = r.ramaDnia?.[key];
+    return !!x?.pasek && x.liczby === 4 && x.h <= 40 && x.left >= 0 && x.right <= x.vw && x.overflowX <= 0 && !x.nan && x.errors.length === 0 && x.consoleErrors.length === 0;
+  });
   r.summary.uwiezieni = UWIEZIENI_VIEWPORTS.every(([key]) => { const x = r.uwiezieni?.[key]; return !!x?.svg && x.texts > 0 && x.cut.length === 0 && x.errors.length === 0; });
   r.summary.pustyStan = Object.values(r.pustyStan ?? {}).every((x) => x.dlugosc > 0 && x.liczby.length === 0 && x.paski.length === 0);
   const prz = r.przeladowanie;
@@ -1497,6 +1545,13 @@ async function main() {
       if (!x) return `${key} —`;
       return `${key}: ${x.svg ? `${x.texts} podpisów, ucięte ${x.cut.length ? x.cut.join(' | ') : 'brak'}` : 'BRAK RYSUNKU'}${x.errors.length ? `, błędy ${x.errors.length}` : ''}`;
     }).join('; ')} — ${ok(r.summary.uwiezieni)}`);
+  }
+  if (r.ramaDnia) {
+    lines.push(`Rama dnia (Kokpit 5m z Effort i IVB): ${RAMA_VIEWPORTS.map(([key]) => {
+      const x = r.ramaDnia[key];
+      if (!x) return `${key} —`;
+      return x.pasek ? `${key}: ${x.liczby} liczb, wys. ${x.h} px, ${x.left}–${x.right} px z ${x.vw}, w bok ${x.overflowX} px${x.nan ? ', NaN' : ''}${x.errors.length + x.consoleErrors.length ? `, błędy ${x.errors.length + x.consoleErrors.length}` : ''}` : `${key}: BRAK PASKA`;
+    }).join('; ')} — ${ok(r.summary.ramaDnia)}`);
   }
   if (r.opisLiczb) {
     lines.push(`Kokpit, okno opisu liczb układu: ${OPIS_LICZB_VIEWPORTS.map(([key]) => {

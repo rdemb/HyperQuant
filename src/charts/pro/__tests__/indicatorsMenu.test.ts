@@ -7,7 +7,7 @@ import { DROPPED_NOTICE_KEY, parseSettings, startSettings } from '../chart/setti
 // Grupy według pytań tradera (plan 59, G1)
 const GROUPS = [
   ['presja', ['absorption', 'effres', 'ofi', 'kyle', 'oiflow']],
-  ['sklad', ['breadth', 'repeat', 'makers', 'ordersize', 'twap', 'hawkes']],
+  ['sklad', ['breadth', 'repeat', 'makers', 'ordersize', 'twap', 'hawkes', 'premium']],
   ['ruch', ['rvol', 'regime', 'slippage', 'cone']],
   ['poziomy', ['pbrange', 'effort', 'ivb', 'outcomes']],
   ['struktura', ['smc']],
