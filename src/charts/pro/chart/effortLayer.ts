@@ -1,7 +1,7 @@
 import type { IChartApiBase, IPrimitivePaneRenderer, IPrimitivePaneView, ISeriesApi, ISeriesPrimitive, Logical, SeriesAttachedParameter, SeriesType, Time } from 'lightweight-charts';
 import { tr } from '../../../i18n';
 import { numLang } from '../../../ui/format';
-import { DEFAULT_EFFORT_PARAMS, type EffortResult, type Side, type SwingLvnTest, type SwingProfile, type VBar, effortZones, swingLvnTest } from '../core/effortZones';
+import { DEFAULT_EFFORT_PARAMS, type EffortResult, type Side, type SwingLvnTest, type SwingProfile, type VBar, type ZoneKind, effortZones, swingLvnTest } from '../core/effortZones';
 import { shownLvn } from '../core/lvn';
 import { PATHS_PENDING, lvnLabel } from './lvnText';
 import type { FootprintBar } from '../core/footprintBar';
@@ -10,15 +10,17 @@ import { fmtDuration } from '../draw/model';
 import type { Candle } from '../hl/parse';
 import { type EffortBand, type EffortSelection, TAPE_SPAN, type ZoneKnown, effortRects, selectEffort } from './effortSelect';
 import { logicalOfTime } from './overlay';
-import { MONO, PRO, rgba } from './theme';
+import { PRO, rgba } from './theme';
+import { type Tag, drawTags } from './tagColumn';
 
 /**
  * Warstwa wskaźnika „Strefy absorpcji i pudełka Effort” na wykresie ceny (interwały do 1 h, na żywo i w powtórce). Model
  * (`effortZones`) liczy wszystkie strefy i pudełka na zamkniętych świecach; rysowany jest wybór `selectEffort` na
- * ostatniej zamkniętej świecy: pasma stref aktywnych i uzbrojonych najbliższe cenie (od świecy powstania, ze
- * znacznikiem A, D, F w rogu i kreską na krańcu swingu), obrys przebitej przez 6 świec i ostatnia seria pudełek każdej
- * strony (wypełnienie na świecach serii, w prawo dwie linie krawędzi). Tryb „Historia” — wszystko obrysami. Strefy w
- * kolorach poziomów (pod ceną ciemniejszy bursztyn, nad ceną jaśniejszy), pudełka w kolorach strony agresora.
+ * ostatniej zamkniętej świecy: pasma stref aktywnych i uzbrojonych najbliższe cenie (od świecy powstania, z kreską na
+ * krańcu swingu), obrys przebitej przez 6 świec i ostatnia seria pudełek każdej strony (wypełnienie na świecach serii,
+ * w prawo dwie linie krawędzi). Rodzaj strefy i pudełka opisuje słowami kolumna podpisów przy osi ceny (`tagColumn`,
+ * wspólna z SMC), bez liter w rogu pasma. Tryb „Historia” — wszystko obrysami. Strefy w kolorach poziomów (pod ceną
+ * ciemniejszy bursztyn, nad ceną jaśniejszy), pudełka w kolorach strony agresora.
  */
 
 /** Styl widocznego wskaźnika: krycie wypełnień, grubość obrysów (kolory stron są stałe) i tryb „Historia”. */
@@ -69,7 +71,6 @@ interface Rect {
 
 interface BandRect extends Rect {
   side: Side;
-  mark: string;
   /** Wypełnione (pasmo aktywne); obrys sam — przebita albo tryb „Historia”. */
   fill: boolean;
   dim: boolean;
@@ -180,7 +181,28 @@ function knownText(k: ZoneKnown, mark: string, asOf: number, fmt: (p: number) =>
   return out;
 }
 
-const KIND_MARK = { absorption: 'A', discount: 'D', flip: 'F' } as const;
+/** Rodzaj strefy w opisie pod krzyżem: „strefa absorpcji”, „strefa dyskonta swingu”, „strefa zmiany roli”. */
+const KIND_OF: Record<ZoneKind, () => string> = {
+  absorption: () => tr('absorpcji', 'absorption'),
+  discount: () => tr('dyskonta swingu', 'swing discount'),
+  flip: () => tr('zmiany roli', 'role flip'),
+};
+
+/** Słowa rodzajów stref w podpisie przy osi (zamiast liter A, D, F). */
+const KIND_WORD: Record<ZoneKind, () => string> = {
+  absorption: () => tr('absorpcja', 'absorption'),
+  discount: () => tr('dyskonto swingu', 'swing discount'),
+  flip: () => tr('zmiana roli', 'role flip'),
+};
+
+/** Podpis pasma: rodzaje jego stref słowami (kolejność jak w paśmie, bez powtórzeń), przy przebitej dopisek. */
+export function bandTag(kinds: readonly ZoneKind[], broken: boolean): string {
+  const words = [...new Set(kinds)].map((k) => KIND_WORD[k]()).join(' + ');
+  return broken ? tr(`${words} · przebita`, `${words} · broken`) : words;
+}
+
+/** Podpis serii pudełek: strona agresora świec serii (opis transakcji, nie zalecenie). */
+export const boxTag = (side: Side): string => (side === 1 ? tr('Effort: agresja kupna', 'Effort: buy-side aggression') : tr('Effort: agresja sprzedaży', 'Effort: sell-side aggression'));
 
 /** Pasmo pod krzyżem: cena w paśmie, czas od świecy powstania do końca (aktywne — bez końca). */
 function bandAt(sel: EffortSelection, hover: { t: number; p: number }, ms: number): EffortBand | null {
@@ -207,7 +229,7 @@ export function effortLegend(
   if (ms > MAX_TF) return [{ text: tr('—, interwał do 1 h', '—, intervals up to 1 h'), color: PRO.ink3 }];
   if (!sel) return [{ text: tr('czekam na świece…', 'waiting for candles…'), color: PRO.ink3 }];
   const hovered = hover ? bandAt(sel, hover, ms) : null;
-  const known = hovered ? hovered.known.flatMap((k) => knownText(k, KIND_MARK[k.kind], asOf, fmt, lvnConf)) : [];
+  const known = hovered ? hovered.known.flatMap((k) => knownText(k, KIND_OF[k.kind](), asOf, fmt, lvnConf)) : [];
   // Taśma na ostatnich 32 świecach: pudełko wymaga taśmy na swojej świecy i 19 przed nią
   const tape = { text: tr(`· taśma ${numLang(String(sel.tapeRecent))} z ${TAPE_SPAN}`, `· tape ${sel.tapeRecent} of ${TAPE_SPAN}`), color: PRO.ink2 };
   if (sel.history) {
@@ -230,7 +252,7 @@ export function effortLegend(
   // Krańce z ostatnich 12 h, przy których strefy A nie dało się ocenić bez taśmy
   const n = sel.untaped.zones;
   const gapA: LegendPart[] =
-    n > 0 ? [{ text: tr(`· A: —, brak taśmy przy ${n} ${n === 1 ? 'krańcu' : 'krańcach'}`, `· A: —, no tape at ${n} swing ${n === 1 ? 'extreme' : 'extremes'}`), color: PRO.ink3 }] : [];
+    n > 0 ? [{ text: tr(`· absorpcja: —, brak taśmy przy ${n} ${n === 1 ? 'krańcu' : 'krańcach'}`, `· absorption: —, no tape at ${n} swing ${n === 1 ? 'extreme' : 'extremes'}`), color: PRO.ink3 }] : [];
   if (sel.tapeRecent === 0) return [zones, ...gapA, { text: tr('· pudełka: —, brak taśmy', '· boxes: —, no tape'), color: PRO.ink3 }, ...known];
   const last = sel.boxes.reduce<EffortSelection['boxes'][number] | null>((a, b) => (!a || b.last > a.last ? b : a), null);
   const gapBox = sel.untaped.box;
@@ -275,6 +297,9 @@ export class EffortLayer implements ISeriesPrimitive<Time> {
   private selKey: readonly unknown[] = [];
   private bands: BandRect[] = [];
   private boxes: BoxRect[] = [];
+  /** Podpisy pasm i pudełek w kolumnie przy osi ceny i jej prawa krawędź. */
+  private tags: Tag[] = [];
+  private tagX = 0;
   private readonly views: readonly IPrimitivePaneView[];
   /** Po każdym nowym wyborze: liczba prostokątów (pomiar układu czyta ją z wykresu). */
   onSelect: ((rects: number) => void) | null = null;
@@ -301,7 +326,7 @@ export class EffortLayer implements ISeriesPrimitive<Time> {
     };
     const front: IPrimitivePaneRenderer = {
       draw: (target) =>
-        target.useMediaCoordinateSpace(({ context: ctx }) => {
+        target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
           const st = this.style;
           if (!st) return;
           const a = Math.max(0.35, 0.85 * st.alpha);
@@ -321,19 +346,12 @@ export class EffortLayer implements ISeriesPrimitive<Time> {
             ctx.lineTo(Math.round(x1), crisp(y, w));
             ctx.stroke();
           };
-          ctx.font = `600 9px ${MONO}`;
-          ctx.textBaseline = 'top';
           for (const z of this.bands) {
             const c = (z.dim ? dim : live)(z.side);
             ctx.strokeStyle = c;
             rect(z, st.width);
             // Kraniec swingu: krótka kreska na jego cenie i świecy, bez wypełnienia
             for (const t of z.ticks) hline(t.x0, t.x1, t.y, Math.max(1, st.width));
-            // Znacznik rodzaju w lewym górnym rogu (przy paśmie zaczętym poza widokiem — przy lewej krawędzi)
-            const lx = Math.max(z.x0, 0) + 3;
-            if (z.x1 - lx < 8) continue;
-            ctx.fillStyle = c;
-            ctx.fillText(z.mark, lx, z.y0 + 2);
           }
           for (const b of this.boxes) {
             ctx.strokeStyle = boxInk(b.side);
@@ -344,6 +362,7 @@ export class EffortLayer implements ISeriesPrimitive<Time> {
               hline(b.x1, b.edgeTo, b.y1, 1);
             }
           }
+          drawTags(ctx, this.tags, this.tagX, mediaSize.height, a);
         }),
     };
     this.views = [
@@ -423,6 +442,7 @@ export class EffortLayer implements ISeriesPrimitive<Time> {
   updateAllViews(): void {
     this.bands = [];
     this.boxes = [];
+    this.tags = [];
     this.style = this.styleOf();
     this.reselect();
     const sel = this.sel;
@@ -436,7 +456,12 @@ export class EffortLayer implements ISeriesPrimitive<Time> {
     const xb = ts.logicalToCoordinate(1 as Logical);
     if (xa === null || xb === null || !(xb > xa)) return;
     const sp = xb - xa;
-    const right = chart.paneSize(0).width - this.rightInset;
+    const pane = chart.paneSize(0);
+    const right = pane.width - this.rightInset;
+    this.tagX = right - 3;
+    const tag = (yy: number, text: string, ink: string, dim: boolean) => {
+      if (yy >= 0 && yy <= pane.height) this.tags.push({ y: yy, text, ink, dim });
+    };
     const x = (t: number) => Math.min(right, xa + (logicalOfTime(bars, t, ms) - 0.5) * sp);
     const y = (p: number) => series.priceToCoordinate(p);
     const span = (x0: number, x1: number, hi: number, lo: number): Rect | null => {
@@ -452,7 +477,9 @@ export class EffortLayer implements ISeriesPrimitive<Time> {
         const ty = y(e.p);
         return ty === null ? [] : [{ x0: x(e.t), x1: x(e.t + ms), y: ty }];
       });
-      this.bands.push({ ...s, side: z.side, mark: z.mark, fill: !sel.history && !broken, dim: broken || (sel.history && z.end !== null), ticks });
+      const dim = broken || (sel.history && z.end !== null);
+      this.bands.push({ ...s, side: z.side, fill: !sel.history && !broken, dim, ticks });
+      tag((s.y0 + s.y1) / 2, bandTag(z.kinds, broken), z.side === 1 ? ZONE_BELOW : ZONE_ABOVE, dim);
     };
     for (const z of sel.bands) band(z, false);
     if (sel.broken) band(sel.broken, true);
@@ -461,6 +488,7 @@ export class EffortLayer implements ISeriesPrimitive<Time> {
       const s = span(x(b.from), x(b.last + ms), b.hi, b.lo);
       if (!s) continue;
       this.boxes.push({ ...s, side: b.side, cells: sel.history ? [] : b.cells.map((t) => ({ x0: x(t), x1: x(t + ms) })), edgeTo: sel.history ? s.x1 : x(b.last + ext) });
+      if (!sel.history) tag((s.y0 + s.y1) / 2, boxTag(b.side), b.side === 1 ? PRO.buyInk : PRO.sellInk, false);
     }
   }
 
