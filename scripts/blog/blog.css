@@ -1632,10 +1632,13 @@ h1 {
   }
 }
 
-/* Filtry rubryk (bez JS: radio + :has) */
+/* Filtry rubryk (bez JS: radio + :has). Fieldset ma domyślnie min-inline-size: min-content, więc bez zera rozpychał
+   stronę na szerokość całego rzędu (390 px: strona 675 px) zamiast przewijać się w swoim rzędzie */
 .filters {
   display: flex;
   gap: 8px;
+  min-inline-size: 0;
+  max-inline-size: 100%;
   margin: 36px 0 0;
   padding: 0 0 4px;
   border: 0;

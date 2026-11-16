@@ -9,6 +9,7 @@ import { type HqIndicatorId, indicatorDef } from '../indicators/registry';
 import type { ChartSettings } from './settings';
 import { LAYERS_OFF } from './templates';
 import { tr } from '../../../i18n';
+import { PERIOD_LVN } from './lvnText';
 import { SCANNER_FRESH_MS, type ScanState, liqScan, scannerAge, whalesScan } from '../../../utils/scanState';
 import { WAIT_TEXT } from '../../../utils/sessionText';
 import { BLOG_ONLY_WHY, BTC_ONLY_BADGE, NO_CEX_BADGE, NO_FORECASTS_BADGE, NO_SCANNER_BADGE, OUTCOMES_ONLY_WHY, noCexWhy } from '../../../utils/marketCaps';
@@ -129,12 +130,12 @@ const METHOD_HINT: Record<ModelKey, string> = {
   regime: tr('MODEL · BOCPD: bayesowskie wykrywanie punktów zmiany na zwrotach świec', 'MODEL · BOCPD: Bayesian change-point detection on candle returns'),
   hawkes: tr('MODEL · Hawkes: proces z jądrem wykładniczym dopasowany metodą największej wiarygodności', 'MODEL · Hawkes: a process with an exponential kernel fitted by maximum likelihood'),
   pbrange: tr(
-    'MODEL · reguły metody Nilla na świecach 5m: strefy P/b i poziomy profilu tygodnia i doby, LVN tylko z pewnością bootstrapową ≥ 70%; opis struktury, bez miejsc wejścia',
-    "MODEL · Nill's method rules on 5m candles: P/b zones and weekly and daily profile levels, LVN only with bootstrap confidence ≥ 70%; a description of structure, without entry places"
+    'MODEL · reguły metody Nilla na świecach 5m: strefy P/b i poziomy profilu tygodnia i doby, LVN i LVA tylko z p ≤ 0,05 wobec szumu pomiaru (SIM); opis struktury, bez miejsc wejścia',
+    "MODEL · Nill's method rules on 5m candles: P/b zones and weekly and daily profile levels, LVN and LVA only with p ≤ 0.05 against measurement noise (SIM); a description of structure, without entry places"
   ),
   effort: tr(
-    'MODEL · reguły modelu intraday Valentiniego: strefy absorpcji i pudełka Effort tylko z delty taśmy (bez taśmy brak wartości z powodem), strefy dyskonta z profilu swingu z taśmy (ze świec tylko jako przybliżenie), LVN swingu z pewnością bootstrapową; to nie wskazania wejścia',
-    "MODEL · Valentini's intraday model rules: absorption zones and effort boxes from the tape delta only (no value with a reason without the tape), swing discount zones from the swing profile of the tape (from candles only as an approximation), swing LVN with bootstrap confidence; not entry cues"
+    'MODEL · reguły modelu intraday Valentiniego: strefy absorpcji i pudełka Effort tylko z delty taśmy (bez taśmy brak wartości z powodem), strefy dyskonta z profilu swingu z taśmy (ze świec tylko jako przybliżenie), LVN swingu z głębokością i p wobec szumu pomiaru; to nie wskazania wejścia',
+    "MODEL · Valentini's intraday model rules: absorption zones and effort boxes from the tape delta only (no value with a reason without the tape), swing discount zones from the swing profile of the tape (from candles only as an approximation), swing LVN with depth and p against measurement noise; not entry cues"
   ),
   smc: tr(
     'MODEL · reguły struktury na zamkniętych świecach: pivoty dwóch skal z filtrem 1 ATR, BOS i CHoCH zamknięciem, sweepy, FVG, EQH i EQL, każdy z chwilą „znany od”; eksperymentalny, częstości bazowe z historii BTC (Binance 5m, sprawdzian 2024–2026) prawie bez różnicy wobec losowych poziomów',
@@ -166,6 +167,7 @@ export function blogMapScan(st: BlogMapsState, picked: Pick<BlogMap, 'publishedA
 
 /** Stałe progi i skale warstw LIVE dopisywane do podpowiedzi plakietki (plan 59, E3 i E6). */
 export const LIVE_NOTE: Record<string, string> = {
+  showPeriodProfiles: tr(PERIOD_LVN.pl, PERIOD_LVN.en),
   showHeatmap: tr(
     ' Skala względna widoku: kolory od 60. do 99,5. percentyla wielkości poziomów w widocznych migawkach, więc przy przewijaniu kolor tego samego poziomu może się zmienić.',
     ' A view-relative scale: colours run from the 60th to the 99.5th percentile of level sizes in the visible snapshots, so the same level can change colour when you scroll.'

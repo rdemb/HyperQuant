@@ -19,6 +19,7 @@ import { INIT, PROBE, fixtureInit } from './probe.mjs';
 import { DATA_BASE_URL, FIXED_NOW, createFixtures, entryMapFixture, liqMapFixture, registry } from './fixtures.mjs';
 import { MARTWE_GNIAZDO, PLIKI_APLIKACJI, POMIAR_PUSTEGO, cyfryPozaEtykietami, noweWidoki } from './pustyStan.mjs';
 import { compareBaseline, margin, metricsOf } from './baseline.mjs';
+import { buildBlog, siteFromPackage } from '../blog/build.mjs';
 
 const args = process.argv.slice(2);
 const opt = (name, def) => {
@@ -437,6 +438,24 @@ const RAMA_STORE = {
     ],
   }),
 };
+/** Blog (strona statyczna z wpisów w repo): bez przewijania strony w bok, rząd filtrów w szerokości okna. */
+const BLOG_VIEWPORTS = [
+  ['360', 360, 780, true],
+  ['390', 390, 844, true],
+  ['720', 720, 900, false],
+];
+// Szerokość porównana z zadaną W, nie z innerWidth: w trybie telefonu okno układu rośnie razem z rozpychającą treścią
+// (przed poprawką filtrów przy 390: innerWidth i scrollWidth po 652 px, więc różnica była 0)
+const blogProbe = (W) => `(() => {
+  const f = document.querySelector('.filters');
+  const r = f ? f.getBoundingClientRect() : null;
+  return {
+    karty: document.querySelectorAll('.post-card').length,
+    overflowX: document.documentElement.scrollWidth - ${W},
+    vw: ${W},
+    filtry: r ? { left: Math.round(r.left), right: Math.round(r.right), przewijane: f.scrollWidth > f.clientWidth } : null,
+  };
+})()`;
 const RAMA_VIEWPORTS = [
   ['390', 390, 844, true],
   ['720', 720, 900, false],
@@ -1048,6 +1067,21 @@ async function main() {
     }
     await page.viewport(1440, 900, false);
 
+    // Blog: strona wpisów zbudowana z content/blog do dist/blog (bez stron serwisu i sieci); filtry rubryk nie mogą
+    // rozpychać strony w bok (przegląd Audytora 16.11: 390 px, scrollWidth 675)
+    report.blog = {};
+    await buildBlog({ outDir: path.resolve('dist'), site: await siteFromPackage(), pages: false });
+    for (const [key, w, h, mobile] of BLOG_VIEWPORTS) {
+      await page.viewport(w, h, mobile);
+      const [e0, c0] = [page.errors.length, page.consoleErrors.length];
+      await page.go(`${BASE}blog/`);
+      await page.waitFor(`document.querySelectorAll('.post-card').length > 0`, 15000).catch(() => undefined);
+      await sleep(300);
+      report.blog[key] = { ...(await page.ev(blogProbe(w))), errors: page.errors.slice(e0), consoleErrors: page.consoleErrors.slice(c0) };
+      await shot(page, `${w}-blog`);
+    }
+    await page.viewport(1440, 900, false);
+
     // M1: HYPE i xyz:NVDA z rejestrem rynków (1440 bez kolumny DOM, potem 390); tylko w trybie danych stałych
     if (fx) {
       serveRegistry = true;
@@ -1441,6 +1475,10 @@ async function main() {
     const x = r.ramaDnia?.[key];
     return !!x?.pasek && x.liczby === 4 && x.h <= 40 && x.left >= 0 && x.right <= x.vw && x.overflowX <= 0 && !x.nan && x.errors.length === 0 && x.consoleErrors.length === 0;
   });
+  r.summary.blog = BLOG_VIEWPORTS.every(([key]) => {
+    const x = r.blog?.[key];
+    return !!x && x.karty > 0 && x.overflowX <= 0 && !!x.filtry && x.filtry.left >= 0 && x.filtry.right <= x.vw && x.errors.length === 0;
+  });
   r.summary.uwiezieni = UWIEZIENI_VIEWPORTS.every(([key]) => { const x = r.uwiezieni?.[key]; return !!x?.svg && x.texts > 0 && x.cut.length === 0 && x.errors.length === 0; });
   r.summary.pustyStan = Object.values(r.pustyStan ?? {}).every((x) => x.dlugosc > 0 && x.liczby.length === 0 && x.paski.length === 0);
   const prz = r.przeladowanie;
@@ -1545,6 +1583,13 @@ async function main() {
       if (!x) return `${key} —`;
       return `${key}: ${x.svg ? `${x.texts} podpisów, ucięte ${x.cut.length ? x.cut.join(' | ') : 'brak'}` : 'BRAK RYSUNKU'}${x.errors.length ? `, błędy ${x.errors.length}` : ''}`;
     }).join('; ')} — ${ok(r.summary.uwiezieni)}`);
+  }
+  if (r.blog) {
+    lines.push(`Blog (/blog/, wpisy z repo): ${BLOG_VIEWPORTS.map(([key]) => {
+      const x = r.blog[key];
+      if (!x) return `${key} —`;
+      return `${key}: ${x.karty} kart, w bok ${x.overflowX} px, filtry ${x.filtry ? `${x.filtry.left}–${x.filtry.right} px z ${x.vw}${x.filtry.przewijane ? ' (przewijane w rzędzie)' : ''}` : 'BRAK'}${x.errors.length ? `, błędy ${x.errors.length}` : ''}`;
+    }).join('; ')} — ${ok(r.summary.blog)}`);
   }
   if (r.ramaDnia) {
     lines.push(`Rama dnia (Kokpit 5m z Effort i IVB): ${RAMA_VIEWPORTS.map(([key]) => {
