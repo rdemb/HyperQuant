@@ -126,7 +126,8 @@ describe('powiadomienia i lista z serwera 24/7', () => {
   });
 
   it('alarm na rynku spoza serwera powiadomień (xyz:NVDA): poza pilnowanymi, nie zajmuje limitu, oznaczony z powodem', () => {
-    const four = ['BTC', 'ETH', 'SOL', 'HYPE'].map((coin, i) => rule(`m${i}`, { coin }));
+    // Rynki desku z konfiguracji (projekt 60, M7) i jeszcze jeden alarm BTC
+    const four = ['BTC', 'xyz:GOLD', 'xyz:SP500', 'BTC'].map((coin, i) => rule(`m${i}`, { coin }));
     const full = Array.from({ length: PUSH_MAX - 4 }, (_, i) => rule(`r${i}`));
     const nvda = rule('nvda', { coin: 'xyz:NVDA' });
     // Najnowszy alarm na xyz:NVDA nie wypycha najstarszego alarmu BTC poza limit
@@ -136,7 +137,9 @@ describe('powiadomienia i lista z serwera 24/7', () => {
     expect(w.has('nvda')).toBe(false);
     expect(['m0', 'm1', 'm2', 'm3'].every((id) => w.has(id))).toBe(true);
     expect(pushOutside(list, w).get('nvda')).toBe(PUSH_OFF_MARKET);
-    expect(PUSH_OFF_MARKET).toBe('Serwer powiadomień pilnuje dziś BTC, ETH, SOL i HYPE; ten alarm dzwoni tylko przy otwartej stronie');
+    expect(PUSH_OFF_MARKET).toBe('Serwer powiadomień pilnuje dziś BTC, złoto i S&P 500; ten alarm dzwoni tylko przy otwartej stronie');
+    // ETH (dawniej na serwerze) dzwoni już tylko przy otwartej stronie
+    expect(pushWatched([rule('eth', { coin: 'ETH' })]).size).toBe(0);
     expect(pushOutside(list, w).size).toBe(1);
     // Alarmy na 4 rynkach bez zmian: ponad limit oznaczone limitem
     const over = [rule('old'), ...four, ...full];

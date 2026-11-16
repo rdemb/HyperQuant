@@ -3,6 +3,7 @@ import { lang, tr } from '../../../i18n';
 import { DATA_BASE } from '../../../state/usePublished';
 import { ALERTS_URL } from '../../../utils/alertsServer';
 import { ALERT_MARKETS, type AlertEvent, type AlertRule, endsAlert, serverWatches } from '../../../utils/alertRules';
+import { DESK_MARKETS, deskPhrase } from '../../../config/deskMarkets';
 import { LOG_MAX, alertBook, alertLog, parseLog } from './alerts';
 
 /**
@@ -27,11 +28,12 @@ export const pushWatched = (list: readonly AlertRule[]): Set<string> =>
       .map((r) => r.id)
   );
 
-const marketList = (and: string) => `${ALERT_MARKETS.slice(0, -1).join(', ')} ${and} ${ALERT_MARKETS[ALERT_MARKETS.length - 1]}`;
+/** Rynki serwera powiadomień w zdaniu („BTC, złoto i S&P 500”), z nazw konfiguracji desku. */
+const alertDesk = DESK_MARKETS.filter((m) => ALERT_MARKETS.includes(m.coin));
 /** Powód przy alarmie na rynku spoza serwera powiadomień. */
 export const PUSH_OFF_MARKET = tr(
-  `Serwer powiadomień pilnuje dziś ${marketList('i')}; ten alarm dzwoni tylko przy otwartej stronie`,
-  `The notification server watches only ${marketList('and')} today; this alert rings only while the page is open`
+  `Serwer powiadomień pilnuje dziś ${deskPhrase('pl', 'nom', alertDesk)}; ten alarm dzwoni tylko przy otwartej stronie`,
+  `The notification server watches only ${deskPhrase('en', 'nom', alertDesk)} today; this alert rings only while the page is open`
 );
 /** Powód przy alarmie poza limitem `PUSH_MAX`. */
 export const PUSH_OVER_LIMIT = tr('Poza limitem serwera 24/7: tylko przy otwartej stronie', 'Over the 24/7 server limit: only while the page is open');

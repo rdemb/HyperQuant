@@ -2,15 +2,22 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, w
 import { dirname, join } from 'node:path';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import {
+  CTX_SAMPLE_MS,
   HIST_HOUR_MS,
   HIST_PART_MS,
   HISTORY_VERSION,
   bookSigFigs,
   clipSpans,
   decodeBook,
+  decodeCtx,
   decodeTrades,
   encodeBook,
+  encodeCtx,
   encodeTrades,
+  type CtxSample,
+  type GapKind,
+  type HistGap,
+  historyDir,
   historyPath,
   type HistCtx,
   type HistFrame,
@@ -20,6 +27,7 @@ import {
   type HistoryIndex,
 } from '../../src/utils/tapeHistory.ts';
 import { DayProfileBuilder, PROFILE_DAY_MS, type DayProfile, dayProfilePath, decodeDayProfile, encodeDayProfile, profileTick } from '../../src/utils/dayProfile.ts';
+import { DESK_MARKETS } from '../../src/config/deskMarkets.ts';
 import type { HlCtx, HlTrade } from './hl.ts';
 import type { BookAgg } from './liquidity.ts';
 
@@ -82,9 +90,10 @@ function levelsOf(levels: unknown): [number[], number[]] | null {
 
 /**
  * Rynki z nagraniem arkusza także bez agregacji ceny (koszt zlecenia rynkowego na wykresie potrzebuje poziomów co tick;
- * bliska agregacja BTC to 10 USD). Pliki arkusza rosną o około połowę, więc tylko tam, gdzie wskaźnik jest używany.
+ * bliska agregacja BTC to 10 USD). Pliki arkusza rosną o około połowę, więc tylko rynki desku z `caps.exactBook`
+ * w konfiguracji (BTC, złoto, S&P 500; projekt 60 R4).
  */
-const EXACT_BOOK = new Set(['BTC']);
+const EXACT_BOOK = new Set(DESK_MARKETS.filter((m) => m.caps.exactBook).map((m) => m.coin));
 
 /** Krok migawki arkusza dokładnego: najmniejszy odstęp sąsiednich cen po jednej stronie, zaokrąglony do potęgi 10. */
 function gapStep(lv: [number[], number[]]): number {
@@ -110,6 +119,52 @@ function uniqFrames(xs: readonly HistFrame[]): HistFrame[] {
 }
 function uniqCtx(xs: readonly HistCtx[]): HistCtx[] {
   return [...new Map(xs.map((c) => [c.t, c])).values()];
+}
+/** Próbki kontekstu bez duplikatów okienka 5 s (późniejsza wygrywa). */
+function uniqSamples(xs: readonly CtxSample[]): CtxSample[] {
+  return [...new Map(xs.map((c) => [c.t, c])).values()];
+}
+
+/** Próbki kontekstu w pamięci: godzina (statystyki jakości w `status.json`) i zapas na niezapisaną część. */
+const SAMPLES_KEEP_MS = HIST_HOUR_MS + 2 * HIST_PART_MS;
+
+/** Pasmo głębokości arkusza w `status.json`: ±0,5% od mid. */
+const DEPTH_BAND = 0.005;
+
+/** Kwantyl metodą najbliższej rangi (wartość z próby); pusto → null. */
+function quantile(xs: readonly number[], q: number): number | null {
+  if (xs.length === 0) return null;
+  const s = [...xs].sort((a, b) => a - b);
+  return s[Math.min(s.length - 1, Math.max(0, Math.ceil(q * s.length) - 1))];
+}
+
+/** Cisza kanału dłuższa niż próg to luka (projekt 60, Q6): arkusz 30 s, kontekst 15 s (tylko przy notującym rynku bazowym). */
+export const GAP_AFTER_MS: Record<'book' | 'ctx', number> = { book: 30_000, ctx: 15_000 };
+/** Plik luk doby w katalogu doby rynku (obok taśmy): `{ v, coin, day, gaps }`. */
+const GAPS_FILE = 'gaps.json';
+const gapKey = (g: HistGap) => `${g.kind}:${g.from}`;
+const isGap = (x: unknown): x is HistGap => {
+  const g = x as Partial<HistGap> | null;
+  return !!g && Number.isFinite(g.from) && Number.isFinite(g.to) && (g.to as number) >= (g.from as number) && (g.kind === 'book' || g.kind === 'ctx' || g.kind === 'ws');
+};
+const dayName = (t: number) => new Date(dayOf(t)).toISOString().slice(0, 10);
+
+/** Luki z pliku doby (zły plik albo brak → pusto). */
+function readGaps(path: string): HistGap[] {
+  try {
+    const j = JSON.parse(readFileSync(path, 'utf8')) as { gaps?: unknown };
+    return Array.isArray(j.gaps) ? j.gaps.filter(isGap).map((g) => ({ from: g.from, to: g.to, kind: g.kind })) : [];
+  } catch {
+    return [];
+  }
+}
+
+export interface RecorderOptions {
+  /**
+   * Czy w chwili `t` kontekst rynku ma płynąć (rynek bazowy notuje albo rynek całodobowy); poza tym cisza kontekstu nie
+   * jest luką. Domyślnie zawsze.
+   */
+  ctxExpected?: (t: number) => boolean;
 }
 
 /** Numeracja jednej doby UTC: numer ważny dobę, nowa doba od 0. */
@@ -141,6 +196,10 @@ export class MarketRecorder {
   private readonly trades = new Map<number, HistTrade[]>();
   private readonly frames = new Map<number, HistFrame[]>();
   private readonly ctx = new Map<number, HistCtx>();
+  /** Próbki kontekstu co 5 s według początku okienka (projekt 60, Q5) */
+  private readonly samples = new Map<number, CtxSample>();
+  /** Głębokość arkusza ±0,5% (USD) według okienka 5 s, ostatnia godzina (projekt 60, Q7) */
+  private readonly depth = new Map<number, number>();
   /** Zamknięte odcinki nagrania jeszcze potrzebne niezapisanym częściom; otwarty — od `openAt` */
   private spans: HistSpan[] = [];
   private openAt: number | null = null;
@@ -154,21 +213,151 @@ export class MarketRecorder {
   private lastPart = Number.NEGATIVE_INFINITY;
   /** Doby z ważnym profilem (sprawdzone albo zapisane w tym uruchomieniu) */
   private readonly profiled = new Set<number>();
+  private readonly ctxExpected: (t: number) => boolean;
+  /** Puls kanałów (projekt 60, Q6): ostatnia transakcja, migawka arkusza i kontekst (null — od połączenia jeszcze nic) */
+  private readonly last: Record<'trade' | 'book' | 'ctx', number | null> = { trade: null, book: null, ctx: null };
+  private connected = false;
+  /** Luki w toku według rodzaju (koniec przesuwany taktem albo powrotem danych) */
+  private readonly openGaps = new Map<GapKind, HistGap>();
+  /** Luki do zapisu w plikach dób (klucz rodzaj:początek) */
+  private readonly dirtyGaps = new Map<string, HistGap>();
 
-  constructor(coin: string, dir: string) {
+  constructor(coin: string, dir: string, opts: RecorderOptions = {}) {
     this.coin = coin;
     this.dir = dir;
+    this.ctxExpected = opts.ctxExpected ?? (() => true);
   }
 
-  /** Połączenie WebSocket: otwarte → pokrycie od najnowszej transakcji pierwszej wiadomości; zamknięte → koniec odcinka. */
+  /**
+   * Połączenie WebSocket: otwarte → pokrycie od najnowszej transakcji pierwszej wiadomości; zamknięte → koniec odcinka.
+   * Zerwanie to luka `ws` do ponownego połączenia; luki arkusza i kontekstu w toku kończą się na zerwaniu, a po powrocie
+   * puls liczy się od chwili połączenia (bez drugiej luki od ostatniej migawki sprzed zerwania).
+   */
   onState(up: boolean, at: number): void {
     if (up) {
       this.waitingSnapshot = true;
+      this.connected = true;
+      this.closeGap('ws', at);
+      this.last.book = at;
+      this.last.ctx = at;
       return;
     }
     this.waitingSnapshot = false;
     if (this.openAt !== null && at > this.openAt) this.spans.push([this.openAt, at]);
     this.openAt = null;
+    if (!this.connected) return;
+    this.connected = false;
+    this.closeGap('book', at);
+    this.closeGap('ctx', at);
+    this.openGap({ from: at, to: at, kind: 'ws' });
+  }
+
+  private openGap(g: HistGap): void {
+    this.openGaps.set(g.kind, g);
+    this.dirtyGaps.set(gapKey(g), g);
+  }
+
+  private closeGap(kind: GapKind, at: number): void {
+    const g = this.openGaps.get(kind);
+    if (!g) return;
+    g.to = Math.max(g.from, at);
+    this.openGaps.delete(kind);
+    this.dirtyGaps.set(gapKey(g), g);
+  }
+
+  /** Wiadomość kanału w chwili `at`: domyka lukę w toku albo zapisuje lukę, którą takt przeoczył (cisza ponad próg). */
+  private pulse(kind: 'book' | 'ctx', at: number): void {
+    const prev = this.last[kind];
+    if (this.openGaps.has(kind)) this.closeGap(kind, at);
+    else if (this.connected && prev !== null && at - prev > GAP_AFTER_MS[kind] && this.expects(kind, prev)) {
+      const g: HistGap = { from: prev, to: at, kind };
+      this.dirtyGaps.set(gapKey(g), g);
+    }
+    if (prev === null || at > prev) this.last[kind] = at;
+  }
+
+  /** Czy cisza kanału od `since` liczy się jako luka: arkusz zawsze, kontekst tylko przy notującym rynku bazowym. */
+  private expects(kind: 'book' | 'ctx', since: number): boolean {
+    return kind === 'book' || this.ctxExpected(since + GAP_AFTER_MS.ctx);
+  }
+
+  /**
+   * Głębokość arkusza ±0,5% od mid (USD, obie strony) z migawki w agregacji dalekiej, jedna na okienko 5 s. Daleka, bo
+   * 20 poziomów bez agregacji pokrywa przy złocie i S&P 500 tylko kilka pb od mid, a 20 kroków dalekich (ok. 20 pb każdy)
+   * obejmuje całe ±0,5%; poziom na granicy pasma liczony w całości albo wcale (błąd do jednego kroku).
+   */
+  private recordDepth(t: number, lv: [number[], number[]]): void {
+    const [bids, asks] = lv;
+    if (bids.length === 0 || asks.length === 0) return;
+    const mid = (bids[0] + asks[0]) / 2;
+    let usd = 0;
+    for (let i = 0; i < bids.length; i += 3) if (bids[i] >= mid * (1 - DEPTH_BAND)) usd += bids[i] * bids[i + 1];
+    for (let i = 0; i < asks.length; i += 3) if (asks[i] <= mid * (1 + DEPTH_BAND)) usd += asks[i] * asks[i + 1];
+    this.depth.set(Math.floor(t / CTX_SAMPLE_MS) * CTX_SAMPLE_MS, usd);
+    for (const k of this.depth.keys()) if (k < t - SAMPLES_KEEP_MS) this.depth.delete(k);
+  }
+
+  /**
+   * Miary jakości z ostatniej godziny do `status.json` (projekt 60, Q7): p95 rozjazdu mark–wyrocznia i p50 spreadu impact
+   * wobec mid (pb) z próbek kontekstu co 5 s, p50 głębokości ±0,5% (USD) z arkusza dalekiego; `latest` — ostatnia próbka.
+   * Brak danych → null (nie zero).
+   */
+  hourStats(now: number): { markOracleBpP95: number | null; impactSpreadBpP50: number | null; depthUsdP50: number | null; latest: CtxSample | null } {
+    const from = now - HIST_HOUR_MS;
+    const xs = [...this.samples.values()].filter((s) => s.t >= from && s.t <= now).sort((a, b) => a.t - b.t);
+    const mo = xs.flatMap((s) => (s.oracle ? [(Math.abs(s.mark - s.oracle) / s.oracle) * 1e4] : []));
+    const sp = xs.flatMap((s) => (s.impactBid !== null && s.impactAsk !== null ? [(Math.abs(s.impactAsk - s.impactBid) / (s.mid ?? s.mark)) * 1e4] : []));
+    const dp = [...this.depth.entries()].flatMap(([t, v]) => (t >= from && t <= now ? [v] : []));
+    return { markOracleBpP95: quantile(mo, 0.95), impactSpreadBpP50: quantile(sp, 0.5), depthUsdP50: quantile(dp, 0.5), latest: xs.at(-1) ?? null };
+  }
+
+  /** Puls kanałów do `status.json`: ostatnia transakcja, migawka arkusza i kontekst (null — jeszcze nic). */
+  pulses(): { lastTradeAt: number | null; lastBookAt: number | null; lastCtxAt: number | null } {
+    return { lastTradeAt: this.last.trade, lastBookAt: this.last.book, lastCtxAt: this.last.ctx };
+  }
+
+  /**
+   * Takt luk (co takt historii): otwiera lukę w toku dla kanału cichego ponad próg, przesuwa koniec luk w toku do `now`
+   * i zapisuje zmienione luki w plikach dób (`<rynek>/<doba>/gaps.json`, doba według początku luki, scalone z plikiem).
+   * Zwraca liczbę zapisanych plików.
+   */
+  trackGaps(now: number): number {
+    if (this.connected) {
+      for (const kind of ['book', 'ctx'] as const) {
+        const prev = this.last[kind];
+        if (this.openGaps.has(kind) || prev === null || now - prev <= GAP_AFTER_MS[kind] || !this.expects(kind, prev)) continue;
+        this.openGap({ from: prev, to: now, kind });
+      }
+    }
+    for (const g of this.openGaps.values()) {
+      if (now > g.to) g.to = now;
+      this.dirtyGaps.set(gapKey(g), g);
+    }
+    if (this.dirtyGaps.size === 0) return 0;
+    const byDay = new Map<string, HistGap[]>();
+    for (const g of this.dirtyGaps.values()) {
+      const d = dayName(g.from);
+      byDay.set(d, [...(byDay.get(d) ?? []), g]);
+    }
+    this.dirtyGaps.clear();
+    for (const [day, gs] of byDay) {
+      const path = join(this.dir, historyDir(this.coin), day, GAPS_FILE);
+      const all = new Map(readGaps(path).map((g) => [gapKey(g), g]));
+      for (const g of gs) all.set(gapKey(g), { from: g.from, to: Math.max(g.to, all.get(gapKey(g))?.to ?? g.to), kind: g.kind });
+      const gaps = [...all.values()].sort((a, b) => a.from - b.from || a.kind.localeCompare(b.kind));
+      mkdirSync(dirname(path), { recursive: true });
+      writeFileSync(`${path}.tmp`, JSON.stringify({ v: 1, coin: this.coin, day, gaps }));
+      renameSync(`${path}.tmp`, path);
+    }
+    return byDay.size;
+  }
+
+  /** Luki kończące się po `from` (pliki dób od `from` do `now` i luki jeszcze niezapisane), rosnąco. */
+  gapsSince(from: number, now: number): HistGap[] {
+    const all = new Map<string, HistGap>();
+    for (let d = dayOf(from); d <= dayOf(now); d += PROFILE_DAY_MS) for (const g of readGaps(join(this.dir, historyDir(this.coin), dayName(d), GAPS_FILE))) all.set(gapKey(g), g);
+    for (const g of [...this.dirtyGaps.values(), ...this.openGaps.values()]) all.set(gapKey(g), { ...g });
+    return [...all.values()].filter((g) => g.to > from).sort((a, b) => a.from - b.from || a.kind.localeCompare(b.kind));
   }
 
   onTrades(list: readonly HlTrade[]): void {
@@ -203,6 +392,7 @@ export class MarketRecorder {
       if (acc) acc.push(row);
       else this.trades.set(p, [row]);
     }
+    if (newest > 0 && (this.last.trade === null || newest > this.last.trade)) this.last.trade = newest;
     // Pierwsza wiadomość po subskrypcji to migawka ostatnich transakcji: od najnowszej z nich taśma jest kompletna
     if (this.waitingSnapshot && newest > 0) {
       this.waitingSnapshot = false;
@@ -212,8 +402,21 @@ export class MarketRecorder {
 
   onCtx(c: HlCtx, at: number): void {
     if (!(c.markPx > 0) || !(c.oiBtc >= 0)) return;
+    this.pulse('ctx', at);
     const minute = Math.floor(at / MIN) * MIN;
     if (Number.isFinite(c.funding)) this.ctx.set(minute, { t: minute, oi: c.oiBtc, funding: c.funding as number, mark: c.markPx });
+    // Próbka jakości ceny co 5 s (ostatni odczyt okienka); część już zapisana — pominięta jak spóźniona transakcja
+    const slot = Math.floor(at / CTX_SAMPLE_MS) * CTX_SAMPLE_MS;
+    if (partOf(slot) > this.lastPart)
+      this.samples.set(slot, {
+        t: slot,
+        mark: c.markPx,
+        oracle: c.oraclePx ?? null,
+        mid: c.midPx ?? null,
+        impactBid: c.impactPxs?.[0] ?? null,
+        impactAsk: c.impactPxs?.[1] ?? null,
+        premium: c.premium ?? null,
+      });
     const sf = bookSigFigs(c.markPx);
     if (this.sigFigs && sf.near === this.sigFigs.near && sf.far === this.sigFigs.far) return;
     const digits = Math.floor(Math.log10(c.markPx)) + 1;
@@ -237,15 +440,18 @@ export class MarketRecorder {
    * bliskiej to arkusz dokładny (zapisywany tylko na rynkach z EXACT_BOOK), inaczej migawka pominięta.
    */
   onBook(t: number, levels: unknown): void {
-    if (!this.steps || !(t > 0)) return;
+    if (!(t > 0)) return;
     const lv = levelsOf(levels);
-    if (!lv || (lv[0].length === 0 && lv[1].length === 0)) return;
+    // Puls arkusza z każdej poprawnej wiadomości (także przed pierwszą ceną i przy pustym arkuszu)
+    if (lv) this.pulse('book', t);
+    if (!this.steps || !lv || (lv[0].length === 0 && lv[1].length === 0)) return;
     const prices = [...lv[0].filter((_, i) => i % 3 === 0), ...lv[1].filter((_, i) => i % 3 === 0)];
     const [near, far] = this.steps;
     const agg = prices.every((px) => isMultiple(px, far)) ? far : prices.every((px) => isMultiple(px, near)) ? near : Number.NaN;
     const exact = !Number.isFinite(agg) && this.exactBook();
     const step = exact ? gapStep(lv) : agg;
     if (!Number.isFinite(step)) return;
+    if (agg === far) this.recordDepth(t, lv);
     const p = partOf(t);
     if (p <= this.lastPart) return;
     const acc = this.frames.get(p);
@@ -341,8 +547,17 @@ export class MarketRecorder {
       writeGz(bPath, encodeBook(this.coin, p, p + HIST_PART_MS, [...spans, ...(oldB?.spans ?? [])], uniqFrames([...(oldB?.frames ?? []), ...frames])));
       this.lastPart = p;
       written += 2;
+      // Próbki kontekstu części (bez odczytu kontekstu — bez pliku), scalone z częścią z poprzedniego uruchomienia
+      const samples = [...this.samples.values()].filter((s) => s.t >= p && s.t < p + HIST_PART_MS);
+      if (samples.length > 0) {
+        const cPath = join(this.dir, historyPath(this.coin, p, 'ctx', true));
+        const oldC = existsSync(cPath) ? decodeCtx(readGz(cPath)) : null;
+        writeGz(cPath, encodeCtx(this.coin, p, p + HIST_PART_MS, [...spans, ...(oldC?.spans ?? [])], uniqSamples([...(oldC?.samples ?? []), ...samples])));
+        written++;
+      }
     }
     for (const k of this.ctx.keys()) if (k < due) this.ctx.delete(k);
+    for (const k of this.samples.keys()) if (k < now - SAMPLES_KEEP_MS) this.samples.delete(k);
     this.spans = this.spans.filter(([, b]) => b > due);
     // Doba, której ostatnia część jest już zapisana: numeracja i mapy kont zapomniane (numer ważny najwyżej dobę)
     const open = dayOf(now - SETTLE_MS);
@@ -355,7 +570,7 @@ export class MarketRecorder {
   consolidate(now: number): number {
     let written = 0;
     const lastClosed = hourOf(now - SETTLE_MS) - HIST_HOUR_MS;
-    const root = join(this.dir, this.coin);
+    const root = join(this.dir, historyDir(this.coin));
     if (!existsSync(root)) return 0;
     const hours = new Set<number>();
     for (const day of readdirSync(root)) {
@@ -379,7 +594,13 @@ export class MarketRecorder {
       writeGz(join(this.dir, historyPath(this.coin, h, 'trades', false)), encodeTrades(this.coin, h, h + HIST_HOUR_MS, tFiles.flatMap((f) => f.spans), trades, ctx, tFiles.every((f) => f.zeroKnown), idScope));
       writeGz(join(this.dir, historyPath(this.coin, h, 'book', false)), encodeBook(this.coin, h, h + HIST_HOUR_MS, bFiles.flatMap((f) => f.spans), frames));
       written += 2;
-      for (const p of parts) for (const kind of ['trades', 'book'] as const) rmSync(join(this.dir, historyPath(this.coin, p, kind, true)), { force: true });
+      // Kontekst co 5 s (projekt 60, Q5): plik godzinowy tylko, gdy któraś część albo dawny plik godziny go ma
+      const cFiles = [read('ctx', false, h), ...parts.map((p) => read('ctx', true, p))].map(decodeCtx).filter((x) => x !== null);
+      if (cFiles.length > 0) {
+        writeGz(join(this.dir, historyPath(this.coin, h, 'ctx', false)), encodeCtx(this.coin, h, h + HIST_HOUR_MS, cFiles.flatMap((f) => f.spans), uniqSamples(cFiles.flatMap((f) => f.samples))));
+        written++;
+      }
+      for (const p of parts) for (const kind of ['trades', 'book', 'ctx'] as const) rmSync(join(this.dir, historyPath(this.coin, p, kind, true)), { force: true });
     }
     return written;
   }
@@ -389,7 +610,7 @@ export class MarketRecorder {
    * godzinowych); doba z niepołączonymi częściami czeka. Zwraca liczbę zapisanych plików.
    */
   profiles(now: number): number {
-    const root = join(this.dir, this.coin);
+    const root = join(this.dir, historyDir(this.coin));
     if (!existsSync(root)) return 0;
     const today = Math.floor(now / PROFILE_DAY_MS) * PROFILE_DAY_MS;
     for (const name of readdirSync(root).sort()) {
@@ -449,36 +670,51 @@ export function buildDayProfile(dir: string, coin: string, day: number): DayProf
   return b?.build() ?? null;
 }
 
-/** Usuwa dni starsze niż `keepDays` (pełne dni UTC przed dzisiejszym) i pliki tymczasowe po przerwanym zapisie. */
-export function pruneHistory(dir: string, coins: readonly string[], keepDays: number, now: number): number {
+const DAY_DIR = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Usuwa dni starsze niż `keepDays` (pełne dni UTC przed dzisiejszym) i pliki tymczasowe po przerwanym zapisie we
+ * **wszystkich** katalogach rynków w gałęzi, także rynków zdjętych z `HQ_HISTORY_MARKETS` (projekt 60, R5: historia ETH,
+ * SOL i HYPE znika sama po oknie, a nocne spłaszczenie usuwa ją z gałęzi). Katalog rynku bez dni po przycięciu jest
+ * usuwany. Pomijane: katalogi z kropką (`.git`) i pliki w katalogu głównym (`index.json`, `README.md`).
+ */
+export function pruneHistory(dir: string, keepDays: number, now: number): number {
   const cut = new Date(Math.floor(now / 86_400_000) * 86_400_000 - keepDays * 86_400_000).toISOString().slice(0, 10);
   let removed = 0;
-  for (const coin of coins) {
-    const root = join(dir, coin);
-    if (!existsSync(root)) continue;
-    for (const day of readdirSync(root)) {
-      if (/^\d{4}-\d{2}-\d{2}$/.test(day) && day < cut) {
-        rmSync(join(root, day), { recursive: true, force: true });
+  for (const market of existsSync(dir) ? readdirSync(dir, { withFileTypes: true }) : []) {
+    if (!market.isDirectory() || market.name.startsWith('.')) continue;
+    const root = join(dir, market.name);
+    for (const day of readdirSync(root, { withFileTypes: true })) {
+      if (!day.isDirectory()) continue;
+      if (DAY_DIR.test(day.name) && day.name < cut) {
+        rmSync(join(root, day.name), { recursive: true, force: true });
         removed++;
         continue;
       }
-      for (const f of readdirSync(join(root, day))) if (f.endsWith('.tmp')) rmSync(join(root, day, f), { force: true });
+      for (const f of readdirSync(join(root, day.name))) if (f.endsWith('.tmp')) rmSync(join(root, day.name, f), { force: true });
     }
+    if (readdirSync(root).length === 0) rmSync(root, { recursive: true, force: true });
   }
   return removed;
 }
 
-/** Spis gałęzi z plików na dysku: godziny i części każdego rynku (rosnąco). */
+/**
+ * Spis gałęzi z plików na dysku: godziny i części każdego rynku z listy (rosnąco); klucz to nazwa rynku, katalog w polu
+ * `dir`. Rynek bez katalogu (jeszcze nic nie zapisał albo przycięty do zera) nie ma wpisu.
+ */
 export function historyIndex(dir: string, coins: readonly string[], keepDays: number, now: number): HistoryIndex {
   const markets: HistoryIndex['markets'] = {};
   for (const coin of coins) {
     const hours: number[] = [];
     const parts: number[] = [];
     const days: number[] = [];
-    const root = join(dir, coin);
-    for (const day of existsSync(root) ? readdirSync(root).sort() : []) {
+    const gaps: HistGap[] = [];
+    const root = join(dir, historyDir(coin));
+    if (!existsSync(root)) continue;
+    for (const day of readdirSync(root).sort()) {
       const d = Date.parse(`${day}T00:00:00Z`);
       if (Number.isFinite(d) && existsSync(join(dir, dayProfilePath(coin, d)))) days.push(d);
+      gaps.push(...readGaps(join(root, day, GAPS_FILE)));
       for (const f of readdirSync(join(root, day)).sort()) {
         const m = /^(\d{2})(?:-(\d{2}))?\.trades\.json\.gz$/.exec(f);
         if (!m || !existsSync(join(root, day, f.replace('.trades.', '.book.')))) continue;
@@ -487,7 +723,7 @@ export function historyIndex(dir: string, coins: readonly string[], keepDays: nu
         (m[2] === undefined ? hours : parts).push(t);
       }
     }
-    markets[coin] = { hours, parts, days };
+    markets[coin] = { dir: historyDir(coin), hours, parts, days, gaps };
   }
   return { v: HISTORY_VERSION, asOf: now, keepDays, partMs: HIST_PART_MS, markets };
 }
@@ -499,15 +735,20 @@ export const HISTORY_README = [
   'skanera [HyperQuant](https://github.com/rdemb/HyperQuant) (katalog backend/). API Hyperliquid nie udostępnia historii taśmy',
   'ani arkusza — bez nagrania wykres miałby footprint, Deltę, CVD i mapę ciepła dopiero od otwarcia strony.',
   '',
-  '- `index.json` — spis: godziny z plikiem godzinowym i części 5-minutowe bieżącej godziny dla każdego rynku.',
+  '- `index.json` — spis: godziny z plikiem godzinowym i części 5-minutowe bieżącej godziny dla każdego rynku (klucz: nazwa',
+  '  rynku, np. `xyz:GOLD`; `dir` — jego katalog), `gaps` — luki w danych: `book` (arkusz milczał ponad 30 s), `ctx` (kontekst',
+  '  milczał ponad 15 s, gdy rynek bazowy notuje), `ws` (zerwane połączenie); źródło: `<RYNEK>/<RRRR-MM-DD>/gaps.json`.',
+  '- `<RYNEK>` — katalog rynku bez dwukropka: `BTC`, `xyz-GOLD` (złoto), `xyz-SP500` (S&P 500).',
   '- `<RYNEK>/<RRRR-MM-DD>/<GG>.trades.json.gz` — taśma godziny (JSON w gzip): czas i tid różnicowo, cena, wielkość, strona',
   '  agresora (B/A), numery zlecenia agresora, biorcy i makera w obrębie doby UTC (`idScope: "day"`; nowa doba od 0; brak pola',
   '  albo `"hour"` — w obrębie godziny: plik sprzed numeracji dobowej albo scalony z takim), indeksy transakcji z hashem',
   '  zerowym (`z`, m.in. podzlecenia TWAP; brak kolumny — plik sprzed jej wprowadzenia); kontekst minutowy (OI, finansowanie,',
   '  mark); pokrycie.',
   '- `<RYNEK>/<RRRR-MM-DD>/<GG>.book.json.gz` — migawki arkusza (co ok. 5 s, 20 poziomów na stronę: cena, wielkość, liczba',
-  '  zleceń) w agregacji bliskiej (~2 pb ceny) i dalekiej (10 × większy krok), dla BTC także bez agregacji (migawka z piątym',
-  '  elementem 1); pokrycie.',
+  '  zleceń) w agregacji bliskiej (~2 pb ceny) i dalekiej (10 × większy krok), dla BTC, złota i S&P 500 także bez agregacji',
+  '  (migawka z piątym elementem 1); pokrycie.',
+  '- `<RYNEK>/<RRRR-MM-DD>/<GG>.ctx.json.gz` — kontekst rynku co 5 s (do 720 próbek na godzinę): cena mark, wyrocznia, mid',
+  '  arkusza, ceny impact kupna i sprzedaży, premia (null — giełda nie podała pola); pokrycie. Pliki od projektu 60.',
   '- `<GG>-<MM>.*.json.gz` — części 5-minutowe godziny w toku (po jej zamknięciu łączone w plik godzinowy).',
   '- `<RYNEK>/<RRRR-MM-DD>/profile.json.gz` — profil zamkniętej doby (spis: `days`): na każdej cenie agresywne kupno',
   '  i sprzedaż oraz zmiana OI minut przypisana cenom w proporcji do wolumenu, w czterech częściach (OI rośnie albo spada',

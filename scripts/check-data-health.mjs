@@ -12,13 +12,26 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { verifyProblem } from './verify-status.mjs';
 import { VERIFY_BRANCH, VERIFY_LATEST_URL } from '../src/utils/verifyFreshness.ts';
+import { DESK_MARKETS, deskMarketOf } from '../src/config/deskMarkets.ts';
+import { historyBaseOf } from '../src/utils/tapeHistory.ts';
 
 export const DATA_BASE = 'https://raw.githubusercontent.com/rdemb/hyperquant-data/main';
 export const FILES = ['status.json', 'liq-map/BTC.json', 'liq-tape/BTC.json', 'cohorts/BTC.json', 'ledger/BTC/summary.json', 'liquidity/BTC.json', 'lab/BTC.json', 'whales.json', 'markets.json', 'README.md'];
 /** Pliki, których brak nie jest alarmem (nowsze niż część wdrożeń skanera) — gdy są, przechodzą strażnika prywatności */
 /** Wynik niezależnej weryfikacji dziennika (GitHub Actions w repo HyperQuant) — adres `VERIFY_LATEST_URL` */
 export const VERIFY_FILE = `verify/latest.json (gałąź ${VERIFY_BRANCH} repo HyperQuant)`;
-export const OPTIONAL = new Set(['liq-tape/BTC.json', 'cohorts/BTC.json', 'ledger/BTC/summary.json', 'liquidity/BTC.json', 'lab/BTC.json', 'whales.json', 'markets.json', VERIFY_FILE]);
+/** Spis gałęzi `history` repo danych (rejestrator historii taśmy; brak — rejestrator wyłączony) */
+export const HISTORY_INDEX_FILE = 'index.json (gałąź history repo danych)';
+export const OPTIONAL = new Set(['liq-tape/BTC.json', 'cohorts/BTC.json', 'ledger/BTC/summary.json', 'liquidity/BTC.json', 'lab/BTC.json', 'whales.json', 'markets.json', VERIFY_FILE, HISTORY_INDEX_FILE]);
+/**
+ * Rynki desku w rejestratorze historii (projekt 60, Q8): ostatni plik godzinny najwyżej 90 min po końcu swojej godziny,
+ * kontekst rynku (`status.json`, `deskMarkets`) najwyżej 2 min przed publikacją statusu, gdy rynek bazowy notuje albo rynek
+ * jest całodobowy. Zgłoszenie dopiero po 30 min stanu czerwonego; czas czerwieni liczony z danych (bez stanu strażnika),
+ * więc tak samo w GitHub Actions i na serwerze. Tylko alarm — strażnik nie restartuje skanera z tego powodu.
+ */
+export const DESK_HISTORY_MAX_AGE_MIN = 90;
+export const DESK_CTX_MAX_AGE_MIN = 2;
+export const DESK_RED_MIN = 30;
 /** Profil płynności arkusza (publikowany co 10 min) */
 export const LIQUIDITY_MAX_AGE_MIN = 30;
 /** Laboratorium folkloru (przeliczane co godzinę) */
@@ -187,12 +200,48 @@ export function assessHealth(input, nowMs, limits = LIMITS, ntlLagOn) {
     if (typeof s.apiErrors === 'number') facts.push({ label: 'Błędy API (od startu procesu)', value: String(s.apiErrors) });
   }
 
+  assessDesk(input.status, input.historyIndex, nowMs, problems, facts);
+
   for (const [file, text] of Object.entries(input.raw ?? {})) {
     const leaks = findLeaks(text);
     if (leaks.length) problems.push(`PRYWATNOŚĆ: ${file} zawiera ${leaks.join(' i ')} — natychmiast wstrzymaj publikację i sprawdź skaner`);
   }
 
   return { ok: problems.length === 0, problems, facts };
+}
+
+const QUALITY_PL = { good: 'dobre', limited: 'ograniczone', bad: 'złe', platform: 'cena platformy', na: 'nieznana' };
+const num = (v) => typeof v === 'number' && Number.isFinite(v);
+
+/**
+ * Rynki desku (projekt 60, Q8): świeżość historii z spisu gałęzi `history` i kontekstu z sekcji `deskMarkets` statusu.
+ * Rynek spoza desku (np. ETH z dawnej listy) i rynek bez pliku godzinnego (nagranie krótsze niż godzina) — bez oceny.
+ */
+function assessDesk(status, index, nowMs, problems, facts) {
+  const after = `zgłoszenie po ${DESK_RED_MIN} min ponad progiem`;
+  if (index && typeof index === 'object' && index.markets && typeof index.markets === 'object') {
+    for (const [coin, m] of Object.entries(index.markets)) {
+      const dm = deskMarketOf(coin);
+      const hours = Array.isArray(m?.hours) ? m.hours.filter(num) : [];
+      if (!dm?.enabled || hours.length === 0) continue;
+      const ageMin = (nowMs - (Math.max(...hours) + 60 * MIN)) / MIN;
+      facts.push({ label: `Historia ${dm.label}: ostatni plik godzinny`, value: `${fmtMin(ageMin)} po końcu godziny` });
+      if (ageMin > DESK_HISTORY_MAX_AGE_MIN + DESK_RED_MIN)
+        problems.push(`historia ${dm.label}: ostatni plik godzinny ${fmtMin(ageMin)} po końcu godziny (próg ${DESK_HISTORY_MAX_AGE_MIN} min, ${after})`);
+    }
+  }
+  const desk = status && typeof status === 'object' ? status.deskMarkets : null;
+  if (!desk || typeof desk !== 'object') return;
+  for (const m of DESK_MARKETS) {
+    const d = desk[m.slug];
+    if (!d || typeof d !== 'object') continue;
+    const state = d.underlying?.state;
+    const ctxAge = num(d.lastCtxAt) && num(status.asOf) ? status.asOf - d.lastCtxAt : null;
+    const ctx = ctxAge === null ? 'kontekst: brak' : ctxAge < MIN ? `kontekst ${Math.round(ctxAge / 1000)} s przed statusem` : `kontekst ${fmtMin(ctxAge / MIN)} przed statusem`;
+    facts.push({ label: `Rynek ${m.label}`, value: `jakość danych: ${QUALITY_PL[d.quality] ?? '—'}, ${ctx}, luki z 24 h: ${num(d.gaps24h) ? d.gaps24h : '—'}` });
+    if ((state === 'open' || state === 'always') && ctxAge !== null && ctxAge > (DESK_CTX_MAX_AGE_MIN + DESK_RED_MIN) * MIN)
+      problems.push(`kontekst rynku ${m.label}: ostatni odczyt ${fmtMin(ctxAge / MIN)} przed statusem przy notującym rynku bazowym (próg ${DESK_CTX_MAX_AGE_MIN} min, ${after})`);
+  }
 }
 
 const utc = (ms) => `${new Date(ms).toISOString().slice(0, 16).replace('T', ' ')} UTC`;
@@ -225,12 +274,12 @@ export async function fetchInput(base = DATA_BASE) {
   const errors = {};
   const json = {};
   await Promise.all(
-    [...FILES.map((f) => [f, `${base}/${f}`]), [VERIFY_FILE, VERIFY_LATEST_URL]].map(async ([file, url]) => {
+    [...FILES.map((f) => [f, `${base}/${f}`]), [VERIFY_FILE, VERIFY_LATEST_URL], [HISTORY_INDEX_FILE, `${historyBaseOf(base)}/index.json`]].map(async ([file, url]) => {
       try {
         const text = await fetchText(url);
         // Wynik weryfikacji to nie publikacja skanera — poza strażnikiem prywatności (linie raportu weryfikatora)
         if (file !== VERIFY_FILE) raw[file] = text;
-        if (file.endsWith('.json') || file === VERIFY_FILE) json[file] = JSON.parse(text);
+        if (file.endsWith('.json') || file === VERIFY_FILE || file === HISTORY_INDEX_FILE) json[file] = JSON.parse(text);
       } catch (e) {
         errors[file] = e instanceof Error ? e.message : String(e);
       }
@@ -245,6 +294,7 @@ export async function fetchInput(base = DATA_BASE) {
     whales: json['whales.json'] ?? null,
     markets: json['markets.json'] ?? null,
     verify: json[VERIFY_FILE] ?? null,
+    historyIndex: json[HISTORY_INDEX_FILE] ?? null,
     raw,
     errors,
   };

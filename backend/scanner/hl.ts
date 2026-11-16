@@ -86,6 +86,14 @@ export interface HlCtx {
   dayNtlVlm: number;
   /** Stawka finansowania za godzinę (ułamek); brak w zapasowym odczycie REST */
   funding?: number;
+  /**
+   * Jakość ceny (projekt 60, Q5): wyrocznia, mid arkusza, ceny impact [kupno, sprzedaż] i premia z `activeAssetCtx`;
+   * null — giełda nie podała pola (np. mid bez arkusza); brak — zapasowy odczyt REST.
+   */
+  oraclePx?: number | null;
+  midPx?: number | null;
+  impactPxs?: [number, number] | null;
+  premium?: number | null;
 }
 
 /**
@@ -229,9 +237,8 @@ export class HlStream {
         if (fresh.length > 0) this.onTrades(fresh);
       }
       else if (msg.channel === 'activeAssetCtx') {
-        const ctx = (msg.data as { ctx?: Record<string, unknown> } | undefined)?.ctx;
-        const c = { markPx: Number(ctx?.markPx), oiBtc: Number(ctx?.openInterest), dayNtlVlm: Number(ctx?.dayNtlVlm), funding: Number(ctx?.funding) };
-        if (Number.isFinite(c.markPx) && Number.isFinite(c.oiBtc)) this.onCtx(c);
+        const c = parseCtx((msg.data as { ctx?: Record<string, unknown> } | undefined)?.ctx);
+        if (c) this.onCtx(c);
       }
     };
     ws.onclose = () => {
@@ -248,6 +255,196 @@ export class HlStream {
       if (ws.readyState === this.WS.OPEN) ws.close();
     };
   }
+}
+
+/** Odbiorca zdarzeń jednego rynku na połączeniu wielu rynków (rejestrator historii). */
+export interface MarketSink {
+  onTrades(t: HlTrade[]): void;
+  onCtx(c: HlCtx): void;
+  onBook(t: number, levels: unknown): void;
+}
+
+/**
+ * Jedno połączenie WebSocket z pełnym zestawem kanałów rejestratora historii dla wielu rynków (projekt 60, R3): na rynek
+ * `trades`, `activeAssetCtx` i `l2Book` w agregacjach ustawionych przez rejestrator (bliska i daleka) oraz bez agregacji,
+ * czyli do 5 subskrypcji na rynek. Zdarzenia rozdzielane po polu `coin` do odbiorcy rynku; rynek spoza listy pominięty.
+ * Stan połączenia jeden dla wszystkich rynków: zerwanie kończy odcinek nagrania każdego z nich (luka na wszystkich naraz).
+ * Ping, strażnik ciszy (90 s), wycofanie przy ponownym łączeniu i deduplikacja transakcji (klucz z rynkiem) jak w `HlStream`
+ * i `HlTradesStream`. Limit giełdy: 1000 subskrypcji i 10 połączeń na IP, więc jedno połączenie wystarcza dla rynków HIP-3.
+ */
+export class HlMarketsStream {
+  private readonly sinks: ReadonlyMap<string, MarketSink>;
+  private readonly onState: ((up: boolean, at: number) => void) | null;
+  private readonly WS: typeof WebSocket;
+  /** Agregacje arkusza i arkusz dokładny na rynek; rynek bez wpisu (przed pierwszą ceną) — bez arkusza */
+  private readonly books = new Map<string, { aggs: BookAgg[]; exact: boolean }>();
+  private ws: WebSocket | null = null;
+  private timers: ReturnType<typeof setTimeout>[] = [];
+  private backoff = 1000;
+  private lastMsgAt = 0;
+  private stopped = false;
+  private seen = new Set<string>();
+  private seenOrder: string[] = [];
+  connected = false;
+
+  constructor(sinks: ReadonlyMap<string, MarketSink>, onState: ((up: boolean, at: number) => void) | null = null, wsCtor: typeof WebSocket = WebSocket) {
+    this.sinks = sinks;
+    this.onState = onState;
+    this.WS = wsCtor;
+  }
+
+  get coins(): string[] {
+    return [...this.sinks.keys()];
+  }
+
+  private static bookSub(coin: string, a: BookAgg | null): Record<string, unknown> {
+    return a ? { type: 'l2Book', coin, nSigFigs: a.nSigFigs, ...(a.mantissa ? { mantissa: a.mantissa } : {}) } : { type: 'l2Book', coin };
+  }
+
+  /** Subskrypcje arkusza rynku według klucza (krok agregacji albo `exact`): agregacje i, gdy `exact`, arkusz bez agregacji. */
+  private static bookSubs(coin: string, b: { aggs: BookAgg[]; exact: boolean } | undefined): Map<string, Record<string, unknown>> {
+    const out = new Map<string, Record<string, unknown>>();
+    for (const a of b?.aggs ?? []) out.set(`${a.nSigFigs}:${a.mantissa ?? 0}`, HlMarketsStream.bookSub(coin, a));
+    if (b?.exact) out.set('exact', HlMarketsStream.bookSub(coin, null));
+    return out;
+  }
+
+  /** Zmiana agregacji arkusza rynku: wypisanie zbędnych subskrypcji, zapis nowych (bez zmian — bez wiadomości). */
+  setBookAggs(coin: string, list: BookAgg[], exact = false): void {
+    if (!this.sinks.has(coin)) return;
+    const prev = HlMarketsStream.bookSubs(coin, this.books.get(coin));
+    const nextBook = { aggs: list.map((a) => ({ nSigFigs: a.nSigFigs, ...(a.mantissa ? { mantissa: a.mantissa } : {}) })), exact };
+    const next = HlMarketsStream.bookSubs(coin, nextBook);
+    this.books.set(coin, nextBook);
+    const ws = this.ws;
+    if (!ws || ws.readyState !== this.WS.OPEN) return;
+    for (const [k, sub] of prev) if (!next.has(k)) ws.send(JSON.stringify({ method: 'unsubscribe', subscription: sub }));
+    for (const [k, sub] of next) if (!prev.has(k)) ws.send(JSON.stringify({ method: 'subscribe', subscription: sub }));
+  }
+
+  start(): void {
+    this.stopped = false;
+    this.open();
+  }
+
+  /** Zatrzymanie: koniec odcinka od razu (na ostatniej wiadomości), niezależnie od tego, kiedy gniazdo faktycznie się zamknie. */
+  stop(): void {
+    this.stopped = true;
+    this.clearTimers();
+    if (this.connected) this.onState?.(false, this.lastMsgAt);
+    this.connected = false;
+    this.ws?.close();
+  }
+
+  private clearTimers(): void {
+    for (const t of this.timers) {
+      clearTimeout(t);
+      clearInterval(t);
+    }
+    this.timers = [];
+  }
+
+  private open(): void {
+    const ws = new this.WS(WS_URL);
+    this.ws = ws;
+    ws.onopen = () => {
+      this.connected = true;
+      this.lastMsgAt = Date.now();
+      for (const coin of this.sinks.keys()) {
+        for (const type of ['trades', 'activeAssetCtx']) ws.send(JSON.stringify({ method: 'subscribe', subscription: { type, coin } }));
+        for (const sub of HlMarketsStream.bookSubs(coin, this.books.get(coin)).values()) ws.send(JSON.stringify({ method: 'subscribe', subscription: sub }));
+      }
+      this.onState?.(true, Date.now());
+      this.timers.push(
+        setInterval(() => ws.readyState === this.WS.OPEN && ws.send('{"method":"ping"}'), 50_000),
+        setInterval(() => {
+          if (Date.now() - this.lastMsgAt > 90_000) ws.close();
+        }, 10_000),
+        setTimeout(() => {
+          this.backoff = 1000;
+        }, 60_000)
+      );
+    };
+    ws.onmessage = (ev) => {
+      this.lastMsgAt = Date.now();
+      let msg: { channel?: string; data?: unknown };
+      try {
+        msg = JSON.parse(String(ev.data));
+      } catch {
+        return;
+      }
+      if (msg.channel === 'l2Book') {
+        const d = msg.data as { coin?: unknown; time?: unknown; levels?: unknown } | undefined;
+        const sink = typeof d?.coin === 'string' ? this.sinks.get(d.coin) : undefined;
+        if (sink && typeof d!.time === 'number' && Array.isArray(d!.levels)) sink.onBook(d!.time, d!.levels);
+      } else if (msg.channel === 'trades' && Array.isArray(msg.data)) {
+        const byCoin = new Map<string, HlTrade[]>();
+        for (const t of msg.data as HlTrade[]) {
+          if (typeof t?.coin !== 'string' || !this.sinks.has(t.coin)) continue;
+          if (t.tid !== undefined) {
+            const key = `${t.coin}:${t.time}:${t.tid}`;
+            if (this.seen.has(key)) continue;
+            this.seen.add(key);
+            this.seenOrder.push(key);
+            if (this.seenOrder.length > 50_000) for (const k of this.seenOrder.splice(0, 10_000)) this.seen.delete(k);
+          }
+          const list = byCoin.get(t.coin);
+          if (list) list.push(t);
+          else byCoin.set(t.coin, [t]);
+        }
+        for (const [coin, list] of byCoin) this.sinks.get(coin)!.onTrades(list);
+      } else if (msg.channel === 'activeAssetCtx') {
+        const d = msg.data as { coin?: unknown; ctx?: Record<string, unknown> } | undefined;
+        const sink = typeof d?.coin === 'string' ? this.sinks.get(d.coin) : undefined;
+        const c = sink ? parseCtx(d!.ctx) : null;
+        if (sink && c) sink.onCtx(c);
+      }
+    };
+    ws.onclose = () => {
+      // Spóźnione zamknięcie starego gniazda po stop() i ponownym start() nie zamyka nowego odcinka ani nie łączy drugi raz
+      if (this.ws !== ws) return;
+      // Koniec odcinka w chwili ostatniej wiadomości: cisza przed wykryciem zerwania (do 90 s) to luka, nie pokrycie
+      if (this.connected) this.onState?.(false, this.lastMsgAt);
+      this.connected = false;
+      this.clearTimers();
+      if (this.stopped) return;
+      this.timers.push(setTimeout(() => this.open(), this.backoff));
+      this.backoff = Math.min(60_000, this.backoff * 2);
+    };
+    ws.onerror = () => {
+      if (ws.readyState === this.WS.OPEN) ws.close();
+    };
+  }
+}
+
+/** Liczba dodatnia z pola API (tekst albo liczba); inaczej null. */
+const pxOrNull = (v: unknown): number | null => {
+  const x = typeof v === 'string' || typeof v === 'number' ? Number(v) : Number.NaN;
+  return Number.isFinite(x) && x > 0 ? x : null;
+};
+
+/**
+ * Kontekst rynku z `activeAssetCtx`: mark, OI, obrót, finansowanie oraz wyrocznia, mid, ceny impact i premia (projekt 60,
+ * Q5); null bez ceny mark albo OI. Pole jakości bez poprawnej wartości → null (nie zero).
+ */
+export function parseCtx(ctx: Record<string, unknown> | undefined): HlCtx | null {
+  const markPx = Number(ctx?.markPx);
+  const oiBtc = Number(ctx?.openInterest);
+  if (!Number.isFinite(markPx) || !Number.isFinite(oiBtc)) return null;
+  const imp = ctx?.impactPxs;
+  const ib = Array.isArray(imp) && imp.length === 2 ? pxOrNull(imp[0]) : null;
+  const ia = Array.isArray(imp) && imp.length === 2 ? pxOrNull(imp[1]) : null;
+  const pr = typeof ctx?.premium === 'string' || typeof ctx?.premium === 'number' ? Number(ctx.premium) : Number.NaN;
+  return {
+    markPx,
+    oiBtc,
+    dayNtlVlm: Number(ctx?.dayNtlVlm),
+    funding: Number(ctx?.funding),
+    oraclePx: pxOrNull(ctx?.oraclePx),
+    midPx: pxOrNull(ctx?.midPx),
+    impactPxs: ib !== null && ia !== null ? [ib, ia] : null,
+    premium: Number.isFinite(pr) ? pr : null,
+  };
 }
 
 /**

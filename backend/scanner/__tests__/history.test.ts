@@ -44,7 +44,8 @@ describe('MarketRecorder — nagranie taśmy, arkusza i kontekstu jednego rynku'
     r.onTrades([trade(T0 + 3000, 3, 'A', 2, 9, ZERO), trade(T0 + 3000, 4, 'A', 2, 9, ZERO), trade(T0 + 4000, 5, 'A', 2, 9, ZERO)]);
     r.onCtx({ markPx: 80_000, oiBtc: 30_000, dayNtlVlm: 1e9, funding: 1.25e-5 }, T0 + 5000);
     expect(r.flush(T0 + 5 * MIN + SETTLE_MS - 1)).toBe(0); // część jeszcze otwarta
-    expect(r.flush(T0 + 5 * MIN + SETTLE_MS)).toBe(2);
+    // Taśma, arkusz i próbki kontekstu co 5 s (projekt 60, Q5)
+    expect(r.flush(T0 + 5 * MIN + SETTLE_MS)).toBe(3);
     const f = decodeTrades(read(dir, 'BTC', T0, 'trades', true))!;
     expect(f.spans).toEqual([[T0 + 2000, T0 + 5 * MIN]]);
     // Biorcy i makerzy w jednej numeracji: 1 → 0, 9 → 1, 8 → 2, 2 → 3
@@ -601,10 +602,41 @@ describe('historyIndex i pruneHistory', () => {
     }
     put(historyPath('BTC', T0 + 65 * MIN, 'trades', true)); // bez pliku arkusza — pominięta
     const idx = historyIndex(dir, ['BTC', 'ETH'], 2, T0);
-    expect(idx.markets.BTC).toEqual({ hours: [T0 - 3 * 86_400_000, T0], parts: [T0 + 60 * MIN], days: [] });
-    expect(idx.markets.ETH).toEqual({ hours: [], parts: [], days: [] });
-    expect(pruneHistory(dir, ['BTC'], 2, T0)).toBe(1);
+    expect(idx.markets.BTC).toEqual({ dir: 'BTC', hours: [T0 - 3 * 86_400_000, T0], parts: [T0 + 60 * MIN], days: [], gaps: [] });
+    // Rynek z listy bez katalogu — bez wpisu (projekt 60, R5)
+    expect(idx.markets.ETH).toBeUndefined();
+    expect(pruneHistory(dir, 2, T0)).toBe(1);
     expect(historyIndex(dir, ['BTC'], 2, T0).markets.BTC.hours).toEqual([T0]);
+  });
+
+  it('przycinanie wszystkich katalogów gałęzi: rynek zdjęty z listy (ETH) znika po oknie, spis bez niego; `.git` i pliki główne zostają (R5)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hq-hist-'));
+    const put = (rel: string) => {
+      mkdirSync(join(dir, rel, '..'), { recursive: true });
+      writeFileSync(join(dir, rel), 'x');
+    };
+    const old = T0 - 3 * 86_400_000;
+    for (const kind of ['trades', 'book'] as const) {
+      put(historyPath('ETH', old, kind, false));
+      put(historyPath('SOL', old, kind, false));
+      put(historyPath('SOL', T0, kind, false));
+      put(historyPath('xyz:GOLD', old, kind, false));
+      put(historyPath('BTC', T0, kind, false));
+    }
+    put(historyPath('SOL', T0, 'trades', false).replace('.json.gz', '.json.gz.tmp'));
+    put('.git/2020-01-01/HEAD');
+    put('index.json');
+    put('README.md');
+    // Lista rejestratora: tylko BTC i złoto; ETH i SOL zdjęte
+    expect(pruneHistory(dir, 2, T0)).toBe(3);
+    expect(existsSync(join(dir, 'ETH'))).toBe(false);
+    expect(readdirSync(join(dir, 'SOL'))).toEqual(['2026-10-24']);
+    expect(readdirSync(join(dir, 'SOL', '2026-10-24')).sort()).toEqual(['13.book.json.gz', '13.trades.json.gz']);
+    expect(existsSync(join(dir, 'xyz-GOLD'))).toBe(false);
+    expect(existsSync(join(dir, '.git', '2020-01-01', 'HEAD'))).toBe(true);
+    expect(existsSync(join(dir, 'index.json')) && existsSync(join(dir, 'README.md'))).toBe(true);
+    const idx = historyIndex(dir, ['BTC', 'xyz:GOLD'], 2, T0);
+    expect(Object.keys(idx.markets)).toEqual(['BTC']);
   });
 });
 

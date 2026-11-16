@@ -1,6 +1,8 @@
+import { deskMarketOf } from '../config/deskMarkets.ts';
+
 /**
  * Historia taśmy i arkusza rynków Hyperliquid nagrywana przez serwer — format plików współdzielony przez rejestrator
- * i stronę (bez importów zewnętrznych; uruchamiany także natywnie przez Node 24).
+ * i stronę (bez pakietów zewnętrznych, jedyny import to konfiguracja rynków desku; uruchamiany także natywnie przez Node 24).
  *
  * Publiczne API nie daje historii transakcji ani arkusza, więc rejestrator nagrywa je na serwerze i publikuje w gałęzi
  * `history` repo danych: części 5-minutowe bieżącej godziny, łączone po jej zamknięciu w plik godzinowy (JSON w gzip).
@@ -94,19 +96,68 @@ export interface BookFile {
   frames: ([number, number, number[], number[]] | [number, number, number[], number[], 1])[];
 }
 
+/** Okienko próbek kontekstu rynku: jedna próbka na 5 s (720 na godzinę). */
+export const CTX_SAMPLE_MS = 5_000;
+
+/**
+ * Próbka kontekstu rynku z `activeAssetCtx` (projekt 60, Q5): cena mark, wyrocznia, mid arkusza, ceny impact (kupno
+ * i sprzedaż większym zleceniem) i premia; null — giełda nie podała pola. Historia jakości danych rynków HIP-3
+ * (rozjazd mark i wyroczni, spread impact) do kalibracji progów (Q9). `t` — początek okienka 5 s, zegar serwera.
+ */
+export interface CtxSample {
+  t: number;
+  mark: number;
+  oracle: number | null;
+  mid: number | null;
+  impactBid: number | null;
+  impactAsk: number | null;
+  premium: number | null;
+}
+
+/** Plik kontekstu (`GG.ctx.json.gz`, obok taśmy i arkusza): kolumny próbek (czas różnicowo) i pokrycie. */
+export interface CtxFile {
+  v: number;
+  coin: string;
+  from: number;
+  to: number;
+  spans: HistSpan[];
+  t: number[];
+  mark: number[];
+  oracle: (number | null)[];
+  mid: (number | null)[];
+  impactBid: (number | null)[];
+  impactAsk: (number | null)[];
+  premium: (number | null)[];
+}
+
 /**
  * Spis gałęzi: godziny z plikiem godzinowym i części godzin jeszcze niepołączonych, dla każdego rynku; `days` — doby
- * z plikiem profilu (src/utils/dayProfile.ts; brak pola w spisach sprzed profili).
+ * z plikiem profilu (src/utils/dayProfile.ts; brak pola w spisach sprzed profili). Klucz to nazwa rynku (`xyz:GOLD`),
+ * `dir` — jego katalog w gałęzi (`historyDir`; brak pola w spisach sprzed projektu 60), `gaps` — luki w danych z dób okna
+ * (projekt 60, Q6; brak pola w starszych spisach).
  */
 export interface HistoryIndex {
   v: number;
   asOf: number;
   keepDays: number;
   partMs: number;
-  markets: Record<string, { hours: number[]; parts: number[]; days?: number[] }>;
+  markets: Record<string, { dir?: string; hours: number[]; parts: number[]; days?: number[]; gaps?: HistGap[] }>;
 }
 
-export type HistKind = 'trades' | 'book';
+/**
+ * Luka w danych rynku w czasie nagrania (projekt 60, Q6): `book` — brak migawki arkusza ponad 30 s, `ctx` — brak
+ * kontekstu rynku ponad 15 s, gdy rynek bazowy notuje (poza sesją kontekst stoi z konstrukcji wyroczni, więc się nie
+ * liczy), `ws` — zerwane połączenie. Rzadka taśma (weekend) nie jest luką. Luka w toku ma koniec równy ostatniemu taktowi.
+ */
+export type GapKind = 'book' | 'ctx' | 'ws';
+export interface HistGap {
+  from: number;
+  to: number;
+  kind: GapKind;
+}
+
+/** Rodzaj pliku: taśma, arkusz i (od projektu 60, Q5) próbki kontekstu rynku co 5 s. */
+export type HistKind = 'trades' | 'book' | 'ctx';
 
 /**
  * Adres gałęzi `history` z adresu danych (gałąź `main`): …/hyperquant-data/main → …/hyperquant-data/history. Adres bez
@@ -116,11 +167,23 @@ export const historyBaseOf = (dataBase: string): string => dataBase.replace(/\/m
 
 const pad = (x: number) => String(x).padStart(2, '0');
 
-/** Ścieżka pliku w gałęzi: `BTC/2026-10-24/13.trades.json.gz` (godzina) albo `BTC/2026-10-24/13-05.trades.json.gz` (część). */
+/**
+ * Katalog rynku w gałęzi `history` (projekt 60, R2): z konfiguracji desku (`historyDir`), poza nią nazwa rynku z myślnikiem
+ * zamiast dwukropka (`xyz:NVDA` → `xyz-NVDA`, jak nazwa bazy taśmy w IndexedDB, `tapeDb.ts`). Checkout gałęzi na Windows
+ * nie zna `:` w nazwach plików. Rynki giełdy głównej bez zmian (`BTC`). Zapis i odczyt idą tylko przez tę funkcję.
+ */
+export function historyDir(coin: string): string {
+  return deskMarketOf(coin)?.historyDir ?? coin.replace(':', '-');
+}
+
+/**
+ * Ścieżka pliku w gałęzi: `BTC/2026-10-24/13.trades.json.gz` (godzina) albo `BTC/2026-10-24/13-05.trades.json.gz` (część);
+ * katalog rynku z `historyDir` (`xyz-GOLD/…` dla `xyz:GOLD`).
+ */
 export function historyPath(coin: string, start: number, kind: HistKind, part: boolean): string {
   const d = new Date(start);
   const day = `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
-  return `${coin}/${day}/${pad(d.getUTCHours())}${part ? `-${pad(d.getUTCMinutes())}` : ''}.${kind}.json.gz`;
+  return `${historyDir(coin)}/${day}/${pad(d.getUTCHours())}${part ? `-${pad(d.getUTCMinutes())}` : ''}.${kind}.json.gz`;
 }
 
 const fin = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x);
@@ -247,6 +310,40 @@ export function decodeBook(raw: unknown): { coin: string; from: number; to: numb
     frames.push({ t: fr[0], step: fr[1], bids: fr[2], asks: fr[3], ...(fr.length === 5 ? { exact: true as const } : {}) });
   }
   return { coin: f.coin, from: f.from, to: f.to, spans: clipSpans(spans, f.from, f.to), frames };
+}
+
+export function encodeCtx(coin: string, from: number, to: number, spans: readonly HistSpan[], samples: readonly CtxSample[]): CtxFile {
+  const xs = [...samples].sort((a, b) => a.t - b.t);
+  return {
+    v: HISTORY_VERSION,
+    coin,
+    from,
+    to,
+    spans: clipSpans(spans, from, to),
+    t: deltas(xs.map((x) => x.t)),
+    mark: xs.map((x) => x.mark),
+    oracle: xs.map((x) => x.oracle),
+    mid: xs.map((x) => x.mid),
+    impactBid: xs.map((x) => x.impactBid),
+    impactAsk: xs.map((x) => x.impactAsk),
+    premium: xs.map((x) => x.premium),
+  };
+}
+
+/** Kolumna liczb albo null (brak pola u giełdy) długości `n`. */
+const nullableArr = (x: unknown, n: number): x is (number | null)[] => Array.isArray(x) && x.length === n && x.every((v) => v === null || fin(v));
+
+/** Odczyt pliku kontekstu; zły kształt albo wersja → null (cały plik — kolumny muszą się zgadzać co do długości). */
+export function decodeCtx(raw: unknown): { coin: string; from: number; to: number; spans: HistSpan[]; samples: CtxSample[] } | null {
+  const f = raw as Partial<CtxFile> | null;
+  if (!f || f.v !== HISTORY_VERSION || typeof f.coin !== 'string' || !fin(f.from) || !fin(f.to) || !Array.isArray(f.spans)) return null;
+  const n = Array.isArray(f.t) ? f.t.length : -1;
+  if (!finArr(f.t) || !finArr(f.mark, n)) return null;
+  if (!nullableArr(f.oracle, n) || !nullableArr(f.mid, n) || !nullableArr(f.impactBid, n) || !nullableArr(f.impactAsk, n) || !nullableArr(f.premium, n)) return null;
+  const t = undelta(f.t);
+  const samples = t.map((tt, i): CtxSample => ({ t: tt, mark: f.mark![i], oracle: f.oracle![i], mid: f.mid![i], impactBid: f.impactBid![i], impactAsk: f.impactAsk![i], premium: f.premium![i] }));
+  const spans = f.spans.filter((s): s is HistSpan => finArr(s, 2) && s[1] > s[0]);
+  return { coin: f.coin, from: f.from, to: f.to, spans: clipSpans(spans, f.from, f.to), samples };
 }
 
 export function isHistoryIndex(x: unknown): x is HistoryIndex {

@@ -1,4 +1,5 @@
 import type { Lang } from '../i18n.ts';
+import { ENABLED_MARKETS } from '../config/deskMarkets.ts';
 
 /**
  * Reguły alarmów cenowych wspólne dla strony i serwera powiadomień (bez importów wykonywalnych; uruchamiane także
@@ -21,12 +22,13 @@ export const knownKind = (k: string): k is AlertKind => (ALERT_KINDS as readonly
 export const ALERT_INTERVALS = ['1m', '5m', '15m', '30m', '1h', '4h'] as const;
 /**
  * Rynki pilnowane przez serwer powiadomień (`backend/alerts`, skrzynka `workers/alerts`) — jedna lista dla serwera
- * i przeglądarki. Strona ustawia alarmy na każdym rynku z rejestru, ale alarm na innym rynku dzwoni tylko przy otwartej
- * stronie (`pushWatched`).
+ * i przeglądarki: włączone rynki desku z konfiguracji (`src/config/deskMarkets.ts`, dziś BTC, złoto i S&P 500; projekt 60
+ * M7). Serwer otwiera połączenie na rynek z alarmem, więc najwyżej 3. Strona ustawia alarmy na każdym rynku z rejestru,
+ * ale alarm na innym rynku dzwoni tylko przy otwartej stronie (`pushWatched`).
  */
-export const ALERT_MARKETS = ['BTC', 'ETH', 'SOL', 'HYPE'] as const;
+export const ALERT_MARKETS: readonly string[] = ENABLED_MARKETS.map((m) => m.coin);
 /** Czy serwer powiadomień pilnuje alarmów na rynku `coin`. */
-export const serverWatches = (coin: string): boolean => (ALERT_MARKETS as readonly string[]).includes(coin);
+export const serverWatches = (coin: string): boolean => ALERT_MARKETS.includes(coin);
 const MIN = 60_000;
 const IV_MS: Record<string, number> = { '1m': MIN, '5m': 5 * MIN, '15m': 15 * MIN, '30m': 30 * MIN, '1h': 60 * MIN, '4h': 240 * MIN };
 export const ivMs = (iv: string): number => IV_MS[iv] ?? 15 * MIN;

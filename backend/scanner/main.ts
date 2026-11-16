@@ -23,6 +23,8 @@ import { Scanner } from './scanner.ts';
 import { fetchLeaderboardAccounts } from './seed.ts';
 import { publishToGit } from './gitPublish.ts';
 import { HISTORY_README, MarketRecorder, historyIndex, pruneHistory } from './history.ts';
+import { recorderStreams } from './recorderStreams.ts';
+import { ctxExpectedOf, deskMarketsStatus, loadNyseCalendar } from './deskStatus.ts';
 import { prepareHistoryRepo, publishHistory, startWhenReady } from './historyGit.ts';
 import { WHALE_MARKETS, WhaleWatcher } from './whales.ts';
 import { MAX_DEX_QUERIES, MarketRegistryRunner } from './marketRegistryRunner.ts';
@@ -134,13 +136,26 @@ const scanner = new Scanner({
   tapeSince,
   prices,
   cohorts,
-  ...(shadow
-    ? {
-        onScan: (addr: string, st: unknown) => shadow.onScan(addr, st),
-        extraStatus: (asOf: number, coverage: number) => shadow.status(asOf, { inBook: (a) => book.has(a), btc: { coin: cfg.coin, coverage } }),
-      }
-    : {}),
+  ...(shadow ? { onScan: (addr: string, st: unknown) => shadow.onScan(addr, st) } : {}),
+  // Pola dodatkowe statusu: pomiar w cieniu M0 (`markets`, `xyz`, `marketsHours`) i stan rynków desku z rejestratora
+  // (`deskMarkets`, projekt 60 Q7); bez obu — status jak dotąd
+  extraStatus: (asOf: number, coverage: number) => ({
+    ...(shadow ? shadow.status(asOf, { inBook: (a) => book.has(a), btc: { coin: cfg.coin, coverage } }) : {}),
+    ...deskStatusOrNothing(asOf),
+  }),
 });
+
+/** Sekcja `deskMarkets` (rynki desku nagrywane przez rejestrator); błąd nie wstrzymuje reszty statusu. */
+function deskStatusOrNothing(asOf: number): { deskMarkets?: ReturnType<typeof deskMarketsStatus> } {
+  if (recorders.length === 0) return {};
+  try {
+    const deskMarkets = deskMarketsStatus(recorders, asOf, nyseCalendar);
+    return Object.keys(deskMarkets).length > 0 ? { deskMarkets } : {};
+  } catch (e) {
+    console.error(`[skaner] błąd stanu rynków desku: ${String(e)}`);
+    return {};
+  }
+}
 let lastWsCtx = 0;
 /** Ostatnia wiadomość WebSocket (transakcje lub kontekst) — przerwa > 2 min zeruje okres obserwacji taśmy */
 let lastWsMsg = Date.now();
@@ -255,31 +270,21 @@ function shadowGateTick(): void {
 }
 
 /**
- * Rejestrator historii (gałąź `history` repo danych, rynki z HQ_HISTORY_MARKETS): na rynek osobne połączenie WebSocket
- * (taśma, kontekst, arkusz bliski i daleki jak na stronie, dla BTC także dokładny). Części 5-minutowe i pliki godzinowe
- * w katalogu repo gałęzi, commit po każdym zapisie; po zamknięciu doby jej profil (kupno, sprzedaż i zmiana OI na cenach);
- * raz na dobę (po 00:15 UTC) usunięcie dni spoza okna i spłaszczenie gałęzi do jednego commita.
+ * Rejestrator historii (gałąź `history` repo danych, rynki z HQ_HISTORY_MARKETS): taśma, kontekst, arkusz bliski i daleki
+ * jak na stronie, dla rynków z `caps.exactBook` także dokładny. BTC (i inny rynek giełdy głównej) na osobnym połączeniu
+ * WebSocket, wszystkie rynki HIP-3 (`xyz:GOLD`, `xyz:SP500`) na jednym wspólnym (projekt 60, R3). Części 5-minutowe i pliki
+ * godzinowe w katalogu repo gałęzi (`historyDir`: `xyz-GOLD/…`), commit po każdym zapisie; po zamknięciu doby jej profil
+ * (kupno, sprzedaż i zmiana OI na cenach); raz na dobę (po 00:15 UTC) usunięcie dni spoza okna we wszystkich katalogach
+ * gałęzi i spłaszczenie gałęzi do jednego commita.
  */
 const DAY_MS = 86_400_000;
 const historyRepo = cfg.git && cfg.history ? { remote: cfg.git.remote, dir: join(cfg.stateDir, 'git', 'history'), sshKey: cfg.git.sshKey, branch: 'history' } : null;
 const historyDir = historyRepo ? historyRepo.dir : join(cfg.stateDir, 'history');
 if (cfg.history) mkdirSync(historyDir, { recursive: true });
-const recorders = (cfg.history?.markets ?? []).map((coin) => {
-  const rec = new MarketRecorder(coin, historyDir);
-  const s: HlStream = new HlStream(
-    coin,
-    (t) => rec.onTrades(t),
-    (c) => {
-      rec.onCtx(c, Date.now());
-      const aggs = rec.aggs();
-      if (aggs) s.setBookAggs(aggs, rec.exactBook());
-    },
-    WebSocket,
-    (t, levels) => rec.onBook(t, levels),
-    (up, at) => rec.onState(up, at)
-  );
-  return { rec, stream: s };
-});
+/** Kalendarz NYSE z repozytorium: stan rynku bazowego S&P 500 (luki kontekstu, `deskMarkets` w statusie) */
+const nyseCalendar = loadNyseCalendar();
+const recorders = (cfg.history?.markets ?? []).map((coin) => new MarketRecorder(coin, historyDir, { ctxExpected: ctxExpectedOf(coin, nyseCalendar) }));
+const recorderLinks = recorderStreams(recorders, WebSocket);
 /** Repo gałęzi przygotowane (bez repo — od razu): dopiero wtedy rejestratory słuchają, a takt historii zapisuje i wypycha */
 let historyReady = historyRepo === null;
 let historyBusy = false;
@@ -293,12 +298,16 @@ async function historyTick(): Promise<void> {
   try {
     const now = Date.now();
     let written = 0;
-    for (const { rec } of recorders) written += rec.flush(now);
+    for (const rec of recorders) written += rec.flush(now);
+    // Luki w danych (projekt 60, Q6): pliki dób `gaps.json` (w spisie pole `gaps`). Bez liczenia do `written`: plik luk
+    // w toku zmienia się co takt, a commit i push co 15 s byłyby za częste — luki idą do gałęzi z najbliższą częścią
+    for (const rec of recorders) rec.trackGaps(now);
     // Profile zamkniętych dób (po połączeniu ostatniej godziny doby; po wdrożeniu — po jednej dobie wstecz na takt)
-    for (const { rec } of recorders) written += rec.profiles(now);
+    for (const rec of recorders) written += rec.profiles(now);
     const day = Math.floor(now / DAY_MS);
     const daily = day !== historyDay && now - day * DAY_MS >= 15 * 60_000;
-    if (daily) pruneHistory(historyDir, cfg.history.markets, cfg.history.keepDays, now);
+    // Wszystkie katalogi gałęzi, także rynków zdjętych z listy (projekt 60, R5)
+    if (daily) pruneHistory(historyDir, cfg.history.keepDays, now);
     if (written > 0 || daily) {
       writeJsonAtomic(join(historyDir, 'index.json'), historyIndex(historyDir, cfg.history.markets, cfg.history.keepDays, now));
       writeFileSync(join(historyDir, 'README.md'), HISTORY_README);
@@ -386,7 +395,7 @@ const DATA_README = [
   '- `lab/BTC.json` — laboratorium folkloru: reguły day tradingu (okrągłe poziomy, zebranie PDH/PDL, IB, VWAP, luka CME, finansowanie, 10:00 NY, momentum) — test historyczny z FDR i prerejestrowany test do przodu (e-wartości, e-BH) ze wszystkimi zdarzeniami do przeliczenia.',
   '- `whales.json` — warstwa wielorybów (BTC, ETH, SOL, HYPE): pozycje (wartość, wejście, likwidacja, dźwignia) i zlecenia oczekujące z wyzwalanymi (limit, stop, TP) największych kont z publicznego rankingu i dużych pozycji BTC; konto jako pseudonim ważny jedną dobę UTC, bez adresów; kwoty i ceny zaokrąglone.',
   '- `markets.json` — rejestr rynków (reguła `reg-v1`, co godzinę): największe rynki wszystkich giełd perp Hyperliquid, także HIP-3 (`xyz:NVDA`), według średniej otwartych pozycji z 7 dni; wejście po 3 dniach w pierwszej 20, wyjście po 7 dniach poza 30. miejscem; BTC, ETH, SOL i HYPE zawsze. Przez histerezę (rynek między 21. a 30. miejscem zostaje) i 4 stałe rynki plik może mieć więcej niż 20 rynków.',
-  '- `status.json` — stan skanera (liczby adresów i pozycji, błędy API).',
+  '- `status.json` — stan skanera (liczby adresów i pozycji, błędy API); `deskMarkets` — stan rynków desku nagrywanych do historii (BTC, złoto, S&P 500): jakość danych, stan rynku bazowego, ostatnia transakcja, migawka arkusza i kontekst, rozjazd mark–wyrocznia, spread impact i głębokość arkusza z ostatniej godziny, liczba luk z 24 h.',
   '- `alerts/keys.json` — klucze publiczne serwera powiadomień o alarmach: VAPID (subskrypcje push przeglądarek) i Ed25519 (podpis zapytań do skrzynki alarmów).',
   '',
   'Gałąź `history` — nagranie taśmy, arkusza i kontekstu rynków (części 5-minutowe i pliki godzinowe JSON w gzip, okno ostatnich dni, jeden commit): historia footprintu, Delty, CVD i mapy ciepła od pierwszej sekundy na stronie, profile zamkniętych dób (kupno, sprzedaż i zmiana OI na cenach); opis w README gałęzi.',
@@ -657,7 +666,7 @@ function shutdown(): void {
   stopping = true;
   for (const t of timers) clearInterval(t);
   stream.stop();
-  for (const r of recorders) r.stream.stop();
+  for (const s of recorderLinks) s.stop();
   shadowStream?.stop();
   try {
     if (shadowStream) flowFile.append(flow.flush(Date.now()));
@@ -666,7 +675,7 @@ function shutdown(): void {
   }
   try {
     // Bieżąca część taśmy do chwili zatrzymania (aktualizacja restartuje skaner — bez tego luka do 5 min)
-    for (const { rec } of recorders) rec.flush(Date.now(), true);
+    for (const rec of recorders) rec.flush(Date.now(), true);
   } catch (e) {
     console.error(`[skaner] zapis historii przy zatrzymaniu nieudany: ${String(e)}`);
   }
@@ -688,7 +697,9 @@ if (runMinutes > 0) setTimeout(shutdown, runMinutes * 60_000);
 log(
   `start: rynek ${cfg.coin}, budżety wag/min: pozycje ${cfg.weightPerMin}, likwidacje ${cfg.liqWeightPerMin}, prognozy ${cfg.forecastWeightPerMin}, publikacja co ${cfg.publishEveryS} s ${cfg.r2 ? 'do R2' : 'lokalnie'}` +
     (cfg.git ? `, repo danych co ${cfg.git.everyS} s` : '') +
-    (cfg.history ? `, historia ${cfg.history.markets.join('/')} (${cfg.history.keepDays} dni${historyRepo ? '' : ', lokalnie'})` : '') +
+    (cfg.history
+      ? `, historia ${cfg.history.markets.join('/')} (${cfg.history.keepDays} dni${historyRepo ? '' : ', lokalnie'}; połączenia rejestratora: ${recorderLinks.length} — ${recorderLinks.map((s) => s.coins.join('+')).join(', ')})`
+      : '') +
     (whales ? `, wieloryby: ${whaleCfg?.top} kont, ${whaleCfg?.weightPerMin} wag/min` : '')
 );
 // Agregacja arkusza dobrana do ceny przed pierwszym połączeniem (z ostatniej zapisanej minuty), potem co 10 min
@@ -699,7 +710,7 @@ shadowGateTick();
 // Rejestratory historii z repo gałęzi dopiero po jego przygotowaniu: na świeżym klonie numeracja doby musi widzieć pliki
 // doby odtworzone z gałęzi (inaczej numery od 0 powtórzyłyby numery innych kont); reszta skanera startuje od razu
 const startRecorders = () => {
-  for (const r of recorders) r.stream.start();
+  for (const s of recorderLinks) s.start();
 };
 if (historyRepo)
   void startWhenReady(
