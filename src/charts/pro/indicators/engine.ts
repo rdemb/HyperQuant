@@ -357,8 +357,8 @@ export class IndicatorEngine {
     this.samples = [];
     this.runs = list.map((x) => {
       const def = indicatorDef(x.id);
-      // Stożek z dziennika, rynki HIP-4, zakresy P/b, strefy Effort i IVB: bez wartości świec, nigdy nie zgłaszają zmiany
-      if (def.forecast || def.outcomes || def.pbRanges || def.effortZones || def.ivb) return { out: [], from: Number.POSITIVE_INFINITY };
+      // Stożek z dziennika, rynki HIP-4, zakresy P/b, strefy Effort, IVB i SMC: bez wartości świec, nigdy nie zgłaszają zmiany
+      if (def.forecast || def.outcomes || def.pbRanges || def.effortZones || def.ivb || def.smc) return { out: [], from: Number.POSITIVE_INFINITY };
       if (def.sample) {
         const r = new SampleRun(x);
         this.samples.push(r);
