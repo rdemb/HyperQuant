@@ -71,7 +71,7 @@ export const FlowTape: React.FC<{
   head?: React.ReactNode;
 }> = ({ store, minUsd, sound, bigUsd, pace, selected, highlight, narrow, className, onPick, onMinUsd, onSound, tools, head }) => {
   const recent = store.orders.latest(SCAN);
-  // Próg w skali rynku (złoto, S&P 500: zwykle mniejsze zlecenia niż na BTC; ustawienie jest w skali BTC)
+  // Próg w skali rynku (rynki HIP-3: zwykle mniejsze zlecenia niż na BTC; ustawienie jest w skali BTC)
   const scale = usdScaleOf(store.coin);
   const rows = tapeRows(recent, tapeMinUsdOf(minUsd, scale), bigUsd, ROWS, store.serverNow());
 
