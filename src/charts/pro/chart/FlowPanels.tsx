@@ -11,6 +11,8 @@ import { fmtPx } from './layout';
 import type { LiquidityPick } from './liquidity';
 import type { ChartSettings } from './settings';
 import { tr } from '../../../i18n';
+import { usdScaleOf } from '../../../state/markets';
+import { TAPE_MIN_OPTIONS, tapeMinUsdOf } from '../core/tapeFilter';
 
 /**
  * Karta obiektu klikniętego na wykresie (zlecenie agresora z podsumowaniem adresu biorcy, seria, ściana)
@@ -204,7 +206,7 @@ export const PickCard: React.FC<{
   );
 };
 
-export const TAPE_MIN_OPTIONS = [0, 10_000, 50_000, 100_000, 250_000, 1_000_000];
+export { TAPE_MIN_OPTIONS };
 /** Przeglądane najnowsze zlecenia i najwięcej wierszy taśmy. */
 const TAPE_SCAN = 3000;
 const TAPE_ROWS = 160;
@@ -237,9 +239,12 @@ export const TapePanel: React.FC<{
   onClose?: () => void;
 }> = ({ store, settings: s, bigUsd, selected, highlight, className, onPick, onChange, onClose }) => {
   const recent = store.orders.latest(TAPE_SCAN);
+  // Próg w skali rynku (rynki HIP-3: mniejsze zlecenia niż na BTC)
+  const scale = usdScaleOf(store.coin);
+  const minUsd = tapeMinUsdOf(s.tapeMinUsd, scale);
   const rows: AggressorOrder[] = [];
   for (const o of recent) {
-    if (o.notional < s.tapeMinUsd) continue;
+    if (o.notional < minUsd) continue;
     rows.push(o);
     if (rows.length >= TAPE_ROWS) break;
   }
@@ -298,7 +303,7 @@ export const TapePanel: React.FC<{
         >
           {TAPE_MIN_OPTIONS.map((v) => (
             <option key={v} value={v}>
-              {v === 0 ? tr('Wszystkie', 'All') : tr(`od ${compact(v)}`, `${compact(v)}+`)}
+              {v === 0 ? tr('Wszystkie', 'All') : tr(`od ${compact(tapeMinUsdOf(v, scale))}`, `${compact(tapeMinUsdOf(v, scale))}+`)}
             </option>
           ))}
         </select>
