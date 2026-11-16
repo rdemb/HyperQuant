@@ -10,6 +10,12 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 #### Naprawione
 - **Opis liczb układu** (Kokpit i pozostałe układy, liczby w pasku wykresu): okno było przypięte do prawej krawędzi grupy liczb i miało 36rem, więc przy 720 px wychodziło za lewą krawędź okna (−64…512 px). Po otwarciu okno jest mierzone i przesuwane do marginesu 8 px (`shiftIntoView`, test jednostkowy). `ui:check` otwiera je przy 720 i 1024 px i sprawdza, że całe jest na ekranie (przed poprawką przy 720 px: lewa krawędź −64).
 
+### Uwięzieni: podpisy osi histogramu bez ucięcia (2026-11-16)
+<!-- co-nowego: ukryj -->
+
+#### Naprawione
+- **Histogram cen wejścia** (Przed sesją, kontrola przed kampanią): stały lewy margines 48 px ucinał podpisy osi „$100,0 mln”–„$300,0 mln” przy 390 i 720 px. Margines liczony teraz z najdłuższego podpisu (pismo stałej szerokości 10 px). `ui:check` dostał plik `entry-map/BTC.json` z danych stałych i sprawdza przy 390 i 720 px, że żaden podpis rysunku nie wychodzi poza jego krawędź (przed poprawką: 3 ucięte przy obu szerokościach).
+
 ### Lekcje: zakres poranka w ćwiczeniu „Wybicie na otwarciu NY” (2026-11-16)
 <!-- co-nowego: ukryj -->
 
