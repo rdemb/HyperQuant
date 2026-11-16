@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gunzipSync, gzipSync } from 'node:zlib';
@@ -733,7 +733,7 @@ describe('publishHistory — gałąź history repo danych', () => {
     writeFileSync(join(repo.dir, 'a.json'), '1');
     expect((await publishHistory(repo, 'historia: 1', T0, false)).pushed).toBe(true);
     writeFileSync(join(repo.dir, 'b.json'), '2');
-    execFileSync('rm', [join(repo.dir, 'a.json')]);
+    rmSync(join(repo.dir, 'a.json'));
     expect((await publishHistory(repo, 'historia: 2', T0 + MIN, false)).pushed).toBe(true);
     expect(git(remote, 'rev-list', '--count', 'history')).toBe('2');
     expect(git(remote, 'ls-tree', '--name-only', 'history').split('\n')).toEqual(['b.json']);

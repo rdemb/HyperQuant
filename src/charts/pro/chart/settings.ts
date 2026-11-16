@@ -59,6 +59,7 @@ export interface ChartSettings {
   showTpo: boolean;
   /** Kolor profilu doby ze zmiany OI na cenach (nowe i zamykane pozycje) zamiast agresji. */
   showTpoOi: boolean;
+  tpoVolumeValue?: boolean;
   showLevels: boolean;
   /** Poziomy mapy z bloga HyperQuant (tekst autora, tylko BTC) i wybrana mapa; bez wyboru — najnowsza Mapa dnia z bieżącej doby UTC. */
   showBlogMap: boolean;
@@ -248,6 +249,7 @@ export function parseSettings(raw: unknown, d: ChartSettings = DEFAULT_SETTINGS)
     showDevPoc: bool(r.showDevPoc, d.showDevPoc),
     showTpo: bool(r.showTpo, d.showTpo),
     showTpoOi: bool(r.showTpoOi, d.showTpoOi),
+    ...(typeof r.tpoVolumeValue === 'boolean' ? { tpoVolumeValue: r.tpoVolumeValue } : {}),
     showLevels: blogSwap ? d.showLevels : bool(r.showLevels, d.showLevels),
     showBlogMap: bool(r.showBlogMap, d.showBlogMap),
     showSessions: bool(r.showSessions, d.showSessions),

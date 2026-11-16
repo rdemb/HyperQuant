@@ -57,7 +57,11 @@ import { Hip4Layer, Hip4Source, outcomeLevels } from './hip4Layer';
 import { PbRangeLayer, PbStyle, PbZone } from './pbRangeLayer';
 import { EffortLayer, type EffortStyle } from './effortLayer';
 import { IvbLayer, type IvbStyle } from './ivbLayer';
-import { SmcLayer, type SmcStyle } from './smcLayer';
+import { type SmcHigherFeed, SmcLayer, type SmcStyle } from './smcLayer';
+import { pickHtf } from '../core/smcMtf';
+import type { Candle } from '../hl/parse';
+import { seriesCandles } from './layoutInputs';
+import { isAbsent } from '../../../utils/sessionText';
 import { BlogMapLayer, blogMapMarks, blogMapModel, levelsInsteadOfMap } from './blogMapLayer';
 import type { Hip4State } from '../../../state/useHip4';
 import { type BlogMap, type BlogMapsState, pickMap } from '../../../state/useBlogMaps';
@@ -499,7 +503,8 @@ export class ProChartController {
     };
     this.main.attachPrimitive(this.zones);
     this.tpo = new TpoLayer(settings.showTpo, settings.showTpoOi);
-    this.tpo.setOn(settings.showTpo, settings.showTpoOi, settings.showIb);
+    this.tpo.setOn(settings.showTpo, settings.showTpoOi, settings.showIb, settings.tpoVolumeValue);
+    this.tpo.valueOf = (day) => this.periodValues.of('day', day);
     this.tpo.onCounts = (c) => {
       container.dataset.tpoObjects = String(c.objects);
       container.dataset.tpoArea = pct(c.area);
@@ -527,6 +532,7 @@ export class ProChartController {
     };
     this.main.attachPrimitive(this.smc);
     this.smc.fmtPx = (p) => store.fmtPx(p);
+    this.smc.valueOf = (at) => this.periodValues.of('day', Math.floor(at / DAY) * DAY);
     // Obiekty SMC na wykresie (wybór warstwy, nie piksele; pomiar układu może czytać je z atrybutu)
     this.smc.onObjects = (n) => {
       container.dataset.smcObjects = String(n);
@@ -616,7 +622,7 @@ export class ProChartController {
       stackedMin: s.stackedMin,
     });
     this.overlay.setToggles(toggles(s, this.series.interval.ms, this.levelsInstead));
-    this.tpo.setOn(s.showTpo, s.showTpoOi, s.showIb);
+    this.tpo.setOn(s.showTpo, s.showTpoOi, s.showIb, s.tpoVolumeValue);
     if (tpoShown(s, this.series.interval.ms) && this.bars.length > 0) requestDayProfiles(this.store, this.bars[0].t);
     this.needs = needsOf(s);
     this.stripAt = 0;
@@ -1151,7 +1157,25 @@ export class ProChartController {
   /** Styl pierwszego widocznego wskaźnika SMC: krycie, grubość, tryb historia 24 h i okna pivota (null — żaden). */
   private smcStyle(): SmcStyle | null {
     const x = this.indShown.find((y) => indicatorDef(y.id).smc);
-    return x ? { alpha: x.alpha, width: x.width, history: x.history === true, internalLen: x.params.internal, swingLen: x.params.swing, mitigation: x.params.mitigation === 1 ? 'wick' : 'close' } : null;
+    return x ? { alpha: x.alpha, width: x.width, history: x.history === true, internalLen: x.params.internal, swingLen: x.params.swing, higher: x.params.higher, periods: x.params.periods, mitigation: x.params.mitigation === 1 ? 'wick' : 'close' } : null;
+  }
+
+  /**
+   * Świece wyższego interwału SMC z magazynu (jak wskaźniki z parametrem interwału: seria wczytuje się przy pierwszym
+   * użyciu, starsza historia od pierwszej świecy wykresu `from`); null — wskaźnik ukryty albo bez wyższego interwału.
+   */
+  private smcDaily(now: number): readonly Candle[] {
+    if (!(this.smcStyle()?.periods)) return [];
+    const got = seriesCandles(this.store, '1d', now);
+    return got === undefined || isAbsent(got) ? [] : this.store.indicatorCandles('1d', now - 70 * 86400_000);
+  }
+
+  private smcHigher(ms: number, from: number, now: number): SmcHigherFeed | null {
+    const st = this.smcStyle();
+    const pick = st ? pickHtf(ms, st.higher ?? 0) : null;
+    if (pick?.kind !== 'on') return null;
+    const got = seriesCandles(this.store, pick.id, now);
+    return { ms: pick.ms, candles: got === undefined || isAbsent(got) ? got : this.store.indicatorCandles(pick.id, from) };
   }
 
   /** Aktywna strefa P/b do alarmów z menu wykresu (null — wskaźnik ukryty albo brak ważnej strefy). */
@@ -1511,7 +1535,7 @@ export class ProChartController {
     this.overlay.setMarket(this.store.coin);
     // Źródło wartości profili okresów (świece 5m z taśmą) tylko przy włączonej warstwie na interwale z profilami okresów
     // (warunek `indicatorScope().periodProfile`: interwały do 4h, bez budowania obiektu przy każdej świecy)
-    if (this.settings.showPeriodProfiles && ms <= 4 * 3_600_000 && next.length > 0) this.periodValues.update(next[0].t, this.store.serverNow());
+    if ((this.settings.showPeriodProfiles || this.settings.showTpo || this.settings.indicators.some((i) => i.id === 'smc')) && ms <= 4 * 3_600_000 && next.length > 0) this.periodValues.update(next[0].t, this.store.serverNow());
     this.overlay.setBars(next, ms, this.store.vwapCandles(this.series.interval), this.store.serverNow());
     this.overlay.setDaily(this.store.daily);
     this.drawLayer.setBars(next, ms);
@@ -1530,7 +1554,7 @@ export class ProChartController {
     this.pb.setData(next, ms, now, st, this.phone);
     this.effort.setData(next, ms, now);
     this.ivb.setData(next, ms, now);
-    this.smc.setData(next, ms, now);
+    this.smc.setData(next, ms, now, next.length > 0 ? this.smcHigher(ms, next[0].t, now) : null, this.smcDaily(now));
     this.syncBlog(now);
     if (full || now - this.stripAt >= STRIP_EVERY_MS) {
       this.stripAt = now;
