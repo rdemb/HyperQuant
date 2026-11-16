@@ -4,6 +4,15 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Złoto i S&P 500: taśma w skali rynku, jasna informacja zamiast pustych kart BTC (2026-11-16)
+<!-- co-nowego: grupa=rynki | pl=Na złocie i S&P 500 taśma pokazuje zlecenia w skali rynku, a pod wykresem jest zdanie, co jest na żywo, zamiast pustych kart BTC | en=On gold and the S&P 500 the tape shows orders on the market's own scale, and below the chart one sentence says what is live instead of empty BTC cards -->
+
+#### Naprawione
+- **Taśma na złocie** (zgłoszenie Rafała: „Gold nie pokazuje taśmy”): filtr „od 10 tys.” był w USD jednakowo dla każdego rynku, a typowe zlecenie złota na Hyperliquid to kilka tysięcy USD (tempo ok. 14,5 tys. USD/min wobec 272 tys. na S&P 500), więc lista wyglądała na pustą. Progi taśmy (kolumna DOM i taśmy oraz taśma w panelach) są teraz w skali rynku, jak progi ścian i dużych graczy (`usdScaleOf`: OI rynku wobec BTC), a lista progów pokazuje kwoty w tej skali. Ustawienie zostaje w skali BTC, więc zapisane ustawienia się nie zmieniają.
+
+#### Zmienione
+- **W sesji na rynku bez skanera** (złoto, S&P 500): zamiast dwóch kart BTC z „—, bez skanera” (przepływ kohort i zrealizowane likwidacje) jedno zdanie: co jest na żywo (taśma z numerami biorców, arkusz, footprint, delta, CVD od otwarcia strony) i dlaczego nie ma historii taśmy sprzed otwarcia strony (brak zapisu serwera dla rynków HIP-3).
+
 ### Kokpit: okno opisu liczb układu w granicach ekranu (2026-11-16)
 <!-- co-nowego: ukryj -->
 
