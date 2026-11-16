@@ -47,6 +47,9 @@ import { MONO, PRO, rgba } from './theme';
 import { lang, tr } from '../../../i18n';
 import { type DeskMarket, deskMarketOf } from '../../../config/deskMarkets';
 import { closedSpans } from '../../../utils/underlying';
+import { confidentLvn } from '../core/lvnConfidence';
+import { type PeriodLvn, periodLvn } from '../core/periodLvn';
+import { lvnLabel } from './lvnText';
 
 /**
  * Warstwa wskaźników nad główną serią: VWAP z pasmami ±1σ i ±2σ, VWAP sesji, profil wolumenu widocznego
@@ -111,6 +114,9 @@ const K = {
   spOut: rgba(PRO.profileOut, 0.42),
   spVa: rgba(PRO.profileVa, 0.6),
   spPocLine: PRO.profilePoc,
+  lvn: rgba(PRO.ink2, 0.7),
+  lva: rgba(PRO.ink3, 0.12),
+  lvnText: PRO.ink2,
   nPocLine: PRO.nakedPoc,
   devPoc: rgba(PRO.pocFrame, 0.85),
   devVa: rgba(PRO.pocFrame, 0.4),
@@ -353,6 +359,10 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
   private profileBars: readonly ProBar[] | null = null;
   private periodCache = new Map<number, PeriodCache>();
   private devCache = new Map<number, DevCache>();
+  /** LVN z pewnością profili okresów (bieżący i poprzedni): przeliczane tylko po zmianie zamkniętych świec okresu. */
+  private lvnCache = new Map<number, { refs: readonly ProBar[]; res: PeriodLvn | null }>();
+  /** Chwila danych (świeca w toku nie wchodzi do LVN okresu). */
+  private now = Number.POSITIVE_INFINITY;
   private rightInset = 0;
   /** Telefon: podpisy wielorybów tylko dotkniętej linii (klucz linii), reszta bez podpisu. */
   private compact = false;
@@ -436,6 +446,7 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
    */
   setBars(bars: readonly ProBar[], intervalMs: number, fine: readonly Candle[] = [], now = Number.POSITIVE_INFINITY): void {
     this.bars = bars;
+    this.now = now;
     let changed = intervalMs !== this.ms || bars.length !== this.candles.length || fine.length !== this.fineN || fine.at(-1) !== this.fineLast;
     for (let i = bars.length - 1; i >= 0 && !changed; i--) changed = bars[i].candle !== this.candles[i];
     if (changed) {
@@ -604,6 +615,7 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
       this.onPeriods?.({ objects, area: rectShare(s.rects.slice(r0), W, H) });
     } else {
       this.periodCache.clear();
+      this.lvnCache.clear();
       this.onPeriods?.({ objects: 0, area: 0 });
     }
     if (t.showDevPoc && sc.periodProfile && step > 0) this.sceneDeveloping(s, bars, sc.periodProfile, step, visFrom, visTo, X, Y);
@@ -834,7 +846,7 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
   ): number {
     const ms = this.ms;
     const cache = new Map<number, PeriodCache>();
-    const items: { from: number; to: number; complete: boolean; pocPx: number; p: VolumeProfile }[] = [];
+    const items: { start: number; from: number; to: number; complete: boolean; pocPx: number; p: VolumeProfile }[] = [];
     for (const r of periodRanges(bars, mode)) {
       const hit = this.periodCache.get(r.start);
       const entry =
@@ -843,9 +855,10 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
           : { step, refs: bars.slice(r.from, r.to + 1), profile: volumeProfile(bars, r.from, r.to, step) };
       cache.set(r.start, entry);
       const p = entry.profile;
-      if (p && p.max > 0) items.push({ from: r.from, to: r.to, complete: r.complete, pocPx: (p.lo + p.poc + 0.5) * p.step, p });
+      if (p && p.max > 0) items.push({ start: r.start, from: r.from, to: r.to, complete: r.complete, pocPx: (p.lo + p.poc + 0.5) * p.step, p });
     }
     this.periodCache = cache;
+    const lvnCache = new Map<number, { refs: readonly ProBar[]; res: PeriodLvn | null }>();
     // Pełny profil: bieżący i poprzedni okres (z danych); starsze — linia POC i pasek value area; nagie POC — 3 najbliższe cenie
     const full = fullFrom(items.length);
     const naked = nakedPocs(bars, items);
@@ -872,6 +885,24 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
         s.rects.push({ x: x0 - 3, y: ya, w: 2, h: Math.max(1, yb - ya), color: K.spVa });
         continue;
       }
+      // LVN i LVA z pewnością od progu (kalibracja SIM): węzeł linią, obszar pasmem przez szerokość okresu; okres w toku
+      // tylko ze świec zamkniętych, z dopiskiem „profil w budowie”
+      let toC = items[k].to;
+      while (toC >= from && bars[toC].t + ms > this.now) toC--;
+      const hitL = this.lvnCache.get(items[k].start);
+      const lv = hitL && sameRefs(hitL.refs, bars, from, toC) ? hitL : { refs: bars.slice(from, toC + 1), res: periodLvn(bars, from, toC, ms, !items[k].complete) };
+      lvnCache.set(items[k].start, lv);
+      for (const l of confidentLvn(lv.res?.lvn ?? [])) {
+        const yl = Y(l.px);
+        if (!Number.isFinite(yl)) continue;
+        objects++;
+        if (l.kind === 'area') {
+          const ya = Y(l.pxHi);
+          const yb = Y(l.pxLo);
+          s.rects.push({ x: Math.max(0, x0), y: Math.min(ya, yb), w: Math.max(1, Math.min(W, x1) - Math.max(0, x0)), h: Math.max(1, Math.abs(yb - ya)), color: K.lva });
+        } else s.hlines.push({ x0: Math.max(0, x0), x1: Math.min(W, x1), y: yl, color: K.lvn, dash: DASH.dot });
+        s.texts.push({ x: Math.min(W, x1) - 4, y: yl, text: lvnLabel(l, lv.res!.building, this.compact, this.fmtPx), color: K.lvnText, align: 'right', bg: true });
+      }
       const pw = Math.min(PERIOD_PROFILE_MAX_PX, (x1 - x0) * PERIOD_PROFILE_WIDTH, W * PROFILE_FIELD_MAX);
       const gap = Math.abs(Y(pocPx) - Y(pocPx + step)) >= 3 ? 1 : 0;
       for (let r = 0; r < p.vol.length; r++) {
@@ -883,6 +914,7 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
         s.rects.push({ x: x0, y: ya, w: Math.max(1, (v / p.max) * pw), h: Math.max(1, yb - ya - gap), color });
       }
     }
+    this.lvnCache = lvnCache;
     return objects;
   }
 

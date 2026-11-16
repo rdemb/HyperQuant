@@ -4,9 +4,9 @@ import { t975 } from '../../../utils/tQuantile';
 import type { BookFrame } from '../core/book';
 import type { MakerSplit } from '../core/makers';
 import { DEFAULT_EFFORT_PARAMS } from '../core/effortZones';
-import { LVN_MIN_CONFIDENCE } from '../core/lvnConfidence';
 import { IVB_DEFAULT, IVB_WINDOWS } from '../core/ivb';
 import { PB_EVIDENCE } from '../chart/pbSelect';
+import { EFFORT_LVN, LVN_THRESHOLD_PCT, PB_LVN } from '../chart/lvnText';
 import { type Branching, MIN_EVENTS, fitBranching } from '../core/hawkes';
 import { fitBranchingLater, inBackground } from '../core/hawkesWorker';
 import { ofiEvent } from '../../../utils/microMechanics';
@@ -17,24 +17,6 @@ import { oneAccountScope } from '../core/accountScope';
 import { numLang } from '../../../ui/format';
 import { PRO } from '../chart/theme';
 import { tr } from '../../../i18n';
-
-/**
- * Metoda LVN z pewnością (projekt Pioniera F-B1), wspólna dla profilu tygodnia P/b i profilu swingu Effort; `blocks` —
- * zdanie o blokach bootstrapu danego profilu.
- */
-const lvnMethod = (blocks: { pl: string; en: string }) => ({
-  pl: ` LVN (MODEL, eksperymentalne): lokalne minima wygładzonego profilu (okno 5 koszyków) wewnątrz obszaru wartości, poniżej 50% POC; najwyżej 3 najtrwalsze, czyli najgłębsze wobec niższego z dwóch otaczających maksimów (trwałość topologiczna), a nie po prostu najniższe. Każde LVN ma pewność z bootstrapu: 200 razy losujemy ze zwracaniem świece profilu, liczymy profil na tej samej siatce koszyków i LVN tą samą regułą; pewność to udział replik z LVN w ±1 koszyku. Ziarno losowania jest stałe, więc ten sam profil ma tę samą pewność przy każdym rysowaniu. Hipoteza zerowa zapisana przed wdrożeniem: LVN z pewnością poniżej ${LVN_PCT}% to szum profilu, więc go nie rysujemy (legenda podaje, ile takich odrzucono), bo blada linia i tak zajęłaby jedno z miejsc najbliższych poziomów. ${blocks.pl} Sąsiednie świece handlują przy podobnych cenach, a losowanie pojedynczych świec tego nie oddaje, więc pewność może być zawyżona: w teście na płaskim profilu z szumem 3 z 15 LVN z samego szumu przeszły próg.`,
-  en: ` LVN (MODEL, experimental): local minima of the smoothed profile (5-bin window) inside the value area, below 50% of the POC; at most the 3 most persistent ones, i.e. the deepest relative to the lower of the two surrounding maxima (topological persistence), not simply the lowest. Each LVN has a bootstrap confidence: 200 times we resample the profile's candles with replacement, rebuild the profile on the same bin grid and find LVN with the same rule; the confidence is the share of replicas with an LVN within ±1 bin. The random seed is fixed, so the same profile has the same confidence on every redraw. Null hypothesis recorded before release: an LVN with confidence below ${LVN_PCT}% is profile noise, so it is not drawn (the legend says how many were rejected), because a faint line would still take one of the nearest-level slots. ${blocks.en} Neighbouring candles trade at similar prices and resampling single candles misses that, so the confidence may be too high: in a test on a flat noisy profile 3 of 15 LVN from pure noise passed the threshold.`,
-});
-const LVN_PCT = Math.round(LVN_MIN_CONFIDENCE * 100);
-const PB_LVN = lvnMethod({
-  pl: 'Profil tygodnia jest ze świec 5m (wolumen świecy rozłożony na jej zakres, bez taśmy), więc blokiem bootstrapu jest jedna świeca 5m.',
-  en: 'The weekly profile is built from 5m candles (each candle’s volume spread over its range, without the tape), so the bootstrap block is one 5m candle.',
-});
-const EFFORT_LVN = lvnMethod({
-  pl: 'Profil swingu jest z taśmy zapisanej w świecach wykresu (wiersze cen bez czasu transakcji), więc blokiem bootstrapu jest jedna świeca wykresu z jej wierszami: na 1m to bloki 1-minutowe, na 5m pięciominutowe. Pewność liczy się dopiero pod kursorem nad pasmem D, raz na profil.',
-  en: 'The swing profile comes from the tape stored in chart candles (price rows without trade times), so the bootstrap block is one chart candle with its rows: 1-minute blocks on 1m, five-minute blocks on 5m. The confidence is computed only under the crosshair over a D band, once per profile.',
-});
 
 /** Historia wykresu dla RVOL: 10 dni roboczych w oknie ok. 14 dni kalendarzowych */
 const RVOL_MIN_HISTORY_DAYS = 14;
@@ -2194,10 +2176,10 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
     convention: tr(
       'Tego wskaźnika nie ma w TradingView. To mechanizacja HyperQuant metody zakresów P i b Patricka Nilla: Nill nie publikuje dokładnych reguł rysowania, więc to nasza wersja, nie jego. Liczona zawsze ze świec 5m Hyperliquid, niezależnie od interwału wykresu: impuls do 16 świec o ruchu netto co najmniej 4 ATR (ATR z 96 świec sprzed impulsu), po nim zakres co najmniej 4 h (48 świec) z co najmniej 3 naprzemiennymi dotknięciami krawędzi (pasy po 20% szerokości) i kształtem P po impulsie w górę (dół zakresu w górnej połowie impulsu) albo b po impulsie w dół (lustrzanie); strefa żyje 16 h albo do pierwszego zamknięcia poza nią. Linie: VAH, POC, VAL i LVN profilu wolumenu poprzedniego tygodnia (od poniedziałku UTC, koszyki 10 bp) oraz VAH, POC i VAL poprzedniej doby UTC (5 bp); „poziom tyg.” przy strefie znaczy, że poziom tygodnia leży w jej zasięgu ± 0,5 ATR. Typowa godzina w legendzie to mediana zakresu 24 ostatnich pełnych godzin. ' +
         PB_EVIDENCE.pl +
-        ' Na wykresie: zakres aktywny (wypełniony od świecy potwierdzenia, wcześniejsza część kropkowanym obrysem, z numerami dotknięć) i ostatni zakończony (sam obrys); zakres w budowie tylko w legendzie („w budowie: 2 dotknięcia z 3”); 2 poziomy tygodnia i doby najbliższe nad ceną i 2 pod nią; przy linii LVN jego pewność („tydz. LVN 65 200 · pewność 84%”).' + PB_LVN.pl,
+        ' Na wykresie: zakres aktywny (wypełniony od świecy potwierdzenia, wcześniejsza część kropkowanym obrysem, z numerami dotknięć) i ostatni zakończony (sam obrys); zakres w budowie tylko w legendzie („w budowie: 2 dotknięcia z 3”); 2 poziomy tygodnia i doby najbliższe nad ceną i 2 pod nią; przy linii LVN jego pewność („tydz. LVN 65 200 · pewność ' + LVN_THRESHOLD_PCT + '%”), a LVA to blade pasmo doliny („tydz. LVA 65 100–65 300”).' + PB_LVN.pl,
       'TradingView has no such indicator. It is HyperQuant’s mechanization of Patrick Nill’s P and b range method: Nill does not publish exact drawing rules, so this is our version, not his. It is always computed from Hyperliquid 5m candles, whatever the chart interval: an impulse of up to 16 candles with a net move of at least 4 ATR (ATR of the 96 candles before the impulse), then a range of at least 4 h (48 candles) with at least 3 alternating edge touches (bands of 20% of the width) and a P shape after an up impulse (the range low in the upper half of the impulse) or b after a down impulse (mirrored); a zone lives 16 h or until the first close outside it. Lines: VAH, POC, VAL and LVN of the previous week’s volume profile (from Monday UTC, 10 bp bins) and VAH, POC and VAL of the previous UTC day (5 bp); “weekly level” at a zone means a weekly level lies within its reach ± 0.5 ATR. The typical hour in the legend is the median range of the last 24 full hours. ' +
         PB_EVIDENCE.en +
-        ' On the chart: the active range (filled from the confirmation candle, the earlier part as a dotted outline, with numbered touches) and the last ended one (outline only); a forming range only in the legend (“forming: 2 of 3 touches”); the 2 weekly and daily levels nearest above the price and 2 below; an LVN line carries its confidence (“wk LVN 65,200 · confidence 84%”).' + PB_LVN.en
+        ' On the chart: the active range (filled from the confirmation candle, the earlier part as a dotted outline, with numbered touches) and the last ended one (outline only); a forming range only in the legend (“forming: 2 of 3 touches”); the 2 weekly and daily levels nearest above the price and 2 below; an LVN line carries its confidence (“wk LVN 65,200 · confidence ' + LVN_THRESHOLD_PCT + '%”), and an LVA is a faint band over its valley (“wk LVA 65,100–65,300”).' + PB_LVN.en
     ),
     memoryNote: tr(
       'Liczone od nowa po każdej zamkniętej świecy 5m, z historii od tygodnia przed początkiem bieżącego tygodnia (profil poprzedniego tygodnia); świeca w trakcie nie wchodzi. Na interwałach do 1 h, na żywo (bez powtórki), na każdym rynku.',

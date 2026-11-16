@@ -4,6 +4,18 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Fabio: LVN v2: bloki 15 min, próg z kalibracji SIM, obszary LVA i profile okresów (2026-11-16)
+<!-- co-nowego: grupa=wykres | pl=LVN mają pewność z losowania bloków 15 min i próg ustalony na symulacji, szerokie doliny są rysowane jako pasma LVA, a LVN z pewnością widać też na profilach sesji i dób | en=LVN carry a confidence from resampling 15-minute blocks with a threshold set on simulation, wide valleys are drawn as LVA bands, and confident LVN also appear on session and day profiles -->
+
+#### Zmienione
+- **Bootstrap kołowy blokami w czasie** (decyzja Pioniera po F-B1): bloki ok. 15 min niezależnie od interwału (1m: 15 świec, 5m: 3, od 15m: 1 świeca), koło, żeby brzegi okresu nie były rzadziej losowane. Profil krótszy niż 20 świec albo 4 bloki nie ma LVN („za mało świec do pewności, 40 z 60”).
+- **Próg z kalibracji na SIM, nie na rynku** (najpierw blok, potem próg): 10 klas płaskich profili z szumem (skupiska świec do ok. 15 min w losowych cenach; swingi 1m i 5m, sesje 1m i 5m, doby 5m, 1m, 15m i 1h, tydzień 5m), po 200 profili. Najniższy próg z siatki 70–100% z ≤ 5% fałszywych LVN w każdej klasie to **100%** (wszystkie 200 replik): przepuścił 34 z 2568 fałszywych LVN (1,3%), w najgorszej klasie 8 z 213 (3,8%); 99,5% i niżej przekraczało 5% w co najmniej jednej klasie. Przyczyna: bootstrap nie dokłada wolumenu tam, gdzie go nie było, więc pusta dolina zostaje w każdej replice. Na błądzeniu losowym (zależność na godziny) próg przepuszcza 25 z 1166 fałszywych dolin (2,1%). Wynik w `LVN_CALIBRATION`, a test liczy kalibrację od nowa i porównuje.
+- **Węzeł albo obszar:** dolina (koszyki do połowy głębokości minimum) szersza niż max(5 koszyków, 0,25 ATR) to LVA, pasmo; jej pewność to udział replik z LVN gdziekolwiek w dolinie. Węższa zostaje węzłem LVN z regułą ±1 koszyka. Dolina na ok. 38 koszyków z testu rundy 1 (pewność węzła 0,47) jest teraz obszarem z pewnością 100%. Legenda i podpisy: „LVN (węzeł)” i „LVA (obszar)”; P/b rysuje LVA tygodnia jako blade pasmo, legenda „LVN tyg. z pewnością 100%: 1 LVN (węzeł), 1 LVA (obszar) z 3”.
+
+#### Dodane
+- **LVN z pewnością na profilach okresów** (sesja albo doba UTC, warstwa „Profile okresów”): bieżący i poprzedni okres na stałej siatce 5 bp niezależnej od powiększenia, ze świec zamkniętych (świeca z pełną taśmą wnosi wiersze taśmy), liczone po zamknięciu świecy i pamiętane; węzeł linią, obszar pasmem przez szerokość okresu, podpis „LVN (węzeł) 65 200 · pewność 100%”, a w okresie w toku „· profil w budowie”. Opis metody w podpowiedzi plakietki warstwy.
+- **Koszt** (mediana z 15, 200 replik): swing 300 świec × 40 wierszy ok. 1,5 ms, tydzień 2016 świec 5m ok. 5,6 ms, sesja 480 świec 1m × 40 wierszy ok. 2,6 ms.
+
 ### Fabio: LVN z pewnością bootstrapową i rankingiem trwałości (2026-11-16)
 <!-- co-nowego: grupa=wykres | pl=LVN w profilu swingu Effort i w profilu tygodnia P/b mają pewność z 200 losowań świec, a LVN z pewnością poniżej 70% nie są rysowane | en=LVN in the Effort swing profile and in the P/b weekly profile carry a confidence from 200 candle resamples, and LVN below 70% confidence are not drawn -->
 

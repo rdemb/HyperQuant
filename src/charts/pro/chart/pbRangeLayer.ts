@@ -1,7 +1,7 @@
 import type { IChartApiBase, IPrimitivePaneRenderer, IPrimitivePaneView, ISeriesApi, ISeriesPrimitive, Logical, SeriesAttachedParameter, SeriesType, Time } from 'lightweight-charts';
 import { tr } from '../../../i18n';
 import { numLang } from '../../../ui/format';
-import { LVN_MIN_CONFIDENCE, confidentLvn } from '../core/lvnConfidence';
+import { LVN_MIN_CONFIDENCE, type LvnLevel, confidentLvn } from '../core/lvnConfidence';
 import { type Bar5, LIFE, type Levels, type Range, TF_MS, atr, dayLevels, ranges, typicalHourBp, weekLevels } from '../core/pbRanges';
 import { utcDayStart, utcWeekStart } from '../core/sessions';
 import type { ProBar, ProStore } from '../store/proStore';
@@ -71,6 +71,8 @@ interface HLine {
   y: number;
   color: string;
   text: string;
+  /** LVA (obszar małego wolumenu): pasmo od y0 do y1 zamiast samej linii. */
+  band?: { y0: number; y1: number };
 }
 
 type State = 'off' | 'replay' | 'interval' | 'loading' | 'ready';
@@ -80,17 +82,32 @@ const WEEK_CACHE = 6;
 
 const pct = (c: number) => numLang(String(Math.round(c * 100)));
 
-/** Podpis linii poziomu: „tydz. LVN 65 200 · pewność 84%” (telefon: „tydz. LVN 84%”), pozostałe bez pewności. */
-export function lineText(l: { px: number; name: string; tag: string; conf: number | null }, phone: boolean): string {
+/**
+ * Podpis linii poziomu: „tydz. LVN 65 200 · pewność 100%”, obszar „tydz. LVA 65 100–65 300 · pewność 100%” (telefon:
+ * „tydz. LVN 100%”), pozostałe poziomy bez pewności.
+ */
+export function lineText(l: { px: number; name: string; tag: string; conf: number | null; lo?: number; hi?: number }, phone: boolean): string {
   if (phone) return l.conf === null ? `${l.tag} ${l.name}` : `${l.tag} ${l.name} ${pct(l.conf)}%`;
   const conf = l.conf === null ? '' : ` · ${tr('pewność', 'confidence')} ${pct(l.conf)}%`;
-  return `${l.tag} ${l.name} ${fmtPx(l.px)}${conf}`;
+  const px = l.lo !== undefined && l.hi !== undefined ? `${fmtPx(l.lo)}–${fmtPx(l.hi)}` : fmtPx(l.px);
+  return `${l.tag} ${l.name} ${px}${conf}`;
 }
 
-/** Legenda: ile LVN tygodnia przeszło próg pewności (pozostałe to szum profilu i nie są rysowane). */
-export function weekLvnText(kept: number, all: number): string {
+/**
+ * Legenda: LVN tygodnia z pewnością od progu, osobno węzły i obszary, z liczbą wszystkich (pozostałe to szum profilu
+ * i nie są rysowane); null — za mało świec do pewności.
+ */
+export function weekLvnText(lvn: readonly Pick<LvnLevel, 'kind' | 'confidence'>[] | null): string | null {
+  if (lvn === null) return tr('LVN tyg.: —, za mało świec do pewności', 'weekly LVN: —, too few candles for a confidence');
+  if (lvn.length === 0) return null;
+  const kept = confidentLvn(lvn);
+  const nodes = kept.filter((l) => l.kind === 'node').length;
+  const areas = kept.length - nodes;
   const min = pct(LVN_MIN_CONFIDENCE);
-  return tr(`LVN tyg. z pewnością ≥ ${min}%: ${kept} z ${all}`, `weekly LVN with confidence ≥ ${min}%: ${kept} of ${all}`);
+  return tr(
+    `LVN tyg. z pewnością ${min}%: ${nodes} LVN (węzeł), ${areas} LVA (obszar) z ${lvn.length}`,
+    `weekly LVN with confidence ${min}%: ${nodes} LVN (node), ${areas} LVA (area) of ${lvn.length}`
+  );
 }
 
 export class PbRangeLayer implements ISeriesPrimitive<Time> {
@@ -126,6 +143,12 @@ export class PbRangeLayer implements ISeriesPrimitive<Time> {
         target.useMediaCoordinateSpace(({ context: ctx }) => {
           const st = this.style;
           if (!st) return;
+          // LVA tygodnia: blade pasmo pod świecami (krawędzie i podpis rysuje warstwa wierzchnia)
+          for (const l of this.lines) {
+            if (!l.band) continue;
+            ctx.fillStyle = rgba(l.color, 0.08);
+            ctx.fillRect(l.x0, l.band.y0, l.x1 - l.x0, l.band.y1 - l.band.y0);
+          }
           for (const r of this.boxes) {
             if (!r.fill || r.x1 <= r.xf) continue;
             const band = (r.y1 - r.y0) * 0.2;
@@ -273,11 +296,11 @@ export class PbRangeLayer implements ISeriesPrimitive<Time> {
       }
       return this.weekCache.get(key)!;
     };
-    // Poziom tygodnia przy strefie: VAH, VAL i LVN z pewnością ≥ 70%
+    // Poziom tygodnia przy strefie: VAH, VAL i LVN (także środek LVA) z pewnością od progu kalibracji SIM
     const level = rs.map((r) => {
       const k = r.kv ?? b.length - 1;
       const lv = weekOf(b[k].t);
-      return lv !== null && [lv.vah, lv.val, ...confidentLvn(lv.lvn).map((l) => l.px)].some((x) => x >= r.lo - 0.5 * A[k] && x <= r.hi + 0.5 * A[k]);
+      return lv !== null && [lv.vah, lv.val, ...confidentLvn(lv.lvn ?? []).map((l) => l.px)].some((x) => x >= r.lo - 0.5 * A[k] && x <= r.hi + 0.5 * A[k]);
     });
     this.view = {
       ranges: rs,
@@ -313,31 +336,34 @@ export class PbRangeLayer implements ISeriesPrimitive<Time> {
     const y = (p: number) => series.priceToCoordinate(p);
     const b = this.b5;
     const last = b.length - 1;
-    // Poziomy tygodnia i doby: najwyżej 2 najbliższe nad ceną i 2 pod nią (z obu profili razem); LVN tylko z pewnością ≥ 70%
-    const levels: { px: number; name: string; from: number; color: string; tag: string; conf: number | null }[] = [];
+    // Poziomy tygodnia i doby: najwyżej 2 najbliższe nad ceną i 2 pod nią (z obu profili razem); LVN i LVA tylko z
+    // pewnością od progu kalibracji SIM, LVA jako pasmo doliny
+    type Lv = { px: number; name: string; from: number; color: string; tag: string; conf: number | null; lo?: number; hi?: number };
+    const levels: Lv[] = [];
     for (const [lv, from, color, tag] of [
       [v.week, utcWeekStart(this.now), WEEK, tr('tydz.', 'wk')],
       [v.day, utcDayStart(this.now), DAY_INK, tr('doba', 'day')],
     ] as const) {
       if (!lv) continue;
-      const items: [number, string, number | null][] = [
-        [lv.vah, 'VAH', null],
-        [lv.poc, 'POC', null],
-        [lv.val, 'VAL', null],
-        ...confidentLvn(lv.lvn).map((l): [number, string, number] => [l.px, 'LVN', l.confidence]),
-      ];
-      for (const [px, name, conf] of items) levels.push({ px, name, from, color, tag, conf });
+      levels.push({ px: lv.vah, name: 'VAH', from, color, tag, conf: null }, { px: lv.poc, name: 'POC', from, color, tag, conf: null }, { px: lv.val, name: 'VAL', from, color, tag, conf: null });
+      for (const l of confidentLvn(lv.lvn ?? [])) {
+        const area = l.kind === 'area' ? { lo: l.pxLo, hi: l.pxHi } : {};
+        levels.push({ px: l.px, name: l.kind === 'area' ? 'LVA' : 'LVN', from, color, tag, conf: l.confidence, ...area });
+      }
     }
     const near = nearestLevels(levels, b[last].c);
     levels.forEach((l, i) => {
       const yy = y(l.px);
       if (!near.has(i) || yy === null) return;
+      const ya = l.hi !== undefined ? y(l.hi) : null;
+      const yb = l.lo !== undefined ? y(l.lo) : null;
       this.lines.push({
         x0: Math.max(0, x(l.from)),
         x1: right,
         y: yy,
         color: l.color,
         text: lineText(l, this.phone),
+        ...(ya !== null && yb !== null ? { band: { y0: Math.min(ya, yb), y1: Math.max(ya, yb) } } : {}),
       });
     });
     // Zakres aktywny i ostatni zakończony; zakres w budowie tylko w legendzie
@@ -442,8 +468,8 @@ export class PbRangeLayer implements ISeriesPrimitive<Time> {
       zone = `${forming.s > 0 ? 'P' : 'b'} ${tr(`w budowie: ${n} ${word} z ${PB_TOUCHES}`, `forming: ${n} of ${PB_TOUCHES} touches`)} · ${hm} ${tr('z', 'of')} 4:00`;
     }
     const parts = [{ text: zone, color: a ? color : PRO.ink2 }];
-    const wl = v.week?.lvn ?? [];
-    if (wl.length > 0) parts.push({ text: weekLvnText(confidentLvn(wl).length, wl.length), color: PRO.ink2 });
+    const wl = v.week ? weekLvnText(v.week.lvn) : null;
+    if (wl) parts.push({ text: wl, color: PRO.ink2 });
     if (v.hourBp !== null)
       parts.push({
         text: `${tr('typowa godzina', 'typical hour')} ${numLang(String(Math.round(v.hourBp)))} bp`,
