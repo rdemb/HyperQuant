@@ -76,12 +76,13 @@ describe('wpis SMC w rejestrze', () => {
     expect(def.params.map((p) => [p.key, p.def, p.options])).toEqual([
       ['internal', 3, [3, 5, 10, 20, 50]],
       ['swing', 10, [3, 5, 10, 20, 50]],
+      ['higher', 0, [0, -1, 15, 30, 60, 240, 1440, 10080]],
     ]);
     expect(tfAllowed(def)).toBe(false);
     expect(usesInstanceColor(def)).toBe(false);
     const [x] = indicatorsFromLink('smc()');
-    expect(indicatorLabel(x)).toBe('SMC+HL 3 10');
-    expect(indicatorsFromLink('smc(5,50)')[0].params).toEqual({ internal: 5, swing: 50 });
+    expect(indicatorLabel(x)).toBe('SMC+HL 3 10 auto');
+    expect(indicatorsFromLink('smc(5,50)')[0].params).toEqual({ internal: 5, swing: 50, higher: 0 });
     expect(indicatorsFromLink('smc(4,10)')[0].params.internal).toBe(3);
     expect(swatchColor(x)).not.toContain(PRO.buy);
   });

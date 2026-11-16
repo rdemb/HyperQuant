@@ -4,6 +4,12 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Struktura i płynność (SMC+HL): luki i przełamanie z wyższego interwału (2026-11-16)
+<!-- co-nowego: grupa=wykres | pl=Struktura i płynność (SMC+HL) pokazuje też luki FVG i ostatnie przełamanie z wyższego interwału (automatycznie 4H albo 1D), obrysem przerywanym, dopiero od zamknięcia jego świecy | en=Structure & Liquidity (SMC+HL) also shows FVG gaps and the last break from a higher timeframe (automatically 4H or 1D), as a dashed outline, only from the close of its candle -->
+
+#### Dodane
+- **SMC z wyższego interwału** (Pionier, `smc-hl.md` §7.2): nowy moduł `core/smcMtf.ts` liczy ten sam model tylko na zamkniętych świecach wyższego interwału (seria świec z magazynu, jak wskaźniki z parametrem interwału), więc `known` elementu to zamknięcie świecy wyższego interwału, a świeca w toku niczego nie tworzy. Parametr „Wyższy interwał”: auto (4H do 30m, 1D dla 1h–4h, od 1D brak), wyłączony albo 15m, 30m, 1H, 4H, 1D, 1W. Wybór `chart/smcMtfSelect.ts`: 3 otwarte FVG najbliższe cenie, 1 linia ostatniego BOS albo CHoCH, wejście gotowe na 2 OB na typ (etap S1), w ramach łącznie 25 obiektów; na telefonie tylko najbliższa luka. Rysunek przygaszonym obrysem przerywanym z podpisem („4H FVG”, „4H BOS”) od `known`; legenda ze stanem struktury wyższego interwału albo „—” z powodem (wyłączony, brak wyższego dla 1D, nie wyższy od wykresu, czekam na świece, błąd pobrania, za mało świec). Testy: tabela wyboru, bez zaglądania w przyszłość (luka 4H dokładnie przy zamknięciu świecy 4H, nie świecę 15m wcześniej), bez przemalowań (odtwarzanie świeca po świecy z bieżącą świecą 4H daje ten sam wybór co liczenie na całości), limity, powody w legendzie.
+
 ### Struktura i płynność (SMC+HL) także na 4H i wyższych interwałach (2026-11-16)
 <!-- co-nowego: grupa=wykres | pl=Struktura i płynność (SMC+HL) działa teraz na każdym interwale, także 4H i 1D, z oknami liczonymi w świecach | en=Structure & Liquidity (SMC+HL) now works on every interval, including 4H and 1D, with windows counted in candles -->
 

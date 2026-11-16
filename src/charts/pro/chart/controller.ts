@@ -57,7 +57,10 @@ import { Hip4Layer, Hip4Source, outcomeLevels } from './hip4Layer';
 import { PbRangeLayer, PbStyle, PbZone } from './pbRangeLayer';
 import { EffortLayer, type EffortStyle } from './effortLayer';
 import { IvbLayer, type IvbStyle } from './ivbLayer';
-import { SmcLayer, type SmcStyle } from './smcLayer';
+import { type SmcHigherFeed, SmcLayer, type SmcStyle } from './smcLayer';
+import { pickHtf } from '../core/smcMtf';
+import { seriesCandles } from './layoutInputs';
+import { isAbsent } from '../../../utils/sessionText';
 import { BlogMapLayer, blogMapMarks, blogMapModel, levelsInsteadOfMap } from './blogMapLayer';
 import type { Hip4State } from '../../../state/useHip4';
 import { type BlogMap, type BlogMapsState, pickMap } from '../../../state/useBlogMaps';
@@ -1151,7 +1154,19 @@ export class ProChartController {
   /** Styl pierwszego widocznego wskaźnika SMC: krycie, grubość, tryb historia 24 h i okna pivota (null — żaden). */
   private smcStyle(): SmcStyle | null {
     const x = this.indShown.find((y) => indicatorDef(y.id).smc);
-    return x ? { alpha: x.alpha, width: x.width, history: x.history === true, internalLen: x.params.internal, swingLen: x.params.swing } : null;
+    return x ? { alpha: x.alpha, width: x.width, history: x.history === true, internalLen: x.params.internal, swingLen: x.params.swing, higher: x.params.higher } : null;
+  }
+
+  /**
+   * Świece wyższego interwału SMC z magazynu (jak wskaźniki z parametrem interwału: seria wczytuje się przy pierwszym
+   * użyciu, starsza historia od pierwszej świecy wykresu `from`); null — wskaźnik ukryty albo bez wyższego interwału.
+   */
+  private smcHigher(ms: number, from: number, now: number): SmcHigherFeed | null {
+    const st = this.smcStyle();
+    const pick = st ? pickHtf(ms, st.higher) : null;
+    if (pick?.kind !== 'on') return null;
+    const got = seriesCandles(this.store, pick.id, now);
+    return { ms: pick.ms, candles: got === undefined || isAbsent(got) ? got : this.store.indicatorCandles(pick.id, from) };
   }
 
   /** Aktywna strefa P/b do alarmów z menu wykresu (null — wskaźnik ukryty albo brak ważnej strefy). */
@@ -1527,7 +1542,7 @@ export class ProChartController {
     this.pb.setData(next, ms, now, st, this.phone);
     this.effort.setData(next, ms, now);
     this.ivb.setData(next, ms, now);
-    this.smc.setData(next, ms, now);
+    this.smc.setData(next, ms, now, next.length > 0 ? this.smcHigher(ms, next[0].t, now) : null);
     this.syncBlog(now);
     if (full || now - this.stripAt >= STRIP_EVERY_MS) {
       this.stripAt = now;
