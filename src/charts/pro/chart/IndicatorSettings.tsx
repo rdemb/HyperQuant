@@ -114,7 +114,7 @@ export const IndicatorSettings: React.FC<{ x: IndicatorInstance; loaded: number;
   // Same słupki w kolorach znaku i wartości tylko w legendzie (zmiana OI, OFI): kolor i grubość linii nic nie zmieniają, zostaje
   // krycie; stożek, rynki HIP-4, zakresy P/b i strefy Effort nie mają plotów, ale mają grubość linii (strefy Effort mają
   // stałe kolory stron, więc bez koloru, z kryciem)
-  const bars = !def.forecast && !def.outcomes && !def.pbRanges && !def.effortZones && !def.ivb && def.plots.every((p) => p.hist || p.hidden);
+  const bars = !def.forecast && !def.outcomes && !def.pbRanges && !def.effortZones && !def.ivb && !def.smc && def.plots.every((p) => p.hist || p.hidden);
   // Kolor instancji tylko tam, gdzie coś zmienia: linie strony i kohort mają stałe kolory palety
   const tinted = usesInstanceColor(def);
   const memory = memoryCandles(def, x.params);
@@ -263,6 +263,13 @@ export const IndicatorSettings: React.FC<{ x: IndicatorInstance; loaded: number;
             </label>
           </div>
         )}
+        {tab === 'params' && def.smc && (
+          // Tryb „historia 24 h”: także luki wypełnione i EQ zakończone w ostatnich 24 h, przygaszone
+          <label className="flex items-center gap-2 min-h-9 py-1 cursor-pointer text-ink-1">
+            <input type="checkbox" checked={x.history === true} onChange={(e) => set({ history: e.target.checked ? true : undefined })} className="w-4 h-4 shrink-0 accent-accent" />
+            {tr('Historia 24 h: także wypełnione luki i zakończone EQ, przygaszone', '24 h history: also filled gaps and ended EQ, dimmed')}
+          </label>
+        )}
         {tab === 'style' && (
           <div className="flex flex-col gap-1">
             {(bars || !tinted) && (
@@ -311,7 +318,7 @@ export const IndicatorSettings: React.FC<{ x: IndicatorInstance; loaded: number;
                 <ColorPicker color={x.color} alpha={x.alpha} onColor={(color) => set({ color })} onAlpha={(alpha) => set({ alpha })} />
               </div>
             )}
-            {!def.forecast && !def.outcomes && !def.pbRanges && !def.effortZones && !def.ivb && (
+            {!def.forecast && !def.outcomes && !def.pbRanges && !def.effortZones && !def.ivb && !def.smc && (
               <label className="flex items-center gap-2.5 min-h-10 cursor-pointer text-ink-1">
                 <input type="checkbox" checked={x.labels} onChange={(e) => set({ labels: e.target.checked })} className="w-4 h-4 shrink-0 accent-accent" />
                 {tr('Wartość na osi ceny', 'Value on the price scale')}
@@ -375,6 +382,11 @@ export const IndicatorSettings: React.FC<{ x: IndicatorInstance; loaded: number;
                           'Strefy i pudełka to miejsca do obserwacji, nie wskazania wejścia: opisują, gdzie rynek przyjął agresję i gdzie ją pokazał, nie co zrobi dalej.',
                           'Zones and boxes are places to watch, not entry cues: they describe where the market absorbed aggression and where it showed it, not what it will do next.'
                         )
+                      : def.smc
+                        ? tr(
+                            'Etykiety, linie, luki i równe szczyty opisują kształt ceny, nie miejsca wejścia. Częstości bazowe wobec losowych poziomów nie są jeszcze policzone: wskaźnik jest eksperymentalny.',
+                            'Labels, lines, gaps and equal highs describe the price shape, not entry places. Base rates against random levels are not computed yet: the indicator is experimental.'
+                          )
                       : def.ivb
                         ? tr(
                             'Szczyt i dołek IVB to miejsca do obserwacji, nie wskazania wejścia: opisują zakres otwarcia NY, nie to, w którą stronę cena z niego wyjdzie.',
