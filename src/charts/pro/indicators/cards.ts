@@ -82,6 +82,17 @@ export const INDICATOR_CARD: Partial<Record<IndicatorId, IndicatorCard>> = {
     claim: tr('Czy wolumen jest wyższy niż zwykle o tej porze dnia w Nowym Jorku.', 'Whether volume is higher than usual at this New York time of day.'),
     status: 'test',
   },
+  kyle: {
+    claim: tr(
+      'O ile punktów bazowych cena ruszała się na każdy milion USD przepływu agresora w ostatnich świecach, osobno dla kupna i sprzedaży.',
+      'How many basis points price moved per million USD of aggressor flow over recent candles, separately for buying and selling.'
+    ),
+    status: 'opis',
+    noise: tr(
+      'λ pokazujemy dopiero, gdy R² przekracza próg szumu dla liczby świec (test nachylenia 5%); na danych z losowym znakiem przepływu pokazuje się w nie więcej niż ok. 5% okien.',
+      'λ is shown only when R² exceeds the noise floor for the number of candles (a 5% slope test); on data with a random flow sign it shows in no more than about 5% of windows.'
+    ),
+  },
   ofi: {
     claim: tr(
       'Jak bardzo nierównowaga na najlepszych poziomach arkusza tłumaczy zmianę ceny w tej samej świecy.',
