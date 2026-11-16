@@ -17,6 +17,11 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 - **LVN po testach na profilach okresów** (sesja albo doba UTC, warstwa „Profile okresów”): bieżący i poprzedni okres na stałej siatce 5 bp niezależnej od powiększenia, ze świec zamkniętych (świeca z pełną taśmą wnosi wiersze taśmy), liczone po zamknięciu świecy i pamiętane; węzeł linią, obszar pasmem przez szerokość okresu, a w okresie w toku „· profil w budowie”. Opis metody w podpowiedzi plakietki warstwy.
 - **Koszt** (mediana z 15): z rozkładem zerowym już w pamięci swing 300 świec × 40 wierszy ok. 1,3–1,9 ms, tydzień 2016 świec 5m ok. 6–7 ms, sesja 480 świec 1m × 40 wierszy ok. 2–4 ms; rozkład zerowy liczony raz na zestaw parametrów (do 32 w pamięci): swing ok. 18 ms, tydzień ok. 110 ms.
 
+### Blog: filtry rubryk bez przewijania strony w bok na telefonie (2026-11-16)
+<!-- co-nowego: ukryj -->
+
+#### Naprawione
+- **Filtry rubryk na liście wpisów** (przegląd Audytora 16.11): rząd filtrów to `fieldset`, który domyślnie ma `min-inline-size: min-content`, więc przy 360 i 390 px rozpychał stronę do ok. 653 px i cała strona przewijała się w bok. Teraz `min-inline-size: 0`: filtry przewijają się tylko w swoim rzędzie. `ui:check` buduje blog z wpisów w repo i przy 360, 390 i 720 px sprawdza, że strona ma szerokość okna (porównanie z zadaną szerokością, bo w trybie telefonu okno układu rośnie razem z treścią) i że rząd filtrów mieści się w oknie (przed poprawką: 653 px przy 360 i 390).
 ### Jedno źródło wartości doby i sesji; liczniki Ramy dnia od otwarcia sesji (2026-11-16)
 <!-- co-nowego: grupa=wykres | pl=Wczorajsze VAH, VAL i POC są teraz te same w pasku Rama dnia, panelu Najbliższe poziomy, nagłówku Mapy dnia i na Profilach okresów; z taśmy LIVE, ze świec MODEL, a liczniki przyjęcia liczą od otwarcia sesji | en=Yesterday's VAH, VAL and POC are now the same in the Day frame bar, the Nearest levels panel, the Day map header and Period profiles; LIVE from the tape, MODEL from candles, and the acceptance counters run from the session open -->
 
