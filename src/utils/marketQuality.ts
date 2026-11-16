@@ -1,6 +1,6 @@
 import type { DeskMarket } from '../config/deskMarkets.ts';
 import type { MarketCtx } from './marketsTable.ts';
-import { type Underlying, platformPriced } from './underlying.ts';
+import { type Underlying, platformPriced } from './underlyingCore.ts';
 
 /**
  * Jakość danych rynku na żywo (projekt 60, Q3), z tego samego odczytu `metaAndAssetCtxs` co strona Rynki:
