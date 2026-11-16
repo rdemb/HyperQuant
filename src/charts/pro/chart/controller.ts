@@ -55,6 +55,7 @@ import { Hip4Layer, Hip4Source, outcomeLevels } from './hip4Layer';
 import { PbRangeLayer, PbStyle, PbZone } from './pbRangeLayer';
 import { EffortLayer, type EffortStyle } from './effortLayer';
 import { IvbLayer, type IvbStyle } from './ivbLayer';
+import { SmcLayer, type SmcStyle } from './smcLayer';
 import { BlogMapLayer, blogMapMarks, blogMapModel, levelsInsteadOfMap } from './blogMapLayer';
 import type { Hip4State } from '../../../state/useHip4';
 import { type BlogMap, type BlogMapsState, pickMap } from '../../../state/useBlogMaps';
@@ -349,6 +350,8 @@ export class ProChartController {
   private readonly effort = new EffortLayer(() => this.effortStyle());
   /** Zakres otwarcia NY 30 albo 60 min ze świec wykresu (wskaźnik „IVB”). */
   private readonly ivb = new IvbLayer(() => this.ivbStyle());
+  /** Struktura i płynność (SMC+HL) ze świec wykresu: swingi, BOS i CHoCH, sweepy, FVG, EQH i EQL (wskaźnik eksperymentalny). */
+  private readonly smc = new SmcLayer(() => this.smcStyle());
   /**
    * Mapa z bloga (warstwa „Mapa z bloga”, tylko BTC): mapy z pliku bloga, rozliczenie poziomów (układ Rozliczenie),
    * mapa na wykresie i chwila ostatniego przeliczenia znaczników (najwyżej raz na minutę).
@@ -516,6 +519,12 @@ export class ProChartController {
     this.ivb.onObjects = (n) => {
       container.dataset.ivbObjects = String(n);
     };
+    this.main.attachPrimitive(this.smc);
+    this.smc.fmtPx = (p) => store.fmtPx(p);
+    // Obiekty SMC na wykresie (wybór warstwy, nie piksele; pomiar układu może czytać je z atrybutu)
+    this.smc.onObjects = (n) => {
+      container.dataset.smcObjects = String(n);
+    };
     this.main.attachPrimitive(this.countdown);
     this.main.attachPrimitive(this.strip);
     // Rysunki dołączone ostatnie — nad wskaźnikami i świecami
@@ -677,6 +686,7 @@ export class ProChartController {
     this.liquidity.setDom(!on);
     this.liquidity.setPhone(on);
     this.effort.setPhone(on);
+    this.smc.setPhone(on);
     this.liquidity.setLabelLimit(densityLimit(this.settings.labelDensity, on));
     this.overlay.setCompact(on);
     this.applyDomInset();
@@ -697,6 +707,7 @@ export class ProChartController {
     this.pb.setRightInset(px);
     this.effort.setRightInset(px);
     this.ivb.setRightInset(px);
+    this.smc.setRightInset(px);
     this.blog.setRightInset(px);
     this.chart.timeScale().applyOptions({ rightOffsetPixels: this.rightGap() });
   }
@@ -1131,6 +1142,12 @@ export class ProChartController {
     return x ? { color: x.color, alpha: x.alpha, width: x.width, minutes: x.params.minutes } : null;
   }
 
+  /** Styl pierwszego widocznego wskaźnika SMC: krycie, grubość, tryb historia 24 h i okna pivota (null — żaden). */
+  private smcStyle(): SmcStyle | null {
+    const x = this.indShown.find((y) => indicatorDef(y.id).smc);
+    return x ? { alpha: x.alpha, width: x.width, history: x.history === true, internalLen: x.params.internal, swingLen: x.params.swing } : null;
+  }
+
   /** Aktywna strefa P/b do alarmów z menu wykresu (null — wskaźnik ukryty albo brak ważnej strefy). */
   pbZone(): PbZone | null {
     return this.pbStyle() ? this.pb.zone() : null;
@@ -1496,6 +1513,7 @@ export class ProChartController {
     this.pb.setData(next, ms, now, st, this.phone);
     this.effort.setData(next, ms, now);
     this.ivb.setData(next, ms, now);
+    this.smc.setData(next, ms, now);
     this.syncBlog(now);
     if (full || now - this.stripAt >= STRIP_EVERY_MS) {
       this.stripAt = now;
@@ -1905,6 +1923,8 @@ export class ProChartController {
               ? this.effort.legend(this.hoverTime !== null && this.hoverPrice !== null ? { t: this.hoverTime, p: this.hoverPrice } : null, this.indFormat('price'))
               : def.ivb
                 ? this.ivb.legend()
+                : def.smc
+                ? this.smc.legend(this.hoverTime !== null && this.hoverPrice !== null ? { t: this.hoverTime, p: this.hoverPrice } : null, this.indFormat('price'))
                 : short
                 ? [{ text: `—, ${short}`, color: PRO.ink3 }]
                 : vs.flatMap((v, p) => {

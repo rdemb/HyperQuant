@@ -90,6 +90,23 @@ export const GROUPS: { title: string; rows: Row[] }[] = [
       },
       {
         metric: tr(
+          'Struktura i płynność (SMC+HL, W sesji): swingi HH, HL, LH, LL, BOS i CHoCH, sweepy, FVG z CE, EQH i EQL, premium i discount',
+          'Structure & Liquidity (SMC+HL, In session): HH, HL, LH, LL swings, BOS and CHoCH, sweeps, FVG with CE, EQH and EQL, premium and discount'
+        ),
+        source: tr('Hyperliquid API: candleSnapshot (zamknięte świece interwału wykresu)', 'Hyperliquid API: candleSnapshot (closed candles of the chart timeframe)'),
+        method: tr(
+          'Nasze reguły na zamkniętych świecach, ATR(14) Wildera: pivoty dwóch skal (domyślnie 3 i 10 świec, ściśle z lewej, nieściśle z prawej) z filtrem 1 ATR, przełamanie zamknięciem za swingiem (BOS zgodne ze stanem, CHoCH przeciwne), sweep (knot ≥ 0,05 ATR i powrót zamknięciem w ≤ 2 świecach), FVG z 3 świec (≥ 0,1 ATR, wypełnienie i środek luki, 24 h), EQH i EQL (≤ 0,1 ATR, ≥ 5 świec), równowaga 47,5–52,5% zakresu swingowego; każdy element z chwilą „znany od”',
+          'Our rules on closed candles, Wilder ATR(14): two-scale pivots (3 and 10 candles by default, strict on the left, non-strict on the right) with a 1 ATR filter, a break as a close beyond a swing (BOS with the state, CHoCH against it), sweep (wick ≥ 0.05 ATR and a close back within ≤ 2 candles), FVG from 3 candles (≥ 0.1 ATR, fill and gap midpoint, 24 h), EQH and EQL (≤ 0.1 ATR, ≥ 5 candles), equilibrium 47.5–52.5% of the swing range; every element with a “known from” time'
+        ),
+        kinds: ['MODEL'],
+        refresh: tr('po każdej zamkniętej świecy', 'after every closed candle'),
+        caveat: tr(
+          'Eksperymentalny: częstości bazowe wobec losowych poziomów nie są jeszcze policzone, więc elementy opisują kształt ceny i niczego nie przewidują.',
+          'Experimental: base rates against random levels are not computed yet, so the elements describe the price shape and predict nothing.'
+        ),
+      },
+      {
+        metric: tr(
           'Pasek „Rama dnia” (W sesji, przy Strefach Effort albo IVB): wartość dziś wobec wczoraj, stan aukcji, status i szerokość IVB',
           'The “Day frame” bar (In session, with the Effort zones or the IVB): today’s value against yesterday’s, auction state, IVB status and width'
         ),
