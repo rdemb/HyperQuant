@@ -208,6 +208,12 @@ export interface IndicatorDef {
   cloud?: readonly [number, number];
   /** Przedział wokół pierwszego plotu (dolna i górna granica): pasmo w kolorze wskaźnika, w legendzie w nawiasie. */
   band?: readonly [number, number];
+  /**
+   * Pasmo zwykłości (plan 59, H1): p10–p90 ostatnich zamkniętych świec (30 dób na interwale wykresu, od 500 świec), dwie
+   * kropkowane linie w panelu i „zwykle a–b” w legendzie. `combine: 'sumAbs'` — miara łączona z plotów 0 i 1 (bez linii,
+   * bo panel rysuje je osobno): szerokość kupujących i sprzedających razem, TWAP kupno + |sprzedaż|.
+   */
+  usualBand?: { combine?: 'sumAbs' };
   /** Linie poziomów w panelu (liczby bez podpisów) i stały zakres jego skali. */
   levels?: readonly number[];
   range?: readonly [number, number];
@@ -1389,6 +1395,7 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
   },
   {
     id: 'oiflow',
+    usualBand: {},
     short: 'OI × Delta',
     name: tr('Zmiana OI i delta', 'OI change and delta'),
     hint: tr(
@@ -1428,6 +1435,7 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
   },
   {
     id: 'absorption',
+    usualBand: {},
     short: tr('Absorpcja', 'Absorption'),
     name: tr('Absorpcja: wysiłek a efekt', 'Absorption: effort vs result'),
     hint: tr(
@@ -1452,7 +1460,8 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
       { hist: true, signOf: 1, title: 'z' },
       { hist: true, hidden: true, title: 'Delta' },
     ],
-    levels: [-2, 0, 2],
+    // Stałe ±2 zastępuje pasmo zwykłości (plan 59, D7 i H1): rozkład z nie jest normalny, więc p10–p90 mówi więcej
+    levels: [0],
     // Liczby ze znakiem jak delta (z i delta w legendzie)
     format: 'volume',
     sample: {
@@ -1479,6 +1488,7 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
   },
   {
     id: 'ofi',
+    usualBand: {},
     short: 'OFI',
     name: tr('OFI: nierównowaga arkusza i jej wpływ na cenę', 'OFI: order book imbalance and its price impact'),
     hint: tr(
@@ -1579,6 +1589,7 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
   },
   {
     id: 'regime',
+    usualBand: {},
     short: tr('Reżim', 'Regime'),
     name: tr('Reżim zmienności (BOCPD)', 'Volatility regime (BOCPD)'),
     hint: tr(
@@ -1719,6 +1730,7 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
   },
   {
     id: 'slippage',
+    usualBand: {},
     short: tr('Koszt', 'Cost'),
     name: tr('Koszt zlecenia rynkowego (poślizg)', 'Market order cost (slippage)'),
     hint: tr(
@@ -1773,6 +1785,7 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
   },
   {
     id: 'breadth',
+    usualBand: { combine: 'sumAbs' },
     short: tr('Szerokość', 'Breadth'),
     name: tr('Szerokość agresji (efektywna liczba biorców)', 'Aggression breadth (effective number of takers)'),
     hint: tr(
@@ -1865,6 +1878,7 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
   },
   {
     id: 'repeat',
+    usualBand: {},
     short: tr('Powroty', 'Returning'),
     name: tr('Powracający i nowi biorcy', 'Returning and new takers'),
     hint: tr(
@@ -2123,6 +2137,7 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
   },
   {
     id: 'twap',
+    usualBand: { combine: 'sumAbs' },
     short: 'TWAP',
     name: tr('Udział TWAP w taśmie', 'TWAP share of the tape'),
     hint: tr(

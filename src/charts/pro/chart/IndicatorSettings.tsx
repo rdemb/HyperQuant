@@ -174,6 +174,15 @@ export const IndicatorSettings: React.FC<{ x: IndicatorInstance; loaded: number;
             {card.noise}
           </span>
         )}
+        {def.usualBand && (
+          <span data-pasmo-zwyklosci className="mt-1 block">
+            <span className="font-medium text-ink-1">{tr('Pasmo „zwykle”. ', 'The “usual” band. ')}</span>
+            {tr(
+              'p10–p90 z ostatnich zamkniętych świec (do 30 dób), od 200 świec jako krótka próba, od 500 pełne. Pasmo z ostatnich godzin miesza pory dnia, np. Azję z otwarciem Londynu; pasmo tej samej godziny przyjdzie po wydłużeniu nagrania taśmy.',
+              'p10–p90 of the last closed candles (up to 30 days), from 200 candles as a short sample, full from 500. A band from the last hours mixes times of day, e.g. Asia with the London open; a same-hour band will come once the tape recording is longer.'
+            )}
+          </span>
+        )}
       </div>
       <div role="tablist" className="flex gap-3 px-3 border-b border-line">
         {TABS.map((t) => (
