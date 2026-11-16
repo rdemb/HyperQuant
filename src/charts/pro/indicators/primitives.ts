@@ -411,8 +411,12 @@ export class RegimeDetector {
   }
 }
 
-/** Pasmo zwykłości dopiero od tylu świec z wartością (plan 59, H1). */
-export const USUAL_BAND_MIN = 500;
+/**
+ * Pasmo zwykłości od tylu świec z wartością (decyzja Pioniera 16.11): od 200 krótka próba (rysowana jaśniej, z etykietą),
+ * od 500 pełne pasmo. Przy 200 świecach błąd pokrycia p10–p90 to ok. ±2 pkt proc., z autokorelacją świec 1m ok. ±4–5.
+ */
+export const USUAL_BAND_MIN = 200;
+export const USUAL_BAND_FULL = 500;
 
 /** Kwantyl typu 7 (interpolacja liniowa, jak w R i NumPy) posortowanej rosnąco tablicy. */
 export function quantile7(sorted: Float64Array, p: number): number {
@@ -424,7 +428,7 @@ export function quantile7(sorted: Float64Array, p: number): number {
   return sorted[lo] + (h - lo) * (sorted[hi] - sorted[lo]);
 }
 
-export type UsualBand = { lo: number; hi: number; n: number; short?: true };
+export type UsualBand = { lo: number; hi: number; n: number; short?: true; brief?: true };
 
 /**
  * Pasmo zwykłości wskaźnika: p10 i p90 ostatnich `maxN` zamkniętych świec z wartością przed świecą `end` (świeca w toku
@@ -445,5 +449,7 @@ export function usualBand(series: Float64Array | readonly Float64Array[], end: n
   }
   if (buf.length < USUAL_BAND_MIN) return { lo: Number.NaN, hi: Number.NaN, n: buf.length, short: true };
   const sorted = Float64Array.from(buf).sort();
-  return { lo: quantile7(sorted, 0.1), hi: quantile7(sorted, 0.9), n: sorted.length };
+  const band: UsualBand = { lo: quantile7(sorted, 0.1), hi: quantile7(sorted, 0.9), n: sorted.length };
+  if (sorted.length < USUAL_BAND_FULL) band.brief = true;
+  return band;
 }

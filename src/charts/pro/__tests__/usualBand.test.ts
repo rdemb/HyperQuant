@@ -20,16 +20,24 @@ describe('pasmo zwykłości (plan 59, H1)', () => {
     expect(b!.hi).toBeCloseTo(89.1, 1);
   });
 
-  it(`za mało świec (< ${USUAL_BAND_MIN}): brak pasma i liczba świec do komunikatu`, () => {
-    const v = Float64Array.from({ length: 400 }, (_, i) => i);
-    const b = usualBand(v, 400, 10_000);
-    expect(b).toEqual({ lo: Number.NaN, hi: Number.NaN, n: 400, short: true });
+  it('progi Pioniera: 199 świec — brak pasma; 200 — krótka próba; 500 — pełne pasmo', () => {
+    const v = (n: number) => Float64Array.from({ length: n }, (_, i) => i);
+    expect(usualBand(v(199), 199, 10_000)).toEqual({ lo: Number.NaN, hi: Number.NaN, n: 199, short: true });
+    const krotka = usualBand(v(200), 200, 10_000);
+    expect(krotka.short).toBeUndefined();
+    expect(krotka.brief).toBe(true);
+    expect(krotka.lo).toBeCloseTo(19.9);
+    const pelna = usualBand(v(500), 500, 10_000);
+    expect(pelna.brief).toBeUndefined();
+    expect(pelna.short).toBeUndefined();
+    expect(USUAL_BAND_MIN).toBe(200);
   });
 
   it('miara łączona (szerokość: kupujący + sprzedający; TWAP: kupno + |sprzedaż|)', () => {
     const buy = Float64Array.from({ length: 600 }, () => 2);
     const sell = Float64Array.from({ length: 600 }, () => -3);
     const b = usualBand([buy, sell], 600, 600, 'sumAbs');
+    expect(b.brief).toBeUndefined();
     expect(b!.lo).toBeCloseTo(5);
     expect(b!.hi).toBeCloseTo(5);
   });

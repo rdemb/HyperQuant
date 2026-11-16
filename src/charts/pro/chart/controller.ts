@@ -1566,8 +1566,10 @@ export class ProChartController {
       b.band = usualBand(def.usualBand?.combine ? [run.out[0], run.out[1]] : run.out[0], Math.min(closed, this.engine.count), maxN, def.usualBand?.combine);
       if (!b.lines) return;
       const ok = !b.band.short;
-      b.lines[0].applyOptions({ price: ok ? b.band.lo : 0, lineVisible: ok });
-      b.lines[1].applyOptions({ price: ok ? b.band.hi : 0, lineVisible: ok });
+      // Krótka próba (200–499 świec): linie jaśniejsze, pełne pasmo od 500 świec
+      const color = rgba(this.indShown[k].color, b.band.brief ? 0.28 : 0.55);
+      b.lines[0].applyOptions({ price: ok ? b.band.lo : 0, lineVisible: ok, color });
+      b.lines[1].applyOptions({ price: ok ? b.band.hi : 0, lineVisible: ok, color });
     });
   }
 
@@ -1906,7 +1908,9 @@ export class ProChartController {
         band && !short
           ? band.short
             ? { text: tr(`zwykle: —, za mało świec (${band.n} z ${USUAL_BAND_MIN})`, `usual: —, too few candles (${band.n} of ${USUAL_BAND_MIN})`), color: PRO.ink3 }
-            : { text: tr(`zwykle ${fmtBand(band.lo)}–${fmtBand(band.hi)} (p10–p90, ${band.n} świec)`, `usual ${fmtBand(band.lo)}–${fmtBand(band.hi)} (p10–p90, ${band.n} candles)`), color: PRO.ink3 }
+            : band.brief
+              ? { text: tr(`zwykle ${fmtBand(band.lo)}–${fmtBand(band.hi)} (p10–p90, krótka próba: ${band.n} świec)`, `usual ${fmtBand(band.lo)}–${fmtBand(band.hi)} (p10–p90, short sample: ${band.n} candles)`), color: PRO.ink3 }
+              : { text: tr(`zwykle ${fmtBand(band.lo)}–${fmtBand(band.hi)} (p10–p90, ${band.n} świec)`, `usual ${fmtBand(band.lo)}–${fmtBand(band.hi)} (p10–p90, ${band.n} candles)`), color: PRO.ink3 }
           : null;
       const shownValues = bandText ? [...values, bandText] : values;
       const legend = this.indLegends[k];
