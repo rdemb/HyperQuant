@@ -9,7 +9,7 @@ export function flowElements(r: SmcResult, mitigation: 'wick' | 'close' = 'close
     ...r.fvgs.map(f => ({ id: flowId('fvg', f.t, f.known, f.dir), kind: 'fvg' as const, known: f.known,
       lo: f.lo, hi: f.hi, dir: f.dir, atr: r.atr[f.idx], expiresAt: f.expiresAt, endAt: f.filledAt, originFrom: f.t - 2 * r.ms })),
     ...r.sweeps.map(s => ({ id: flowId('sweep', s.t, s.known, s.dir), kind: 'sweep' as const, known: s.known,
-      lo: s.level, hi: s.level, dir: s.dir, atr: r.atr[s.returnIdx], expiresAt: s.known + Math.max(86400000, 24 * r.ms) })),
+      lo: s.level, hi: s.level, dir: s.dir, atr: r.atr[s.returnIdx], originFrom: s.t, expiresAt: s.known + Math.max(86400000, 24 * r.ms) })),
   ];
 }
 export type FlowAlignment = 'aligned' | 'divergent' | 'ambiguous' | 'unavailable';

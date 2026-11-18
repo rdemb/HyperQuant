@@ -76,3 +76,13 @@ it('marks a known gap only after it is observed and never profile-enables anothe
   other.print(10, 100, 2, 1);
   expect(other.m.contactProfiles(zone.id, null, null, true)).toBeNull();
 });
+
+it('keeps individual contact receipts visible when the supplementary trial also changes in the batch', () => {
+  const { j, m, update } = setup();
+  j.trades([{ tid: 1, time: 10, px: 100, sz: 2, side: 1 }], 11);
+  j.trades([{ tid: 2, time: 12, px: 100, sz: 1, side: -1 }], 20);
+  update(21);
+  expect(m.events(zone.id).filter(e => e.kind === 'contact').map(e => e.observedAt)).toEqual([11]);
+  expect(m.contactProfiles(zone.id, 11, null, false)?.current).toMatchObject({ turnoverUsd: 200, deltaUsd: 200 });
+  expect(m.contactProfiles(zone.id, 21, null, false)?.current).toMatchObject({ turnoverUsd: 300, deltaUsd: 100 });
+});

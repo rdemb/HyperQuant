@@ -11,6 +11,7 @@ import type { SmcStyle } from './smcLayer';
 export type FlowOption = 'defense' | 'initiative' | 'anchored' | 'formation' | 'memory';
 const n = (v: number | null, digits = 2): string => v === null || !Number.isFinite(v) ? '—' : numLang(v.toFixed(digits));
 const time = (t: number | null): string => t === null ? '—' : `${fmtDayTime(t, Date.now())}:${String(new Date(t).getSeconds()).padStart(2, '0')}`;
+const depthReason = (reason: string | null | undefined) => ({ baseline: tr('brak stanu sprzed uderzenia', 'missing pre-impact state'), range: tr('brak zasięgu', 'insufficient range'), gap: tr('przerwa obserwacji', 'observation gap'), step: tr('zmieniona agregacja', 'aggregation changed'), 'no-sample': tr('brak próbki po uderzeniu', 'no post-impact sample') })[reason ?? ''] ?? '—';
 const options = (): [FlowOption, string][] => [
   ['defense', tr('Obrona OB', 'OB defense')], ['initiative', tr('Sweep i retest', 'Sweep and retest')],
   ['anchored', tr('Delta / VWAP', 'Delta / VWAP')], ['formation', tr('Powstanie FVG', 'FVG formation')], ['memory', tr('Pamięć zdarzeń', 'Event memory')],
@@ -65,6 +66,16 @@ export function SmcFlowDetails({ s, opts, unit }: { s: FlowSnapshot; opts: SmcSt
       <p className="text-xs text-ink-3">{tr('Zaobserwowane kontakty', 'Observed contacts')}: {s.contacts} · {tr('zakończone', 'ended')}: {s.completed}</p>
       {s.recent.map((c, i) => <p key={`${c.from}:${i}`} className="mt-1 text-xs tabular-nums">{time(c.from)} · {({ active: tr('w toku', 'active'), retreat: tr('odejście', 'retreat'), broken: tr('przebicie', 'broken'), expired: tr('limit czasu', 'timed out') })[c.result]} · {tr('atak w strefie', 'attack inside zone')} {n(c.complete ? c.attack : null)} {unit} · {tr('penetracja / odbicie ATR', 'penetration / rebound ATR')} {n(c.complete && s.atr > 0 ? c.penetration / s.atr : null)} / {n(c.complete && s.atr > 0 ? c.rebound / s.atr : null)} · {tr('kupno / sprzedaż w strefie', 'buy / sell inside zone')} {n(c.complete ? c.flow.buy : null)} / {n(c.complete ? c.flow.sell : null)} {unit} · Δ {n(c.complete ? c.flow.delta : null)} {unit} · USD {n(c.complete ? c.flow.pv : null)}</p>)}
       <p className="mt-1 text-xs text-ink-3">{tr('Heurystyka kontaktów, nie dowód iceberg ani prognoza.', 'Contact heuristic, not evidence of an iceberg or a forecast.')}</p>
+      <div data-flow-matched-contacts className="mt-2 text-xs">
+        <h4>{tr('Penetracja przy jednakowym nominale agresji · MODEL', 'Penetration at equal aggression notional · MODEL')}</h4>
+        {s.recent.map((c, i) => <p key={c.from}>{i + 1}. {tr('Próg USD', 'USD budget')} {n(c.matched?.budgetUsd ?? null, 0)} · {tr('penetracja ATR', 'penetration ATR')} {n(c.matched?.penetrationAtr ?? null)} · {tr('nadwyżka transakcji USD', 'crossing-print excess USD')} {n(c.matched?.overshootUsd ?? null)}</p>)}
+        <p>{tr('Cała transakcja przekraczająca próg; cena bez interpolacji. — oznacza brak pokrycia lub nieosiągnięty próg.', 'Whole print crossing the budget; no price interpolation. — means incomplete coverage or budget not reached.')}</p>
+      </div>
+      <div data-flow-depth-recovery className="mt-2 text-xs">
+        <h4>{tr('Widoczna L2 po uderzeniu · MODEL (stałe ceny)', 'Visible L2 after impact · MODEL (fixed prices)')}</h4>
+        {s.recent.map((c, i) => <p key={c.from}>{i + 1}. {s.dir === 1 ? 'Bids' : 'Asks'} · {tr('względem stanu przed', 'relative to pre-impact')} {n(c.recovery?.ratio != null ? c.recovery.ratio * 100 : null)}% · USD {n(c.recovery?.currentUsd ?? null)} / {n(c.recovery?.baselineUsd ?? null)} · {tr('poziomy', 'levels')} {c.recovery?.prices.length ?? 0} · {tr('luka maks. s', 'max gap s')} {n(c.recovery ? c.recovery.maxGapMs / 1000 : null)} · {tr('zasięg próbki', 'sample range')} {c.recovery?.range ? `${n(c.recovery.range[0])}–${n(c.recovery.range[1])}` : '—'} · {depthReason(c.recovery?.reason)}</p>)}
+        <p>{tr('Ta sama strona i ceny sprzed uderzenia. Luki, zmiana agregacji lub brak zasięgu unieważniają porównanie. Stosunek może przekroczyć 100%; nie dowodzi odnawiania zleceń.', 'Same side and pre-impact prices. Gaps, aggregation changes or insufficient range invalidate comparison. Ratio can exceed 100%; it does not prove order replenishment.')}</p>
+      </div>
     </section>}
     {opts.initiative !== false && s.sweep && <section data-flow-section="initiative"><h3 className="font-semibold">{tr('Sweep → powrót → retest', 'Sweep → return → retest')}</h3>
       <p>{({ observing: tr('Obserwacja trzech pełnych świec', 'Observing three full candles'), initiative: tr('Powrót z inicjatywą przepływu', 'Return with flow initiative'), 'return-only': tr('Powrót bez potwierdzonej inicjatywy', 'Return without confirmed initiative'), beyond: tr('Ponowne zamknięcie za poziomem', 'Closed beyond the level again'), unknown: tr('— Niepełne pokrycie okna', '— Incomplete window coverage') })[s.sweep.state]} <span className="text-xs text-ink-3">MODEL</span></p>
@@ -72,6 +83,13 @@ export function SmcFlowDetails({ s, opts, unit }: { s: FlowSnapshot; opts: SmcSt
       <p className="text-xs text-ink-3">{time(s.knownAt)} → {time(s.knownAt + 3 * s.intervalMs)}</p>
       <p className="text-xs">{tr('Agresja kupna / sprzedaży, całe okno', 'Aggressive buy / sell, whole window')}: {n(s.sweep.flow?.buy ?? null)} / {n(s.sweep.flow?.sell ?? null)} {unit}</p>
       <p className="text-xs">{tr('Na i nad poziomem', 'At and above level')}: {n(s.sweep.above?.buy ?? null)} / {n(s.sweep.above?.sell ?? null)} · {tr('Pod poziomem', 'Below level')}: {n(s.sweep.below?.buy ?? null)} / {n(s.sweep.below?.sell ?? null)} {unit}</p>
+      <div className="mt-2 text-xs" data-sweep-excursion>
+        <p>{tr('Pierwotny sweep · MODEL (odstępy ostatniej ceny)', 'Original sweep · MODEL (last-price intervals)')}</p>
+        <p>{tr('Czas poza granicą / nieznany', 'Time outside / unknown')}: {n(s.sweep.excursion?.startAt != null ? s.sweep.excursion.outsideMs / 1000 : null)} / {n(s.sweep.excursion?.startAt != null ? s.sweep.excursion.unknownMs / 1000 : null)} s · {tr('pokrycie czasu', 'time coverage')} {n(s.sweep.excursion?.timeCoverage != null ? s.sweep.excursion.timeCoverage * 100 : null)}%</p>
+        <p>{tr('Obrót kontaktu poza granicą', 'Contact turnover outside')}: {n(s.sweep.excursion?.outsideShare != null ? s.sweep.excursion.outsideShare * 100 : null)}% · {tr('Zaobserwowany USD poza / cały kontakt', 'Observed USD outside / whole contact')}: {n(s.sweep.excursion?.observedOutsideUsd ?? null)} / {n(s.sweep.excursion?.observedUsd ?? null)}</p>
+        <p>{s.sweep.excursion?.frozen ? tr('Zamrożone przy pierwszym zaobserwowanym powrocie', 'Frozen at first observed return') : tr('— Brak kompletnego powrotu w obserwacji', '— No complete return observed')} · {s.sweep.excursion?.complete ? tr('pełna taśma', 'complete tape') : tr('niepełna taśma', 'incomplete tape')}</p>
+        <p>{tr('Bez ekstrapolacji ostatniej ceny. Odstępy >12 s są nieznane.', 'No last-price extrapolation. Intervals >12 s are unknown.')}</p>
+      </div>
     </section>}
     {opts.formation !== false && f && <section data-flow-section="formation"><h3 className="font-semibold">{tr('Profil trzech świec powstania', 'Three-candle formation profile')} <span className="text-xs text-ink-3">LIVE / MODEL</span></h3>
       <p className="text-xs text-ink-3">{time(f.from)} → {time(f.to)}</p>
@@ -91,6 +109,14 @@ export function SmcFlowDetails({ s, opts, unit }: { s: FlowSnapshot; opts: SmcSt
       <p className="mt-2 text-xs">{relation[alignment]} · MODEL</p>
       <p className="text-xs">{structureText}; {alignment === 'unavailable' ? unavailable : side === null ? tr('brak przewagi agresora 60%', 'no 60% aggressor dominance') : `${side === 'buy' ? tr('przewaga agresywnego kupna', 'aggressive buying dominant') : tr('przewaga agresywnej sprzedaży', 'aggressive selling dominant')} ${n(share === null ? null : share * 100)}%`}</p>
       <p className="text-xs text-ink-3">{tr('Porównanie dotyczy całej delty od kontaktu, nie tylko wnętrza strefy; próg przewagi strony 60%.', 'Comparison uses all delta since contact, not only trades inside the zone; side dominance threshold 60%.')}</p>
+    </section>}
+    {opts.memory !== false && opts.anchored !== false && s.comparison && <section data-flow-section="control"><h3 className="font-semibold">{tr('Reakcja SMC i zwykły poziom · MODEL', 'SMC reaction and ordinary level · MODEL')}</h3>
+      <p className="text-xs">{tr('Dobór przed kontaktem', 'Selection before contact')}: {time(s.comparison.selectedAt)} · {tr('od wykonania w strefie: 3 × interwał, czyli', 'from execution in the zone: 3 × timeframe, or')} {n(s.comparison.horizonMs / 60000, 1)} min</p>
+      <p className="text-xs">{tr('Kontrola', 'Control')}: {s.comparison.control ? `${n(s.comparison.control.lo)}–${n(s.comparison.control.hi)}` : tr('— brak dopasowanego poziomu', '— no matched level')}</p>
+      <p className="text-xs">n SMC / {tr('kontroli / par', 'control / pairs')}: {s.comparison.nSmc} / {s.comparison.nControl} / {s.comparison.n}</p>
+      <p className="text-xs">{tr('Reakcja SMC / kontrola / różnica ATR', 'SMC / control / difference ATR')}: {n(s.comparison.smcAtr)} / {n(s.comparison.controlAtr)} / {n(s.comparison.differenceAtr)}</p>
+      <p className="text-xs text-ink-3">{tr('Zwykłe high/low z 24 zamkniętych świec; ta sama szerokość, odległość ±0,25 ATR, zmienność tej samej chwili. Kontakt dopiero po rejestracji. Pojedyncza para nie określa skuteczności; brak próby pozostaje —.', 'Ordinary highs/lows from 24 closed candles; equal width, distance ±0.25 ATR, same-time volatility. Contact only after registration. A single pair does not establish effectiveness; absent samples remain —.')}</p>
+      {s.comparison.incomplete && <p className="text-xs">{tr('Niepełna obserwacja — próba unieważniona', 'Incomplete observation — trial invalidated')}</p>}
     </section>}
   </div>;
 }

@@ -2,6 +2,8 @@ import type { ObservationJournal, ObservedPrint } from './smcObservation';
 import { addFlow, emptyFlow, printFlow } from './smcObservationBins';
 import type { FlowTotal } from './smcObservationBins';
 import type { Dir, SBar, StructureState } from './smcStructure';
+import { sweepExcursion, NotionalTally, depthRecovery, type SweepExcursion, type NotionalResult, type DepthRecovery } from './smcMicrostructure';
+import { LevelControlTrial, ordinaryControl, type ControlComparison } from './smcControlReplay';
 import { contactGrid, ContactDeltaTally, type ContactProfile, type ContactProfiles } from './smcContactDelta';
 import { supportsSmcContactDelta } from '../../../utils/marketCaps';
 
@@ -15,6 +17,7 @@ export interface Contact {
   price: number; retreatPrice: number | null;
   attack: number; penetration: number; rebound: number; extreme: number; complete: boolean;
   flow: FlowTotal;
+  matched?: NotionalResult; recovery?: DepthRecovery;
 }
 export interface FvgProfile {
   from: number; to: number; totalUsd: number | null; insideUsd: number | null; share: number | null; delta: number | null;
@@ -28,8 +31,9 @@ export interface FlowSnapshot {
   id: string; kind: FlowElement['kind']; lo: number; hi: number; dir: Dir; atr: number; knownAt: number; observedAt: number;
   structure: StructureState; anchor: number | null; complete: boolean; reason: 'before-observation' | 'gap' | 'buffer' | null;
   contacts: number; completed: number; defense: Defense; recent: Contact[]; zone: FlowTotal; since: FlowTotal;
-  sweep: { state: 'observing' | 'initiative' | 'return-only' | 'beyond' | 'unknown'; retest: number | null; retestPrice: number | null; closes: number; bars: number; lastClose: number | null; flow: FlowTotal | null; above: FlowTotal | null; below: FlowTotal | null } | null;
+  sweep: { state: 'observing' | 'initiative' | 'return-only' | 'beyond' | 'unknown'; retest: number | null; retestPrice: number | null; closes: number; bars: number; lastClose: number | null; flow: FlowTotal | null; above: FlowTotal | null; below: FlowTotal | null; excursion?: SweepExcursion } | null;
   fvg: FvgProfile | null; ended: boolean; endReason: 'filled' | 'mitigated' | 'expired' | null;
+  comparison?: ControlComparison;
 }
 export type FlowEventKind = 'formation' | 'contact' | 'contact-end' | 'defense' | 'sweep' | 'retest' | 'profile' | 'metrics' | 'gap' | 'structure' | 'filled' | 'mitigated' | 'expired' | 'late';
 export interface FlowEvent { kind: FlowEventKind; observedAt: number; exchangeAt: number; snapshot: FlowSnapshot }
@@ -42,6 +46,8 @@ interface Entry {
   metricAt: number; gapAt: number; lastPrint: ObservedPrint | null; armed: boolean;
   path: FlowSample[]; tail: FlowSample | null; cut: boolean;
   profiles: Map<number, ContactDeltaTally> | null;
+  trial: LevelControlTrial;
+  notional: NotionalTally | null;
 }
 const PATH_SAMPLES = 256;
 const SAMPLE_MS = 10_000;
@@ -73,7 +79,7 @@ export function formationProfile(j: ObservationJournal, e: FlowElement, ms: numb
 export class SmcOrderflow {
   private readonly entries = new Map<string, Entry>();
   private correction = 0;
-  constructor(readonly journal: ObservationJournal, readonly ms = 300000, readonly tick: number | ((price: number) => number) = .1) {}
+  constructor(readonly journal: ObservationJournal, readonly ms = 300000, readonly tick: number | ((price: number) => number) = .1, readonly notionalUsd = 100000) {}
   private tickAt(price: number): number { const tick = typeof this.tick === 'number' ? this.tick : this.tick(price); return tick > 0 && Number.isFinite(tick) ? tick : Infinity; }
   private event(r: Entry, kind: FlowEventKind, observedAt: number, exchangeAt: number): void {
     const at = Math.max(r.state.observedAt, observedAt);
@@ -104,9 +110,14 @@ export class SmcOrderflow {
           contacts: 0, completed: 0, defense: 'first', recent: [], zone: emptyFlow(), since: emptyFlow(),
           sweep: e.kind === 'sweep' ? { state: 'observing', retest: null, retestPrice: null, closes: 0, bars: 0, lastClose: null, flow: null, above: null, below: null } : null,
           fvg: e.kind === 'fvg' ? formationProfile(this.journal, e, this.ms, now) : null, ended: false, endReason: null };
+        if (state.sweep && e.originFrom !== undefined) state.sweep.excursion = Object.freeze(sweepExcursion(this.journal,
+          { from: e.originFrom, to: e.known, boundary: e.lo, outside: e.dir, maxGapMs: 12000 }, now));
+        const trial = new LevelControlTrial({ selectedAt: now, horizonMs: 3 * this.ms, atr: e.atr, dir: e.dir,
+          target: { lo: e.lo, hi: e.hi }, control: ordinaryControl(e, bars, this.ms, now), maxGapMs: 12000 });
+        state.comparison = Object.freeze(trial.snapshot());
         r = { element: e, state, history: [], seq: available ? 0 : this.journal.sequence, barThrough: e.known,
           metricAt: now, gapAt: this.journal.gaps().at(-1)?.id ?? 0, lastPrint: null, armed: true, path: [], tail: null, cut: true,
-          profiles: supportsSmcContactDelta(this.journal.coin) && e.kind !== 'sweep' ? new Map() : null };
+          profiles: supportsSmcContactDelta(this.journal.coin) && e.kind !== 'sweep' ? new Map() : null, trial, notional: null };
         this.entries.set(e.id, r); this.event(r, 'formation', now, e.known);
       } else r.element = { ...r.element, endAt: e.endAt, expiresAt: Math.min(r.element.expiresAt, e.expiresAt) };
     }
@@ -119,6 +130,9 @@ export class SmcOrderflow {
       const e = r.element, s = r.state;
       const profileDirty = correctionOverflow || corrections.some(c => c.time < e.known && c.time >= (e.originFrom ?? e.known - 3 * this.ms) - 63 * this.ms);
       const eventCount = r.history.length;
+      const comparisonChanged = r.trial.observe(trades.filter(t => t.seq > r.seq), now,
+        this.journal.continuous(r.trial.config.selectedAt, now, now) &&
+        (!trades.length || trades[0].seq <= r.seq + 1));
       if (trades.length && trades[0].seq > r.seq + 1 && (r.seq > 0 || e.known <= this.journal.stats().retainedAfter)) {
         s.complete = false; s.reason = 'buffer'; s.defense = 'unknown'; r.armed = false; r.lastPrint = null;
         for (const c of s.recent) c.complete = false;
@@ -136,6 +150,7 @@ export class SmcOrderflow {
         if (late.length) this.event(r, 'late', now, late.at(-1)!.time);
         if (profileDirty) this.refreshProfile(r, now);
         if (s.sweep && corrections.some(c => c.time >= e.known && c.time < e.known + 3 * this.ms)) this.finishSweep(r, now);
+        if (comparisonChanged) this.recordComparison(r, now);
         r.seq = this.journal.sequence; continue;
       }
       if (s.structure !== structure) { s.structure = structure; this.event(r, 'structure', now, now); }
@@ -168,10 +183,17 @@ export class SmcOrderflow {
         s.ended = true; s.endReason = e.endAt != null && e.endAt <= now && e.endAt <= e.expiresAt ? (e.kind === 'fvg' ? 'filled' : 'mitigated') : 'expired';
         this.event(r, s.endReason, now, Math.min(e.endAt ?? Infinity, e.expiresAt));
       }
+      const activeContact = s.recent.at(-1);
+      if (e.kind === 'ob' && activeContact?.result === 'active') this.contactMetrics(r, activeContact, now, now);
+      if (comparisonChanged) this.recordComparison(r, now);
       if (s.anchor !== null && (now - r.metricAt >= 10000 || r.history.length !== eventCount)) { this.event(r, 'metrics', now, now); r.metricAt = now; }
       s.observedAt = Math.max(s.observedAt, now);
     }
     this.correction = this.journal.revision;
+  }
+  private recordComparison(r: Entry, observedAt: number): void {
+    r.state.comparison = Object.freeze(r.trial.snapshot());
+    this.event(r, 'metrics', observedAt, observedAt);
   }
   private archive(r: Entry, point: FlowSample): void {
     if (r.path.at(-1) === point) return;
@@ -241,8 +263,10 @@ export class SmcOrderflow {
         r.profiles.set(s.contacts, new ContactDeltaTally(contactGrid(e.lo, e.hi, tick), t));
         r.profiles.delete(s.contacts - 3);
       }
+      if (e.kind === 'ob') r.notional = new NotionalTally({ ...e, budgetUsd: this.notionalUsd });
     }
     if (!c || c.result !== 'active' || t.time < c.from) return;
+    r.notional?.add(t);
     if (inside) {
       addFlow(c.flow, printFlow(t));
       if (t.side === -e.dir) c.attack += t.sz;
@@ -259,6 +283,8 @@ export class SmcOrderflow {
   private endContact(r: Entry, result: Contact['result'], observedAt: number, exchangeAt: number): void {
     const s = r.state, c = s.recent.at(-1); if (!c || c.result !== 'active') return;
     c.result = result; c.endedAt = exchangeAt; c.complete &&= this.journal.continuous(c.from, exchangeAt, observedAt);
+    if (r.element.kind === 'ob') this.contactMetrics(r, c, observedAt, exchangeAt);
+    r.notional = null;
     s.completed++;
     const completed = s.recent.filter(x => x.result !== 'active'); const [a, b] = completed.slice(-2);
     const cmp = (x: number) => Math.abs(x) < 2 * this.tickAt(r.element.lo) ? 0 : Math.sign(x);
@@ -267,6 +293,15 @@ export class SmcOrderflow {
       cmp(b.penetration - a.penetration) > 0 && cmp(b.rebound - a.rebound) < 0 && b.attack <= a.attack ? 'weakening' :
       b.attack > a.attack && cmp(b.penetration - a.penetration) <= 0 && cmp(b.rebound - a.rebound) >= 0 ? 'absorption' : 'mixed';
     this.event(r, 'contact-end', observedAt, exchangeAt); if (b && r.element.kind === 'ob') this.event(r, 'defense', observedAt, exchangeAt);
+  }
+  private contactMetrics(r: Entry, c: Contact, observedAt: number, to: number): void {
+    const e = r.element, j = this.journal;
+    if (r.notional) c.matched = Object.freeze(r.notional.read(c.complete && j.complete(c.from, to, observedAt), to));
+    const books = j.bookRows().filter(b => b.time <= to && b.observedAt <= observedAt);
+    const baseline = books.filter(b => b.time < c.from && b.observedAt <= c.observedAt).at(-1);
+    const recovery = depthRecovery(books, { hitAt: c.from, to, side: e.dir === 1 ? 'bids' : 'asks', lo: e.lo, hi: e.hi,
+      maxGapMs: 12000, complete: !!baseline && j.continuous(baseline.time, to, observedAt) }, observedAt);
+    Object.freeze(recovery.prices); if (recovery.range) Object.freeze(recovery.range); c.recovery = Object.freeze(recovery);
   }
   private bar(r: Entry, b: SBar, now: number): void {
     const e = r.element, s = r.state, end = b.t + this.ms, c = s.recent.at(-1);
