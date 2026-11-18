@@ -100,6 +100,32 @@ describe('ProStore', () => {
     expect(store.markOracle.times()).toHaveLength(1);
   });
 
+  it('nie wznawia pokrycia dokładnym arkuszem od zaległej migawki po utracie łącza', async () => {
+    const ws = await boot();
+    ws.msg({ channel: 'activeAssetCtx', data: { coin: 'BTC', ctx: {
+      markPx: '81081', oraclePx: '81000', midPx: '81080', funding: '0.00001', openInterest: '25000', premium: '0.0003', dayNtlVlm: '1', prevDayPx: '80000',
+    } } });
+    const frame = (t: number) => ({ channel: 'l2Book', data: { coin: 'BTC', time: t, levels: [
+      [{ px: '81081', sz: '1', n: 1 }], [{ px: '81082', sz: '1', n: 1 }],
+    ] } });
+    const first = now;
+    ws.msg(frame(first));
+    expect(store.exactBook()?.latest()).toMatchObject({ exact: true, t: first });
+    expect(store.bookCoverage.isOpen).toBe(true);
+    vi.setSystemTime(first + 1000);
+    ws.close();
+    expect(store.bookCoverage.isOpen).toBe(false);
+    await vi.advanceTimersByTimeAsync(10_000);
+    const next = FakeWs.last!;
+    expect(next).not.toBe(ws);
+    next.open();
+    next.msg(frame(first));
+    expect(store.bookCoverage.isOpen).toBe(false);
+    next.msg(frame(Date.now()));
+    expect(store.bookCoverage.isOpen).toBe(true);
+    expect(store.bookCoverage.covers(first, Date.now())).toBe(false);
+  });
+
   it('transakcje tworzą footprint świecy; świeca otwarta w trakcie nagrania jest niepełna', async () => {
     const ws = await boot();
     ws.msg({ channel: 'trades', data: [trade(now - 1000, 81025, 0.5, 'B', 1), trade(now - 500, 81024, 0.2, 'A', 2)] });

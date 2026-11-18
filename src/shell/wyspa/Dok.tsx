@@ -166,7 +166,7 @@ export const Dok: React.FC<{
         )}
       </AnimatePresence>
 
-      <motion.div layout={!reduce} className="flex items-center gap-1 rounded-full border border-line-strong bg-surface-1/90 backdrop-blur-xl p-1.5 shadow-[0_18px_40px_-12px_rgb(0_0_0/0.7)] cursor-grab active:cursor-grabbing">
+      <motion.div data-dok-launcher layout={!reduce} className="flex items-center gap-1 rounded-full border border-line-strong bg-surface-1/90 backdrop-blur-xl p-1.5 shadow-[0_18px_40px_-12px_rgb(0_0_0/0.7)] cursor-grab active:cursor-grabbing">
         {pos.zwiniety ? (
           <button type="button" data-dok-postac={lead.p.id} onClick={() => onOpen()} aria-label={tr(`Otwórz załogę (${lead.p.name})`, `Open the crew (${lead.p.name})`)} className="rounded-full p-0.5 hover:bg-surface-3 focus-visible:outline-2 focus-visible:outline-accent">
             <Postac id={lead.p.id} state={lead.state} size={44} />

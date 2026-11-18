@@ -19,15 +19,15 @@ it('uses executed USD before bucketing, including neutral volume and actual gaps
   const coverage = new Coverage([[from, from + 4]]);
   expect(profile.read({ from, to: from + 5 }, 1, coverage)).toEqual({
     rows: [
-      { price: 100, turnoverUsd: 300, deltaUsd: 100 },
-      { price: 101, turnoverUsd: 303, deltaUsd: -303 },
-      { price: 102, turnoverUsd: 204, deltaUsd: 0 },
+      { price: 100, turnoverUsd: 300, deltaMicros: 100_000_000n },
+      { price: 101, turnoverUsd: 303, deltaMicros: -303_000_000n },
+      { price: 102, turnoverUsd: 204, deltaMicros: 0n },
     ],
     turnoverUsd: 807, deltaUsd: -203, coveredMs: 4, spanMs: 5,
   });
   expect(profile.read({ from, to: from + 6 }, 1, coverage).rows.map(row => row.price)).toEqual([100, 101, 102, 107]);
   const wide = profile.read({ from, to: from + 6 }, 5, coverage);
-  expect(wide.rows).toEqual([{ price: 100, turnoverUsd: 807, deltaUsd: -203 }, { price: 105, turnoverUsd: 107, deltaUsd: 107 }]);
+  expect(wide.rows).toEqual([{ price: 100, turnoverUsd: 807, deltaMicros: -203_000_000n }, { price: 105, turnoverUsd: 107, deltaMicros: 107_000_000n }]);
 });
 
 it('counts a replay boundary and merged history/live tape exactly once across minute and range changes', () => {
@@ -51,7 +51,7 @@ it('counts a replay boundary and merged history/live tape exactly once across mi
 
 it('selects fewer price rows on a short chart and keeps empty tape empty', () => {
   expect(rangeProfileStep(64500, 65000, 720)).toBe(10);
-  expect(rangeProfileStep(64500, 65000, 320)).toBe(20);
+  expect(rangeProfileStep(64500, 65000, 320)).toBe(50);
   expect(rangeProfileStep(100, 102, 700)).toBe(1);
   const profile = new SmcRangeProfile(new Tape());
   expect(profile.read({ from, to: from + MINUTE }, 1, new Coverage())).toEqual({

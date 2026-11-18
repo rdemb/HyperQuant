@@ -195,6 +195,7 @@ export class ServerHistory {
     const batch: HistoryBatch = {
       trades: tOk ? { from: t.from, to: t.to, spans: t.spans, zeroSpans: t.zeroKnown ? t.spans : [], fills: toFills(t.trades, u.start, t.idScope), oi: t.ctx.map((c) => [c.t, c.oi]) } : null,
       frames: bOk ? b.frames.map(toBookFrame) : [],
+      bookSpans: bOk ? b.spans : [],
     };
     this.store.restoreHistory(batch);
     if (tOk && (bOk || !withBook)) this.done.add(unitKey(u));
@@ -226,7 +227,8 @@ const loaders = new Map<ProStore, ServerHistory>();
 
 /** Historia z serwera od chwili `from` dla rynku magazynu; bez adresu danych albo bez dekompresji w przeglądarce — nic. */
 export function requestHistory(store: ProStore, from: number): void {
-  if (!HISTORY_BASE || typeof DecompressionStream === 'undefined') return;
+  // Powtórka dostaje taśmę i arkusz wyłącznie z odcinka podanego przez jej sesję.
+  if (store.replay || !HISTORY_BASE || typeof DecompressionStream === 'undefined') return;
   let h = loaders.get(store);
   if (!h) loaders.set(store, (h = new ServerHistory(store, HISTORY_BASE)));
   void h.ensure(from);

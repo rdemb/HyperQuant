@@ -71,6 +71,7 @@ export interface HistoryBatch {
     oi: [number, number][];
   } | null;
   frames: BookFrame[];
+  bookSpans?: readonly Span[];
 }
 
 /**
@@ -110,6 +111,7 @@ export class ProStore {
   readonly stream: HlStream;
   readonly tape = new Tape();
   readonly coverage = new Coverage();
+  readonly bookCoverage = new Coverage();
   readonly orders = new OrderLog();
   /** Czas z kontami biorców na taśmie (strumień na żywo i historia serwera; zapis przeglądarki ich nie ma). */
   readonly addressed = new Coverage();
@@ -176,6 +178,7 @@ export class ProStore {
   private exactSub = false;
   /** Dokładny arkusz (bez agregacji ceny) od otwarcia strony, gdy bliska agregacja jest grubsza niż tick; serwer go nie nagrywa. */
   private readonly exact = new BookHistory(Number.NaN);
+  private bookReopenAfter = -Infinity;
 
   constructor(
     stream?: HlStream,
@@ -198,6 +201,7 @@ export class ProStore {
         this.observations.close(this.clock.toServer(at), this.serverNow(), 'disconnect');
         this.head.reset();
         this.coverage.close(this.clock.toServer(at));
+        this.closeBookCoverage(this.clock.toServer(at));
         this.addressed.close(this.clock.toServer(at));
         this.zeroKnown.close(this.clock.toServer(at));
         this.bump();
@@ -469,7 +473,9 @@ export class ProStore {
       const exact = [...snap.bids, ...snap.asks].some((l) => Math.abs(l.px / near - Math.round(l.px / near)) > 1e-6);
       if (exact) {
         this.walls.observeBook(snap);
-        this.exact.add(toFrame(snap, bookStep(snap)));
+        if (snap.time < this.bookReopenAfter) return;
+        this.bookCoverage.open(snap.time);
+        this.exact.add({ ...toFrame(snap, bookStep(snap)), exact: true });
         this.bump();
         return;
       }
@@ -497,6 +503,11 @@ export class ProStore {
 
   // ───────────────────────── arkusz ─────────────────────────
 
+  private closeBookCoverage(at: number): void {
+    this.bookCoverage.close(at);
+    this.bookReopenAfter = at;
+  }
+
   /** Agregacje arkusza dopasowane do rzędu wielkości ceny (zmiana tylko przy przejściu przez 10^k). */
   private ensureBookSubs(price: number): void {
     if (!(price > 0)) return;
@@ -504,6 +515,7 @@ export class ProStore {
     const digits = Math.floor(Math.log10(price)) + 1;
     const steps: [number, number] = [10 ** (digits - near), 10 ** (digits - far)];
     if (steps[0] === this.bookSteps[0] && steps[1] === this.bookSteps[1]) return;
+    if (this.bookCoverage.isOpen) this.closeBookCoverage(this.serverNow());
     for (const sub of this.bookSubs) this.stream.remove(sub);
     this.bookSteps = steps;
     // Historia arkusza w tych samych krokach zostaje (także wczytana z serwera przed pierwszą ceną)
@@ -588,6 +600,7 @@ export class ProStore {
    * albo sprzed jego początku i jeszcze nie złożonych z historii (zapis przeglądarki nie ma adresów, więc nie ma zleceń).
    */
   restoreHistory(b: HistoryBatch): void {
+    for (const [a, z] of b.bookSpans ?? []) this.bookCoverage.addSpan(a, z);
     const tr = b.trades;
     if (tr) {
       for (const [a, z] of tr.spans) {
@@ -628,7 +641,7 @@ export class ProStore {
    * serwera, migawki arkusza dopisywane po kolei (rosnąco po czasie), ostatnia cena z ostatniej transakcji odcinka.
    */
   feedReplay(b: HistoryBatch): void {
-    this.restoreHistory({ trades: b.trades, frames: [] });
+    this.restoreHistory({ trades: b.trades, frames: [], bookSpans: b.bookSpans });
     for (const f of b.frames) {
       if (f.exact) {
         this.exact.add(f);
@@ -667,6 +680,7 @@ export class ProStore {
     this.markOracle.prune(cut);
     this.books.forEach((b) => b.prune(cut));
     this.exact.prune(cut);
+    this.bookCoverage.prune(cut);
     this.makers.prune(windowCut);
     for (const s of this.seriesById.values()) s.prune(cut);
   }

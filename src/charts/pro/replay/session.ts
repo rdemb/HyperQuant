@@ -237,7 +237,8 @@ export class ReplaySession {
     const lo = Number.isFinite(a) ? a : this.from;
     const clip = (xs: readonly [number, number][]) => xs.map(([x, y]): [number, number] => [Math.max(x, lo), Math.min(y, t)]).filter(([x, y]) => y > x);
     this.fed = t;
-    st.feedReplay({ trades: { from: lo, to: t, spans: clip(d.spans), zeroSpans: clip(d.zeroSpans), fills, oi }, frames });
+    st.feedReplay({ trades: { from: lo, to: t, spans: clip(d.spans), zeroSpans: clip(d.zeroSpans), fills, oi },
+      frames, bookSpans: clip(d.bookSpans) });
   }
 
   /** Świece z API do końca nagrania (brakujące — z taśmy nagrania), pamiętane dla kolejnych magazynów tej powtórki. */
