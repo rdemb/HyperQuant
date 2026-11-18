@@ -96,6 +96,8 @@ export interface ParamDef {
   optionLabels?: readonly string[];
   /** Podpis wartości z listy w oknie ustawień i w nazwie instancji (np. „auto”, „4H”); bez niego — liczba. */
   optionLabel?(v: number): string;
+  /** Przełącznik szczegółów widoku: zapisany w ustawieniach/linku, bez pięciu „wł.” w krótkiej nazwie. */
+  viewToggle?: boolean;
 }
 
 export type Params = Readonly<Record<string, number>>;
@@ -2299,6 +2301,7 @@ const INDICATOR_DEFS: readonly Omit<IndicatorDef, 'tier'>[] = [
         optionLabel: (v) => (v === SMC_HTF_AUTO ? tr('auto', 'auto') : v === SMC_HTF_OFF ? tr('wył.', 'off') : htfLabel(v * 60_000)),
       },
       { key: 'periods', label: tr('Poprzednie maksima i minima UTC', 'Previous UTC highs and lows'), min: 0, max: 7, step: 1, def: 0, options: [0, 1, 2, 4, 6, 7], optionLabels: [tr('bez poziomów', 'no levels'), 'D', 'W', 'M', 'W+M', 'D+W+M'] },
+      ...([['defense', tr('Obrona OB', 'OB defense')], ['initiative', tr('Sweep i retest', 'Sweep and retest')], ['anchored', tr('Delta / VWAP od kontaktu', 'Delta / VWAP since contact')], ['formation', tr('Profil powstania FVG', 'FVG formation profile')], ['memory', tr('Pamięć obserwacji', 'Observation memory')]] as const).map(([key, label]) => ({ key, label, min: 0, max: 1, step: 1, def: 1, viewToggle: true, options: [0, 1], optionLabels: [tr('wył.', 'off'), tr('wł.', 'on')] })),
     ],
     plots: [],
     format: 'price',
@@ -2561,7 +2564,7 @@ export function paramText(p: ParamDef, v: number): string {
 
 export function indicatorLabel(x: IndicatorInstance): string {
   const def = indicatorDef(x.id);
-  return [def.short, ...def.params.map((p) => paramText(p, x.params[p.key])), ...(x.tf ? [intervalById(x.tf).label] : [])].join(' ');
+  return [def.short, ...def.params.filter(p => !p.viewToggle).map((p) => paramText(p, x.params[p.key])), ...(x.tf ? [intervalById(x.tf).label] : [])].join(' ');
 }
 
 /**
