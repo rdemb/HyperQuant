@@ -1,7 +1,7 @@
 import type { ContactProfile, ContactProfiles } from '../core/smcContactDelta';
 import { MONO, PRO, rgba } from './theme';
 
-export interface ContactProfileView { zone: string | null; at: number | null; ordinal: number | null; compare: boolean }
+export interface ContactProfileView { zone: string; at: number | null; ordinal: number | null; compare: boolean }
 const LANE_PX = 44;
 const PADDING_PX = 4;
 export function contactProfileWidth(compare: boolean): number {
@@ -21,10 +21,9 @@ interface ContactLane {
   bins: { top: number; bottom: number; turnover: number; delta: number }[];
 }
 
-export function contactProfileScene(profiles: ContactProfiles | null, compare: boolean, project: (price: number) => number | null): ContactLane[] {
-  const scale = profiles ? contactProfileScale(profiles) : 0;
-  const current = profiles?.current ?? null;
-  const objects = compare ? [current, profiles?.previous ?? null] : [current];
+export function contactProfileScene(profiles: ContactProfiles, compare: boolean, project: (price: number) => number | null): ContactLane[] {
+  const scale = contactProfileScale(profiles);
+  const objects = compare ? [profiles.current, profiles.previous] : [profiles.current];
   return objects.map(profile => {
     const bins: ContactLane['bins'] = [];
     for (const b of profile?.bins ?? []) {

@@ -4,12 +4,12 @@ import { SmcOrderflow, type FlowElement } from '../core/smcOrderflow';
 import { contactProfileScale, contactProfileScene } from '../chart/smcContactProfile';
 
 const zone: FlowElement = { id: 'ob:test', kind: 'ob', known: 0, lo: 99, hi: 101, dir: 1, atr: 4, expiresAt: 1e9 };
-function setup(coin = 'BTC', cap = 50000, elements = [zone]) {
+function setup(coin = 'BTC', cap = 50000) {
   const j = new ObservationJournal(coin, { trades: cap, books: 4 });
   j.open(0, 0);
   const m = new SmcOrderflow(j, 5000, .1);
   let tid = 0;
-  const update = (now: number) => m.update(elements, [], 'up', now);
+  const update = (now: number) => m.update([zone], [], 'up', now);
   update(0);
   const print = (time: number, px: number, sz: number, side: 1 | -1, observedAt = time) => {
     const row = { time, px, sz, side, tid: ++tid };
@@ -19,37 +19,6 @@ function setup(coin = 'BTC', cap = 50000, elements = [zone]) {
   };
   return { j, m, print, update };
 }
-
-it('keeps a profile lane before the first observed contact', () => {
-  const { m } = setup();
-  const profiles = m.contactProfiles(null, null, null, false);
-  expect(profiles).toBeNull();
-  expect(contactProfileScene(profiles, false, p => p)).toEqual([{ profile: null, bins: [] }]);
-});
-
-it('shows the active contact automatically and keeps the last contact after retreat', () => {
-  const { m, print } = setup();
-  print(10, 100, 2, 1);
-  print(11, 100, 1, -1, 20);
-  print(21, 102, 1, 1);
-  expect(m.contactProfiles(null, null, null, false)?.current).toMatchObject({ ordinal: 1, active: false, deltaUsd: 100 });
-  print(22, 100, 2, -1);
-  const profiles = m.contactProfiles(null, null, null, true);
-  expect(profiles?.current).toMatchObject({ ordinal: 2, active: true, deltaUsd: -200 });
-  expect(profiles?.previous).toMatchObject({ ordinal: 1, deltaUsd: 100 });
-  expect(m.contactProfiles(null, 19, null, false)?.current).toMatchObject({ ordinal: 1, active: true, deltaUsd: 200 });
-  expect(m.contactProfiles(null, 9, null, false)).toBeNull();
-});
-
-it('follows new contacts in other zones while allowing an explicit zone choice', () => {
-  const other: FlowElement = { ...zone, id: 'fvg:other', kind: 'fvg', lo: 102, hi: 104 };
-  const { m, print } = setup('BTC', 50000, [zone, other]);
-  print(10, 100, 2, 1);
-  print(20, 103, 1, -1);
-  expect(m.contactProfiles(null, null, null, false)?.current).toMatchObject({ deltaUsd: -103 });
-  expect(m.contactProfiles(zone.id, null, null, false)?.current).toMatchObject({ deltaUsd: 200 });
-  expect(m.contactProfiles(null, 10, null, false)?.current).toMatchObject({ deltaUsd: 200 });
-});
 
 it('keeps the oracle contacts disjoint and treats an observation cutoff as receipt time', () => {
   const { m, print } = setup();

@@ -60,6 +60,8 @@ import { IvbLayer, type IvbStyle } from './ivbLayer';
 import { type SmcHigherFeed, SmcLayer, type SmcStyle } from './smcLayer';
 import { TAG_GAP_PX } from './tagColumn';
 import { contactProfileWidth, type ContactProfileView } from './smcContactProfile';
+import { SmcRangeProfileLayer, type RangeProfileInfo } from './smcRangeProfileLayer';
+import { supportsSmcContactDelta } from '../../../utils/marketCaps';
 import { pickHtf } from '../core/smcMtf';
 import type { Candle } from '../hl/parse';
 import { seriesCandles } from './layoutInputs';
@@ -399,7 +401,9 @@ export class ProChartController {
   onEmptyTap: (() => void) | null = null;
   onSmcPick: ((id: string) => void) | null = null;
   onSmcContactPick: ((ordinal: number) => void) | null = null;
+  onSmcRangeInfo: ((info: RangeProfileInfo | null) => void) | null = null;
   private smcContactWidth = 0;
+  private readonly smcRange: SmcRangeProfileLayer;
   smcObservations() { return this.smc.observationModel(); }
   smcObservationOptions() { return this.smcStyle(); }
   setSmcObservationView(id: string | null, at: number | null): void { this.smc.setObservationView(id, at); }
@@ -546,6 +550,9 @@ export class ProChartController {
       container.dataset.ivbObjects = String(n);
     };
     this.main.attachPrimitive(this.smc);
+    this.smcRange = new SmcRangeProfileLayer(store.tape, store.coverage, () => this.visibleSpan(store.serverNow()), store.replay !== null);
+    this.smcRange.onInfo = (info) => this.onSmcRangeInfo?.(info);
+    this.main.attachPrimitive(this.smcRange);
     this.smc.fmtPx = (p) => store.fmtPx(p);
     this.smc.setObservations(store.observations, p => store.tick(p));
     this.smc.valueOf = (at) => this.periodValues.of('day', Math.floor(at / DAY) * DAY);
@@ -649,7 +656,7 @@ export class ProChartController {
     this.zones.setToggles({ showZones: s.showZones, showAuctions: s.showAuctions, history: s.zonesHistory === true });
     this.zones.setParams(this.zoneParams(s));
     if (prev.bigTradeUsd !== s.bigTradeUsd) this.schedule();
-    if (force || prev.showHeatmap !== s.showHeatmap) this.applyDomInset();
+    if (force || prev.showHeatmap !== s.showHeatmap || this.smcRangeOn(prev) !== this.smcRangeOn(s)) this.applyDomInset();
     if (force || prev.statGroups !== s.statGroups) {
       this.statsTable.setGroups(s.statGroups);
       this.statsAt = 0;
@@ -727,10 +734,12 @@ export class ProChartController {
    */
   private applyDomInset(): void {
     const ladder = this.domShown() ? DOM_W_PX + 8 : 0;
-    const axisWidth = this.smcContactWidth ? Math.max(70, AXIS_W_PX) : AXIS_W_PX;
-    const extra = ladder + this.smcContactWidth;
+    const rangeWidth = this.smcRangeOn(this.settings) ? (this.phone ? 72 : 148) : 0;
+    const axisWidth = rangeWidth || this.smcContactWidth ? Math.max(70, AXIS_W_PX) : AXIS_W_PX;
+    const extra = ladder + this.smcContactWidth + rangeWidth;
     this.chart.priceScale('right').applyOptions({ minimumWidth: extra ? axisWidth + extra : 0 });
     this.smc.setContactAxisInset(ladder);
+    this.smcRange.setLayout(rangeWidth, ladder + this.smcContactWidth);
     const px = 0;
     this.overlay.setRightInset(px);
     this.zones.setRightInset(px);
@@ -743,6 +752,10 @@ export class ProChartController {
     this.blog.setRightInset(px);
     this.gapApplied = this.rightGap();
     this.chart.timeScale().applyOptions({ rightOffsetPixels: this.gapApplied });
+  }
+
+  private smcRangeOn(settings: ChartSettings): boolean {
+    return supportsSmcContactDelta(this.store.coin) && settings.indicators.some(i => i.id === 'smc' && i.visible);
   }
 
   /** Odstęp za ostatnią świecą ustawiony ostatnio na osi czasu. */

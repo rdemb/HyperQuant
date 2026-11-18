@@ -4,6 +4,10 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Profil obrotu i delty w zakresie SMC (2026-11-18)
+<!-- co-nowego: grupa=wykres | pl=Stały profil obrotu i delty według ceny na SMC BTC | en=Always-visible turnover and delta by price on BTC SMC -->
+- Dwie kolumny przy osi pokazują obrót i deltę z wykonań w widocznym zakresie BTC, wraz z pokryciem taśmy i granicą powtórki. Profil kontaktu i porównanie są dostępne po wybraniu strefy.
+
 ### Stały profil delty SMC (2026-11-18)
 <!-- co-nowego: grupa=wykres | pl=Profil delty widoczny od razu po włączeniu SMC na BTC | en=The delta profile appears as soon as SMC is enabled on BTC -->
 - Na BTC profil przy osi ceny pokazuje trwający lub ostatni zaobserwowany kontakt bez otwierania panelu. Kliknięcie strefy przełącza profil na jej kontakty. Przy braku zapisu profil pokazuje brak danych.
