@@ -19,10 +19,10 @@ it('only combines rows that lack space and sums both values before drawing', () 
     { price: 102, turnoverUsd: 204, deltaMicros: 0n },
     { price: 106, turnoverUsd: 106, deltaMicros: 106_000_000n },
     { price: 110, turnoverUsd: 110, deltaMicros: -110_000_000n },
-  ], 1, 70, p => 52 - (p - 100) * 5);
+  ], 1, 106, p => 78 - (p - 100) * 8);
   expect(rows).toEqual([
-    { low: 106, high: 107, top: 17, bottom: 22, labelY: 23, turnoverUsd: 106, deltaUsd: 106 },
-    { low: 100, high: 103, top: 37, bottom: 52, labelY: 44.5, turnoverUsd: 807, deltaUsd: -203 },
+    { low: 106, high: 107, top: 22, bottom: 30, labelY: 30, turnoverUsd: 106, deltaUsd: 106 },
+    { low: 100, high: 103, top: 54, bottom: 78, labelY: 66, turnoverUsd: 807, deltaUsd: -203 },
   ]);
 });
 
@@ -31,15 +31,15 @@ it('keeps separately visible price bins and their signs at normal row height', (
     { price: 100, turnoverUsd: 300, deltaMicros: 100_000_000n },
     { price: 101, turnoverUsd: 303, deltaMicros: -303_000_000n },
     { price: 102, turnoverUsd: 204, deltaMicros: 0n },
-  ], 1, 100, p => 90 - (p - 100) * 20);
+  ], 1, 120, p => 106 - (p - 100) * 26);
   expect(rows.map(r => [r.labelY, rangeProfileLabel(r.turnoverUsd, false), rangeProfileLabel(r.deltaUsd, true)])).toEqual([
-    [40, '204', '0'], [60, '303', '−303'], [80, '300', '+100'],
+    [41, '204', '0'], [67, '303', '−303'], [93, '300', '+100'],
   ]);
 });
 
 it('keeps the labels below the compact chart legend and column titles', () => {
   const rows = rangeProfileRows([{ price: 100, turnoverUsd: 300, deltaMicros: 100_000_000n }], 1, 100, p => 50 - (p - 100) * 20, 24);
-  expect(rows).toEqual([{ low: 100, high: 101, top: 41, bottom: 50, labelY: 47, turnoverUsd: 300, deltaUsd: 100 }]);
+  expect(rows).toEqual([{ low: 100, high: 101, top: 44, bottom: 50, labelY: 54, turnoverUsd: 300, deltaUsd: 100 }]);
 });
 
 it('retains a sub-cent difference through visual grouping beyond the safe integer range', () => {
@@ -60,7 +60,7 @@ it('closes an unmatched window on the live clock and reopens it when replay move
   try {
     let now = 40_000;
     const tape = new Tape();
-    tape.insert([{ t: 10_000, px: 100, sz: 1, side: 1, tid: 1 }]);
+    tape.insert([{ t: 10_000, px: 100, sz: 1, side: 1, tid: 1 }, { t: 41_000, px: 100, sz: .5, side: -1, tid: 2 }]);
     const layer = new SmcRangeProfileLayer(tape, new Coverage([[1, Infinity]]), () => ({ from: 1, to: now }),
       false, () => [], new Coverage(), () => now);
     const info = vi.fn();
@@ -72,12 +72,17 @@ it('closes an unmatched window on the live clock and reopens it when replay move
       requestUpdate: () => layer.updateAllViews(),
     } as Parameters<typeof layer.attached>[0]);
     layer.updateAllViews();
-    expect(info).toHaveBeenLastCalledWith(expect.objectContaining({ reaction: expect.objectContaining({ buy: expect.objectContaining({ pendingUsd: 100 }) }) }));
+    const snapshot = (deltaMicros: bigint, buy: { pendingUsd: number; missingUsd: number }, to: number) =>
+      expect.objectContaining({ to, active: expect.objectContaining({
+        low: 100, high: 105, visits: { count: 1, deltaMicros, partial: true },
+        reaction: expect.objectContaining({ buy: expect.objectContaining(buy) }),
+      }) });
+    expect(info).toHaveBeenLastCalledWith(snapshot(100_000_000n, { pendingUsd: 100, missingUsd: 0 }, 40_000));
     now = 45_000;
     vi.advanceTimersByTime(5_000);
-    expect(info).toHaveBeenLastCalledWith(expect.objectContaining({ reaction: expect.objectContaining({ buy: expect.objectContaining({ pendingUsd: 0, missingUsd: 100 }) }) }));
+    expect(info).toHaveBeenLastCalledWith(snapshot(50_000_000n, { pendingUsd: 0, missingUsd: 100 }, 45_000));
     layer.setCutoff(40_000);
-    expect(info).toHaveBeenLastCalledWith(expect.objectContaining({ to: 40_000, reaction: expect.objectContaining({ buy: expect.objectContaining({ pendingUsd: 100 }) }) }));
+    expect(info).toHaveBeenLastCalledWith(snapshot(100_000_000n, { pendingUsd: 100, missingUsd: 0 }, 40_000));
     layer.detached();
     expect(vi.getTimerCount()).toBe(0);
   } finally {

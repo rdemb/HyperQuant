@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 import type { BookFrame } from '../core/book';
 import { Coverage } from '../core/coverage';
-import { priceBuckets, RangeVisits, priceReaction } from '../core/smcRangeProfileFlow';
+import { priceBuckets, RangeVisits, priceReaction, summarizeVisits } from '../core/smcRangeProfileFlow';
 import { Tape, type TradeRow } from '../core/tape';
 
 function tapeOf(trades: [number, number, number, TradeRow['side']][]): Tape {
@@ -46,6 +46,18 @@ it('marks clipped and interrupted fragments without inventing a visit at skipped
   expect(first.lastBucket).toEqual({ low: 130, high: 140 });
   coverage.addSpan(63_000, 67_000);
   expect(visits.read(span, bins).byPrice.get(100)).toEqual([{ deltaMicros: 100_000_000n, partial: true }]);
+});
+
+it('keeps the sum exact and distinguishes a zero visit from missing visits', () => {
+  expect(summarizeVisits([])).toBeNull();
+  expect(summarizeVisits([{ deltaMicros: 0n, partial: true }])).toEqual({ count: 1, deltaMicros: 0n, partial: true });
+  expect(summarizeVisits([
+    { deltaMicros: 847_701_000n, partial: false },
+    { deltaMicros: 34_296_300n, partial: true },
+    { deltaMicros: -4_822_687_650n, partial: false },
+  ])).toEqual({ count: 3, deltaMicros: -3_940_690_350n, partial: true });
+  const large = 2n ** 60n;
+  expect(summarizeVisits([{ deltaMicros: large, partial: false }, { deltaMicros: 1n - large, partial: false }])?.deltaMicros).toBe(1n);
 });
 
 it('uses the first valid exact snapshot in 30–35 s and retains the sign on sells', () => {

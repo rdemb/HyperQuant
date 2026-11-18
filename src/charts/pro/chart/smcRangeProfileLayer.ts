@@ -4,8 +4,8 @@ import { DASH, numLang } from '../../../ui/format';
 import { fmtVol } from '../../orderflow/footprint';
 import type { BookFrame } from '../core/book';
 import type { Coverage } from '../core/coverage';
-import { rangeProfileStep, SMC_PROFILE_ROW_PX, SmcRangeProfile, usdFromMicros, type ProfileSpan, type RangeProfileRow } from '../core/smcRangeProfile';
-import { priceBuckets, RangeVisits, priceReaction, type PriceBucket, type PriceReaction, type ProfileVisit } from '../core/smcRangeProfileFlow';
+import { rangeProfileStep, SmcRangeProfile, usdFromMicros, type ProfileSpan, type RangeProfileRow } from '../core/smcRangeProfile';
+import { priceBuckets, RangeVisits, priceReaction, summarizeVisits, type PriceBucket, type PriceReaction, type VisitSummary } from '../core/smcRangeProfileFlow';
 import type { Tape } from '../core/tape';
 import { MONO, PRO, rgba } from './theme';
 
@@ -13,14 +13,14 @@ export interface RangeProfileInfo extends ProfileSpan {
   step: number;
   levels: number;
   coverage: number;
-  reaction: (PriceReaction & PriceBucket) | null;
+  active: (PriceBucket & { visits: VisitSummary; reaction: PriceReaction }) | null;
 }
 
 const REFRESH_MS = 250;
-const HEADER_PX = 17;
-const COMPACT_HEADER_PX = 30;
-const COMPACT_ROW_PX = 24;
-export const rangeProfileWidth = (compact: boolean): number => compact ? 120 : 246;
+const HEADER_PX = 20;
+const ROW_PX = 24;
+const LABEL_MARGIN_PX = 10;
+export const rangeProfileWidth = (compact: boolean): number => compact ? 112 : 144;
 
 interface DrawRow extends PriceBucket {
   top: number;
@@ -39,12 +39,11 @@ export function rangeProfileLabel(usd: number | null, signed: boolean): string {
 }
 
 export function rangeProfileRows(
-  rows: readonly RangeProfileRow[], step: number, height: number, yOf: (price: number) => number | null, headerTop = 0, compact = false
+  rows: readonly RangeProfileRow[], step: number, height: number, yOf: (price: number) => number | null, headerTop = 0
 ): DrawRow[] {
-  const start = headerTop + (compact ? COMPACT_HEADER_PX : HEADER_PX);
-  const half = compact ? COMPACT_ROW_PX / 2 : 6;
-  if (height < start + 2 * half) return [];
-  const yOfLabel = (top: number, bottom: number) => Math.max(start + half, Math.min(height - half, (top + bottom) / 2));
+  const start = headerTop + HEADER_PX;
+  if (height < start + 2 * LABEL_MARGIN_PX) return [];
+  const yOfLabel = (top: number, bottom: number) => Math.max(start + LABEL_MARGIN_PX, Math.min(height - LABEL_MARGIN_PX, (top + bottom) / 2));
   type ProjectedRow = Omit<DrawRow, 'deltaUsd'> & Pick<RangeProfileRow, 'deltaMicros'>;
   const visible: ProjectedRow[] = [];
   for (const { price, turnoverUsd, deltaMicros } of rows) {
@@ -59,7 +58,7 @@ export function rangeProfileRows(
   for (const row of visible) {
     const prev = laidOut.at(-1);
     // Przy uciętym brzegu osi scalamy słupki i podpisy z tej samej sumy wykonań.
-    if (prev && row.labelY - prev.labelY < (compact ? COMPACT_ROW_PX : SMC_PROFILE_ROW_PX)) {
+    if (prev && row.labelY - prev.labelY < ROW_PX) {
       prev.low = Math.min(prev.low, row.low);
       prev.high = Math.max(prev.high, row.high);
       prev.bottom = Math.max(prev.bottom, row.bottom);
@@ -71,7 +70,7 @@ export function rangeProfileRows(
   return laidOut.map(({ deltaMicros, ...row }) => ({ ...row, deltaUsd: usdFromMicros(deltaMicros) }));
 }
 
-type DrawData = { span: ProfileSpan; step: number; geometry: string; rows: DrawRow[]; visits: ReadonlyMap<number, ProfileVisit[]> };
+type DrawData = { span: ProfileSpan; step: number; geometry: string; rows: DrawRow[] };
 
 export class SmcRangeProfileLayer implements ISeriesPrimitive<Time> {
   private adapter: SeriesAttachedParameter<Time> | null = null;
@@ -145,7 +144,8 @@ export class SmcRangeProfileLayer implements ISeriesPrimitive<Time> {
       return;
     }
     const compact = this.width <= rangeProfileWidth(true);
-    const step = rangeProfileStep(Math.min(top, bottom), Math.max(top, bottom), height, compact ? COMPACT_ROW_PX : SMC_PROFILE_ROW_PX);
+    const rowLimit = Math.min(compact ? 9 : 14, Math.floor((height - this.headerTop - HEADER_PX) / ROW_PX));
+    const step = rangeProfileStep(Math.min(top, bottom), Math.max(top, bottom), rowLimit);
     const geometry = `${this.width}:${this.headerTop}:${height}:${top}:${bottom}`;
     const now = performance.now();
     const prior = this.data;
@@ -163,28 +163,30 @@ export class SmcRangeProfileLayer implements ISeriesPrimitive<Time> {
     if (this.timer !== null) clearTimeout(this.timer);
     this.timer = null;
     const profile = this.model.read(span, step, this.coverage);
-    const rows = rangeProfileRows(profile.rows, step, height, p => adapter.series.priceToCoordinate(p), this.headerTop, compact);
+    const rows = rangeProfileRows(profile.rows, step, height, p => adapter.series.priceToCoordinate(p), this.headerTop);
     const observed = this.visits.read(span, priceBuckets(step, rows.filter(row => row.high - row.low > step)));
     const bucket = observed.lastBucket;
-    const reaction = bucket ? { ...bucket, ...priceReaction(this.tape, span, bucket, this.exactBook(), this.bookCoverage) } : null;
+    const visits = bucket ? summarizeVisits(observed.byPrice.get(bucket.low) ?? []) : null;
+    const active = bucket && visits ? { ...bucket, visits, reaction: priceReaction(this.tape, span, bucket, this.exactBook(), this.bookCoverage) } : null;
+    const nextDeadline = active?.reaction.nextDeadline;
     this.clearDeadline();
-    if (!this.replay && this.cutoff === null && reaction?.nextDeadline != null) {
+    if (!this.replay && this.cutoff === null && nextDeadline != null) {
       const serverNow = this.serverNow();
       if (serverNow - span.to < REFRESH_MS) {
         this.deadlineTimer = setTimeout(() => {
           this.deadlineTimer = null;
           this.adapter?.requestUpdate();
-        }, Math.max(1, reaction.nextDeadline - serverNow));
+        }, Math.max(1, nextDeadline - serverNow));
       }
     }
-    this.data = { span, step, geometry, rows, visits: observed.byPrice };
+    this.data = { span, step, geometry, rows };
     this.updated = now;
     const coverage = profile.spanMs > 0 ? Math.floor(1000 * profile.coveredMs / profile.spanMs) / 10 : 0;
-    const info = { ...span, step, levels: profile.rows.length, coverage, reaction };
+    const info = { ...span, step, levels: rows.length, coverage, active };
     const stateKey = (side: PriceReaction['buy']) =>
       `${side.mean?.toFixed(2)}:${side.totalUsd ? (100 * side.matchedUsd / side.totalUsd).toFixed(1) : '-'}:${side.pendingUsd > 0}:${side.missingUsd > 0}`;
-    const reactionKey = reaction && `${reaction.low}:${reaction.high}/${stateKey(reaction.buy)}/${stateKey(reaction.sell)}`;
-    const key = `${info.from}:${Math.floor(info.to / (this.replay ? 1000 : 60000))}:${step}:${info.levels}:${coverage}:${reactionKey}`;
+    const activeKey = active && `${active.low}:${active.high}/${active.visits.count}:${active.visits.deltaMicros}:${active.visits.partial}/${stateKey(active.reaction.buy)}/${stateKey(active.reaction.sell)}`;
+    const key = `${info.from}:${Math.floor(info.to / (this.replay ? 1000 : 60000))}:${step}:${info.levels}:${coverage}:${activeKey}`;
     if (key === this.infoKey) return;
     this.infoKey = key;
     this.onInfo?.(info);
@@ -207,71 +209,45 @@ export class SmcRangeProfileLayer implements ISeriesPrimitive<Time> {
       maxDelta = Math.max(maxDelta, Math.abs(row.deltaUsd));
     }
     const compact = this.width <= rangeProfileWidth(true);
-    const metricEnd = compact ? right : left + 116;
-    const divider = Math.round((left + metricEnd) / 2);
-    const zero = Math.round((divider + metricEnd) / 2);
-    const volWidth = divider - left - 5;
-    const halfDelta = metricEnd - zero - 4;
-    const visitLeft = compact ? left : metricEnd;
-    const visitWidth = (right - visitLeft) / 3;
+    const divider = Math.round((left + right) / 2);
+    const zero = Math.round((divider + right) / 2);
+    const gutter = 5;
+    const columnWidth = divider - left - 2 * gutter;
+    const halfDelta = right - zero - gutter;
     ctx.save();
     ctx.beginPath();
     ctx.rect(left, 0, this.width, height);
     ctx.clip();
+    ctx.fillStyle = PRO.bg;
+    ctx.fillRect(left, 0, this.width, height);
     ctx.fillStyle = rgba(PRO.ink2, .12);
-    for (const x of [left, divider, zero, metricEnd]) ctx.fillRect(x, 0, 1, height);
-    ctx.font = `600 ${compact ? 10 : 11}px ${MONO}`;
+    for (const x of [left, divider]) ctx.fillRect(x, 0, 1, height);
+    ctx.fillRect(left, this.headerTop + HEADER_PX - 1, this.width, 1);
+    ctx.font = `600 ${compact ? 11 : 12}px ${MONO}`;
     ctx.textBaseline = 'middle';
     ctx.textAlign = 'right';
-    ctx.lineWidth = 3;
-    ctx.lineJoin = 'round';
-    ctx.strokeStyle = PRO.bg;
-    const label = (text: string, x: number, y: number, maxWidth: number) => {
-      ctx.strokeText(text, x, y, maxWidth);
-      ctx.fillText(text, x, y, maxWidth);
-    };
     for (const row of rows) {
-      const h = Math.max(1, row.bottom - row.top - 1);
-      const vol = row.turnoverUsd / maxVolume * volWidth;
+      const barY = row.labelY + 8;
+      const vol = row.turnoverUsd / maxVolume * columnWidth;
       ctx.fillStyle = rgba(PRO.ink2, row.turnoverUsd === maxVolume ? .86 : .55);
-      ctx.fillRect(divider - vol, row.top, vol, h);
+      ctx.fillRect(divider - gutter - vol, barY, vol, 2);
       if (row.deltaUsd !== 0 && maxDelta > 0) {
         const delta = row.deltaUsd / maxDelta * halfDelta;
         ctx.fillStyle = delta > 0 ? PRO.buy : PRO.sell;
-        ctx.fillRect(zero + Math.min(0, delta), row.top, Math.abs(delta), h);
+        ctx.fillRect(zero + Math.min(0, delta), barY, Math.abs(delta), 2);
       }
       ctx.fillStyle = PRO.ink1;
-      const metricY = row.labelY - (compact ? 6 : 0);
-      label(rangeProfileLabel(row.turnoverUsd, false), divider - 4, metricY, divider - left - 8);
+      ctx.fillText(rangeProfileLabel(row.turnoverUsd, false), divider - gutter, row.labelY, columnWidth);
       ctx.fillStyle = row.deltaUsd < 0 ? PRO.sellInk : row.deltaUsd > 0 ? PRO.buyInk : PRO.ink2;
-      label(rangeProfileLabel(row.deltaUsd, true), metricEnd - 4, metricY, metricEnd - divider - 8);
-      const visits = this.data?.visits.get(row.low) ?? [];
-      const visitMax = visits.reduce((max, visit) => Math.max(max, Math.abs(usdFromMicros(visit.deltaMicros))), 0);
-      const visitY = row.labelY + (compact ? 6 : 0);
-      for (let i = 0; i < 3; i++) {
-        const visit = visits[i + visits.length - 3];
-        const value = visit ? usdFromMicros(visit.deltaMicros) : null;
-        if (value !== null && value !== 0 && visitMax > 0) {
-          const center = visitLeft + (i + .5) * visitWidth;
-          const length = value / visitMax * (visitWidth / 2 - 4);
-          ctx.fillStyle = rgba(value > 0 ? PRO.buy : PRO.sell, .65);
-          ctx.fillRect(center + Math.min(0, length), visitY + 4, Math.abs(length), 2);
-        }
-        ctx.fillStyle = value === null || value === 0 ? PRO.ink2 : value < 0 ? PRO.sellInk : PRO.buyInk;
-        label(rangeProfileLabel(value, true) + (visit?.partial ? '*' : ''),
-          visitLeft + (i + 1) * visitWidth - 3, visitY, visitWidth - 4);
-      }
+      ctx.fillText(rangeProfileLabel(row.deltaUsd, true), right - gutter, row.labelY, right - divider - 2 * gutter);
     }
-    ctx.fillStyle = PRO.bg;
-    ctx.fillRect(left, this.headerTop, this.width, compact ? COMPACT_HEADER_PX : HEADER_PX);
     ctx.font = `600 10px ${MONO}`;
     ctx.textBaseline = 'top';
     ctx.textAlign = 'center';
     ctx.fillStyle = PRO.ink2;
-    ctx.fillText(compact ? tr('Obr. USD', 'Vol USD') : tr('Obrót USD', 'Volume USD'), (left + divider) / 2, this.headerTop + 3, divider - left - 4);
-    ctx.fillText('Δ USD', zero, this.headerTop + 3);
-    ctx.fillText(tr('Δ wizyt USD →', 'Visit Δ USD →'), (visitLeft + right) / 2, this.headerTop + (compact ? 16 : 3), right - visitLeft - 4);
-    if (!rows.length) ctx.fillText(DASH, (left + right) / 2, this.headerTop + (compact ? 34 : 21));
+    ctx.fillText(tr('Obrót USD', 'Volume USD'), (left + divider) / 2, this.headerTop + 4, divider - left - 6);
+    ctx.fillText('Δ USD', zero, this.headerTop + 4);
+    if (!rows.length) ctx.fillText(DASH, (left + right) / 2, this.headerTop + HEADER_PX + 7);
     ctx.restore();
   }
 }

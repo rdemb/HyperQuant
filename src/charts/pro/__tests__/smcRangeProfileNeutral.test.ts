@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
-import { rangeProfileWidth, SmcRangeProfileLayer } from '../chart/smcRangeProfileLayer';
-import { PRO, rgba } from '../chart/theme';
+import { rangeProfileWidth, SmcRangeProfileLayer, type RangeProfileInfo } from '../chart/smcRangeProfileLayer';
+import { PRO } from '../chart/theme';
 import { Coverage } from '../core/coverage';
 import { Tape, type TradeRow } from '../core/tape';
 
@@ -12,8 +12,10 @@ function paint(trades: TradeRow[], compact = false) {
   tape.insert(trades);
   const span = { from: start, to: trades[trades.length - 1].t + 1 };
   const layer = new SmcRangeProfileLayer(tape, new Coverage([[span.from, span.to]]), () => span, true, () => [], new Coverage(), () => span.to);
-  // The chart spans 18 USD on 180 pixels; both 64,670 and 64,671 are in one 2 USD row.
+  // The chart spans 18 USD on 180 pixels; both 64,670 and 64,671 fit in one row.
   const width = rangeProfileWidth(compact);
+  const output: { info: RangeProfileInfo | null } = { info: null };
+  layer.onInfo = info => { output.info = info; };
   layer.setLayout(width, 0);
   layer.attached({
     chart: { paneSize: () => ({ width: 400, height: 180 }) },
@@ -25,23 +27,21 @@ function paint(trades: TradeRow[], compact = false) {
   layer.updateAllViews();
 
   const deltaWidths: number[] = [];
-  const visitBars: { x: number; y: number; width: number; height: number; color: string }[] = [];
-  const texts: string[] = [];
+  const fills: { x: number; y: number; width: number; height: number; color: string }[] = [];
+  const texts: { value: string; x: number; y: number }[] = [];
   const context = {
     fillStyle: '',
     save() {}, restore() {}, beginPath() {}, rect() {}, clip() {}, strokeText() {},
-    fillText(value: string) { texts.push(value); },
+    fillText(value: string, x: number, y: number) { texts.push({ value, x, y }); },
     fillRect(x: number, y: number, width: number, height: number) {
       if (this.fillStyle === PRO.buy || this.fillStyle === PRO.sell) deltaWidths.push(width);
-      if ([rgba(PRO.buy, .65), rgba(PRO.sell, .65)].includes(this.fillStyle)) {
-        visitBars.push({ x, y, width, height, color: this.fillStyle });
-      }
+      fills.push({ x, y, width, height, color: this.fillStyle });
     },
   };
   const renderer = layer.priceAxisPaneViews()[0].renderer()!;
   const target = { useMediaCoordinateSpace: (draw: (scope: object) => void) => draw({ context, mediaSize: { width, height: 180 } }) };
   renderer.draw(target as Parameters<typeof renderer.draw>[0]);
-  return { labels: texts.slice(0, 2), deltaWidths: deltaWidths.filter(width => width > 0), texts, visitBars };
+  return { labels: texts.slice(0, 2).map(t => t.value), deltaWidths: deltaWidths.filter(width => width > 0), texts, fills, info: output.info };
 }
 
 it.each([[1, 0], [-1, 0], [1, 60_000], [-1, 60_000]] as const)('plots a neutral row (first side %i, spacing %i ms)', (side, gap) => {
@@ -51,7 +51,7 @@ it.each([[1, 0], [-1, 0], [1, 60_000], [-1, 60_000]] as const)('plots a neutral 
     { t: start + 1 + gap, px: price, sz: .001, side: other, tid: 2 },
     { t: start + 2 + 2 * gap, px: price, sz: .002, side: other, tid: 3 },
   ];
-  expect(paint(fills)).toMatchObject({ labels: ['388', '0'], deltaWidths: [], visitBars: [] });
+  expect(paint(fills)).toMatchObject({ labels: ['388', '0'], deltaWidths: [] });
 });
 
 it.each([1, -1] as const)('keeps a real signed difference of 0.00001 USD (first side %i)', side => {
@@ -63,28 +63,24 @@ it.each([1, -1] as const)('keeps a real signed difference of 0.00001 USD (first 
   expect(result.deltaWidths).toHaveLength(1);
 });
 
-it.each([false, true])('draws proportional visits from the middle of each cell (compact %s)', compact => {
+it.each([false, true])('draws two aligned numbers on a plain background with bars below (compact %s)', compact => {
   const trade = (tid: number, px: number, sz: number, side: TradeRow['side']): TradeRow =>
     ({ t: start + tid, tid, px, sz, side });
-  const { visitBars, texts } = paint([
+  const { fills, texts, info } = paint([
     trade(1, price, .01, 1),
     trade(2, price + 8, .01, 1), trade(3, price + 8, .01, -1),
     trade(4, price, .02, -1),
     trade(5, price + 8, .01, 1), trade(6, price + 8, .01, -1),
     trade(7, price, .01, 1), trade(8, price, .01, -1),
   ], compact);
-  expect(visitBars).toHaveLength(2);
-  const [buy, sell] = visitBars;
-  const left = compact ? 0 : 116;
-  const cell = (rangeProfileWidth(compact) - left) / 3;
-  expect(buy.color).toBe(rgba(PRO.buy, .65));
-  expect(buy.x).toBeCloseTo(left + cell * .5);
-  expect(sell.color).toBe(rgba(PRO.sell, .65));
-  expect(sell.x + sell.width).toBeCloseTo(left + cell * 1.5);
-  expect(sell.width).toBeCloseTo(buy.width * 2);
-  expect(sell.y).toBe(buy.y);
-  expect(buy.height).toBe(2);
-  expect(texts).toEqual(expect.arrayContaining(['+647*', '−1,3K', '0', '—']));
+  expect(fills[0]).toEqual({ x: 0, y: 0, width: rangeProfileWidth(compact), height: 180, color: PRO.bg });
+  expect(texts.map(t => t.value)).toEqual(['2,6K', '0', '3,2K', '−647', 'Obrót USD', 'Δ USD']);
+  expect(texts[0].x).toBe(texts[2].x);
+  expect(texts[1].x).toBe(texts[3].x);
+  expect(texts[0].y).toBe(texts[1].y);
+  expect(fills.filter(f => f.height === 2).every(f => !texts.some(t => Math.abs(f.y - t.y) <= 6))).toBe(true);
+  expect(fills.filter(f => f.height === 2)).toHaveLength(3);
+  expect(info?.active?.visits).toEqual({ count: 3, deltaMicros: -646_700_000n, partial: true });
 });
 
 it.each([0, 60_000])('keeps exact zero and both tiny signs after 1651 fills (minute offset %i)', offset => {
@@ -100,9 +96,8 @@ it.each([0, 60_000])('keeps exact zero and both tiny signs after 1651 fills (min
 
   const neutral = paint(fills);
   expect(neutral.labels[1]).toBe('0');
-  expect(neutral.texts[4]).toBe('0*');
   expect(neutral.deltaWidths).toEqual([]);
-  expect(neutral.visitBars).toEqual([]);
+  expect(neutral.info?.active?.visits).toEqual({ count: 1, deltaMicros: 0n, partial: true });
   for (const side of [1, -1] as const) {
     const tid = fills.length;
     const t = fills.at(-1)!.t + 20;
@@ -110,9 +105,7 @@ it.each([0, 60_000])('keeps exact zero and both tiny signs after 1651 fills (min
       { t: t + 20, px: price, sz: .00001, side: side === 1 ? -1 : 1, tid: tid + 1 }]);
     const label = side === 1 ? '+<0,01' : '−<0,01';
     expect(observed.labels[1]).toBe(label);
-    expect(observed.texts[4]).toBe(label + '*');
     expect(observed.deltaWidths).toHaveLength(1);
-    expect(observed.visitBars).toHaveLength(1);
-    expect(observed.visitBars[0].color).toBe(rgba(side === 1 ? PRO.buy : PRO.sell, .65));
+    expect(observed.info?.active?.visits).toEqual({ count: 1, deltaMicros: BigInt(side) * 10n, partial: true });
   }
 });
