@@ -1,6 +1,5 @@
 import type { FlowElement, FlowSnapshot } from '../core/smcOrderflow';
 import type { SmcResult } from '../core/smcStructure';
-import { tr } from '../../../i18n';
 
 export const flowId = (kind: FlowElement['kind'], t: number, known: number, dir: number): string => `${kind}:${t}:${known}:${dir}`;
 export function flowElements(r: SmcResult, mitigation: 'wick' | 'close' = 'close'): FlowElement[] {
@@ -13,14 +12,6 @@ export function flowElements(r: SmcResult, mitigation: 'wick' | 'close' = 'close
       lo: s.level, hi: s.level, dir: s.dir, atr: r.atr[s.returnIdx], expiresAt: s.known + Math.max(86400000, 24 * r.ms) })),
   ];
 }
-export function flowBadge(s: FlowSnapshot | null): string {
-  if (!s) return '';
-  if (s.kind === 'ob') return s.defense === 'weakening' ? tr(' · obrona ↓', ' · defense ↓') :
-    s.defense === 'absorption' ? tr(' · absorpcja ↑', ' · absorption ↑') : s.contacts ? ` · ${s.contacts}×` : '';
-  if (s.kind === 'sweep') return s.sweep?.state === 'initiative' ? tr(' · inicjatywa', ' · initiative') : s.sweep?.retest !== null ? tr(' · retest', ' · retest') : '';
-  return `${s.fvg?.strongFlow ? tr(' · przepływ', ' · flow') : ''}${s.fvg?.lowLiquidity ? ' · L2↓' : ''}`;
-}
-
 export type FlowAlignment = 'aligned' | 'divergent' | 'ambiguous' | 'unavailable';
 export function flowAlignment(s: FlowSnapshot): FlowAlignment {
   if (!s.complete || s.since.volume <= 0 || !s.recent.some(c => c.complete && (c.result === 'retreat' || c.result === 'broken'))) return 'unavailable';

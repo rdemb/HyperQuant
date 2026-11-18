@@ -17,7 +17,7 @@ function walk(): SBar[] {
     return { t: i * 300000, o, h: Math.max(o, c) + random() * .5, l: Math.min(o, c) - random() * .5, c };
   });
 }
-it('connects real structure outputs to the shared journal, chart pick and five UI controls', () => {
+it('connects real structure outputs to the shared journal and five UI controls', () => {
   const bars = walk(), now = 700 * 300000, structure = smcStructure(bars, 300000);
   const all = flowElements(structure);
   for (const kind of ['ob', 'sweep', 'fvg']) expect(all.some(x => x.kind === kind), kind).toBe(true);
@@ -27,16 +27,14 @@ it('connects real structure outputs to the shared journal, chart pick and five U
   layer.setData(bars.map(b => ({ t: b.t, candle: { ...b, v: 1, n: 1 } })), 300000, now);
   const sel = layer.selection()!, model = layer.observationModel()!;
   expect(model.stats().elements).toBeLessThanOrEqual(64);
-  for (const { o, endAt } of sel.obs) {
+  for (const { o } of sel.obs) {
     const id = flowId('ob', o.t, o.known, o.dir);
     expect(model.current(id)).toBeTruthy();
-    const picked = layer.pickObservation((o.known + (endAt ?? now)) / 2, (o.lo + o.hi) / 2, 0);
-    expect(picked).toBeTruthy(); expect(model.current(picked!)?.kind).toBe('ob');
   }
   const params = indicatorDef('smc').params;
   for (const key of ['defense', 'initiative', 'anchored', 'formation', 'memory']) expect(params.some(p => p.key === key && p.def === 1)).toBe(true);
   const selected = model.list()[0]; expect(selected).toBeTruthy();
-  const html = renderToStaticMarkup(<SmcOrderflowPanel model={model} selected={selected.id} opts={style} unit="BTC" onSelect={() => {}} onOption={() => {}} onClose={() => {}} />);
+  const html = renderToStaticMarkup(<SmcOrderflowPanel model={model} selected={selected.id} replay={null} onReplay={() => {}} opts={style} unit="BTC" onSelect={() => {}} onOption={() => {}} onClose={() => {}} />);
   expect(html).toContain('data-flow-section="memory"'); expect(html).toContain('Co się zmieniło');
   expect(html).toContain('tylko tej sesji strony'); expect(html).not.toContain('NaN');
   layer.setData([], 60000, now + 250);

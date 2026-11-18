@@ -2,6 +2,8 @@ import type { ObservationJournal, ObservedPrint } from './smcObservation';
 import { addFlow, emptyFlow, printFlow } from './smcObservationBins';
 import type { FlowTotal } from './smcObservationBins';
 import type { Dir, SBar, StructureState } from './smcStructure';
+import { contactGrid, ContactDeltaTally, type ContactProfile, type ContactProfiles } from './smcContactDelta';
+import { supportsSmcContactDelta } from '../../../utils/marketCaps';
 
 export interface FlowElement {
   id: string; kind: 'ob' | 'fvg' | 'sweep'; known: number; lo: number; hi: number; dir: Dir;
@@ -10,6 +12,7 @@ export interface FlowElement {
 export type Defense = 'first' | 'weakening' | 'absorption' | 'mixed' | 'unknown';
 export interface Contact {
   from: number; observedAt: number; endedAt: number | null; result: 'active' | 'retreat' | 'broken' | 'expired';
+  price: number; retreatPrice: number | null;
   attack: number; penetration: number; rebound: number; extreme: number; complete: boolean;
   flow: FlowTotal;
 }
@@ -25,12 +28,23 @@ export interface FlowSnapshot {
   id: string; kind: FlowElement['kind']; lo: number; hi: number; dir: Dir; atr: number; knownAt: number; observedAt: number;
   structure: StructureState; anchor: number | null; complete: boolean; reason: 'before-observation' | 'gap' | 'buffer' | null;
   contacts: number; completed: number; defense: Defense; recent: Contact[]; zone: FlowTotal; since: FlowTotal;
-  sweep: { state: 'observing' | 'initiative' | 'return-only' | 'beyond' | 'unknown'; retest: number | null; closes: number; bars: number; lastClose: number | null; flow: FlowTotal | null; above: FlowTotal | null; below: FlowTotal | null } | null;
+  sweep: { state: 'observing' | 'initiative' | 'return-only' | 'beyond' | 'unknown'; retest: number | null; retestPrice: number | null; closes: number; bars: number; lastClose: number | null; flow: FlowTotal | null; above: FlowTotal | null; below: FlowTotal | null } | null;
   fvg: FvgProfile | null; ended: boolean; endReason: 'filled' | 'mitigated' | 'expired' | null;
 }
 export type FlowEventKind = 'formation' | 'contact' | 'contact-end' | 'defense' | 'sweep' | 'retest' | 'profile' | 'metrics' | 'gap' | 'structure' | 'filled' | 'mitigated' | 'expired' | 'late';
 export interface FlowEvent { kind: FlowEventKind; observedAt: number; exchangeAt: number; snapshot: FlowSnapshot }
-interface Entry { element: FlowElement; state: FlowSnapshot; history: FlowEvent[]; seq: number; barThrough: number; metricAt: number; gapAt: number; lastPx: number | null; armed: boolean }
+export function numberedContacts(s: FlowSnapshot) {
+  return s.recent.map((contact, i) => ({ ordinal: s.contacts - s.recent.length + i + 1, contact }));
+}
+export interface FlowSample { readonly time: number; readonly observedAt: number; readonly vwap: number; readonly delta: number; readonly deltaUsd: number; readonly connect: boolean }
+interface Entry {
+  element: FlowElement; state: FlowSnapshot; history: FlowEvent[]; seq: number; barThrough: number;
+  metricAt: number; gapAt: number; lastPrint: ObservedPrint | null; armed: boolean;
+  path: FlowSample[]; tail: FlowSample | null; cut: boolean;
+  profiles: Map<number, ContactDeltaTally> | null;
+}
+const PATH_SAMPLES = 256;
+const SAMPLE_MS = 10_000;
 const clone = (s: FlowSnapshot): FlowSnapshot => ({ ...s, recent: s.recent.map(x => ({ ...x, flow: { ...x.flow } })), zone: { ...s.zone }, since: { ...s.since }, sweep: s.sweep && { ...s.sweep, flow: s.sweep.flow && { ...s.sweep.flow }, above: s.sweep.above && { ...s.sweep.above }, below: s.sweep.below && { ...s.sweep.below } }, fvg: s.fvg && { ...s.fvg } });
 const quantile = (xs: number[], q: number): number | null => xs.length < 20 ? null : [...xs].sort((a, b) => a - b)[Math.ceil(q * xs.length) - 1];
 
@@ -64,6 +78,7 @@ export class SmcOrderflow {
   private event(r: Entry, kind: FlowEventKind, observedAt: number, exchangeAt: number): void {
     const at = Math.max(r.state.observedAt, observedAt);
     r.state.observedAt = at;
+    if (r.tail) this.archive(r, r.tail);
     const snapshot = clone(r.state);
     Object.freeze(snapshot.zone); Object.freeze(snapshot.since);
     for (const c of snapshot.recent) { Object.freeze(c.flow); Object.freeze(c); }
@@ -87,9 +102,11 @@ export class SmcOrderflow {
         const state: FlowSnapshot = { version: 'smc-orderflow-v1', intervalMs: this.ms, id: e.id, kind: e.kind, lo: e.lo, hi: e.hi, dir: e.dir, atr: e.atr, knownAt: e.known,
           observedAt: now, structure, anchor: null, complete: available, reason: available ? null : 'before-observation',
           contacts: 0, completed: 0, defense: 'first', recent: [], zone: emptyFlow(), since: emptyFlow(),
-          sweep: e.kind === 'sweep' ? { state: 'observing', retest: null, closes: 0, bars: 0, lastClose: null, flow: null, above: null, below: null } : null,
+          sweep: e.kind === 'sweep' ? { state: 'observing', retest: null, retestPrice: null, closes: 0, bars: 0, lastClose: null, flow: null, above: null, below: null } : null,
           fvg: e.kind === 'fvg' ? formationProfile(this.journal, e, this.ms, now) : null, ended: false, endReason: null };
-        r = { element: e, state, history: [], seq: available ? 0 : this.journal.sequence, barThrough: e.known, metricAt: now, gapAt: this.journal.gaps().at(-1)?.id ?? 0, lastPx: null, armed: true };
+        r = { element: e, state, history: [], seq: available ? 0 : this.journal.sequence, barThrough: e.known,
+          metricAt: now, gapAt: this.journal.gaps().at(-1)?.id ?? 0, lastPrint: null, armed: true, path: [], tail: null, cut: true,
+          profiles: supportsSmcContactDelta(this.journal.coin) && e.kind !== 'sweep' ? new Map() : null };
         this.entries.set(e.id, r); this.event(r, 'formation', now, e.known);
       } else r.element = { ...r.element, endAt: e.endAt, expiresAt: Math.min(r.element.expiresAt, e.expiresAt) };
     }
@@ -103,7 +120,7 @@ export class SmcOrderflow {
       const profileDirty = correctionOverflow || corrections.some(c => c.time < e.known && c.time >= (e.originFrom ?? e.known - 3 * this.ms) - 63 * this.ms);
       const eventCount = r.history.length;
       if (trades.length && trades[0].seq > r.seq + 1 && (r.seq > 0 || e.known <= this.journal.stats().retainedAfter)) {
-        s.complete = false; s.reason = 'buffer'; s.defense = 'unknown'; r.armed = false;
+        s.complete = false; s.reason = 'buffer'; s.defense = 'unknown'; r.armed = false; r.lastPrint = null;
         for (const c of s.recent) c.complete = false;
         this.event(r, 'gap', now, now);
       }
@@ -123,7 +140,7 @@ export class SmcOrderflow {
       }
       if (s.structure !== structure) { s.structure = structure; this.event(r, 'structure', now, now); }
       for (const gap of this.journal.gaps()) if (gap.id > r.gapAt && gap.observedAt >= e.known) {
-        s.complete = false; s.reason = 'gap'; s.defense = 'unknown'; r.armed = false;
+        s.complete = false; s.reason = 'gap'; s.defense = 'unknown'; r.armed = false; r.lastPrint = null;
         const active = s.recent.at(-1); if (active?.result === 'active') active.complete = false;
         this.event(r, 'gap', gap.observedAt, gap.from);
       }
@@ -156,46 +173,88 @@ export class SmcOrderflow {
     }
     this.correction = this.journal.revision;
   }
+  private archive(r: Entry, point: FlowSample): void {
+    if (r.path.at(-1) === point) return;
+    r.path.push(point);
+    if (r.path.length <= PATH_SAMPLES) return;
+    r.path.splice(1, 1);
+    if (r.path[1].connect) r.path[1] = { ...r.path[1], connect: false };
+  }
+  private sample(r: Entry, t: ObservedPrint): void {
+    const s = r.state;
+    if (!s.complete || !(s.since.volume > 0)) return;
+    const previous = r.tail;
+    const sameStart = previous?.time === t.time && !previous.connect;
+    const point: FlowSample = { time: t.time, observedAt: t.observedAt, vwap: s.since.pv / s.since.volume,
+      delta: s.since.delta, deltaUsd: s.since.buyUsd - s.since.sellUsd, connect: !r.cut && !sameStart };
+    r.tail = point;
+    if (r.cut || t.time - (r.path.at(-1)?.time ?? -Infinity) >= SAMPLE_MS) this.archive(r, point);
+    r.cut = false;
+  }
   private print(r: Entry, t: ObservedPrint): void {
     const e = r.element, s = r.state;
     const tick = this.tickAt(e.lo);
     const inside = t.px >= e.lo && t.px <= e.hi;
     let anchored = false;
     if (t.late) {
-      if (s.anchor !== null && t.time >= s.anchor) { const f = printFlow(t); addFlow(s.since, f); if (inside) addFlow(s.zone, f); }
-      for (const c of s.recent) if (t.time >= c.from && t.time <= (c.endedAt ?? Infinity)) c.complete = false;
+      if (s.anchor !== null && t.time >= s.anchor) {
+        if (r.tail) this.archive(r, r.tail);
+        r.cut = true;
+        const f = printFlow(t); addFlow(s.since, f); if (inside) addFlow(s.zone, f);
+      }
+      for (const { contact, ordinal } of numberedContacts(s)) if (t.time >= contact.from && t.time <= (contact.endedAt ?? Infinity)) {
+        contact.complete = false;
+        r.profiles?.get(ordinal)?.invalidate(t.observedAt);
+      }
       s.defense = 'unknown'; return;
     }
-    if (s.sweep && s.sweep.retest === null && r.lastPx !== null && Math.abs(r.lastPx - e.lo) > tick && Math.abs(t.px - e.lo) <= tick) {
-      s.sweep.retest = t.time; this.event(r, 'retest', t.observedAt, t.time);
+    const previous = r.lastPrint;
+    const retest = s.sweep && s.sweep.retest === null && previous && Math.abs(previous.px - e.lo) > tick &&
+      Math.abs(t.px - e.lo) <= tick && this.journal.continuous(previous.time, t.time, t.observedAt) ? s.sweep : null;
+    if (retest) {
+      retest.retest = t.time;
+      retest.retestPrice = t.px;
     }
-    r.lastPx = t.px;
+    r.lastPrint = t;
     if (s.anchor === null && (inside || s.sweep?.retest === t.time)) {
       s.anchor = t.time; s.complete = s.reason !== 'buffer' && s.reason !== 'gap' && this.journal.continuous(t.time, t.time, t.observedAt); s.reason = s.complete ? null : s.reason ?? 'gap';
       anchored = true;
     }
     if (s.anchor !== null && t.time >= s.anchor) {
       const flow = printFlow(t); addFlow(s.since, flow); if (inside) addFlow(s.zone, flow);
+      this.sample(r, t);
     }
-    if (e.kind !== 'ob') { if (anchored) this.event(r, 'contact', t.observedAt, t.time); return; }
+    if (e.kind === 'sweep') {
+      if (anchored) this.event(r, 'contact', t.observedAt, t.time);
+      if (retest) this.event(r, 'retest', t.observedAt, t.time);
+      return;
+    }
     let c = s.recent.at(-1);
     let started = false;
     const retreat = (e.dir === 1 ? t.px - e.hi : e.lo - t.px) >= .25 * e.atr && e.atr > 0;
     if (c?.result !== 'active' && !inside) r.armed = true;
     if ((!c || c.result !== 'active') && inside && r.armed) {
       c = { from: t.time, observedAt: t.observedAt, endedAt: null, result: 'active', attack: 0, penetration: 0, rebound: 0,
-        extreme: t.px, complete: this.journal.continuous(t.time, t.time, t.observedAt), flow: emptyFlow() }; s.recent.push(c); if (s.recent.length > 3) s.recent.shift(); s.contacts++; r.armed = false;
+        price: t.px, retreatPrice: null, extreme: t.px, complete: this.journal.continuous(t.time, t.time, t.observedAt), flow: emptyFlow() }; s.recent.push(c); if (s.recent.length > 3) s.recent.shift(); s.contacts++; r.armed = false;
       started = true;
+      if (r.profiles) {
+        r.profiles.set(s.contacts, new ContactDeltaTally(contactGrid(e.lo, e.hi, tick), t));
+        r.profiles.delete(s.contacts - 3);
+      }
     }
     if (!c || c.result !== 'active' || t.time < c.from) return;
-    if (inside) { addFlow(c.flow, printFlow(t)); if (t.side === -e.dir) c.attack += t.sz; }
+    if (inside) {
+      addFlow(c.flow, printFlow(t));
+      if (t.side === -e.dir) c.attack += t.sz;
+      r.profiles?.get(s.contacts)?.add(t);
+    }
     const previousExtreme = c.extreme;
     c.extreme = e.dir === 1 ? Math.min(c.extreme, t.px) : Math.max(c.extreme, t.px);
     if (c.extreme !== previousExtreme) c.rebound = 0;
     c.penetration = Math.max(c.penetration, e.dir === 1 ? e.hi - c.extreme : c.extreme - e.lo);
     c.rebound = Math.max(c.rebound, (t.px - c.extreme) * e.dir);
     if (started) this.event(r, 'contact', t.observedAt, t.time);
-    if (retreat) { this.endContact(r, 'retreat', t.observedAt, t.time); r.armed = true; }
+    if (retreat) { c.retreatPrice = t.px; this.endContact(r, 'retreat', t.observedAt, t.time); r.armed = true; }
   }
   private endContact(r: Entry, result: Contact['result'], observedAt: number, exchangeAt: number): void {
     const s = r.state, c = s.recent.at(-1); if (!c || c.result !== 'active') return;
@@ -204,10 +263,10 @@ export class SmcOrderflow {
     const completed = s.recent.filter(x => x.result !== 'active'); const [a, b] = completed.slice(-2);
     const cmp = (x: number) => Math.abs(x) < 2 * this.tickAt(r.element.lo) ? 0 : Math.sign(x);
     const validScale = Number.isFinite(r.element.atr) && r.element.atr > 0 && Number.isFinite(this.tickAt(r.element.lo));
-    s.defense = !b ? 'first' : !validScale || !a.complete || !b.complete || a.result === 'expired' || b.result === 'expired' ? 'unknown' :
+    if (r.element.kind === 'ob') s.defense = !b ? 'first' : !validScale || !a.complete || !b.complete || a.result === 'expired' || b.result === 'expired' ? 'unknown' :
       cmp(b.penetration - a.penetration) > 0 && cmp(b.rebound - a.rebound) < 0 && b.attack <= a.attack ? 'weakening' :
       b.attack > a.attack && cmp(b.penetration - a.penetration) <= 0 && cmp(b.rebound - a.rebound) >= 0 ? 'absorption' : 'mixed';
-    this.event(r, 'contact-end', observedAt, exchangeAt); if (b) this.event(r, 'defense', observedAt, exchangeAt);
+    this.event(r, 'contact-end', observedAt, exchangeAt); if (b && r.element.kind === 'ob') this.event(r, 'defense', observedAt, exchangeAt);
   }
   private bar(r: Entry, b: SBar, now: number): void {
     const e = r.element, s = r.state, end = b.t + this.ms, c = s.recent.at(-1);
@@ -240,7 +299,32 @@ export class SmcOrderflow {
     if (before !== JSON.stringify(w)) this.event(r, 'sweep', now, end);
   }
   current(id: string): FlowSnapshot | null { const s = this.entries.get(id)?.state; return s ? clone(s) : null; }
+  contactProfiles(id: string, observedAt: number | null, ordinal: number | null, compare: boolean): ContactProfiles | null {
+    const r = this.entries.get(id);
+    if (!r?.profiles) return null;
+    const at = Math.min(observedAt ?? Infinity, r.state.observedAt);
+    const snapshot = at >= r.state.observedAt ? r.state : this.at(id, at);
+    if (!snapshot?.recent.length) return null;
+    const contacts = numberedContacts(snapshot);
+    const i = ordinal === null ? contacts.length - 1 : contacts.findIndex(c => c.ordinal === ordinal);
+    const selected = contacts[i];
+    if (!selected) return null;
+    const read = ({ ordinal: n, contact }: (typeof contacts)[number]): ContactProfile => {
+      const identity = { ordinal: n, active: contact.result === 'active' };
+      const tally = r.profiles?.get(n);
+      if (!tally) return { ...identity, status: 'retention', bins: [], turnoverUsd: null, deltaUsd: null };
+      const complete = contact.complete && this.journal.continuous(contact.from, contact.endedAt ?? at, at);
+      return tally.read(identity, this.journal, at, complete);
+    };
+    return { current: read(selected), previous: compare && i > 0 ? read(contacts[i - 1]) : null };
+  }
   events(id: string): readonly FlowEvent[] { return this.entries.get(id)?.history.slice() ?? []; }
+  trajectory(id: string, observedAt = Infinity): readonly FlowSample[] {
+    const r = this.entries.get(id); if (!r) return [];
+    const points = r.path.filter(p => p.observedAt <= observedAt && p.time <= observedAt);
+    if (r.tail && r.tail.observedAt <= observedAt && r.tail.time <= observedAt && points.at(-1) !== r.tail) points.push(r.tail);
+    return points;
+  }
   at(id: string, observedAt: number): FlowSnapshot | null {
     const r = this.entries.get(id); if (!r) return null;
     if (observedAt >= r.state.observedAt) return clone(r.state);

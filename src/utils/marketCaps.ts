@@ -10,6 +10,7 @@ import { type ChartMarket, DEFAULT_MARKETS } from './marketRegistry';
 
 /** Rynek wykresu, gdy link albo zapis wskazuje rynek spoza rejestru (i rynek startowy strony). */
 export const HOME_MARKET = 'BTC';
+export const supportsSmcContactDelta = (coin: string): boolean => coin === HOME_MARKET;
 
 export interface MarketCaps {
   /**

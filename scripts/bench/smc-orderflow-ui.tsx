@@ -32,11 +32,13 @@ const styles = { alpha: 1, width: 1, internalLen: 3, swingLen: 10, defense: true
 const root = createRoot(document.getElementById('root')!);
 function Preview() {
   const [selected, select] = useState('ob'), [opts, setOpts] = useState(styles), [open, setOpen] = useState(true);
+  const [replay, setReplay] = useState<number | null>(null);
+  const selectNow = (id: string) => { select(id); setReplay(null); };
   return <main className="min-h-screen bg-surface-1 p-4 text-ink-1" data-theme="dark"><h1 className="font-semibold">SIM · {tr('Weryfikacja pięciu funkcji SMC', 'Five SMC features verification')}</h1>
     <p className="mb-3 text-xs text-ink-3">{tr('Dane syntetyczne, rzeczywisty model i komponent panelu. Bez połączeń z giełdą.', 'Synthetic data, actual model and panel component. No exchange connections.')}</p>
-    <div className="flex flex-wrap gap-2">{['ob', 'sweep', 'fvg'].map(id => <button key={id} className="min-h-11 rounded-lg border border-white/20 px-4" onClick={() => { select(id); setOpen(true); }}>{id.toUpperCase()}</button>)}</div>
+    <div className="flex flex-wrap gap-2">{['ob', 'sweep', 'fvg'].map(id => <button key={id} className="min-h-11 rounded-lg border border-white/20 px-4" onClick={() => { selectNow(id); setOpen(true); }}>{id.toUpperCase()}</button>)}</div>
     <div className="relative mt-3 h-[680px] w-full rounded-xl border border-white/10 bg-surface-2 sm:w-[520px]">
-      {open && <SmcOrderflowPanel model={model} selected={selected} opts={opts} unit="BTC" onSelect={select} onOption={(key, on) => setOpts(o => ({ ...o, [key]: on }))} onClose={() => setOpen(false)} />}
+      {open && <SmcOrderflowPanel model={model} selected={selected} replay={replay} onReplay={setReplay} opts={opts} unit="BTC" onSelect={selectNow} onOption={(key, on) => setOpts(o => ({ ...o, [key]: on }))} onClose={() => setOpen(false)} />}
     </div><div id="benchmark-host" className="relative h-[680px] w-full sm:w-[520px]" /></main>;
 }
 root.render(<Preview />);
@@ -79,7 +81,7 @@ async function benchmark() {
   };
   const view = (withPanel: boolean, i: number) => <Profiler id="paired" onRender={onRender}>
     <div><span>{i} · SMC · {elements.map(e => `${e.kind} ${e.lo}–${e.hi}`).join(' · ')}</span>
-      {withPanel && <SmcOrderflowPanel model={model} selected={['ob', 'sweep', 'fvg'][i % 3]} opts={styles} unit="BTC" onSelect={noop} onOption={noop} onClose={noop} />}</div></Profiler>;
+      {withPanel && <SmcOrderflowPanel model={model} selected={['ob', 'sweep', 'fvg'][i % 3]} replay={null} onReplay={noop} opts={styles} unit="BTC" onSelect={noop} onOption={noop} onClose={noop} />}</div></Profiler>;
   for (let i = 0; i < 220; i++) {
     let b = 0, f = 0;
     // Kolejność naprzemienna, te same dane i 20 elementów. Pomiar React render/commit osobno od następnej klatki.

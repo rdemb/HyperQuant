@@ -18,6 +18,11 @@ class Ring<T> {
   }
   values(): T[] { return [...this.rows.slice(this.head), ...this.rows.slice(0, this.head)]; }
   get size(): number { return this.rows.length; }
+  slice(from: number, to: number): T[] {
+    const out: T[] = [];
+    for (let i = from; i < to; i++) out.push(this.rows[(this.head + i) % this.rows.length]);
+    return out;
+  }
   after(test: (x: T) => boolean): T[] {
     const out: T[] = [];
     for (let i = this.rows.length - 1; i >= 0; i--) { const row = this.rows[(this.head + i) % this.rows.length]; if (!test(row)) break; out.push(row); }
@@ -94,6 +99,11 @@ export class ObservationJournal {
     if (Number.isFinite(changedFrom)) this.corrected(changedFrom, observedAt);
   }
   tradesAfter(seq: number): ObservedPrint[] { return this.prints.after(x => x.seq > seq); }
+  sequenceRange(first: number, last: number): ObservedPrint[] | null {
+    const oldest = this.next - this.prints.size + 1;
+    if (first < oldest || last > this.next || last < first) return null;
+    return this.prints.slice(first - oldest, last - oldest + 1);
+  }
   range(from: number, to: number, asOf = Infinity): ObservedPrint[] {
     return this.prints.values().filter(x => from <= x.time && x.time < to && x.observedAt <= asOf).sort((a, b) => a.time - b.time || a.seq - b.seq);
   }
