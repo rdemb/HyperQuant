@@ -4,6 +4,10 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Ślad taśmy w profilu SMC BTC (2026-11-18)
+<!-- co-nowego: grupa=wykres | pl=Ostatnie 30 sekund taśmy przy cenach w profilu SMC BTC | en=The last 30 seconds of trades by price in the BTC SMC profile -->
+- Przy cenach trzy kolejne okna po 10 sekund pokazują nominał agresywnego kupna i sprzedaży. Pod wykresem widać, które okna są niepełne.
+
 ### Dwie liczby w profilu SMC BTC (2026-11-18)
 <!-- co-nowego: grupa=wykres | pl=Dwie czytelne kolumny w profilu SMC BTC | en=Two readable columns in the BTC SMC profile -->
 - Przy cenach pozostają obrót i delta. Pasek pod wykresem sumuje delty ostatnich wizyt w tym samym przedziale co odczyt zmiany ceny po 30 sekundach.

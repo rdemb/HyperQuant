@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { rangeProfileWidth, SmcRangeProfileLayer, type RangeProfileInfo } from '../chart/smcRangeProfileLayer';
 import { PRO } from '../chart/theme';
 import { Coverage } from '../core/coverage';
@@ -17,15 +17,23 @@ function paint(trades: TradeRow[], compact = false) {
   const output: { info: RangeProfileInfo | null } = { info: null };
   layer.onInfo = info => { output.info = info; };
   layer.setLayout(width, 0);
+  attach(layer);
+  return { ...render(layer, width), info: output.info };
+}
+
+function attach(layer: SmcRangeProfileLayer) {
   layer.attached({
     chart: { paneSize: () => ({ width: 400, height: 180 }) },
     series: {
       coordinateToPrice: (y: number) => price + 10 - y / 10,
       priceToCoordinate: (px: number) => (price + 10 - px) * 10,
     },
+    requestUpdate: () => layer.updateAllViews(),
   } as Parameters<typeof layer.attached>[0]);
   layer.updateAllViews();
+}
 
+function render(layer: SmcRangeProfileLayer, width: number) {
   const deltaWidths: number[] = [];
   const fills: { x: number; y: number; width: number; height: number; color: string }[] = [];
   const texts: { value: string; x: number; y: number }[] = [];
@@ -34,14 +42,14 @@ function paint(trades: TradeRow[], compact = false) {
     save() {}, restore() {}, beginPath() {}, rect() {}, clip() {}, strokeText() {},
     fillText(value: string, x: number, y: number) { texts.push({ value, x, y }); },
     fillRect(x: number, y: number, width: number, height: number) {
-      if (this.fillStyle === PRO.buy || this.fillStyle === PRO.sell) deltaWidths.push(width);
+      if (height === 2 && (this.fillStyle === PRO.buy || this.fillStyle === PRO.sell)) deltaWidths.push(width);
       fills.push({ x, y, width, height, color: this.fillStyle });
     },
   };
   const renderer = layer.priceAxisPaneViews()[0].renderer()!;
   const target = { useMediaCoordinateSpace: (draw: (scope: object) => void) => draw({ context, mediaSize: { width, height: 180 } }) };
   renderer.draw(target as Parameters<typeof renderer.draw>[0]);
-  return { labels: texts.slice(0, 2).map(t => t.value), deltaWidths: deltaWidths.filter(width => width > 0), texts, fills, info: output.info };
+  return { labels: texts.slice(0, 2).map(t => t.value), deltaWidths: deltaWidths.filter(width => width > 0), texts, fills };
 }
 
 it.each([[1, 0], [-1, 0], [1, 60_000], [-1, 60_000]] as const)('plots a neutral row (first side %i, spacing %i ms)', (side, gap) => {
@@ -52,6 +60,60 @@ it.each([[1, 0], [-1, 0], [1, 60_000], [-1, 60_000]] as const)('plots a neutral 
     { t: start + 2 + 2 * gap, px: price, sz: .002, side: other, tid: 3 },
   ];
   expect(paint(fills)).toMatchObject({ labels: ['388', '0'], deltaWidths: [] });
+});
+
+it.each([false, true])('zachowuje oba kierunki w śladzie przy delcie 0 (kompakt %s)', compact => {
+  const view = paint([
+    { t: start, px: price, sz: 1, side: 1, tid: 1 },
+    { t: start + 1, px: price, sz: 1, side: -1, tid: 2 },
+  ], compact);
+  const sell = view.fills.find(f => f.height === 3 && f.color === PRO.sell);
+  const buy = view.fills.find(f => f.height === 3 && f.color === PRO.buy);
+  expect(view.labels).toEqual(['129,3K', '0']);
+  expect(view.deltaWidths).toEqual([]);
+  expect(sell).toBeDefined();
+  expect(buy).toBeDefined();
+  expect(sell!.x + sell!.width).toBeCloseTo(buy!.x);
+  expect(sell!.width).toBeCloseTo(buy!.width);
+  expect(buy!.y).toBeGreaterThan(view.fills.find(f => f.height === 2)!.y + 2);
+});
+
+it.each([false, true])('przesuwa ślad z zegarem i respektuje pauzę oraz cofnięcie (powtórka %s)', replay => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+  try {
+    const tape = new Tape();
+    tape.insert([
+      { t: start + 1, px: price, sz: 1, side: 1, tid: 1 },
+      { t: start + 31_000, px: price, sz: 1, side: -1, tid: 2 },
+    ]);
+    let now = start + 29_500, playing = true;
+    const width = rangeProfileWidth(true);
+    const layer = new SmcRangeProfileLayer(tape, new Coverage([[start, Infinity]]), () => ({ from: start, to: now }),
+      replay, () => [], new Coverage(), () => now, () => playing);
+    layer.setLayout(width, 0);
+    attach(layer);
+    const sides = () => render(layer, width).fills.filter(f => f.height === 3 && (f.color === PRO.buy || f.color === PRO.sell)).map(f => f.color);
+    expect(sides()).toEqual([PRO.buy]);
+    now += 600;
+    vi.advanceTimersByTime(600);
+    expect(sides()).toEqual([PRO.buy]);
+    vi.advanceTimersByTime(400);
+    expect(sides()).toEqual([]);
+    // Cofnięcie usuwa przyszłe wykonania niezależnie od czasu, który upłynął w przeglądarce.
+    playing = false;
+    layer.setCutoff(start + 2_000);
+    expect(sides()).toEqual([PRO.buy]);
+    now += 40_000;
+    vi.advanceTimersByTime(40_000);
+    expect(sides()).toEqual([PRO.buy]);
+    layer.setTraceVisible(false);
+    expect(sides()).toEqual([]);
+    expect(render(layer, width).labels[1]).not.toBe('0');
+    layer.detached();
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 it.each([1, -1] as const)('keeps a real signed difference of 0.00001 USD (first side %i)', side => {

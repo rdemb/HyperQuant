@@ -65,14 +65,14 @@ export const fromDaily = (ms: number): boolean => ms > DAY;
  * widocznej świecy (`r` — zakres logiczny, `at(i)` — początek i-tej z `n` świec interwału `ms`), najwyżej do `now`
  * (świeca w toku). Bez świec albo zakresu — null.
  */
-export function visibleSpan(r: { from: number; to: number } | null, n: number, at: (i: number) => number, ms: number, now: number): { from: number; to: number } | null {
+export function visibleSpan(r: { from: number; to: number } | null, n: number, at: (i: number) => number, ms: number, now: number, followClock = false): { from: number; to: number } | null {
   if (!r || n <= 0) return null;
   const clamp = (i: number) => Math.max(0, Math.min(n - 1, Math.round(i)));
   const a = clamp(r.from);
   const b = clamp(r.to);
   if (b < a) return null;
   const from = at(a);
-  const to = Math.min(now, barEnd(at(b), ms));
+  const to = followClock && b === n - 1 ? now : Math.min(now, barEnd(at(b), ms));
   return to > from ? { from, to } : null;
 }
 

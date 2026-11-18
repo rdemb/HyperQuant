@@ -106,6 +106,16 @@ export const GROUPS: { title: string; rows: Row[] }[] = [
         ),
       },
       {
+        metric: tr('Taśma 30 s w profilu SMC BTC', '30 s tape in the BTC SMC profile'),
+        source: tr('Publiczne wykonania Hyperliquid ze strumienia i archiwum HyperQuant', 'Public Hyperliquid trades from the stream and the HyperQuant archive'),
+        method: tr('W każdym przedziale ceny trzy kolejne okna po 10 s pokazują sumy cena × ilość osobno dla agresywnego kupna i sprzedaży. Wszystkie komórki mają jedną skalę względem największej sumy jednej strony.',
+          'At each price band, three successive 10 s windows show separate price × size sums for aggressive buys and sells. Every cell shares one scale based on the largest single-side sum.'),
+        kinds: ['LIVE', 'SIM'],
+        refresh: tr('co sekundę na żywo, według kursora w powtórce', 'once a second live, following the cursor in replay'),
+        caveat: tr('Pokrycie okna pochodzi z zapisu połączenia i archiwum. Pusta komórka w pełnym oknie oznacza brak wykonań na poziomie.',
+          'Window coverage comes from the connection record and archive. An empty cell in a fully covered window means there were no trades at that level.'),
+      },
+      {
         metric: tr('Profil SMC BTC: obrót, delta, suma wizyt i zmiana po 30 s',
           'BTC SMC profile: turnover, delta, total for recent visits and the move after 30 s'),
         source: tr('Publiczna taśma i dokładny arkusz Hyperliquid: strumień oraz archiwum HyperQuant',

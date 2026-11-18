@@ -267,6 +267,8 @@ describe('Klatka: jakość danych wykresu', () => {
     expect(visibleSpan({ from: 2.2, to: 5.6 }, 10, at, M5, T0 + 100 * M5)).toEqual({ from: at(2), to: at(7) });
     // Ostatnia świeca w toku: koniec na „teraz”, nie na końcu świecy
     expect(visibleSpan({ from: 5, to: 14 }, 10, at, M5, at(9) + 60_000)).toEqual({ from: at(5), to: at(9) + 60_000 });
+    expect(visibleSpan({ from: 5, to: 14 }, 10, at, M5, at(9) + 2 * M5, true)).toEqual({ from: at(5), to: at(9) + 2 * M5 });
+    expect(visibleSpan({ from: 2.2, to: 5.6 }, 10, at, M5, at(9) + 2 * M5, true)).toEqual({ from: at(2), to: at(7) });
     expect(visibleSpan(null, 10, at, M5, T0)).toBeNull();
     expect(visibleSpan({ from: 0, to: 3 }, 0, at, M5, T0)).toBeNull();
   });

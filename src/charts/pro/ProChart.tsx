@@ -354,7 +354,9 @@ export const ProChart: React.FC<{
   const [smcReplay, setSmcReplay] = useState<number | null>(null);
   const [smcContact, setSmcContact] = useState<number | null>(null);
   const [smcCompare, setSmcCompare] = useState(false);
+  const [smcTapeExpanded, setSmcTapeExpanded] = useState(false);
   const [smcRangeInfo, setSmcRangeInfo] = useState<RangeProfileInfo | null>(null);
+  const smcTapeId = useId();
   const smcButton = useRef<HTMLButtonElement>(null);
   const closeSmc = useCallback(() => { setSmcPanelOpen(false); smcButton.current?.focus({ preventScroll: true }); }, []);
   const selectSmc = useCallback((id: string) => { setSmcSelected(id); setSmcReplay(null); setSmcContact(null); }, []);
@@ -466,6 +468,7 @@ export const ProChart: React.FC<{
       setToast(tr(`Ukryto panel: ${PANE_NAMES[pane]} — włączysz go w menu Wskaźniki → Pod wykresem`, `Panel hidden: ${PANE_NAMES[pane]} — turn it back on in Indicators → Below the chart`));
     }, setScale);
     ctrl.setPhone(isNarrow());
+    ctrl.setSmcTapeVisible(!isNarrow());
     ctrl.onEditIndicator = editIndicator;
     ctrl.onSmcPick = selectSmc;
     ctrl.onSmcContactPick = setSmcContact;
@@ -496,6 +499,10 @@ export const ProChart: React.FC<{
     ctrlRef.current?.setSmcObservationView(smcSelected, smcReplay);
     ctrlRef.current?.setSmcContactView(smcContactZone && smcContactVisible ? { zone: smcContactZone, at: smcReplay, ordinal: smcContact, compare: smcCompare } : null);
   }, [store, series, smcSelected, smcReplay, smcContactZone, smcContactVisible, smcContact, smcCompare]);
+
+  useEffect(() => {
+    ctrlRef.current?.setSmcTapeVisible(!narrow || smcTapeExpanded);
+  }, [store, signal, narrow, smcTapeExpanded]);
 
   useEffect(() => {
     // Telefon i układ 2 × 2 chowają część paneli — zapisane ustawienia wracają na szerszym ekranie albo w mniejszym układzie
@@ -1393,6 +1400,11 @@ export const ProChart: React.FC<{
           <SmcContactProfileControls profiles={smcProfiles} compare={smcCompare} onCompare={() => setSmcCompare(v => !v)} replay={smcReplay !== null} />
         </div>}
         <div className="flex flex-wrap gap-1">
+        {smcProfileOn && narrow && <button type="button" aria-expanded={smcTapeExpanded} aria-controls={smcTapeExpanded ? smcTapeId : undefined}
+          className="min-h-11 rounded-md border border-line-strong bg-surface-2 px-3 text-xs"
+          onClick={() => setSmcTapeExpanded(expanded => !expanded)}>
+          {smcTapeExpanded ? tr('Zwiń profil', 'Collapse profile') : tr('Rozwiń profil', 'Expand profile')}
+        </button>}
         <button ref={smcButton} type="button" className="min-h-11 sm:min-h-7 rounded-md border border-line-strong bg-surface-2 px-3 text-xs text-ink-1 hover:bg-surface-3" onClick={() => {
           if (!smcSelected) selectSmc(ctrlRef.current?.smcObservations()?.list()[0]?.id ?? '');
           setSmcPanelOpen(true);
@@ -1401,6 +1413,24 @@ export const ProChart: React.FC<{
         {smcSelected && <button type="button" className="min-h-11 min-w-11 sm:min-h-7 sm:min-w-7 rounded-md border border-line-strong bg-surface-2 text-xs" aria-label={tr('Odznacz strefę SMC', 'Clear SMC selection')} onClick={() => { resetSmc(); smcButton.current?.focus({ preventScroll: true }); }}>×</button>}
         {chartOnly && <FocusExit onExit={exitFocus} inFooter />}
         </div>
+        {smcProfileOn && (
+          // Telefon rezerwuje dwa wiersze stopki, żeby legenda i luki nie przeskalowały osi ceny.
+          <div className={narrow ? 'h-8 w-full' : 'max-w-full'}>
+            {(!narrow || smcTapeExpanded) && (
+              <div id={smcTapeId} data-smc-tape-trace className={narrow ? 'text-xs leading-4 text-ink-2' : 'flex flex-wrap items-center gap-x-2 text-xs text-ink-2'}>
+                <div className="flex flex-wrap items-center gap-x-2">
+                  <span>{tr('Taśma 30 s · 3 × 10 s →', 'Tape 30 s · 3 × 10 s →')}</span>
+                  <span className="text-sell-ink">{tr('← sprzedaż', '← sell')}</span>
+                  <span className="text-buy-ink">{tr('kupno →', 'buy →')}</span>
+                </div>
+                {smcRangeInfo?.tapeWindows.some(window => window.coverage !== 'full') && <div className="text-warn">
+                  {smcRangeInfo.tapeWindows.flatMap(({ coverage }, index) => coverage === 'full' ? [] :
+                    [`${index + 1} ${coverage === 'gap' ? tr('brak', 'missing') : tr('fragment', 'partial')}`]).join(' · ')}
+                </div>}
+              </div>
+            )}
+          </div>
+        )}
       </div>}
       {/* Schrödi (prognoza BTC na godzinę) w pasku stanu, tylko w pierwszym panelu i poza powtórką */}
       {!chartOnly && <StatusBar
