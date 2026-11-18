@@ -396,6 +396,9 @@ export class ProChartController {
   private paneScale = 1;
   /** Dotknięcie pustego miejsca panelu ceny (bez bąbla, ściany, wieloryba i rysowania): tryb skupienia na telefonie. */
   onEmptyTap: (() => void) | null = null;
+  onSmcPick: ((id: string) => void) | null = null;
+  smcObservations() { return this.smc.observationModel(); }
+  smcObservationOptions() { return this.smcStyle(); }
   private ticksKey = '';
   /** Chwila z poprzedniej karty: po pierwszych danych widok na niej zamiast na bieżącej świecy. */
   private focusT: number | null = null;
@@ -533,6 +536,7 @@ export class ProChartController {
     };
     this.main.attachPrimitive(this.smc);
     this.smc.fmtPx = (p) => store.fmtPx(p);
+    this.smc.setObservations(store.observations, p => store.tick(p));
     this.smc.valueOf = (at) => this.periodValues.of('day', Math.floor(at / DAY) * DAY);
     // Obiekty SMC na wykresie (wybór warstwy, nie piksele; pomiar układu może czytać je z atrybutu)
     this.smc.onObjects = (n) => {
@@ -1167,7 +1171,8 @@ export class ProChartController {
   /** Styl pierwszego widocznego wskaźnika SMC: krycie, grubość, tryb historia 24 h i okna pivota (null — żaden). */
   private smcStyle(): SmcStyle | null {
     const x = this.indShown.find((y) => indicatorDef(y.id).smc);
-    return x ? { alpha: x.alpha, width: x.width, history: x.history === true, internalLen: x.params.internal, swingLen: x.params.swing, higher: x.params.higher, periods: x.params.periods, mitigation: x.params.mitigation === 1 ? 'wick' : 'close' } : null;
+    return x ? { alpha: x.alpha, width: x.width, history: x.history === true, internalLen: x.params.internal, swingLen: x.params.swing, higher: x.params.higher, periods: x.params.periods, mitigation: x.params.mitigation === 1 ? 'wick' : 'close',
+      defense: x.params.defense !== 0, initiative: x.params.initiative !== 0, anchored: x.params.anchored !== 0, formation: x.params.formation !== 0, memory: x.params.memory !== 0 } : null;
   }
 
   /**
@@ -1856,6 +1861,11 @@ export class ProChartController {
     const whale = !pick && p.point && p.paneIndex === 0 ? this.overlay.pickWhale(p.point.y) : false;
     this.liquidity.setSelected(pick);
     this.onPick(pick);
+    if (!pick && !whale && p.point && p.paneIndex === 0 && !this.draw.pressBusy && !this.draw.busy) {
+      const price = this.main.coordinateToPrice(p.point.y), near = this.main.coordinateToPrice(p.point.y + 8);
+      const id = price === null ? null : this.smc.pickObservation(p.time === undefined ? this.store.serverNow() : Number(p.time) * 1000, price, near === null ? 0 : Math.abs(near - price));
+      if (id) { this.onSmcPick?.(id); return; }
+    }
     // Wciśnięcie, które odznaczyło rysunek albo stawiało punkt, należy do rysowania (stan z chwili wciśnięcia)
     if (!pick && !whale && p.point && p.paneIndex === 0 && !this.draw.pressBusy && !this.draw.busy) this.onEmptyTap?.();
   };

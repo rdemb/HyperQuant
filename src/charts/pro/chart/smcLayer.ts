@@ -16,6 +16,10 @@ import { type SmcMtfSelection, selectSmcMtf, smcMtfObjects } from './smcMtfSelec
 import { MONO, PRO, rgba } from './theme';
 import { type Tag, drawTags } from './tagColumn';
 import { type ValueRef, valueBadge } from '../core/valueReference';
+import type { ObservationJournal } from '../core/smcObservation';
+import { SmcOrderflow } from '../core/smcOrderflow';
+import { stateAt } from '../core/smcStructure';
+import { flowBadge, flowElements, flowId } from './smcOrderflowAdapter';
 
 /** Wartość doby względem potwierdzonego zakresu swingowego. */
 export function smcValueContext(pd: NonNullable<SmcSelection['pd']>, ref: ValueRef | null): string {
@@ -51,6 +55,11 @@ export interface SmcStyle {
   /** Parametr „Wyższy interwał” (`SMC_HTF_OPTIONS`: 0 automatycznie, −1 wyłączony, inaczej minuty). */
   higher?: number;
   periods?: number;
+  defense?: boolean;
+  initiative?: boolean;
+  anchored?: boolean;
+  formation?: boolean;
+  memory?: boolean;
 }
 
 /** Świece wyższego interwału `ms` z magazynu: lista (może kończyć się świecą w toku), powód braku albo undefined (w drodze). */
@@ -462,6 +471,13 @@ export function smcFlowOf(sel: SmcSelection, bars: readonly SmcSourceBar[], ms: 
 }
 
 export class SmcLayer implements ISeriesPrimitive<Time> {
+  private journal: ObservationJournal | null = null;
+  private observations: SmcOrderflow | null = null;
+  private observationKey = '';
+  private observedThrough = -Infinity;
+  private tickOf: (price: number) => number = () => .1;
+  setObservations(journal: ObservationJournal, tickOf?: (price: number) => number): void { this.journal = journal; if (tickOf) this.tickOf = tickOf; }
+  observationModel(): SmcOrderflow | null { return this.observations; }
   private chart: IChartApiBase<Time> | null = null;
   private series: ISeriesApi<SeriesType, Time> | null = null;
   private requestUpdate: (() => void) | null = null;
@@ -650,9 +666,24 @@ export class SmcLayer implements ISeriesPrimitive<Time> {
     this.now = now;
     this.feed = higher;
     const st = this.styleOf();
+    const observationKey = st ? `${ms}:${st.internalLen}:${st.swingLen}:${st.mitigation}` : '';
+    if (observationKey !== this.observationKey) {
+      this.observationKey = observationKey; this.observedThrough = -Infinity;
+      this.observations = st && this.journal ? new SmcOrderflow(this.journal, ms, this.tickOf) : null;
+    }
     this.recompute(st);
     this.recomputeHigher(st);
     this.reselect();
+    if (st && this.journal && this.result && (now - this.observedThrough >= 250 || now < this.observedThrough)) {
+      const visible = new Set([
+        ...(this.sel?.obs.map(v => flowId('ob', v.o.t, v.o.known, v.o.dir)) ?? []),
+        ...(this.sel?.fvgs.map(v => flowId('fvg', v.f.t, v.f.known, v.f.dir)) ?? []),
+        ...(this.sel?.sweeps.map(s => flowId('sweep', s.t, s.known, s.dir)) ?? []),
+      ]);
+      const elements = flowElements(this.result, st.mitigation).sort((a, b) => Number(visible.has(b.id)) - Number(visible.has(a.id)) || b.known - a.known);
+      this.observations?.update(elements, this.sbars, stateAt(this.result, 'swing', now), now);
+      this.observedThrough = now;
+    }
     this.requestUpdate?.();
   }
 
@@ -803,7 +834,8 @@ export class SmcLayer implements ISeriesPrimitive<Time> {
         mark: rect(x(o.t), x(o.t + ms), o.hi, o.lo),
       });
       const extra = `${fl?.absorption ? tr(' absorpcja', ' absorption') : ''}${withFvg.has(o.id) ? ' +FVG' : ''}${inHtf(o)}`;
-      tag((r.y0 + r.y1) / 2, `OB${dirArrow(o.dir)}${extra}`, SMC_INK.ob, v.ended || touched);
+      const observed = st.defense !== false ? flowBadge(this.observations?.current(flowId('ob', o.t, o.known, o.dir)) ?? null) : '';
+      tag((r.y0 + r.y1) / 2, `OB${dirArrow(o.dir)}${extra}${observed}`, SMC_INK.ob, v.ended || touched);
     }
     for (const v of sel.fvgs) {
       const f = v.f;
@@ -827,7 +859,8 @@ export class SmcLayer implements ISeriesPrimitive<Time> {
         mark: null,
       });
       const thin = flow?.fvg.get(f.id)?.thin ? tr(' pusta', ' thin') : '';
-      tag((r.y0 + r.y1) / 2, `FVG${dirArrow(f.dir)}${thin}${inHtf(f)}`, SMC_INK.fvg, v.ended !== null);
+      const observed = st.formation !== false ? flowBadge(this.observations?.current(flowId('fvg', f.t, f.known, f.dir)) ?? null) : '';
+      tag((r.y0 + r.y1) / 2, `FVG${dirArrow(f.dir)}${thin}${inHtf(f)}${observed}`, SMC_INK.fvg, v.ended !== null);
     }
     for (const v of sel.eqs) {
       const e = v.e;
@@ -867,7 +900,8 @@ export class SmcLayer implements ISeriesPrimitive<Time> {
       const x0 = x(s.t);
       const x1 = x(s.returnT + ms);
       if (ys === null || x1 < 0 || x0 >= zr) continue;
-      sc.lines.push({ x0, x1, y: ys, ink: SMC_INK.eq, alpha: 0.95, width: 2, dash: [], text: 'sweep', bold: false, below: s.dir === -1 });
+      const observed = st.initiative !== false ? flowBadge(this.observations?.current(flowId('sweep', s.t, s.known, s.dir)) ?? null) : '';
+      sc.lines.push({ x0, x1, y: ys, ink: SMC_INK.eq, alpha: 0.95, width: 2, dash: [], text: `sweep${observed}`, bold: false, below: s.dir === -1 });
     }
     for (const s of sel.labels) {
       const yl = y(s.price);
@@ -966,6 +1000,16 @@ export class SmcLayer implements ISeriesPrimitive<Time> {
   /** Wybór na ostatniej zamkniętej świecy (legenda, testy). */
   selection(): SmcSelection | null {
     return this.sel;
+  }
+  pickObservation(t: number, price: number, tolerance: number): string | null {
+    if (!this.styleOf() || !this.sel) return null;
+    for (const { o, endAt } of this.sel.obs) if (t + this.ms >= o.known && t <= (endAt ?? this.now + this.ms) && price >= o.lo - tolerance && price <= o.hi + tolerance)
+      return flowId('ob', o.t, o.known, o.dir);
+    for (const { f, endAt } of this.sel.fvgs) if (t + this.ms >= f.known && t <= (endAt ?? this.now + this.ms) && price >= f.lo - tolerance && price <= f.hi + tolerance)
+      return flowId('fvg', f.t, f.known, f.dir);
+    for (const s of this.sel.sweeps) if (t >= s.t - this.ms && t <= s.returnT + 2 * this.ms && Math.abs(price - s.level) <= tolerance)
+      return flowId('sweep', s.t, s.known, s.dir);
+    return null;
   }
 
   valueOf: ((at: number) => ValueRef | null) | null = null;

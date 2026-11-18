@@ -4,6 +4,15 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### SMC: obrona, przepływ i pamięć obserwacji (2026-11-17)
+<!-- co-nowego: grupa=wykres | pl=SMC: kontakty OB, sweep i retest, delta i VWAP od kontaktu, profil powstania FVG oraz pamięć obserwacji | en=SMC: OB contacts, sweep and retest, contact-anchored delta and VWAP, FVG formation profile and observation memory -->
+- Krótkie oznaczenia przy istniejących strefach, szczegóły po kliknięciu i pięć niezależnych przełączników na komputerze i telefonie, po polsku i angielsku.
+- Obrona OB porównuje zakończone kontakty; sweep oddziela powrót, retest i przewagę agresji po trzech pełnych świecach. Delta i VWAP mają osobne zakresy: wnętrze strefy oraz cały przepływ od kontaktu.
+- Profil trzech świec FVG porównuje przepływ i próbkowaną widoczną płynność z wcześniejszymi oknami. Niepełna taśma, brak pokrycia L2 lub odniesień pozostają brakiem danych.
+- Historia przechowuje stan dostępny w chwili obserwacji, bez cofania spóźnionych danych. Odtworzenie jest ograniczone do zachowanych obserwacji bieżącej sesji strony; po przeładowaniu brak wcześniejszego zapisu jest jawny.
+- „Co się zmieniło” prowadzi do zdarzenia, a panel porównuje potwierdzoną strukturę z przepływem. Progi są heurystykami opisowymi, bez deklaracji przewagi ekonomicznej.
+- Wspólny strumień publicznych danych, ograniczone bufory i agregaty, bez dodatkowej subskrypcji na strefę. Stare linki i definicje struktury zachowane.
+
 ### Strefy Effort z podpisami słowami przy osi ceny (2026-11-16)
 <!-- co-nowego: grupa=wykres | pl=Strefy Effort opisane słowami przy osi ceny zamiast liter A, D i F | en=Effort zones labelled in words at the price axis instead of the letters A, D and F -->
 - Rodzaj strefy opisuje podpis w kolumnie przy osi ceny: „absorpcja”, „dyskonto swingu”, „zmiana roli”, pasmo kilku stref łącznie, a przebita z dopiskiem „przebita”. Litery w rogu pasma zniknęły.
