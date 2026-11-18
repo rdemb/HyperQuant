@@ -805,8 +805,8 @@ export class SmcLayer implements ISeriesPrimitive<Time> {
     const contact = this.contactView;
     if (st && series && contact) {
       const { zone, at, ordinal, compare } = contact;
-      const profiles = this.observations?.contactProfiles(zone, at, ordinal, compare) ?? null;
-      this.contactScene = contactProfileScene(profiles, compare, p => series.priceToCoordinate(p));
+      const profiles = this.observations?.contactProfiles(zone, at, ordinal, compare);
+      if (profiles) this.contactScene = contactProfileScene(profiles, compare, p => series.priceToCoordinate(p));
     }
     if (!st || !sel || !chart || !series || bars.length === 0 || ms > SMC_MAX_TF) return;
     const ts = chart.timeScale();

@@ -16,13 +16,13 @@ export const focusOn = (_tab: PhoneTab): { focus: true; tab: 'chart' } => ({ foc
 /** Czy klawisz kończy skupienie. */
 export const focusExitKey = (key: string, active: boolean): boolean => active && key === 'Escape';
 
-export const FocusExit: React.FC<{ onExit: () => void }> = ({ onExit }) => (
+export const FocusExit: React.FC<{ onExit: () => void; inFooter?: boolean }> = ({ onExit, inFooter }) => (
   <button
     type="button"
     onClick={onExit}
     aria-label={tr('Zamknij tryb skupienia (Esc)', 'Exit focus mode (Esc)')}
     title={tr('Zamknij tryb skupienia (Esc)', 'Exit focus mode (Esc)')}
-    className="absolute right-1 top-1 z-30 grid place-items-center w-11 h-11 rounded-lg border border-line-strong bg-surface-2/90 text-ink-1 shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+    className={`${inFooter ? 'shrink-0' : 'absolute right-1 top-1 z-30 shadow-lg'} grid place-items-center w-11 h-11 rounded-lg border border-line-strong bg-surface-2/90 text-ink-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent`}
   >
     <Minimize2 className="w-4 h-4" aria-hidden="true" />
   </button>

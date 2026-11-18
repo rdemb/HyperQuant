@@ -12,7 +12,7 @@ import { usePublished } from '../../state/usePublished';
 import { type BlogMapsState, pickMap, useBlogMaps } from '../../state/useBlogMaps';
 import { WHALES_STALE_MS, type WhaleLayer, isWhaleLayer } from '../../utils/whaleLayer';
 import { SCANNER_FRESH_MS } from '../../utils/scanState';
-import { DAY, INTERVALS, fmtDayTime, fmtHm, fmtSince, fromDaily, intervalById } from './core/time';
+import { DAY, INTERVALS, fmtDayTime, fmtHm, fmtHms, fmtSince, fromDaily, intervalById } from './core/time';
 import { DEFAULT_THRESHOLD_USD, classify } from './core/clashes';
 import { indicatorScope, liqLevels } from './core/indicators';
 import type { AggressorOrder } from './core/orders';
@@ -48,6 +48,7 @@ import { AUCTIONS_PER_SIDE, ZONES_EVIDENCE, ZONES_PER_SIDE } from './chart/zones
 import { MarketStateBar } from './chart/MarketStateBar';
 import { SmcOrderflowPanel, type FlowOption } from './chart/SmcOrderflowPanel';
 import { SmcContactProfileControls } from './chart/SmcContactProfileControls';
+import type { RangeProfileInfo } from './chart/smcRangeProfileLayer';
 import { DayFrameBar } from './chart/DayFrameBar';
 import { IVB_DEFAULT, ivbMinutes } from './core/ivb';
 import { LayoutHeader } from './chart/LayoutHeader';
@@ -351,6 +352,7 @@ export const ProChart: React.FC<{
   const [smcReplay, setSmcReplay] = useState<number | null>(null);
   const [smcContact, setSmcContact] = useState<number | null>(null);
   const [smcCompare, setSmcCompare] = useState(false);
+  const [smcRangeInfo, setSmcRangeInfo] = useState<RangeProfileInfo | null>(null);
   const smcButton = useRef<HTMLButtonElement>(null);
   const closeSmc = useCallback(() => { setSmcPanelOpen(false); smcButton.current?.focus({ preventScroll: true }); }, []);
   const selectSmc = useCallback((id: string) => { setSmcSelected(id); setSmcReplay(null); setSmcContact(null); }, []);
@@ -400,9 +402,10 @@ export const ProChart: React.FC<{
   const smcVisible = settings.indicators.some(i => i.id === 'smc' && i.visible);
   const smcProfileOn = smcVisible && supportsSmcContactDelta(store.coin);
   const smcContactZone = smcProfileOn && smcSelected && /^(ob|fvg):/.test(smcSelected) ? smcSelected : null;
-  const smcProfiles = smcProfileOn
+  const smcProfiles = smcContactZone !== null
     ? ctrlRef.current?.smcObservations()?.contactProfiles(smcContactZone, smcReplay, smcContact, smcCompare) ?? null
     : null;
+  const smcContactVisible = smcProfiles !== null;
 
   // Usunięty wskaźnik zestawu paneli wypada też z listy instancji zestawu (keepPanelSetIids)
   const update = useCallback((patch: Partial<ChartSettings>) => setSettings((s) => keepPanelSetIids({ ...s, ...patch })), []);
@@ -464,6 +467,7 @@ export const ProChart: React.FC<{
     ctrl.onEditIndicator = editIndicator;
     ctrl.onSmcPick = selectSmc;
     ctrl.onSmcContactPick = setSmcContact;
+    ctrl.onSmcRangeInfo = setSmcRangeInfo;
     ctrl.onEmptyTap = () => {
       if (!isNarrow()) return;
       if (live.current.chartOnly) exitFocus();
@@ -480,6 +484,7 @@ export const ProChart: React.FC<{
       ctrl.destroy();
       ctrlRef.current = null;
       setTools(null);
+      setSmcRangeInfo(null);
       resetSmc();
     };
     // Wykres tworzymy raz; zmiany ustawień idą przez applySettings
@@ -487,8 +492,8 @@ export const ProChart: React.FC<{
 
   useEffect(() => {
     ctrlRef.current?.setSmcObservationView(smcSelected, smcReplay);
-    ctrlRef.current?.setSmcContactView(smcProfileOn ? { zone: smcContactZone, at: smcReplay, ordinal: smcContact, compare: smcCompare } : null);
-  }, [store, series, smcSelected, smcReplay, smcProfileOn, smcContactZone, smcContact, smcCompare]);
+    ctrlRef.current?.setSmcContactView(smcContactZone && smcContactVisible ? { zone: smcContactZone, at: smcReplay, ordinal: smcContact, compare: smcCompare } : null);
+  }, [store, series, smcSelected, smcReplay, smcContactZone, smcContactVisible, smcContact, smcCompare]);
 
   useEffect(() => {
     // Telefon i układ 2 × 2 chowają część paneli — zapisane ustawienia wracają na szerszym ekranie albo w mniejszym układzie
@@ -1165,19 +1170,6 @@ export const ProChart: React.FC<{
         <div className="relative flex-1 min-h-0 min-w-0" onContextMenu={onContextMenu}>
           {/* Własny kontekst warstw: uchwyt zmiany wysokości paneli wykresu (z-index 50) nie przykrywa pasków i okien rysunków */}
           <div ref={hostRef} className="absolute inset-0 isolate" />
-          {smcVisible && <div className="pointer-events-none absolute bottom-9 left-2 right-2 z-30 flex flex-col items-start gap-1">
-            {smcProfileOn && !smcPanelOpen && <div className="pointer-events-auto max-w-full">
-              <SmcContactProfileControls profiles={smcProfiles} compare={smcCompare} onCompare={() => setSmcCompare(v => !v)} replay={smcReplay !== null} />
-            </div>}
-            <div className="pointer-events-auto flex flex-wrap gap-1">
-            <button ref={smcButton} type="button" className="min-h-11 rounded-lg border border-line-strong bg-surface-2 px-3 text-xs text-ink-1 hover:bg-surface-3" onClick={() => {
-              if (!smcSelected) selectSmc(ctrlRef.current?.smcObservations()?.list()[0]?.id ?? '');
-              setSmcPanelOpen(true);
-            }}>SMC · {tr('obserwacje', 'observations')}</button>
-            {smcReplay !== null && <button type="button" className="min-h-11 rounded-lg border border-line-strong bg-surface-2 px-3 text-xs" onClick={() => setSmcReplay(null)}>{tr('SMC · wróć do teraz', 'SMC · back to now')}</button>}
-            {smcSelected && <button type="button" className="min-h-11 min-w-11 rounded-lg border border-line-strong bg-surface-2 text-xs" aria-label={tr('Odznacz strefę SMC', 'Clear SMC selection')} onClick={() => { resetSmc(); smcButton.current?.focus({ preventScroll: true }); }}>×</button>}
-            </div>
-          </div>}
           {smcPanelOpen && smcSelected !== null && (() => {
             const model = ctrlRef.current?.smcObservations(), opts = ctrlRef.current?.smcObservationOptions();
             return model && opts && model.current(smcSelected) ? <SmcOrderflowPanel model={model} selected={smcSelected} replay={smcReplay} onReplay={setSmcReplay} opts={opts} unit={store.coin} onSelect={selectSmc} onOption={changeSmcOption} onClose={closeSmc}
@@ -1185,7 +1177,7 @@ export const ProChart: React.FC<{
               <aside className="fixed bottom-16 left-2 right-2 z-40 max-h-[78dvh] overflow-y-auto rounded-xl border border-line bg-surface-1 p-3 text-sm sm:absolute sm:bottom-2 sm:left-auto sm:w-80" role="dialog" aria-label="SMC"><button type="button" onClick={closeSmc} className="float-right min-h-11 min-w-11" aria-label={tr('Zamknij panel SMC', 'Close SMC panel')}>×</button>{tr('Brak elementu w zachowanej obserwacji. Historyczne świece nie zastępują nagranej taśmy i L2.', 'No element in retained observations. Historical candles do not replace recorded tape and L2.')}</aside>;
           })()}
           <AutoScaleBtn scale={scale} onToggle={() => ctrlRef.current?.setAutoScale(!scale.auto)} />
-          {chartOnly && <FocusExit onExit={exitFocus} />}
+          {chartOnly && !smcVisible && <FocusExit onExit={exitFocus} />}
           <Legend
             signal={signal}
             intervalMs={iv.ms}
@@ -1381,6 +1373,32 @@ export const ProChart: React.FC<{
         )}
       </div>
 
+      {smcVisible && <div data-smc-footer className="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-t border-line px-2 py-1">
+        {smcProfileOn && <div className="max-w-full text-xs text-ink-2"
+          data-smc-range-profile={smcRangeInfo?.levels ?? 0}
+          title={tr('Obrót w lewo, delta sprzedaży w lewo od zera, delta kupna w prawo. Każda kolumna ma własną skalę USD. Pokrycie dotyczy czasu nagrania taśmy.', 'Turnover extends left, sell delta extends left from zero and buy delta extends right. Each column has its own USD scale. Coverage is recorded tape time.')}>
+          <span className="font-semibold">{tr('Profil zakresu', 'Range profile')}</span>
+          {!smcRangeInfo?.levels ? <> · {tr('brak wykonań w zakresie', 'no trades in range')}</> : <> · {smcRangeInfo.step} USD</>}
+          {smcRangeInfo && <>
+            {' · '}{tr('taśma', 'tape')} {smcRangeInfo.coverage.toLocaleString(lang === 'pl' ? 'pl-PL' : 'en-US')}%
+            {smcRangeInfo.coverage < 100 && <span className="text-warn"> · {tr('luki', 'gaps')}</span>}
+            <span className="hidden sm:inline"> · {fmtDayTime(smcRangeInfo.from, smcRangeInfo.to)}–{fmtHm(smcRangeInfo.to)}</span>
+          </>}
+          {inReplay && <> · {tr('powtórka do', 'replay through')} {fmtHms(store.serverNow())}</>}
+        </div>}
+        {smcContactZone && !smcPanelOpen && <div className="max-w-full">
+          <SmcContactProfileControls profiles={smcProfiles} compare={smcCompare} onCompare={() => setSmcCompare(v => !v)} replay={smcReplay !== null} />
+        </div>}
+        <div className="flex flex-wrap gap-1">
+        <button ref={smcButton} type="button" className="min-h-11 sm:min-h-7 rounded-md border border-line-strong bg-surface-2 px-3 text-xs text-ink-1 hover:bg-surface-3" onClick={() => {
+          if (!smcSelected) selectSmc(ctrlRef.current?.smcObservations()?.list()[0]?.id ?? '');
+          setSmcPanelOpen(true);
+        }}>SMC · {tr('obserwacje', 'observations')}</button>
+        {smcReplay !== null && <button type="button" className="min-h-11 sm:min-h-7 rounded-md border border-line-strong bg-surface-2 px-3 text-xs" onClick={() => setSmcReplay(null)}>{tr('SMC · wróć do teraz', 'SMC · back to now')}</button>}
+        {smcSelected && <button type="button" className="min-h-11 min-w-11 sm:min-h-7 sm:min-w-7 rounded-md border border-line-strong bg-surface-2 text-xs" aria-label={tr('Odznacz strefę SMC', 'Clear SMC selection')} onClick={() => { resetSmc(); smcButton.current?.focus({ preventScroll: true }); }}>×</button>}
+        {chartOnly && <FocusExit onExit={exitFocus} inFooter />}
+        </div>
+      </div>}
       {/* Schrödi (prognoza BTC na godzinę) w pasku stanu, tylko w pierwszym panelu i poza powtórką */}
       {!chartOnly && <StatusBar
         store={store}
