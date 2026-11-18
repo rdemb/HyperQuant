@@ -410,6 +410,9 @@ export class ProChartController {
     this.smc.setObservationView(id, at);
     this.smcRange.setCutoff(at);
   }
+  setSmcTapeVisible(visible: boolean): void {
+    this.smcRange.setTraceVisible(visible);
+  }
   setSmcContactView(view: ContactProfileView | null): void {
     this.smc.setContactView(view);
     const width = view ? contactProfileWidth(view.compare) : 0;
@@ -553,8 +556,9 @@ export class ProChartController {
       container.dataset.ivbObjects = String(n);
     };
     this.main.attachPrimitive(this.smc);
-    this.smcRange = new SmcRangeProfileLayer(store.tape, store.coverage, () => this.visibleSpan(store.serverNow()), store.replay !== null,
-      () => store.exactBook()?.list() ?? [], store.bookCoverage, () => store.serverNow());
+    this.smcRange = new SmcRangeProfileLayer(store.tape, store.coverage, () => this.visibleSpan(store.serverNow(), true), store.replay !== null,
+      () => store.exactBook()?.list() ?? [], store.bookCoverage, () => store.serverNow(),
+      () => store.replay?.playing?.() === true, store.tapeTraceCoverage);
     this.smcRange.onInfo = (info) => this.onSmcRangeInfo?.(info);
     this.main.attachPrimitive(this.smcRange);
     this.smc.fmtPx = (p) => store.fmtPx(p);
@@ -1341,9 +1345,9 @@ export class ProChartController {
   }
 
   /** Widoczny zakres czasu (ms) od pierwszej do końca ostatniej widocznej świecy, najwyżej do `now`; bez świec — null. */
-  visibleSpan(now: number): { from: number; to: number } | null {
+  visibleSpan(now: number, followClock = false): { from: number; to: number } | null {
     const bars = this.bars;
-    return visibleSpan(this.chart.timeScale().getVisibleLogicalRange(), bars.length, (i) => bars[i].t, this.series.interval.ms, now);
+    return visibleSpan(this.chart.timeScale().getVisibleLogicalRange(), bars.length, (i) => bars[i].t, this.series.interval.ms, now, followClock);
   }
 
   /**

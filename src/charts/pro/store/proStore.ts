@@ -79,6 +79,7 @@ export interface HistoryBatch {
  * sięgają zapytania o świece, i świece z pamięci powtórki (nowy magazyn po przewinięciu wstecz nie pyta API drugi raz).
  */
 export interface ReplayClock {
+  playing?(): boolean;
   now(): number;
   end: number;
   candles(coin: string, interval: string, from: number, to: number): Promise<Candle[]>;
@@ -111,6 +112,18 @@ export class ProStore {
   readonly stream: HlStream;
   readonly tape = new Tape();
   readonly coverage = new Coverage();
+  private replayTapeBoundary: number | null = null;
+  /** Ślad taśmy pyta o milisekundę kursora włącznie; pozostałe odbiorniki nadal używają coverage. */
+  readonly tapeTraceCoverage: Pick<Coverage, 'coveredMs'> = {
+    coveredMs: (from, to) => {
+      const covered = this.coverage.coveredMs(from, to);
+      const boundary = this.replayTapeBoundary;
+      if (boundary === null) return covered;
+      const a = Math.max(from, boundary);
+      const b = Math.min(to, boundary + 1);
+      return a < b ? covered + (b - a - this.coverage.coveredMs(a, b)) : covered;
+    },
+  };
   readonly bookCoverage = new Coverage();
   readonly orders = new OrderLog();
   /** Czas z kontami biorców na taśmie (strumień na żywo i historia serwera; zapis przeglądarki ich nie ma). */
@@ -640,7 +653,8 @@ export class ProStore {
    * Powtórka: kolejny odcinek nagrania do chwili odtwarzania — taśma, pokrycie, zlecenia i otwarte pozycje jak historia
    * serwera, migawki arkusza dopisywane po kolei (rosnąco po czasie), ostatnia cena z ostatniej transakcji odcinka.
    */
-  feedReplay(b: HistoryBatch): void {
+  feedReplay(b: HistoryBatch, tapeBoundary: number | null = null): void {
+    this.replayTapeBoundary = tapeBoundary;
     this.restoreHistory({ trades: b.trades, frames: [], bookSpans: b.bookSpans });
     for (const f of b.frames) {
       if (f.exact) {

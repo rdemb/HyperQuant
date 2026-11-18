@@ -6,6 +6,7 @@ import type { BookFrame } from '../core/book';
 import type { Coverage } from '../core/coverage';
 import { rangeProfileStep, SmcRangeProfile, usdFromMicros, type ProfileSpan, type RangeProfileRow } from '../core/smcRangeProfile';
 import { priceBuckets, RangeVisits, priceReaction, summarizeVisits, type PriceBucket, type PriceReaction, type VisitSummary } from '../core/smcRangeProfileFlow';
+import { rangeTapeWindows, readRangeTape, type TapeWindow } from '../core/smcRangeProfileTape';
 import type { Tape } from '../core/tape';
 import { MONO, PRO, rgba } from './theme';
 
@@ -13,13 +14,16 @@ export interface RangeProfileInfo extends ProfileSpan {
   step: number;
   levels: number;
   coverage: number;
+  tapeWindows: TapeWindow[];
   active: (PriceBucket & { visits: VisitSummary; reaction: PriceReaction }) | null;
 }
 
 const REFRESH_MS = 250;
+const TAPE_REFRESH_MS = 1000;
 const HEADER_PX = 20;
-const ROW_PX = 24;
+const ROW_PX = 26;
 const LABEL_MARGIN_PX = 10;
+const TRACE_BOTTOM_PX = 16;
 export const rangeProfileWidth = (compact: boolean): number => compact ? 112 : 144;
 
 interface DrawRow extends PriceBucket {
@@ -42,8 +46,8 @@ export function rangeProfileRows(
   rows: readonly RangeProfileRow[], step: number, height: number, yOf: (price: number) => number | null, headerTop = 0
 ): DrawRow[] {
   const start = headerTop + HEADER_PX;
-  if (height < start + 2 * LABEL_MARGIN_PX) return [];
-  const yOfLabel = (top: number, bottom: number) => Math.max(start + LABEL_MARGIN_PX, Math.min(height - LABEL_MARGIN_PX, (top + bottom) / 2));
+  if (height < start + LABEL_MARGIN_PX + TRACE_BOTTOM_PX) return [];
+  const yOfLabel = (top: number, bottom: number) => Math.max(start + LABEL_MARGIN_PX, Math.min(height - TRACE_BOTTOM_PX, (top + bottom) / 2));
   type ProjectedRow = Omit<DrawRow, 'deltaUsd'> & Pick<RangeProfileRow, 'deltaMicros'>;
   const visible: ProjectedRow[] = [];
   for (const { price, turnoverUsd, deltaMicros } of rows) {
@@ -71,6 +75,12 @@ export function rangeProfileRows(
 }
 
 type DrawData = { span: ProfileSpan; step: number; geometry: string; rows: DrawRow[] };
+type DrawTape = ReturnType<typeof readRangeTape> & {
+  key: string;
+  updated: number;
+  end: number;
+  windows: TapeWindow[];
+};
 
 export class SmcRangeProfileLayer implements ISeriesPrimitive<Time> {
   private adapter: SeriesAttachedParameter<Time> | null = null;
@@ -80,6 +90,9 @@ export class SmcRangeProfileLayer implements ISeriesPrimitive<Time> {
   private cutoff: number | null = null;
   private updated = -Infinity;
   private data: DrawData | null = null;
+  private trace: DrawTape | null = null;
+  private traceVisible = true;
+  private traceTimer: ReturnType<typeof setTimeout> | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private deadlineTimer: ReturnType<typeof setTimeout> | null = null;
   private infoKey = '';
@@ -89,7 +102,8 @@ export class SmcRangeProfileLayer implements ISeriesPrimitive<Time> {
 
   constructor(private readonly tape: Tape, private readonly coverage: Coverage, private readonly span: () => ProfileSpan | null,
     private readonly replay: boolean, private readonly exactBook: () => readonly BookFrame[], private readonly bookCoverage: Coverage,
-    private readonly serverNow: () => number) {
+    private readonly serverNow: () => number, private readonly replayPlaying: () => boolean = () => false,
+    private readonly traceCoverage: Pick<Coverage, 'coveredMs'> = coverage) {
     this.model = new SmcRangeProfile(tape);
     this.visits = new RangeVisits(tape, coverage);
   }
@@ -99,6 +113,8 @@ export class SmcRangeProfileLayer implements ISeriesPrimitive<Time> {
     if (this.timer !== null) clearTimeout(this.timer);
     this.timer = null;
     this.clearDeadline();
+    this.clearTraceTimer();
+    this.trace = null;
     this.adapter = null;
   }
 
@@ -115,6 +131,15 @@ export class SmcRangeProfileLayer implements ISeriesPrimitive<Time> {
     this.adapter?.requestUpdate();
   }
 
+  setTraceVisible(visible: boolean): void {
+    if (this.traceVisible === visible) return;
+    this.traceVisible = visible;
+    this.trace = null;
+    this.clearTraceTimer();
+    this.updated = -Infinity;
+    this.adapter?.requestUpdate();
+  }
+
   setCutoff(at: number | null): void {
     if (this.cutoff === at) return;
     this.cutoff = at;
@@ -127,6 +152,37 @@ export class SmcRangeProfileLayer implements ISeriesPrimitive<Time> {
     this.deadlineTimer = null;
   }
 
+  private clearTraceTimer(): void {
+    if (this.traceTimer !== null) clearTimeout(this.traceTimer);
+    this.traceTimer = null;
+  }
+
+  private requestTraceIn(ms: number): void {
+    if (this.traceTimer !== null) return;
+    this.traceTimer = setTimeout(() => {
+      this.traceTimer = null;
+      this.adapter?.requestUpdate();
+    }, Math.ceil(ms));
+  }
+
+  private updateTrace(span: ProfileSpan, rows: readonly DrawRow[], now: number, ticking: boolean): TapeWindow[] {
+    let key = `${span.from}/${rows.map(row => `${row.low}:${row.high}`).join(',')}`;
+    const previous = this.trace;
+    if (ticking && previous?.key === key && previous.end <= span.to && now - previous.updated < TAPE_REFRESH_MS) {
+      this.requestTraceIn(TAPE_REFRESH_MS - (now - previous.updated));
+      return previous.windows;
+    }
+    const windows = rangeTapeWindows(span, this.traceCoverage);
+    if (!ticking) {
+      key += `/${span.to}/${this.tape.signature(windows[0].from, windows[windows.length - 1].to)}/${windows.map(window => window.coverage).join(',')}`;
+      if (previous?.key === key) return previous.windows;
+    }
+    this.clearTraceTimer();
+    this.trace = { ...readRangeTape(this.tape, windows, rows), key, updated: now, end: span.to, windows };
+    if (ticking) this.requestTraceIn(TAPE_REFRESH_MS);
+    return windows;
+  }
+
   updateAllViews(): void {
     const adapter = this.adapter;
     const range = this.width > 0 && adapter ? this.span() : null;
@@ -136,6 +192,8 @@ export class SmcRangeProfileLayer implements ISeriesPrimitive<Time> {
     const bottom = adapter?.series.coordinateToPrice(height);
     if (!adapter || !span || span.to <= span.from || top == null || bottom == null || height <= 0 || !Number.isFinite(top - bottom) || top === bottom) {
       this.data = null;
+      this.trace = null;
+      this.clearTraceTimer();
       this.clearDeadline();
       if (this.infoKey) {
         this.infoKey = '';
@@ -164,6 +222,8 @@ export class SmcRangeProfileLayer implements ISeriesPrimitive<Time> {
     this.timer = null;
     const profile = this.model.read(span, step, this.coverage);
     const rows = rangeProfileRows(profile.rows, step, height, p => adapter.series.priceToCoordinate(p), this.headerTop);
+    const ticking = this.cutoff === null && (!this.replay || this.replayPlaying()) && this.serverNow() - span.to < REFRESH_MS;
+    const tapeWindows = this.traceVisible ? this.updateTrace(span, rows, now, ticking) : [];
     const observed = this.visits.read(span, priceBuckets(step, rows.filter(row => row.high - row.low > step)));
     const bucket = observed.lastBucket;
     const visits = bucket ? summarizeVisits(observed.byPrice.get(bucket.low) ?? []) : null;
@@ -182,11 +242,11 @@ export class SmcRangeProfileLayer implements ISeriesPrimitive<Time> {
     this.data = { span, step, geometry, rows };
     this.updated = now;
     const coverage = profile.spanMs > 0 ? Math.floor(1000 * profile.coveredMs / profile.spanMs) / 10 : 0;
-    const info = { ...span, step, levels: rows.length, coverage, active };
+    const info = { ...span, step, levels: rows.length, coverage, active, tapeWindows };
     const stateKey = (side: PriceReaction['buy']) =>
       `${side.mean?.toFixed(2)}:${side.totalUsd ? (100 * side.matchedUsd / side.totalUsd).toFixed(1) : '-'}:${side.pendingUsd > 0}:${side.missingUsd > 0}`;
     const activeKey = active && `${active.low}:${active.high}/${active.visits.count}:${active.visits.deltaMicros}:${active.visits.partial}/${stateKey(active.reaction.buy)}/${stateKey(active.reaction.sell)}`;
-    const key = `${info.from}:${Math.floor(info.to / (this.replay ? 1000 : 60000))}:${step}:${info.levels}:${coverage}:${activeKey}`;
+    const key = `${info.from}:${Math.floor(info.to / (this.replay ? 1000 : 60000))}:${step}:${info.levels}:${coverage}:${activeKey}:${tapeWindows.map(window => window.coverage).join(',')}`;
     if (key === this.infoKey) return;
     this.infoKey = key;
     this.onInfo?.(info);
@@ -214,6 +274,9 @@ export class SmcRangeProfileLayer implements ISeriesPrimitive<Time> {
     const gutter = 5;
     const columnWidth = divider - left - 2 * gutter;
     const halfDelta = right - zero - gutter;
+    const traceCellWidth = (this.width - 2 * gutter) / 3;
+    const traceHalf = traceCellWidth / 2 - 2;
+    const traceScale = Number(this.trace?.maxSide ?? 0n);
     ctx.save();
     ctx.beginPath();
     ctx.rect(left, 0, this.width, height);
@@ -240,6 +303,23 @@ export class SmcRangeProfileLayer implements ISeriesPrimitive<Time> {
       ctx.fillText(rangeProfileLabel(row.turnoverUsd, false), divider - gutter, row.labelY, columnWidth);
       ctx.fillStyle = row.deltaUsd < 0 ? PRO.sellInk : row.deltaUsd > 0 ? PRO.buyInk : PRO.ink2;
       ctx.fillText(rangeProfileLabel(row.deltaUsd, true), right - gutter, row.labelY, right - divider - 2 * gutter);
+      this.trace?.byPrice.get(row.low)?.forEach((cell, index) => {
+        if (!cell) return;
+        const center = Math.round(left + gutter + (index + .5) * traceCellWidth);
+        const y = row.labelY + 12;
+        const sell = Number(cell.sell) / traceScale * traceHalf;
+        const buy = Number(cell.buy) / traceScale * traceHalf;
+        if (sell > 0) {
+          ctx.fillStyle = PRO.sell;
+          ctx.fillRect(center - sell, y, sell, 3);
+        }
+        if (buy > 0) {
+          ctx.fillStyle = PRO.buy;
+          ctx.fillRect(center, y, buy, 3);
+        }
+        ctx.fillStyle = rgba(PRO.ink2, .55);
+        ctx.fillRect(center - .5, y, 1, 3);
+      });
     }
     ctx.font = `600 10px ${MONO}`;
     ctx.textBaseline = 'top';
