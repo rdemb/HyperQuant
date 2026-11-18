@@ -25,7 +25,7 @@ export function SmcContactProfileControls({ profiles, compare, onCompare, replay
   return <div className="flex max-w-full flex-wrap items-center gap-1 rounded-lg border border-line bg-surface-2 px-2 text-xs text-ink-1" data-smc-contact-profile={cur?.status ?? 'no-contact'}>
     <span className="sr-only">{tr('Tło: obrót USD. Niebieski w prawo: dodatnia delta USD. Czerwony w lewo: ujemna delta USD.', 'Background: USD turnover. Blue to the right: positive USD delta. Red to the left: negative USD delta.')}</span>
     <span className="py-2 font-mono tabular-nums" title={cur && profileTitle(cur)}>
-      {cur ? profileText(cur) : tr('Brak kontaktu z taśmy', 'No contact on tape')}
+      {cur ? profileText(cur) : tr('Profil delty · brak kontaktu z taśmy', 'Delta profile · no contact on tape')}
     </span>
     {cur && <><span className="text-ink-3">{replay ? tr('Odtworzenie', 'Replay') : 'LIVE'}</span>
       <button type="button" className="min-h-11 rounded-md px-2 underline decoration-dotted underline-offset-2 aria-pressed:bg-surface-3 aria-pressed:text-accent"

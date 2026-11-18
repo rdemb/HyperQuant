@@ -334,11 +334,28 @@ export class SmcOrderflow {
     if (before !== JSON.stringify(w)) this.event(r, 'sweep', now, end);
   }
   current(id: string): FlowSnapshot | null { const s = this.entries.get(id)?.state; return s ? clone(s) : null; }
-  contactProfiles(id: string, observedAt: number | null, ordinal: number | null, compare: boolean): ContactProfiles | null {
-    const r = this.entries.get(id);
+  private defaultContactEntry(observedAt: number | null): Entry | undefined {
+    let best: { entry: Entry; contact: Contact } | undefined;
+    for (const entry of this.entries.values()) {
+      if (!entry.profiles) continue;
+      const snapshot = observedAt === null || observedAt >= entry.state.observedAt
+        ? entry.state : this.at(entry.element.id, observedAt);
+      const contact = snapshot?.recent.at(-1);
+      if (!contact) continue;
+      const active = contact.result === 'active';
+      const bestActive = best?.contact.result === 'active';
+      if (!best || (active !== bestActive ? active : contact.observedAt > best.contact.observedAt)) {
+        best = { entry, contact };
+      }
+    }
+    return best?.entry;
+  }
+
+  contactProfiles(id: string | null, observedAt: number | null, ordinal: number | null, compare: boolean): ContactProfiles | null {
+    const r = id === null ? this.defaultContactEntry(observedAt) : this.entries.get(id);
     if (!r?.profiles) return null;
     const at = Math.min(observedAt ?? Infinity, r.state.observedAt);
-    const snapshot = at >= r.state.observedAt ? r.state : this.at(id, at);
+    const snapshot = at >= r.state.observedAt ? r.state : this.at(r.element.id, at);
     if (!snapshot?.recent.length) return null;
     const contacts = numberedContacts(snapshot);
     const i = ordinal === null ? contacts.length - 1 : contacts.findIndex(c => c.ordinal === ordinal);
