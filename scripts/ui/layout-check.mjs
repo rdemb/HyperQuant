@@ -934,6 +934,18 @@ async function main() {
     await sleep(4000);
     report.smc.phone = await probe(page, smcCount);
     await shot(page, '390-smc');
+    // Panel SMC ma pozostać w ekranie także po przewinięciu długiej strony do przycisku w środku widoku.
+    const smcButton = await page.ev(`(() => { const b = [...document.querySelectorAll('button')].find(x => x.textContent.trim() === 'SMC · obserwacje'); if (!b) throw new Error('Brak przycisku obserwacji SMC'); b.scrollIntoView({ block: 'center', behavior: 'instant' }); const r = b.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()`);
+    const beforePanelScroll = await page.ev('scrollY');
+    await page.click(smcButton[0], smcButton[1]);
+    await sleep(300);
+    report.smc.panelPhone = await probe(page, `(() => { const p = document.querySelector('[data-smc-flow-panel]'); if (!p) return null; const r = p.getBoundingClientRect(); const controls = [...p.querySelectorAll('input[type=checkbox]')]; return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, vw: innerWidth, vh: innerHeight, toggles: controls.length, enabled: controls.every(x => x.checked), badNumber: /NaN|Infinity/.test(p.textContent), scroll: scrollY }; })()`);
+    await shot(page, '390-smc-panel');
+    await page.key('Escape');
+    await sleep(100);
+    report.smc.panelPhoneClosed = await page.ev(`!document.querySelector('[data-smc-flow-panel]') && document.activeElement?.textContent?.trim() === 'SMC · obserwacje'`);
+    report.smc.panelPhoneNoJump = Math.abs((await page.ev('scrollY')) - beforePanelScroll) <= 1;
+    await page.ev('window.scrollTo(0,0)');
     await page.viewport(1440, 900, false);
 
     // Szlif 3: ściany i serie w Kokpicie 1m na powtórce (1440)
@@ -1395,6 +1407,8 @@ async function main() {
   // SMC+HL: obiekty wyboru w limicie projektu, na komputerze co najmniej jeden (warstwa liczy i rysuje)
   const s10 = typeof r.smc?.desktop === 'number' && typeof r.smc?.phone === 'number' && r.smc.desktop >= 1 && r.smc.desktop <= SMC_MAX.desktop && r.smc.phone <= SMC_MAX.phone;
   r.summary = { t1, t2, t3, t4, t5, t6, s1, s2, s3, s4, s5, s6, s7, s8, s9, s10 };
+  const sp = r.smc?.panelPhone;
+  r.summary.smcPanel = !!sp && sp.left >= 0 && sp.top >= 0 && sp.right <= sp.vw && sp.bottom <= sp.vh && sp.toggles === 5 && sp.enabled && !sp.badNumber && r.smc.panelPhoneClosed && r.smc.panelPhoneNoJump;
   // M1: na każdym rynku i w obu układach bez elementów nad świecami i nachodzących etykiet, bez błędów strony i NaN, właściwy rynek
   const marketOk = (coin, key) => {
     const x = r.markets?.[coin]?.[key];

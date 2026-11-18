@@ -12,6 +12,7 @@ import { QueueHead } from '../core/queueHead';
 import { PremiumLog, hlPremiumBp, markOracleBp, oracleLive } from '../core/premium';
 import { FundingBook, HOUR_MS, OiLog } from '../core/stats';
 import { Tape, TradeRow } from '../core/tape';
+import { ObservationJournal } from '../core/smcObservation';
 import { periodStart, utcDayStart } from '../core/sessions';
 import { indicatorScope, vwapSourceId } from '../core/indicators';
 import { DAY, Interval, aggregateCandles, barEnd, barStart, fromDaily, intervalById } from '../core/time';
@@ -104,6 +105,7 @@ export class ClockSync {
 }
 
 export class ProStore {
+  readonly observations: ObservationJournal;
   readonly coin: string;
   readonly stream: HlStream;
   readonly tape = new Tape();
@@ -181,6 +183,7 @@ export class ProStore {
     readonly replay: ReplayClock | null = null
   ) {
     this.coin = coin;
+    this.observations = new ObservationJournal(coin);
     this.players = new PlayerFlow(this.orders, this.addressed, bigPlayerUsd(usdScaleOf(coin)));
     this.walls = new WallTracker(minWallUsd(usdScaleOf(coin)));
     this.stream = stream ?? new HlStream();
@@ -192,6 +195,7 @@ export class ProStore {
         if (sub.type === 'candle') for (const s of this.seriesById.values()) if (s.src === sub.interval) void s.refreshRecent();
       },
       onClosed: (at) => {
+        this.observations.close(this.clock.toServer(at), this.serverNow(), 'disconnect');
         this.head.reset();
         this.coverage.close(this.clock.toServer(at));
         this.addressed.close(this.clock.toServer(at));
@@ -398,8 +402,12 @@ export class ProStore {
 
   private onMessage(channel: string, data: unknown, recvAt: number): void {
     if (channel === 'trades') {
-      const fills = parseFills(data, this.coin);
-      if (fills.length === 0) return;
+      const rows = Array.isArray(data) ? data.filter(r => !(typeof r === 'object' && r !== null && 'coin' in r && r.coin !== undefined && r.coin !== this.coin)) : data;
+      const fills = parseFills(rows, this.coin);
+      if (fills.length === 0) {
+        if (!Array.isArray(rows) || rows.length > 0) this.observations.close(this.clock.toServer(recvAt), this.clock.toServer(recvAt), 'invalid-message');
+        return;
+      }
       let newest = 0;
       let oldest = Number.POSITIVE_INFINITY;
       for (const f of fills) {
@@ -407,6 +415,10 @@ export class ProStore {
         oldest = Math.min(oldest, f.time);
       }
       this.clock.observe(newest, recvAt);
+      const observedAt = this.clock.toServer(recvAt);
+      if (!this.observations.connected) this.observations.open(Math.min(oldest + 1, newest), observedAt);
+      this.observations.trades(fills, observedAt, recvAt);
+      if (Array.isArray(rows) && rows.length !== fills.length) this.observations.close(newest, observedAt, 'invalid-message');
       if (this.liveFrom === Number.POSITIVE_INFINITY) this.liveFrom = oldest;
       if (this.tradesPending) {
         // Pierwsza wiadomość po subskrypcji to migawka 30 ostatnich transakcji z rzędu, więc taśma jest kompletna
@@ -449,8 +461,9 @@ export class ProStore {
       this.head.settle(this.serverNow(), (a, z, fn) => this.tape.forEach(a, z, fn));
       this.bump();
     } else if (channel === 'l2Book') {
+      if (typeof data === 'object' && data !== null && 'coin' in data && data.coin !== undefined && data.coin !== this.coin) return;
       const snap = parseBook(data, this.coin);
-      if (!snap) return;
+      if (!snap) { const at = this.clock.toServer(recvAt); this.observations.invalidBook(at, at); return; }
       // Dokładny arkusz: jakaś cena poza siatką bliskiej agregacji (rzadkie poziomy mogą mieć odstępy jak agregacja)
       const near = this.bookSteps[0];
       const exact = [...snap.bids, ...snap.asks].some((l) => Math.abs(l.px / near - Math.round(l.px / near)) > 1e-6);
@@ -462,6 +475,7 @@ export class ProStore {
       }
       const step = bookStep(snap);
       if (step !== this.bookSteps[0] && step !== this.bookSteps[1]) return;
+      if (step === near) this.observations.book(snap, this.clock.toServer(recvAt), step);
       // Rynek, na którym bliska agregacja równa się tickowi: bliska migawka jest arkuszem dokładnym
       if (step === near && !this.exactSub) this.walls.observeBook(snap);
       let h = this.books.get(step);
