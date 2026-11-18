@@ -4,7 +4,7 @@ import { numLang } from '../../../ui/format';
 import { fmtSignedVol } from '../../orderflow/renderer';
 import { DEFAULT_SMC_PARAMS, SMC_OB_LIFE_CANDLES, type SBar, type Scale, type SmcParams, type SmcResult, type StructureState, fvgMid, smcStructure } from '../core/smcStructure';
 import { type HtfPick, type SmcMtf, htfLabel, pickHtf, smcMtf } from '../core/smcMtf';
-import { fmtDayTime } from '../core/time';
+import { barEnd, fmtDayTime } from '../core/time';
 import { PREV_NAMES, prevHighLow, prevPeriodsOf } from '../core/prevPeriods';
 import type { Candle } from '../hl/parse';
 import { effortResult } from '../indicators/registry';
@@ -19,7 +19,10 @@ import { type ValueRef, valueBadge } from '../core/valueReference';
 import type { ObservationJournal } from '../core/smcObservation';
 import { SmcOrderflow } from '../core/smcOrderflow';
 import { stateAt } from '../core/smcStructure';
-import { flowBadge, flowElements, flowId } from './smcOrderflowAdapter';
+import { flowAlignment, flowElements, flowId } from './smcOrderflowAdapter';
+import { contactMarks, drawObservationOverlay, formationCaption, observationCaption, pickSmcZone, printCoordinate, type ChartNote, type ObservationOverlay, type SmcHitZone } from './smcChartObservations';
+import { contactProfileScene, drawContactProfiles, type ContactProfileView } from './smcContactProfile';
+import { supportsSmcContactDelta } from '../../../utils/marketCaps';
 
 /** Wartość doby względem potwierdzonego zakresu swingowego. */
 export function smcValueContext(pd: NonNullable<SmcSelection['pd']>, ref: ValueRef | null): string {
@@ -439,14 +442,18 @@ interface Scene {
   lines: Line[];
   ticks: { x0: number; x1: number; y: number; ink: string }[];
   labels: { x: number; y: number; text: string; above: boolean; bold: boolean }[];
-  tags: Tag[];
+  tags: (Tag & { observationId?: string })[];
+  hits: SmcHitZone[];
+  contactHits: { x: number; y: number; ordinal: number }[];
+  observation: ObservationOverlay;
   /** Prawa krawędź kolumny podpisów. */
   tagX: number;
   /** Linijka zakresu swingowego przy osi: odcinki premium, równowaga, discount i znacznik ostatniego zamknięcia. */
   ruler: { x: number; segs: { y0: number; y1: number; ink: string; on: boolean }[]; at: number | null } | null;
 }
 
-const emptyScene = (): Scene => ({ zones: [], lines: [], ticks: [], labels: [], tags: [], tagX: 0, ruler: null });
+const emptyScene = (): Scene => ({ zones: [], lines: [], ticks: [], labels: [], tags: [], hits: [], contactHits: [],
+  observation: { path: [], notes: [], outline: null, callout: null, pickedLabel: null }, tagX: 0, ruler: null });
 const EMPTY: Scene = emptyScene();
 
 /** Linijka premium i discount: szerokość i odstęp od stref. */
@@ -475,6 +482,24 @@ export class SmcLayer implements ISeriesPrimitive<Time> {
   private observations: SmcOrderflow | null = null;
   private observationKey = '';
   private observedThrough = -Infinity;
+  private observationView: { id: string; at: number | null } | null = null;
+  private contactView: ContactProfileView | null = null;
+  private contactAxisInset = 0;
+  private contactScene: ReturnType<typeof contactProfileScene> = [];
+  setObservationView(id: string | null, at: number | null): void {
+    if ((this.observationView?.id ?? null) === id && (this.observationView?.at ?? null) === at) return;
+    this.observationView = id === null ? null : { id, at };
+    this.requestUpdate?.();
+  }
+  setContactView(view: ContactProfileView | null): void {
+    if (view === this.contactView || view && this.contactView?.ordinal === view.ordinal && this.contactView.compare === view.compare) return;
+    this.contactView = view;
+    this.requestUpdate?.();
+  }
+  setContactAxisInset(px: number): void {
+    this.contactAxisInset = px;
+    this.requestUpdate?.();
+  }
   private tickOf: (price: number) => number = () => .1;
   setObservations(journal: ObservationJournal, tickOf?: (price: number) => number): void { this.journal = journal; if (tickOf) this.tickOf = tickOf; }
   observationModel(): SmcOrderflow | null { return this.observations; }
@@ -505,6 +530,10 @@ export class SmcLayer implements ISeriesPrimitive<Time> {
   private selKey: readonly unknown[] = [];
   private scene: Scene = EMPTY;
   private readonly views: readonly IPrimitivePaneView[];
+  private readonly contactAxisViews: readonly IPrimitivePaneView[] = [{ zOrder: () => 'normal', renderer: () => ({
+    draw: (target) => target.useMediaCoordinateSpace(({ context, mediaSize }) =>
+      drawContactProfiles(context, this.contactScene, mediaSize.width - this.contactAxisInset, mediaSize.height)),
+  }) }];
   fmtPx: (p: number) => string = (p) => String(p);
   /** Po każdym nowym wyborze: liczba obiektów rysunku (pomiar układu czyta ją z atrybutu wykresu). */
   onObjects: ((n: number) => void) | null = null;
@@ -611,6 +640,7 @@ export class SmcLayer implements ISeriesPrimitive<Time> {
             }
           }
           drawTags(ctx, sc.tags, sc.tagX, mediaSize.height, a);
+          drawObservationOverlay(ctx, sc.observation, sc.tagX + 3, mediaSize.height);
         }),
     };
     this.views = [
@@ -639,6 +669,7 @@ export class SmcLayer implements ISeriesPrimitive<Time> {
   paneViews(): readonly IPrimitivePaneView[] {
     return this.views;
   }
+  priceAxisPaneViews(): readonly IPrimitivePaneView[] { return this.contactAxisViews; }
 
   setRightInset(px: number): void {
     this.rightInset = px;
@@ -757,6 +788,7 @@ export class SmcLayer implements ISeriesPrimitive<Time> {
 
   updateAllViews(): void {
     this.scene = emptyScene();
+    this.contactScene = [];
     const st = this.styleOf();
     this.style = st;
     const lens = st ? `${st.internalLen}|${st.swingLen}` : '';
@@ -782,14 +814,17 @@ export class SmcLayer implements ISeriesPrimitive<Time> {
     sc.tagX = zr - 3;
     const x = (t: number) => Math.min(zr, xa + (logicalOfTime(bars, t, ms) - 0.5) * sp);
     const y = (p: number) => series.priceToCoordinate(p);
+    const view = this.observationView, contact = this.contactView;
+    const profiles = view && contact && this.observations?.contactProfiles(view.id, view.at, contact.ordinal, contact.compare);
+    if (profiles) this.contactScene = contactProfileScene(profiles, contact.compare, y);
     const rect = (x0: number, x1: number, hi: number, lo: number): Rect | null => {
       if (x1 < 0 || x0 >= zr) return null;
       const ya = y(hi);
       const yb = y(lo);
       return ya === null || yb === null ? null : { x0, x1, y0: Math.min(ya, yb), y1: Math.max(ya, yb) };
     };
-    const tag = (yy: number | null, text: string, ink: string, dim = false) => {
-      if (yy !== null && yy >= 0 && yy <= pane.height) sc.tags.push({ y: yy, text, ink, dim });
+    const tag = (yy: number | null, text: string, ink: string, dim = false, observationId?: string) => {
+      if (yy !== null && yy >= 0 && yy <= pane.height) sc.tags.push({ y: yy, text, ink, dim, observationId });
     };
     const flow = this.flow;
     const hs = this.hsel;
@@ -834,18 +869,22 @@ export class SmcLayer implements ISeriesPrimitive<Time> {
         mark: rect(x(o.t), x(o.t + ms), o.hi, o.lo),
       });
       const extra = `${fl?.absorption ? tr(' absorpcja', ' absorption') : ''}${withFvg.has(o.id) ? ' +FVG' : ''}${inHtf(o)}`;
-      const observed = st.defense !== false ? flowBadge(this.observations?.current(flowId('ob', o.t, o.known, o.dir)) ?? null) : '';
-      tag((r.y0 + r.y1) / 2, `OB${dirArrow(o.dir)}${extra}${observed}`, SMC_INK.ob, v.ended || touched);
+      const id = flowId('ob', o.t, o.known, o.dir);
+      sc.hits.push({ ...r, id });
+      tag((r.y0 + r.y1) / 2, `OB${dirArrow(o.dir)}${extra}`, SMC_INK.ob, v.ended || touched, id);
     }
     for (const v of sel.fvgs) {
       const f = v.f;
-      if (merged.has(f.id)) continue;
       // Rysujemy to, co z luki zostało: wypełnienie idzie od strony ceny
       const w = f.hi - f.lo;
       const left = v.ended ? { lo: f.lo, hi: f.hi } : f.dir === 1 ? { lo: f.lo, hi: f.hi - v.fill * w } : { lo: f.lo + v.fill * w, hi: f.hi };
       const x1 = v.endAt === null ? zr : x(v.endAt);
       const r = rect(x(f.t), x1, left.hi, left.lo);
       if (!r) continue;
+      const full = !v.ended && v.fill > 0.02 ? rect(r.x0, r.x1, f.hi, f.lo) : null;
+      const id = flowId('fvg', f.t, f.known, f.dir);
+      sc.hits.push({ ...(full ?? r), id });
+      if (merged.has(f.id)) continue;
       const ym = y(fvgMid(f));
       sc.zones.push({
         ...r,
@@ -853,14 +892,13 @@ export class SmcLayer implements ISeriesPrimitive<Time> {
         fill: v.ended ? 0 : 0.15,
         border: v.ended ? 'dashed' : null,
         dim: v.ended !== null,
-        ghost: v.fill > 0.02 && !v.ended ? rect(x(f.t), x1, f.hi, f.lo) : null,
+        ghost: full,
         // Środek luki (CE), dopóki cena go nie dotknęła
         mid: !v.ce && ym !== null ? { y: ym, dash: [2, 3] } : null,
         mark: null,
       });
       const thin = flow?.fvg.get(f.id)?.thin ? tr(' pusta', ' thin') : '';
-      const observed = st.formation !== false ? flowBadge(this.observations?.current(flowId('fvg', f.t, f.known, f.dir)) ?? null) : '';
-      tag((r.y0 + r.y1) / 2, `FVG${dirArrow(f.dir)}${thin}${inHtf(f)}${observed}`, SMC_INK.fvg, v.ended !== null);
+      tag((r.y0 + r.y1) / 2, `FVG${dirArrow(f.dir)}${thin}${inHtf(f)}`, SMC_INK.fvg, v.ended !== null, id);
     }
     for (const v of sel.eqs) {
       const e = v.e;
@@ -900,8 +938,8 @@ export class SmcLayer implements ISeriesPrimitive<Time> {
       const x0 = x(s.t);
       const x1 = x(s.returnT + ms);
       if (ys === null || x1 < 0 || x0 >= zr) continue;
-      const observed = st.initiative !== false ? flowBadge(this.observations?.current(flowId('sweep', s.t, s.known, s.dir)) ?? null) : '';
-      sc.lines.push({ x0, x1, y: ys, ink: SMC_INK.eq, alpha: 0.95, width: 2, dash: [], text: `sweep${observed}`, bold: false, below: s.dir === -1 });
+      sc.hits.push({ x0, x1, y0: ys, y1: ys, id: flowId('sweep', s.t, s.known, s.dir) });
+      sc.lines.push({ x0, x1, y: ys, ink: SMC_INK.eq, alpha: 0.95, width: 2, dash: [], text: st.initiative === false ? 'sweep' : null, bold: false, below: s.dir === -1 });
     }
     for (const s of sel.labels) {
       const yl = y(s.price);
@@ -957,6 +995,7 @@ export class SmcLayer implements ISeriesPrimitive<Time> {
     }
     // Wyższy interwał: od zamknięcia świecy wyższego interwału, która element potwierdza (`known`), nigdy wcześniej;
     // obrys przerywany bez wypełnienia; podpis tylko, gdy żadna strefa wykresu go nie przejęła („+4H”)
+    this.buildObservationOverlay(st, xa, sp, zr, pane.height, y);
     if (!hs) return;
     const hz = (lo: number, hi: number, known: number, ink: string, mid: number | null, text: string, k: number) => {
       const r = rect(x(known), zr, hi, lo);
@@ -973,6 +1012,130 @@ export class SmcLayer implements ISeriesPrimitive<Time> {
       sc.lines.push({ x0, x1: zr, y: yb, ink: SMC_INK.structure, alpha: 0.6, width: Math.max(1, st.width - 1), dash: [6, 4], text: null, bold: false });
       tag(yb, `${label} ${b.kind}`, SMC_INK.structure);
     }
+  }
+
+  private buildObservationOverlay(st: SmcStyle, xa: number, spacing: number, right: number, height: number, y: (price: number) => number | null): void {
+    const model = this.observations;
+    if (!model || !this.sel) return;
+    const { observation: overlay, hits } = this.scene;
+    const view = this.observationView;
+    const cutoff = view?.at ?? Infinity;
+    const snap = (id: string) => cutoff === Infinity ? model.current(id) : model.at(id, cutoff);
+    const selected = view ? snap(view.id) : null;
+    const candidate = (hit: SmcHitZone) => {
+      const mid = (hit.y0 + hit.y1) / 2;
+      return mid >= 0 && mid <= height && hit.x1 >= 0 && hit.x0 < right;
+    };
+    const optionEnabled = (kind: string) => kind === 'ob' ? st.defense !== false : st.formation !== false;
+    for (const hit of hits) {
+      if (view && hit.id !== view.id || hit.id.startsWith('sweep:') || !candidate(hit)) continue;
+      const state = view ? selected : snap(hit.id);
+      if (!state || !optionEnabled(state.kind) || (!view && (state.ended || state.recent.at(-1)?.result !== 'active'))) continue;
+      if (!overlay.callout || state.recent.at(-1)?.result === 'active' && state.kind === 'ob' && overlay.callout.id.startsWith('fvg:')) {
+        overlay.callout = { id: state.id, x: hit.x1, y: (hit.y0 + hit.y1) / 2, text: observationCaption(state),
+          ink: state.kind === 'ob' ? SMC_INK.ob : SMC_INK.fvg, side: 'left' };
+      }
+    }
+    const label = overlay.callout;
+    if (label) this.scene.tags = this.scene.tags.filter(tag => tag.observationId !== label.id);
+
+    const coordinate = (time: number, price: number, center = false) => {
+      const at = printCoordinate(this.bars, time, this.ms, center);
+      const py = y(price);
+      return at === null || py === null ? null : { x: xa + at.logical * spacing, y: py, bar: at.bar };
+    };
+    const note = (time: number, price: number, text: string, ink: string, symbol: ChartNote['symbol'], center = false) => {
+      const point = coordinate(time, price, center);
+      if (point && point.x >= 0 && point.x <= right && point.y >= 0 && point.y <= height) {
+        overlay.notes.push({ ...point, text, ink, symbol, side: point.x >= right * .65 ? 'left' : 'right' });
+      }
+      return point;
+    };
+    if (st.initiative !== false && (!view || selected?.kind === 'sweep')) {
+      const sweeps = this.result?.sweeps ?? [];
+      const id = (s: (typeof sweeps)[number]) => flowId('sweep', s.t, s.known, s.dir);
+      let sweep = view ? sweeps.find(s => id(s) === view.id) : undefined;
+      if (!view) for (let i = sweeps.length - 1; i >= 0; i--) {
+        const s = sweeps[i];
+        if (s.known < this.now - Math.max(86400000, 24 * this.ms)) break;
+        const start = coordinate(s.t, s.level, true), end = coordinate(s.returnT, s.level, true);
+        if (s.known <= this.now && start && end && candidate({ id: '', x0: start.x, x1: end.x, y0: start.y, y1: end.y }) && snap(id(s))) {
+          sweep = s;
+          break;
+        }
+      }
+      if (sweep) {
+        const state = snap(id(sweep))?.sweep;
+        const wick = this.sbars[sweep.idx], returned = this.sbars[sweep.returnIdx];
+        if (state && wick && returned) {
+          const first = note(wick.t, sweep.dir === 1 ? wick.h : wick.l, 'Sweep', SMC_INK.eq, 'diamond', true);
+          const back = note(returned.t, returned.c, tr('Powrót', 'Return'), SMC_INK.eq, 'dot', true);
+          const retest = state.retest !== null && state.retest <= cutoff && state.retestPrice !== null ?
+            note(state.retest, state.retestPrice, 'Retest', SMC_INK.eq, 'diamond') : null;
+          const confirmed = state.state === 'initiative' && state.lastClose !== null && sweep.known + 3 * this.ms <= cutoff ?
+            note(sweep.known + 2 * this.ms, state.lastClose, tr('Inicjatywa', 'Initiative'), SMC_INK.eq, 'dot', true) : null;
+          for (const p of [first, back, retest, confirmed]) if (p) hits.push({ id: id(sweep), x0: p.x - 12, x1: p.x + 12, y0: p.y - 5, y1: p.y + 5 });
+        }
+      }
+    }
+    if (!selected) return;
+    const ink = selected.kind === 'ob' ? SMC_INK.ob : SMC_INK.fvg;
+    const target = hits.find(z => z.id === selected.id);
+    if (target && selected.kind !== 'sweep' && (optionEnabled(selected.kind) || st.anchored !== false)) {
+      overlay.outline = { ...target, ink };
+    }
+    if (selected.kind !== 'sweep' && optionEnabled(selected.kind)) {
+      for (const mark of contactMarks(selected, cutoff)) {
+        const focused = this.contactView?.ordinal === mark.ordinal && mark.kind === 'contact';
+        const p = note(mark.time, mark.price, mark.text, focused ? PRO.accent : ink, mark.kind === 'contact' ? 'dot' : 'diamond');
+        if (p && mark.kind === 'contact') this.scene.contactHits.push({ ...p, ordinal: mark.ordinal });
+      }
+    }
+    if (selected.kind === 'fvg' && st.formation !== false) {
+      const origin = this.result?.fvgs.find(f => flowId('fvg', f.t, f.known, f.dir) === selected.id);
+      if (origin && origin.known <= cutoff) note(origin.t, (origin.hi + origin.lo) / 2, formationCaption(selected.fvg), ink, undefined, true);
+    }
+    if (st.anchored !== false) {
+      let previous: number | null = null;
+      const path = model.trajectory(selected.id, cutoff);
+      for (const sample of path) {
+        const point = coordinate(sample.time, sample.vwap);
+        if (!point) { previous = null; continue; }
+        // Na świecach miesiąca długość jest zmienna, więc sprawdzamy też rzeczywiste końce interwałów.
+        let through = sample.connect ? previous : null;
+        while (through !== null && through < point.bar && this.bars[through + 1].t === barEnd(this.bars[through].t, this.ms)) through++;
+        const contiguous = through === point.bar;
+        overlay.path.push({ ...point, connect: sample.connect && contiguous });
+        previous = point.bar;
+      }
+      const last = path.at(-1);
+      if (selected.complete && last) {
+        const divergence = last.delta === selected.since.delta && flowAlignment(selected) === 'divergent' ? tr(' · rozbieżność', ' · divergence') : '';
+        note(last.time, last.vwap, `VWAP · Δ ${fmtSignedVol(last.deltaUsd)} USD${divergence}`, PRO.accent, undefined);
+      }
+    }
+  }
+
+  pickObservationLabel(x: number, y: number): string | null {
+    const label = this.scene.observation.pickedLabel;
+    if (!label || !this.styleOf()) return null;
+    const tolerance = this.phone ? 11 : 1;
+    return pickSmcZone([label], x, y, tolerance, null);
+  }
+
+  pickObservationAtPoint(x: number, y: number): string | null {
+    if (!this.styleOf() || !this.observations) return null;
+    return pickSmcZone(this.scene.hits, x, y, this.phone ? 13 : 5, this.observationView?.id ?? null);
+  }
+
+  pickContactAtPoint(x: number, y: number): number | null {
+    if (!this.journal || !supportsSmcContactDelta(this.journal.coin) || !this.styleOf() || !this.observationView) return null;
+    let best = (this.phone ? 15 : 10) ** 2, hit: number | null = null;
+    for (const p of this.scene.contactHits) {
+      const distance = (p.x - x) ** 2 + (p.y - y) ** 2;
+      if (distance <= best) { hit = p.ordinal; best = distance; }
+    }
+    return hit;
   }
 
   /** Wyższy interwał w legendzie: wybór interwału, elementy albo powód braku (null — wskaźnik ukryty). */
@@ -1001,16 +1164,5 @@ export class SmcLayer implements ISeriesPrimitive<Time> {
   selection(): SmcSelection | null {
     return this.sel;
   }
-  pickObservation(t: number, price: number, tolerance: number): string | null {
-    if (!this.styleOf() || !this.sel) return null;
-    for (const { o, endAt } of this.sel.obs) if (t + this.ms >= o.known && t <= (endAt ?? this.now + this.ms) && price >= o.lo - tolerance && price <= o.hi + tolerance)
-      return flowId('ob', o.t, o.known, o.dir);
-    for (const { f, endAt } of this.sel.fvgs) if (t + this.ms >= f.known && t <= (endAt ?? this.now + this.ms) && price >= f.lo - tolerance && price <= f.hi + tolerance)
-      return flowId('fvg', f.t, f.known, f.dir);
-    for (const s of this.sel.sweeps) if (t >= s.t - this.ms && t <= s.returnT + 2 * this.ms && Math.abs(price - s.level) <= tolerance)
-      return flowId('sweep', s.t, s.known, s.dir);
-    return null;
-  }
-
   valueOf: ((at: number) => ValueRef | null) | null = null;
 }

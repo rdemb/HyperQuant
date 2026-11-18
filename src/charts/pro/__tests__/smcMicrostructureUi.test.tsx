@@ -1,0 +1,34 @@
+import { expect, it } from 'vitest';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { ObservationJournal } from '../core/smcObservation';
+import { SmcOrderflow } from '../core/smcOrderflow';
+import { SmcFlowDetails } from '../chart/SmcOrderflowPanel';
+const style = { alpha: 1, width: 1, internalLen: 3, swingLen: 10, higher: -1, history: true };
+it('renders sweep evidence and honest missing control counts from the real model', () => {
+  const j = new ObservationJournal('BTC'); j.open(0, 0);
+  j.trades([{ time: 10, tid: 1, px: 101, sz: 1, side: 1 }, { time: 20, tid: 2, px: 100, sz: 1, side: -1 }], 20);
+  const m = new SmcOrderflow(j), e = { id: 's', kind: 'sweep' as const, known: 30, originFrom: 0, lo: 100, hi: 100, dir: 1 as const, atr: 10, expiresAt: 10000 };
+  m.update([e], [], 'mixed', 30);
+  const html = renderToStaticMarkup(<SmcFlowDetails s={m.current('s')!} opts={style} unit="BTC" />);
+  expect(html).toContain('data-sweep-excursion'); expect(html).toContain('Zamrożone');
+  expect(html).toContain('0 / 0 / 0'); expect(html).toContain('— brak dopasowanego poziomu');
+  expect(html).not.toMatch(/NaN|Infinity/);
+});
+it('exposes equal USD and depth metrics, invalidating L2 across a short disconnect', () => {
+  const j = new ObservationJournal('BTC'); j.open(0, 0);
+  const b = (time: number) => ({ time, bids: [{ px: 101, sz: 1 }, { px: 99, sz: 1 }], asks: [{ px: 102, sz: 1 }] });
+  j.book(b(0), 0, 1);
+  const e = { id: 'o', kind: 'ob' as const, known: 0, lo: 99, hi: 101, dir: 1 as const, atr: 10, expiresAt: 10000 };
+  const m = new SmcOrderflow(j, 1000, .1, 100); m.update([e], [], 'mixed', 0);
+  j.trades([{ time: 10, tid: 1, px: 100, sz: 1, side: -1 }], 10); j.book(b(10), 10, 1);
+  m.update([e], [], 'mixed', 10);
+  expect(m.current('o')!.recent[0].recovery?.ratio).toBe(1);
+  const old = JSON.stringify(m.at('o', 10));
+  j.close(11, 11, 'disconnect'); j.open(12, 12); j.book(b(13), 13, 1);
+  m.update([e], [], 'mixed', 13);
+  expect(m.current('o')!.recent[0].recovery?.ratio).toBeNull();
+  expect(JSON.stringify(m.at('o', 10))).toBe(old);
+  const html = renderToStaticMarkup(<SmcFlowDetails s={m.current('o')!} opts={style} unit="BTC" />);
+  expect(html).toContain('data-flow-matched-contacts'); expect(html).toContain('data-flow-depth-recovery');
+  expect(html).not.toMatch(/NaN|Infinity/);
+});

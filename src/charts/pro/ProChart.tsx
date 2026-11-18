@@ -47,6 +47,7 @@ import { BUBBLES_BARS, BUBBLES_EVIDENCE, BUBBLES_K, BUBBLES_MAX } from './chart/
 import { AUCTIONS_PER_SIDE, ZONES_EVIDENCE, ZONES_PER_SIDE } from './chart/zonesSelect';
 import { MarketStateBar } from './chart/MarketStateBar';
 import { SmcOrderflowPanel, type FlowOption } from './chart/SmcOrderflowPanel';
+import { SmcContactProfileControls } from './chart/SmcContactProfileControls';
 import { DayFrameBar } from './chart/DayFrameBar';
 import { IVB_DEFAULT, ivbMinutes } from './core/ivb';
 import { LayoutHeader } from './chart/LayoutHeader';
@@ -69,7 +70,7 @@ import { chartKeyAction } from './chart/shortcuts';
 import { FocusExit, type PhoneTab, focusExitKey, focusOn } from './chart/focusMode';
 import { COIN, CandleSeries, Market, ProStore, dropStore, storeFor } from './store/proStore';
 import { capsOf, chartMarkets, marketOf, noScannerWhyOf, useMarkets } from '../../state/markets';
-import { BLOG_ONLY_WHY, marketCaps } from '../../utils/marketCaps';
+import { BLOG_ONLY_WHY, marketCaps, supportsSmcContactDelta } from '../../utils/marketCaps';
 import { MarketPicker, PhoneMarketSelect } from './chart/MarketPicker';
 import { expiredNotice, isListed, nextMarket } from './chart/marketMenu';
 import { appMarkets } from '../../utils/marketRegistry';
@@ -346,8 +347,14 @@ export const ProChart: React.FC<{
   const menuRef = useRef<HTMLDivElement>(null);
   const ctrlRef = useRef<ProChartController | null>(null);
   const [smcSelected, setSmcSelected] = useState<string | null>(null);
+  const [smcPanelOpen, setSmcPanelOpen] = useState(false);
+  const [smcReplay, setSmcReplay] = useState<number | null>(null);
+  const [smcContact, setSmcContact] = useState<number | null>(null);
+  const [smcCompare, setSmcCompare] = useState(false);
   const smcButton = useRef<HTMLButtonElement>(null);
-  const closeSmc = useCallback(() => { setSmcSelected(null); smcButton.current?.focus({ preventScroll: true }); }, []);
+  const closeSmc = useCallback(() => { setSmcPanelOpen(false); smcButton.current?.focus({ preventScroll: true }); }, []);
+  const selectSmc = useCallback((id: string) => { setSmcSelected(id); setSmcReplay(null); setSmcContact(null); }, []);
+  const resetSmc = useCallback(() => { setSmcSelected(null); setSmcReplay(null); setSmcPanelOpen(false); setSmcContact(null); setSmcCompare(false); }, []);
   const changeSmcOption = useCallback((key: FlowOption, on: boolean) => {
     setSettings(s => ({ ...s, indicators: s.indicators.map(i => i.id === 'smc' ? { ...i, params: { ...i.params, [key]: on ? 1 : 0 } } : i) }));
   }, [setSettings]);
@@ -390,6 +397,10 @@ export const ProChart: React.FC<{
   }, [markets, settings.coin, inReplay]);
   const blogMaps = useBlogMaps((settings.showBlogMap || (layoutHeader && blogSettle && !inReplay)) && caps.blog);
   useStoreVersion(store, 400);
+  const smcContactZone = supportsSmcContactDelta(store.coin) && smcSelected && /^(ob|fvg):/.test(smcSelected) ? smcSelected : null;
+  const smcProfiles = smcContactZone === null ? null :
+    ctrlRef.current?.smcObservations()?.contactProfiles(smcContactZone, smcReplay, smcContact, smcCompare) ?? null;
+  const smcContactVisible = smcProfiles !== null;
 
   // Usunięty wskaźnik zestawu paneli wypada też z listy instancji zestawu (keepPanelSetIids)
   const update = useCallback((patch: Partial<ChartSettings>) => setSettings((s) => keepPanelSetIids({ ...s, ...patch })), []);
@@ -424,9 +435,13 @@ export const ProChart: React.FC<{
     void series.load();
     if (!store.replay) startRecording(store);
     ctrlRef.current?.setSeries(series);
-    setSmcSelected(null);
-  }, [store, series]);
-  useEffect(() => { if (!settings.indicators.some(i => i.id === 'smc' && i.visible)) setSmcSelected(null); }, [settings.indicators]);
+    resetSmc();
+  }, [store, series, resetSmc]);
+  useEffect(() => {
+    const indicator = settings.indicators.find(i => i.id === 'smc' && i.visible);
+    if (!indicator) resetSmc();
+    else if (indicator.params.memory === 0) setSmcReplay(null);
+  }, [settings.indicators, resetSmc]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -445,7 +460,8 @@ export const ProChart: React.FC<{
     }, setScale);
     ctrl.setPhone(isNarrow());
     ctrl.onEditIndicator = editIndicator;
-    ctrl.onSmcPick = setSmcSelected;
+    ctrl.onSmcPick = selectSmc;
+    ctrl.onSmcContactPick = setSmcContact;
     ctrl.onEmptyTap = () => {
       if (!isNarrow()) return;
       if (live.current.chartOnly) exitFocus();
@@ -462,10 +478,15 @@ export const ProChart: React.FC<{
       ctrl.destroy();
       ctrlRef.current = null;
       setTools(null);
-      setSmcSelected(null);
+      resetSmc();
     };
     // Wykres tworzymy raz; zmiany ustawień idą przez applySettings
-  }, [store, signal, update, editIndicator]);
+  }, [store, signal, update, editIndicator, selectSmc, resetSmc]);
+
+  useEffect(() => {
+    ctrlRef.current?.setSmcObservationView(smcSelected, smcReplay);
+    ctrlRef.current?.setSmcContactView(smcContactVisible ? { ordinal: smcContact, compare: smcCompare } : null);
+  }, [store, series, smcSelected, smcReplay, smcContactVisible, smcContact, smcCompare]);
 
   useEffect(() => {
     // Telefon i układ 2 × 2 chowają część paneli — zapisane ustawienia wracają na szerszym ekranie albo w mniejszym układzie
@@ -1142,12 +1163,23 @@ export const ProChart: React.FC<{
         <div className="relative flex-1 min-h-0 min-w-0" onContextMenu={onContextMenu}>
           {/* Własny kontekst warstw: uchwyt zmiany wysokości paneli wykresu (z-index 50) nie przykrywa pasków i okien rysunków */}
           <div ref={hostRef} className="absolute inset-0 isolate" />
-          {settings.indicators.some(i => i.id === 'smc' && i.visible) && <button ref={smcButton} type="button" className="absolute bottom-9 left-2 z-30 min-h-11 rounded-lg border border-line-strong bg-surface-2 px-3 text-xs text-ink-1 hover:bg-surface-3" onClick={() => setSmcSelected(ctrlRef.current?.smcObservations()?.list()[0]?.id ?? '')}>
-            SMC · {tr('obserwacje', 'observations')}
-          </button>}
-          {smcSelected !== null && (() => {
+          {settings.indicators.some(i => i.id === 'smc' && i.visible) && <div className="pointer-events-none absolute bottom-9 left-2 right-2 z-30 flex flex-col items-start gap-1">
+            {smcContactZone && !smcPanelOpen && <div className="pointer-events-auto max-w-full">
+              <SmcContactProfileControls profiles={smcProfiles} compare={smcCompare} onCompare={() => setSmcCompare(v => !v)} replay={smcReplay !== null} />
+            </div>}
+            <div className="pointer-events-auto flex flex-wrap gap-1">
+            <button ref={smcButton} type="button" className="min-h-11 rounded-lg border border-line-strong bg-surface-2 px-3 text-xs text-ink-1 hover:bg-surface-3" onClick={() => {
+              if (!smcSelected) selectSmc(ctrlRef.current?.smcObservations()?.list()[0]?.id ?? '');
+              setSmcPanelOpen(true);
+            }}>SMC · {tr('obserwacje', 'observations')}</button>
+            {smcReplay !== null && <button type="button" className="min-h-11 rounded-lg border border-line-strong bg-surface-2 px-3 text-xs" onClick={() => setSmcReplay(null)}>{tr('SMC · wróć do teraz', 'SMC · back to now')}</button>}
+            {smcSelected && <button type="button" className="min-h-11 min-w-11 rounded-lg border border-line-strong bg-surface-2 text-xs" aria-label={tr('Odznacz strefę SMC', 'Clear SMC selection')} onClick={() => { resetSmc(); smcButton.current?.focus({ preventScroll: true }); }}>×</button>}
+            </div>
+          </div>}
+          {smcPanelOpen && smcSelected !== null && (() => {
             const model = ctrlRef.current?.smcObservations(), opts = ctrlRef.current?.smcObservationOptions();
-            return model && opts && model.current(smcSelected) ? <SmcOrderflowPanel model={model} selected={smcSelected} opts={opts} unit={store.coin} onSelect={setSmcSelected} onOption={changeSmcOption} onClose={closeSmc} /> :
+            return model && opts && model.current(smcSelected) ? <SmcOrderflowPanel model={model} selected={smcSelected} replay={smcReplay} onReplay={setSmcReplay} opts={opts} unit={store.coin} onSelect={selectSmc} onOption={changeSmcOption} onClose={closeSmc}
+              contactChoice={smcContactZone ? { ordinal: smcContact, onChoose: setSmcContact } : undefined} /> :
               <aside className="fixed bottom-16 left-2 right-2 z-40 max-h-[78dvh] overflow-y-auto rounded-xl border border-line bg-surface-1 p-3 text-sm sm:absolute sm:bottom-2 sm:left-auto sm:w-80" role="dialog" aria-label="SMC"><button type="button" onClick={closeSmc} className="float-right min-h-11 min-w-11" aria-label={tr('Zamknij panel SMC', 'Close SMC panel')}>×</button>{tr('Brak elementu w zachowanej obserwacji. Historyczne świece nie zastępują nagranej taśmy i L2.', 'No element in retained observations. Historical candles do not replace recorded tape and L2.')}</aside>;
           })()}
           <AutoScaleBtn scale={scale} onToggle={() => ctrlRef.current?.setAutoScale(!scale.auto)} />

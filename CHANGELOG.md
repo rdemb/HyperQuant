@@ -4,6 +4,16 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Profil delty kontaktu SMC (2026-11-18)
+<!-- co-nowego: ukryj -->
+- Na osi ceny BTC profil wybranego kontaktu pokazuje w tych samych koszykach obrót oraz deltę agresorów w USD. Porównanie używa tej samej skali dla poprzedniego kontaktu w strefie.
+- Odtworzenie respektuje chwilę obserwacji. Brak pokrycia albo brak zachowanych próbek daje jawny brak profilu.
+
+### Obserwacje SMC na wykresie (2026-11-18)
+<!-- co-nowego: ukryj -->
+- Wybór strefy pokazuje do trzech zaobserwowanych kontaktów i odbić, VWAP od pierwszego kontaktu z deltą oraz opis powstania luki. Sweep, powrót i retest mają znaczniki na odpowiadających im świecach.
+- Opcjonalna historia panelu odtwarza te same adnotacje według czasu obserwacji. Przerwy w taśmie i brakujące próbki nie są uzupełniane.
+
 ### SMC: obrona, przepływ i pamięć obserwacji (2026-11-17)
 <!-- co-nowego: grupa=wykres | pl=SMC: kontakty OB, sweep i retest, delta i VWAP od kontaktu, profil powstania FVG oraz pamięć obserwacji | en=SMC: OB contacts, sweep and retest, contact-anchored delta and VWAP, FVG formation profile and observation memory -->
 - Krótkie oznaczenia przy istniejących strefach, szczegóły po kliknięciu i pięć niezależnych przełączników na komputerze i telefonie, po polsku i angielsku.
