@@ -49,10 +49,12 @@ it('counts a replay boundary and merged history/live tape exactly once across mi
   expect(profile.read({ from, to: middle + 2 }, 1, new Coverage()).coveredMs).toBe(0);
 });
 
-it('selects fewer price rows on a short chart and keeps empty tape empty', () => {
-  expect(rangeProfileStep(64500, 65000, 720)).toBe(10);
-  expect(rangeProfileStep(64500, 65000, 320)).toBe(50);
-  expect(rangeProfileStep(100, 102, 700)).toBe(1);
+it('groups dense rows with the next 1/2/5 step and keeps empty tape empty', () => {
+  expect(rangeProfileStep(64500, 65000, 14)).toBe(50);
+  expect(rangeProfileStep(64500, 64930, 9)).toBe(50);
+  expect(rangeProfileStep(64500, 65000, 9)).toBe(100);
+  expect(rangeProfileStep(64500, 66000, 9)).toBe(200);
+  expect(rangeProfileStep(100, 102, 14)).toBe(1);
   const profile = new SmcRangeProfile(new Tape());
   expect(profile.read({ from, to: from + MINUTE }, 1, new Coverage())).toEqual({
     rows: [], turnoverUsd: 0, deltaUsd: 0, coveredMs: 0, spanMs: MINUTE,

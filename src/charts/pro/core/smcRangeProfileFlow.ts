@@ -5,6 +5,16 @@ import { minuteOf, type Tape } from './tape';
 
 export interface PriceBucket { low: number; high: number }
 export interface ProfileVisit { deltaMicros: bigint; partial: boolean }
+export interface VisitSummary extends ProfileVisit { count: number }
+
+export function summarizeVisits(visits: readonly ProfileVisit[]): VisitSummary | null {
+  if (visits.length === 0) return null;
+  return {
+    count: visits.length,
+    deltaMicros: visits.reduce((sum, visit) => sum + visit.deltaMicros, 0n),
+    partial: visits.some(visit => visit.partial),
+  };
+}
 
 export function priceBuckets(step: number, merged: readonly PriceBucket[]) {
   const key = `${step}/${merged.map(b => `${b.low}:${b.high}`).join(',')}`;

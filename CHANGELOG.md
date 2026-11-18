@@ -4,6 +4,10 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Dwie liczby w profilu SMC BTC (2026-11-18)
+<!-- co-nowego: grupa=wykres | pl=Dwie czytelne kolumny w profilu SMC BTC | en=Two readable columns in the BTC SMC profile -->
+- Przy cenach pozostają obrót i delta. Pasek pod wykresem sumuje delty ostatnich wizyt w tym samym przedziale co odczyt zmiany ceny po 30 sekundach.
+
 ### Liczby w bocznym profilu SMC (2026-11-18)
 <!-- co-nowego: grupa=wykres | pl=Obrót i delta w każdym wierszu bocznego profilu SMC | en=Turnover and delta on every row of the SMC side profile -->
 - Na BTC każdy wyświetlony słupek ma stały odczyt obrotu i delty w USD. W wąskim widoku pozostają widoczne obie wartości.
