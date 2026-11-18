@@ -12,7 +12,6 @@ export interface RangeProfile {
 }
 
 const MAX_CACHED_MINUTES = 1440;
-export const SMC_PROFILE_ROW_PX = 14;
 type Rows = Map<number, RangeProfileRow>;
 
 // BTC: ceny mają najwyżej 1 miejsce dziesiętne, ilości 5. Ich iloczyn to całkowita liczba milionowych USD.
@@ -24,8 +23,8 @@ export function usdFromMicros(micros: bigint): number {
   return Number(micros) / 1_000_000;
 }
 
-export function rangeProfileStep(lo: number, hi: number, height: number, rowHeight = SMC_PROFILE_ROW_PX): number {
-  const target = Math.max(1, (hi - lo) / Math.max(1, Math.min(72, Math.floor(height / rowHeight))));
+export function rangeProfileStep(lo: number, hi: number, rowLimit: number): number {
+  const target = Math.max(1, (hi - lo) / Math.max(1, rowLimit));
   const unit = 10 ** Math.floor(Math.log10(target));
   const ratio = target / unit;
   return unit * (ratio <= 1 ? 1 : ratio <= 2 ? 2 : ratio <= 5 ? 5 : 10);
