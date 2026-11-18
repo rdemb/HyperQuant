@@ -2,6 +2,7 @@ import { gzipSync } from 'node:zlib';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { HIST_HOUR_MS, HIST_PART_MS, type HistTrade, encodeBook, encodeTrades, historyPath } from '../../../utils/tapeHistory';
 import type { Candle } from '../hl/parse';
+import { rangeTapeWindows, readRangeTape } from '../core/smcRangeProfileTape';
 import { joinUnits, recordedRange, replayUnits } from '../replay/data';
 import { linkPatch, parseReplayLink, replayHash } from '../replay/link';
 import { ReplaySession } from '../replay/session';
@@ -124,6 +125,44 @@ describe('ReplaySession — odtwarzanie nagrania', () => {
     return fakeFetch(files(units), index([H0, H0 + HIST_HOUR_MS], []), plain);
   };
   const tradesUpTo = (t: number) => tradesIn(H0, H0 + 2 * HIST_HOUR_MS).filter((x) => x.t <= t).length;
+
+  it('podaje śladowi taśmy pokrycie milisekundy kursora tylko jeśli potwierdza je archiwum', async () => {
+    const t = H0 + 30_000;
+    const end = H0 + 60_000;
+    const [first, second] = tradesIn(H0, end);
+    const fills = [first, second, { ...second, t: t + 1, tid: second.tid + 1, side: 'A' as const }];
+    const paths = new Map([[historyPath('BTC', H0, 'trades', false),
+      encodeTrades('BTC', H0, end, [[H0, t + 2], [t + 3, end]], fills, [])]]);
+    const f = fakeFetch(paths, index([H0], []));
+    s = new ReplaySession({ source: 'history', coin: 'BTC', from: null, to: null, t }, f.fetcher, fakeCandles().load, BASE);
+    await s.load();
+    const read = () => {
+      const store = s!.store!;
+      const span = { from: H0, to: store.serverNow() };
+      const windows = rangeTapeWindows(span, store.tapeTraceCoverage);
+      const trace = readRangeTape(store.tape, windows, [{ low: 80_000, high: 80_010 }]);
+      return { store, coverage: windows.map(w => w.coverage), sides: trace.byPrice.get(80_000)?.at(-1) };
+    };
+    expect(read().coverage).toEqual(['full', 'full', 'full']);
+    expect(read().sides).toEqual({ buy: 80_000_000_000n, sell: 0n });
+    expect(read().store.coverage.coveredMs(t, t + 1)).toBe(0);
+    s.seek(t + 0.5);
+    expect(read().coverage.at(-1)).toBe('full');
+    expect(read().store.coverage.coveredMs(t, t + 1)).toBe(0.5);
+    expect(read().sides?.sell).toBe(0n);
+    s.seek(t + 1);
+    expect(read().coverage.at(-1)).toBe('full');
+    expect(read().sides).toEqual({ buy: 80_000_000_000n, sell: 80_000_000_000n });
+    s.seek(t + 2);
+    expect(read().coverage.at(-1)).toBe('partial');
+    s.seek(t + 3);
+    expect(read().coverage.at(-1)).toBe('partial');
+    s.seek(t);
+    expect(read().coverage.at(-1)).toBe('full');
+    expect(read().sides).toEqual({ buy: 80_000_000_000n, sell: 0n });
+    s.seek(end);
+    expect(read().coverage.at(-1)).toBe('partial');
+  });
 
   it('start godzinę przed końcem; taśma i świece tylko do chwili odtwarzania, bieżąca świeca z taśmy', async () => {
     const f = twoHours();

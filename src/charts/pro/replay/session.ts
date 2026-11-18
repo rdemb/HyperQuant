@@ -184,7 +184,7 @@ export class ReplaySession {
   private rebuild(): void {
     const d = this.data;
     if (!d) return;
-    const clock: ReplayClock = { now: () => this.t, end: this.to, candles: (coin, iv, a, b) => this.candles(coin, iv, a, b) };
+    const clock: ReplayClock = { now: () => this.t, playing: () => this.playing, end: this.to, candles: (coin, iv, a, b) => this.candles(coin, iv, a, b) };
     this.store = new ProStore(new HlStream(), this.coin, clock);
     this.storeGen++;
     this.catchUp = null;
@@ -236,9 +236,12 @@ export class ReplaySession {
     while (this.iOi < d.oi.length && d.oi[this.iOi][0] <= t) oi.push(d.oi[this.iOi++]);
     const lo = Number.isFinite(a) ? a : this.from;
     const clip = (xs: readonly [number, number][]) => xs.map(([x, y]): [number, number] => [Math.max(x, lo), Math.min(y, t)]).filter(([x, y]) => y > x);
+    // Ślad może domknąć chwilę kursora tylko na podstawie potwierdzonego odcinka nagrania.
+    const boundary = Math.floor(t);
+    const coveredBoundary = d.spans.some(([from, to]) => from <= boundary && boundary + 1 <= to) ? boundary : null;
     this.fed = t;
     st.feedReplay({ trades: { from: lo, to: t, spans: clip(d.spans), zeroSpans: clip(d.zeroSpans), fills, oi },
-      frames, bookSpans: clip(d.bookSpans) });
+      frames, bookSpans: clip(d.bookSpans) }, coveredBoundary);
   }
 
   /** Świece z API do końca nagrania (brakujące — z taśmy nagrania), pamiętane dla kolejnych magazynów tej powtórki. */
