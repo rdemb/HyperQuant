@@ -1,9 +1,9 @@
 {
   "v": 1,
   "ok": true,
-  "at": 1794987741561,
-  "run": "https://github.com/rdemb/HyperQuant/actions/runs/44260897319",
-  "commit": "9c227a38c262982e6a883a9e89a247c9a7e2bf4e",
+  "at": 1795034544530,
+  "run": "https://github.com/rdemb/HyperQuant/actions/runs/44393725111",
+  "commit": "b53aee7d9093b5d2e1981a667a8953a23cd8f646",
   "lines": [
     "✓ 2026-10-22.jsonl: 398 linii",
     "✓ 2026-10-23.jsonl: 960 linii",
@@ -32,18 +32,18 @@
     "✓ 2026-11-15.jsonl: 1488 linii",
     "✓ 2026-11-16.jsonl: 1488 linii",
     "✓ 2026-11-17.jsonl: 1488 linii",
-    "✓ 2026-11-18.jsonl: 482 linie",
+    "✓ 2026-11-18.jsonl: 1288 linii",
     "✓ kolejność i spójność rekordów",
     "✓ wyniki zgodne z przeliczonymi z kwantyli",
-    "✓ ensemble: 2555 wydań — p_e i p_r zgodne z zapisanymi wagami; wagi ostatnich wydań (2555) odtworzone ponownym dopasowaniem na pytaniach rozstrzygniętych przed wydaniem",
-    "✓ A/B: wariant B = wersja A × skala ze wzoru, te same chwile (2545 prognoz)",
+    "✓ ensemble: 2607 wydań — p_e i p_r zgodne z zapisanymi wagami; wagi ostatnich wydań (2607) odtworzone ponownym dopasowaniem na pytaniach rozstrzygniętych przed wydaniem",
+    "✓ A/B: wariant B = wersja A × skala ze wzoru, te same chwile (2597 prognoz)",
     "✓ plan A/B ab-v1 prerejestrowany 2026-10-22T17:51Z, zgodny z kodem; wariant B wydawany po rejestracji",
-    "✓ A/B: wariant C = przekształcenie kwantyli A (świeży poziom zmienności, mieszanina skali) przeliczone niezależnie, te same chwile (566 prognoz)",
+    "✓ A/B: wariant C = przekształcenie kwantyli A (świeży poziom zmienności, mieszanina skali) przeliczone niezależnie, te same chwile (618 prognoz)",
     "✓ plan A/B ab-v2 prerejestrowany 2026-11-12T10:16Z, zgodny z kodem; wariant C wydawany po rejestracji",
-    "✓ Schrödi: 1999 prognoz — p, szanse dotknięcia i stożek przeliczone z zapisanych cech publicznymi modelami, hashe modeli zgodne",
-    "✓ plan zaufania kota schrodi-trust-v1 prerejestrowany 2026-10-28T11:48Z, zgodny z kodem; przeliczone z rekordów — duży ruch E = 1.12e+8 (496 godzin, dowód od 2026-10-30T14Z), kierunek E = 0.532 (496 godzin), dotknięcia E = 3.56 (450 godzin, dowód od 2026-10-31T16Z); dowód przy E ≥ 20; alarm dryfu: brak",
-    "✓ godzina na żywo: 991 zapisów — cena, próg i szanse startowe z prognozy kota, p przeliczone z zapisanych cech publicznym modelem, hash zgodny",
-    "✓ plan godziny na żywo schrodi-hour-v1 prerejestrowany 2026-10-28T14:30Z, zgodny z kodem; przeliczone z rekordów — duży ruch wobec samej drogi ceny E = 0.338 (495 godzin); alarm dryfu: brak",
-    "✓ kalibracja kota cat-cal-v1: 565 prognoz — a, d i p przeliczone z par rozstrzygniętych wcześniej w dzienniku, plan zgodny z kodem"
+    "✓ Schrödi: 2051 prognoz — p, szanse dotknięcia i stożek przeliczone z zapisanych cech publicznymi modelami, hashe modeli zgodne",
+    "✓ plan zaufania kota schrodi-trust-v1 prerejestrowany 2026-10-28T11:48Z, zgodny z kodem; przeliczone z rekordów — duży ruch E = 4.17e+7 (509 godzin, dowód od 2026-10-30T14Z), kierunek E = 0.419 (509 godzin), dotknięcia E = 8.72 (463 godziny, dowód od 2026-10-31T16Z); dowód przy E ≥ 20; alarm dryfu: brak",
+    "✓ godzina na żywo: 1017 zapisów — cena, próg i szanse startowe z prognozy kota, p przeliczone z zapisanych cech publicznym modelem, hash zgodny",
+    "✓ plan godziny na żywo schrodi-hour-v1 prerejestrowany 2026-10-28T14:30Z, zgodny z kodem; przeliczone z rekordów — duży ruch wobec samej drogi ceny E = 0.337 (508 godzin); alarm dryfu: brak",
+    "✓ kalibracja kota cat-cal-v1: 617 prognoz — a, d i p przeliczone z par rozstrzygniętych wcześniej w dzienniku, plan zgodny z kodem"
   ]
 }
