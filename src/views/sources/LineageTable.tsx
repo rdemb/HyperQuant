@@ -106,6 +106,19 @@ export const GROUPS: { title: string; rows: Row[] }[] = [
         ),
       },
       {
+        metric: tr('Boczny profil SMC BTC: obrót, delta, trzy wizyty i zmiana po 30 s',
+          'BTC SMC side profile: turnover, delta, three visits and the move after 30 s'),
+        source: tr('Publiczna taśma i dokładny arkusz Hyperliquid: strumień oraz archiwum HyperQuant',
+          'Public Hyperliquid trades and exact order book: stream and HyperQuant archive'),
+        method: tr(
+          'Obrót to suma cena × ilość z wykonań. Delta odejmuje nominał sprzedaży od kupna. Wizyta to kolejne wykonania w jednym przedziale ceny. Dla przedziału ostatniego wykonania zmiana to średnia ważona nominałem różnica między ceną wykonania a środkiem pierwszej poprawnej migawki dokładnego arkusza od 30 do 35 s później, osobno po kupnie i sprzedaży.',
+          'Turnover sums price × size for each trade. Delta subtracts sell from buy notional. A visit is a sequence of consecutive trades in one price band. For the last trade’s band, the move is the notional-weighted change from trade price to the first valid exact book midpoint 30 to 35 s later, separately for buys and sells.'),
+        kinds: ['MODEL', 'SIM'],
+        refresh: tr('w granicach widoku lub powtórki', 'within the visible range or replay'),
+        caveat: tr('Gwiazdka oznacza fragment wizyty na skraju zapisu lub przy luce. Pokrycie zmiany liczone według nominału strony. Przerwa arkusza wyklucza dopasowanie.',
+          'An asterisk marks a partial visit at a recording boundary or gap. Move coverage uses each side’s notional. An order book gap prevents a match.'),
+      },
+      {
         metric: tr(
           'Częstości bazowe SMC+HL (legenda i krzyż nad elementem, W sesji): co działo się po FVG, BOS, CHoCH, sweepach, EQH i EQL wobec losowej kontroli',
           'SMC+HL base rates (legend and crosshair over an element, In session): what followed FVG, BOS, CHoCH, sweeps, EQH and EQL against a random control'

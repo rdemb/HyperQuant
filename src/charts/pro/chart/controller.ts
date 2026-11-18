@@ -60,7 +60,7 @@ import { IvbLayer, type IvbStyle } from './ivbLayer';
 import { type SmcHigherFeed, SmcLayer, type SmcStyle } from './smcLayer';
 import { TAG_GAP_PX } from './tagColumn';
 import { contactProfileWidth, type ContactProfileView } from './smcContactProfile';
-import { SmcRangeProfileLayer, type RangeProfileInfo } from './smcRangeProfileLayer';
+import { rangeProfileWidth, SmcRangeProfileLayer, type RangeProfileInfo } from './smcRangeProfileLayer';
 import { supportsSmcContactDelta } from '../../../utils/marketCaps';
 import { pickHtf } from '../core/smcMtf';
 import type { Candle } from '../hl/parse';
@@ -406,7 +406,10 @@ export class ProChartController {
   private readonly smcRange: SmcRangeProfileLayer;
   smcObservations() { return this.smc.observationModel(); }
   smcObservationOptions() { return this.smcStyle(); }
-  setSmcObservationView(id: string | null, at: number | null): void { this.smc.setObservationView(id, at); }
+  setSmcObservationView(id: string | null, at: number | null): void {
+    this.smc.setObservationView(id, at);
+    this.smcRange.setCutoff(at);
+  }
   setSmcContactView(view: ContactProfileView | null): void {
     this.smc.setContactView(view);
     const width = view ? contactProfileWidth(view.compare) : 0;
@@ -550,7 +553,8 @@ export class ProChartController {
       container.dataset.ivbObjects = String(n);
     };
     this.main.attachPrimitive(this.smc);
-    this.smcRange = new SmcRangeProfileLayer(store.tape, store.coverage, () => this.visibleSpan(store.serverNow()), store.replay !== null);
+    this.smcRange = new SmcRangeProfileLayer(store.tape, store.coverage, () => this.visibleSpan(store.serverNow()), store.replay !== null,
+      () => store.exactBook()?.list() ?? [], store.bookCoverage, () => store.serverNow());
     this.smcRange.onInfo = (info) => this.onSmcRangeInfo?.(info);
     this.main.attachPrimitive(this.smcRange);
     this.smc.fmtPx = (p) => store.fmtPx(p);
@@ -734,7 +738,7 @@ export class ProChartController {
    */
   private applyDomInset(): void {
     const ladder = this.domShown() ? DOM_W_PX + 8 : 0;
-    const rangeWidth = this.smcRangeOn(this.settings) ? (this.phone ? 72 : 148) : 0;
+    const rangeWidth = this.smcRangeOn(this.settings) ? rangeProfileWidth(this.phone) : 0;
     const axisWidth = rangeWidth || this.smcContactWidth ? Math.max(70, AXIS_W_PX) : AXIS_W_PX;
     const extra = ladder + this.smcContactWidth + rangeWidth;
     this.chart.priceScale('right').applyOptions({ minimumWidth: extra ? axisWidth + extra : 0 });
@@ -1025,6 +1029,7 @@ export class ProChartController {
    */
   setTopInset(px: number): void {
     this.topInset = px;
+    this.smcRange.setHeaderTop(this.phone ? Math.max(24, Math.ceil(px)) : 0);
     cancelAnimationFrame(this.marginFrame);
     this.marginFrame = requestAnimationFrame(() => {
       this.marginFrame = 0;

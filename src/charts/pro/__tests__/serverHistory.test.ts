@@ -81,6 +81,7 @@ describe('ServerHistory — historia z serwera do magazynu wykresu', () => {
     // Taśma i pokrycie od H0 do końca ostatniej części
     const end = H0 + 2 * HIST_HOUR_MS + 3 * HIST_PART_MS;
     expect(store.coverage.covers(H0, end)).toBe(true);
+    expect(store.bookCoverage.covers(H0, end)).toBe(true);
     expect(store.tape.count).toBe(((end - H0) / 30_000) * 2);
     // Zlecenia agresora złożone z numerów: dwa wypełnienia na zlecenie, biorca bez adresu
     const orders = store.orders.range(H0, end);
@@ -108,6 +109,7 @@ describe('ServerHistory — historia z serwera do magazynu wykresu', () => {
     expect(f.calls).toContain(historyPath('BTC', p, 'trades', true));
     expect(store.coverage.covers(p - HIST_PART_MS, p)).toBe(true);
     expect(store.coverage.covers(p, p + HIST_PART_MS)).toBe(false);
+    expect(store.bookCoverage.covers(p, p + HIST_PART_MS)).toBe(false);
     for (const [k, v] of files([{ start: p, part: true }])) m.set(k, v);
     vi.setSystemTime(NOW + 61_000); // spis do odświeżenia
     await h.round();

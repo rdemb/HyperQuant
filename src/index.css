@@ -1,5 +1,13 @@
 @import "tailwindcss";
 
+/* Na wykresie z profilem SMC wejście do Załogi zostaje w nagłówku. Pływający przycisk może przykryć profil lub pasek. */
+body:has([data-smc-range-profile]) [data-dok-launcher] {
+  visibility: hidden;
+}
+body:has([data-smc-range-profile]) [data-dok]:not(:has([data-wyspa-flash])) {
+  pointer-events: none;
+}
+
 /* Tokeny projektu (v2) — opis i zasady w docs/STYLEGUIDE.md */
 @theme {
   /* Motyw ciemny „Chronograf” (grafit) jako domyślny; jasny („papier”) i zasięg ciemny niżej, w [data-theme] */

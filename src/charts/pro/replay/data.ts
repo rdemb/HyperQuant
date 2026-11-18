@@ -15,6 +15,7 @@ export interface ReplayData {
   /** Odcinki ciągłego nagrania i ich część z oznaczonymi hashami zerowymi. */
   spans: HistSpan[];
   zeroSpans: HistSpan[];
+  bookSpans: HistSpan[];
   fills: Fill[];
   frames: BookFrame[];
   /** [czas, otwarte pozycje] co minutę. */
@@ -76,7 +77,7 @@ async function fetchGz(fetcher: Fetcher, url: string): Promise<unknown> {
 
 /** Sklejone pliki: taśma, migawki i otwarte pozycje rosnąco po czasie (pliki są rozłączne i ułożone po kolei). */
 export function joinUnits(coin: string, parts: readonly { unit: ReplayUnit; trades: unknown; book: unknown }[]): ReplayData {
-  const out: ReplayData = { coin, spans: [], zeroSpans: [], fills: [], frames: [], oi: [] };
+  const out: ReplayData = { coin, spans: [], zeroSpans: [], bookSpans: [], fills: [], frames: [], oi: [] };
   for (const { unit, trades, book } of parts) {
     const t = decodeTrades(trades);
     if (t && t.coin === coin) {
@@ -86,7 +87,10 @@ export function joinUnits(coin: string, parts: readonly { unit: ReplayUnit; trad
       for (const c of t.ctx) out.oi.push([c.t, c.oi]);
     }
     const b = decodeBook(book);
-    if (b && b.coin === coin) for (const f of b.frames) out.frames.push(toBookFrame(f));
+    if (b && b.coin === coin) {
+      out.bookSpans.push(...b.spans);
+      for (const f of b.frames) out.frames.push(toBookFrame(f));
+    }
   }
   out.fills.sort((a, b) => a.time - b.time);
   out.frames.sort((a, b) => a.t - b.t);
@@ -101,6 +105,7 @@ export function clipReplay(d: ReplayData, from: number, to: number): ReplayData 
     coin: d.coin,
     spans: clipSpans(d.spans, from, to),
     zeroSpans: clipSpans(d.zeroSpans, from, to),
+    bookSpans: clipSpans(d.bookSpans, from, to),
     fills: d.fills.filter((f) => inside(f.time)),
     frames: d.frames.filter((f) => inside(f.t)),
     oi: d.oi.filter(([t]) => inside(t)),
