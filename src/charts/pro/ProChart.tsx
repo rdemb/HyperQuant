@@ -1,6 +1,7 @@
 import React, { Suspense, lazy, useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Bell, BellOff, BellPlus, Camera, ChevronDown, ChevronsRight, Columns2, Copy, Eye, EyeOff, Frame as FrameIcon, Grid2x2, History, Info, Keyboard, Layers, Link, ListOrdered, Maximize2, Minimize2, Minus, MoreHorizontal, PenTool, RotateCcw, SlidersHorizontal, Square, X } from 'lucide-react';
 import { Badge, BadgeTone, LocalBoundary, Segmented, numLang } from '../../ui';
+import { fmtNum, fmtPct, fmtSigned } from '../../ui/format';
 import { BAR_BTN, DropdownSelect, barBtnTone } from '../../ui/Dropdown';
 import { scrollFadeRef } from '../../ui/scrollFade';
 import { LiqMapState, useLiqMap } from '../../state/useLiqMap';
@@ -1384,8 +1385,10 @@ export const ProChart: React.FC<{
             {smcRangeInfo.coverage < 100 && <span className="text-warn"> · {tr('luki', 'gaps')}</span>}
             <span className="hidden sm:inline"> · {fmtDayTime(smcRangeInfo.from, smcRangeInfo.to)}–{fmtHm(smcRangeInfo.to)}</span>
           </>}
-          {inReplay && <> · {tr('powtórka do', 'replay through')} {fmtHms(store.serverNow())}</>}
+          {Boolean(smcRangeInfo?.levels) && <> · <span>{tr('* fragment wizyty', '* partial visit')}</span></>}
+          {(inReplay || smcReplay !== null) && <> · {tr('powtórka do', 'replay through')} {fmtHms(Math.min(store.serverNow(), smcReplay ?? Infinity))}</>}
         </div>}
+        {smcProfileOn && smcRangeInfo?.reaction && <SmcRangeReaction reaction={smcRangeInfo.reaction} inReplay={inReplay || smcReplay !== null} />}
         {smcContactZone && !smcPanelOpen && <div className="max-w-full">
           <SmcContactProfileControls profiles={smcProfiles} compare={smcCompare} onCompare={() => setSmcCompare(v => !v)} replay={smcReplay !== null} />
         </div>}
@@ -1509,6 +1512,23 @@ const PanesTab: React.FC<{ s: ChartSettings; grid4: boolean; narrow: boolean; on
 };
 
 /** Lista wyboru w pasku telefonu (systemowy wybór — wygodny palcem i zajmuje mało miejsca). */
+function SmcRangeReaction({ reaction, inReplay }: { reaction: NonNullable<RangeProfileInfo['reaction']>; inReplay: boolean }) {
+  return <div data-smc-range-reaction className="flex min-w-0 max-w-full flex-wrap items-baseline gap-x-3 gap-y-0.5 text-xs text-ink-2"
+    title={tr('Zmiana od ceny wykonania do środka dokładnego arkusza 30–35 s później. Średnia ważona nominałem. Pokrycie według nominału danej strony.',
+      'Move from trade price to the exact book midpoint 30–35 s later. Notional-weighted mean and notional coverage for each side.')}>
+    <span className="font-semibold">{tr('Zmiana po 30 s', 'Move after 30 s')} <span className="font-mono">[{fmtNum(reaction.low)}–{fmtNum(reaction.high)})</span> · USD/BTC</span>
+    <Badge tone={inReplay ? 'sim' : 'model'} size="sm">{inReplay ? 'SIM' : 'MODEL'}</Badge>
+    {(['buy', 'sell'] as const).map(key => {
+      const { mean, matchedUsd, totalUsd, pendingUsd, missingUsd } = reaction[key];
+      return <span key={key} data-smc-reaction-side={key}>
+        {key === 'buy' ? tr('Kupno', 'Buys') : tr('Sprzedaż', 'Sells')}
+        {totalUsd > 0 ? <> <span className="font-mono text-ink-1">{fmtSigned(mean, 2)}</span> · {tr('pokrycie', 'coverage')} {fmtPct(100 * matchedUsd / totalUsd, 1, false)}
+          {pendingUsd > 0 && <> · {tr('w toku', 'pending')}</>}{missingUsd > 0 && <> · {tr('brak migawek', 'missing quotes')}</>}</> : <> · {tr('brak wykonań', 'no trades')}</>}
+      </span>;
+    })}
+  </div>;
+}
+
 function PhoneSelect<T extends string>({
   ariaLabel,
   value,

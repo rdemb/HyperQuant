@@ -2,7 +2,7 @@ import type { Coverage } from './coverage';
 import { MINUTE, minuteOf, type Tape } from './tape';
 
 export type ProfileSpan = { from: number; to: number };
-export interface RangeProfileRow { price: number; turnoverUsd: number; deltaUsd: number }
+export interface RangeProfileRow { price: number; turnoverUsd: number; deltaMicros: bigint }
 export interface RangeProfile {
   rows: RangeProfileRow[];
   turnoverUsd: number;
@@ -12,25 +12,35 @@ export interface RangeProfile {
 }
 
 const MAX_CACHED_MINUTES = 1440;
+export const SMC_PROFILE_ROW_PX = 14;
 type Rows = Map<number, RangeProfileRow>;
 
-export function rangeProfileStep(lo: number, hi: number, height: number): number {
-  const target = Math.max(1, (hi - lo) / Math.max(1, Math.min(72, Math.floor(height / 10))));
+// BTC: ceny mają najwyżej 1 miejsce dziesiętne, ilości 5. Ich iloczyn to całkowita liczba milionowych USD.
+export function btcNotionalMicros(price: number, size: number): bigint {
+  return BigInt(Math.round(price * 10)) * BigInt(Math.round(size * 100_000));
+}
+
+export function usdFromMicros(micros: bigint): number {
+  return Number(micros) / 1_000_000;
+}
+
+export function rangeProfileStep(lo: number, hi: number, height: number, rowHeight = SMC_PROFILE_ROW_PX): number {
+  const target = Math.max(1, (hi - lo) / Math.max(1, Math.min(72, Math.floor(height / rowHeight))));
   const unit = 10 ** Math.floor(Math.log10(target));
   const ratio = target / unit;
   return unit * (ratio <= 1 ? 1 : ratio <= 2 ? 2 : ratio <= 5 ? 5 : 10);
 }
 
-function add(rows: Rows, price: number, turnoverUsd: number, deltaUsd: number): void {
+function add(rows: Rows, price: number, turnoverUsd: number, deltaMicros: bigint): void {
   const row = rows.get(price);
   if (row) {
     row.turnoverUsd += turnoverUsd;
-    row.deltaUsd += deltaUsd;
-  } else rows.set(price, { price, turnoverUsd, deltaUsd });
+    row.deltaMicros += deltaMicros;
+  } else rows.set(price, { price, turnoverUsd, deltaMicros });
 }
 
 function merge(into: Rows, from: Rows): void {
-  for (const row of from.values()) add(into, row.price, row.turnoverUsd, row.deltaUsd);
+  for (const row of from.values()) add(into, row.price, row.turnoverUsd, row.deltaMicros);
 }
 
 /** Wspólna taśma usuwa duplikaty archiwum, zapisu przeglądarki i strumienia. Granice okna liczymy z dokładnością taśmy. */
@@ -63,10 +73,12 @@ export class SmcRangeProfile {
     }
     const result: RangeProfile = { rows: [...rows.values()].sort((a, b) => a.price - b.price), turnoverUsd: 0, deltaUsd: 0,
       coveredMs: coverage.coveredMs(from, to), spanMs: Math.max(0, to - from) };
+    let deltaMicros = 0n;
     for (const row of result.rows) {
       result.turnoverUsd += row.turnoverUsd;
-      result.deltaUsd += row.deltaUsd;
+      deltaMicros += row.deltaMicros;
     }
+    result.deltaUsd = usdFromMicros(deltaMicros);
     return result;
   }
 
@@ -74,7 +86,8 @@ export class SmcRangeProfile {
     this.tape.forEach(from, to, (_t, price, size, side) => {
       const usd = price * size;
       if (!(usd > 0) || !Number.isFinite(usd)) return;
-      add(rows, Math.floor(price / this.step) * this.step, usd, side * usd);
+      const micros = btcNotionalMicros(price, size);
+      add(rows, Math.floor(price / this.step) * this.step, usd, side === 1 ? micros : -micros);
     });
   }
 
