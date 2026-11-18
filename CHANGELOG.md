@@ -4,6 +4,10 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Stały profil delty SMC (2026-11-18)
+<!-- co-nowego: grupa=wykres | pl=Profil delty widoczny od razu po włączeniu SMC na BTC | en=The delta profile appears as soon as SMC is enabled on BTC -->
+- Na BTC profil przy osi ceny pokazuje trwający lub ostatni zaobserwowany kontakt bez otwierania panelu. Kliknięcie strefy przełącza profil na jej kontakty. Przy braku zapisu profil pokazuje brak danych.
+
 ### Profil delty kontaktu SMC (2026-11-18)
 <!-- co-nowego: ukryj -->
 - Na osi ceny BTC profil wybranego kontaktu pokazuje w tych samych koszykach obrót oraz deltę agresorów w USD. Porównanie używa tej samej skali dla poprzedniego kontaktu w strefie.

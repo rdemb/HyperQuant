@@ -492,7 +492,9 @@ export class SmcLayer implements ISeriesPrimitive<Time> {
     this.requestUpdate?.();
   }
   setContactView(view: ContactProfileView | null): void {
-    if (view === this.contactView || view && this.contactView?.ordinal === view.ordinal && this.contactView.compare === view.compare) return;
+    const prev = this.contactView;
+    if (view === prev || view && prev && view.zone === prev.zone && view.at === prev.at &&
+      view.ordinal === prev.ordinal && view.compare === prev.compare) return;
     this.contactView = view;
     this.requestUpdate?.();
   }
@@ -800,6 +802,12 @@ export class SmcLayer implements ISeriesPrimitive<Time> {
     const series = this.series;
     const bars = this.bars;
     const ms = this.ms;
+    const contact = this.contactView;
+    if (st && series && contact) {
+      const { zone, at, ordinal, compare } = contact;
+      const profiles = this.observations?.contactProfiles(zone, at, ordinal, compare) ?? null;
+      this.contactScene = contactProfileScene(profiles, compare, p => series.priceToCoordinate(p));
+    }
     if (!st || !sel || !chart || !series || bars.length === 0 || ms > SMC_MAX_TF) return;
     const ts = chart.timeScale();
     const xa = ts.logicalToCoordinate(0 as Logical);
@@ -814,9 +822,6 @@ export class SmcLayer implements ISeriesPrimitive<Time> {
     sc.tagX = zr - 3;
     const x = (t: number) => Math.min(zr, xa + (logicalOfTime(bars, t, ms) - 0.5) * sp);
     const y = (p: number) => series.priceToCoordinate(p);
-    const view = this.observationView, contact = this.contactView;
-    const profiles = view && contact && this.observations?.contactProfiles(view.id, view.at, contact.ordinal, contact.compare);
-    if (profiles) this.contactScene = contactProfileScene(profiles, contact.compare, y);
     const rect = (x0: number, x1: number, hi: number, lo: number): Rect | null => {
       if (x1 < 0 || x0 >= zr) return null;
       const ya = y(hi);

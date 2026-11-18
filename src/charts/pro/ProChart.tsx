@@ -397,10 +397,12 @@ export const ProChart: React.FC<{
   }, [markets, settings.coin, inReplay]);
   const blogMaps = useBlogMaps((settings.showBlogMap || (layoutHeader && blogSettle && !inReplay)) && caps.blog);
   useStoreVersion(store, 400);
-  const smcContactZone = supportsSmcContactDelta(store.coin) && smcSelected && /^(ob|fvg):/.test(smcSelected) ? smcSelected : null;
-  const smcProfiles = smcContactZone === null ? null :
-    ctrlRef.current?.smcObservations()?.contactProfiles(smcContactZone, smcReplay, smcContact, smcCompare) ?? null;
-  const smcContactVisible = smcProfiles !== null;
+  const smcVisible = settings.indicators.some(i => i.id === 'smc' && i.visible);
+  const smcProfileOn = smcVisible && supportsSmcContactDelta(store.coin);
+  const smcContactZone = smcProfileOn && smcSelected && /^(ob|fvg):/.test(smcSelected) ? smcSelected : null;
+  const smcProfiles = smcProfileOn
+    ? ctrlRef.current?.smcObservations()?.contactProfiles(smcContactZone, smcReplay, smcContact, smcCompare) ?? null
+    : null;
 
   // Usunięty wskaźnik zestawu paneli wypada też z listy instancji zestawu (keepPanelSetIids)
   const update = useCallback((patch: Partial<ChartSettings>) => setSettings((s) => keepPanelSetIids({ ...s, ...patch })), []);
@@ -485,8 +487,8 @@ export const ProChart: React.FC<{
 
   useEffect(() => {
     ctrlRef.current?.setSmcObservationView(smcSelected, smcReplay);
-    ctrlRef.current?.setSmcContactView(smcContactVisible ? { ordinal: smcContact, compare: smcCompare } : null);
-  }, [store, series, smcSelected, smcReplay, smcContactVisible, smcContact, smcCompare]);
+    ctrlRef.current?.setSmcContactView(smcProfileOn ? { zone: smcContactZone, at: smcReplay, ordinal: smcContact, compare: smcCompare } : null);
+  }, [store, series, smcSelected, smcReplay, smcProfileOn, smcContactZone, smcContact, smcCompare]);
 
   useEffect(() => {
     // Telefon i układ 2 × 2 chowają część paneli — zapisane ustawienia wracają na szerszym ekranie albo w mniejszym układzie
@@ -1163,8 +1165,8 @@ export const ProChart: React.FC<{
         <div className="relative flex-1 min-h-0 min-w-0" onContextMenu={onContextMenu}>
           {/* Własny kontekst warstw: uchwyt zmiany wysokości paneli wykresu (z-index 50) nie przykrywa pasków i okien rysunków */}
           <div ref={hostRef} className="absolute inset-0 isolate" />
-          {settings.indicators.some(i => i.id === 'smc' && i.visible) && <div className="pointer-events-none absolute bottom-9 left-2 right-2 z-30 flex flex-col items-start gap-1">
-            {smcContactZone && !smcPanelOpen && <div className="pointer-events-auto max-w-full">
+          {smcVisible && <div className="pointer-events-none absolute bottom-9 left-2 right-2 z-30 flex flex-col items-start gap-1">
+            {smcProfileOn && !smcPanelOpen && <div className="pointer-events-auto max-w-full">
               <SmcContactProfileControls profiles={smcProfiles} compare={smcCompare} onCompare={() => setSmcCompare(v => !v)} replay={smcReplay !== null} />
             </div>}
             <div className="pointer-events-auto flex flex-wrap gap-1">
