@@ -59,6 +59,7 @@ import { EffortLayer, type EffortStyle } from './effortLayer';
 import { IvbLayer, type IvbStyle } from './ivbLayer';
 import { type SmcHigherFeed, SmcLayer, type SmcStyle } from './smcLayer';
 import { TAG_GAP_PX } from './tagColumn';
+import { contactProfileWidth, type ContactProfileView } from './smcContactProfile';
 import { pickHtf } from '../core/smcMtf';
 import type { Candle } from '../hl/parse';
 import { seriesCandles } from './layoutInputs';
@@ -397,8 +398,18 @@ export class ProChartController {
   /** Dotknięcie pustego miejsca panelu ceny (bez bąbla, ściany, wieloryba i rysowania): tryb skupienia na telefonie. */
   onEmptyTap: (() => void) | null = null;
   onSmcPick: ((id: string) => void) | null = null;
+  onSmcContactPick: ((ordinal: number) => void) | null = null;
+  private smcContactWidth = 0;
   smcObservations() { return this.smc.observationModel(); }
   smcObservationOptions() { return this.smcStyle(); }
+  setSmcObservationView(id: string | null, at: number | null): void { this.smc.setObservationView(id, at); }
+  setSmcContactView(view: ContactProfileView | null): void {
+    this.smc.setContactView(view);
+    const width = view ? contactProfileWidth(view.compare) : 0;
+    if (width === this.smcContactWidth) return;
+    this.smcContactWidth = width;
+    this.applyDomInset();
+  }
   private ticksKey = '';
   /** Chwila z poprzedniej karty: po pierwszych danych widok na niej zamiast na bieżącej świecy. */
   private focusT: number | null = null;
@@ -715,7 +726,11 @@ export class ProChartController {
    * 8 px, a etykiety osi zostają przy jej lewej krawędzi — drabina nie leży na świecach przy żadnym przewinięciu.
    */
   private applyDomInset(): void {
-    this.chart.priceScale('right').applyOptions({ minimumWidth: this.domShown() ? AXIS_W_PX + DOM_W_PX + 8 : 0 });
+    const ladder = this.domShown() ? DOM_W_PX + 8 : 0;
+    const axisWidth = this.smcContactWidth ? Math.max(70, AXIS_W_PX) : AXIS_W_PX;
+    const extra = ladder + this.smcContactWidth;
+    this.chart.priceScale('right').applyOptions({ minimumWidth: extra ? axisWidth + extra : 0 });
+    this.smc.setContactAxisInset(ladder);
     const px = 0;
     this.overlay.setRightInset(px);
     this.zones.setRightInset(px);
@@ -1856,14 +1871,18 @@ export class ProChartController {
       if ((PANE_KEYS as readonly string[]).includes(key) || key.startsWith('ind:')) this.onHidePane(key as HideKey);
       return;
     }
+    const point = p.paneIndex === 0 && !this.draw.pressBusy && !this.draw.busy ? p.point : undefined;
+    const label = point && this.smc.pickObservationLabel(point.x, point.y);
+    if (label) { this.onSmcPick?.(label); return; }
+    const contact = point ? this.smc.pickContactAtPoint(point.x, point.y) : null;
+    if (contact !== null) { this.onSmcContactPick?.(contact); return; }
     const pick = p.point && p.paneIndex === 0 ? this.liquidity.pick(p.point.x, p.point.y) : null;
     // Telefon: dotknięcie przy linii wieloryba pokazuje albo chowa jej podpis
     const whale = !pick && p.point && p.paneIndex === 0 ? this.overlay.pickWhale(p.point.y) : false;
     this.liquidity.setSelected(pick);
     this.onPick(pick);
-    if (!pick && !whale && p.point && p.paneIndex === 0 && !this.draw.pressBusy && !this.draw.busy) {
-      const price = this.main.coordinateToPrice(p.point.y), near = this.main.coordinateToPrice(p.point.y + 8);
-      const id = price === null ? null : this.smc.pickObservation(p.time === undefined ? this.store.serverNow() : Number(p.time) * 1000, price, near === null ? 0 : Math.abs(near - price));
+    if (!pick && !whale && point) {
+      const id = this.smc.pickObservationAtPoint(point.x, point.y);
       if (id) { this.onSmcPick?.(id); return; }
     }
     // Wciśnięcie, które odznaczyło rysunek albo stawiało punkt, należy do rysowania (stan z chwili wciśnięcia)

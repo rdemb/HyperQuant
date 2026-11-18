@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { tr } from '../../../i18n';
 import { numLang } from '../../../ui/format';
 import { fmtDayTime } from '../core/time';
 import type { FlowEvent, FlowSnapshot, SmcOrderflow } from '../core/smcOrderflow';
+import { numberedContacts } from '../core/smcOrderflow';
 import type { FlowTotal } from '../core/smcObservationBins';
 import { flowAlignment } from './smcOrderflowAdapter';
 import type { SmcStyle } from './smcLayer';
@@ -10,6 +11,7 @@ import type { SmcStyle } from './smcLayer';
 export type FlowOption = 'defense' | 'initiative' | 'anchored' | 'formation' | 'memory';
 const n = (v: number | null, digits = 2): string => v === null || !Number.isFinite(v) ? '—' : numLang(v.toFixed(digits));
 const time = (t: number | null): string => t === null ? '—' : `${fmtDayTime(t, Date.now())}:${String(new Date(t).getSeconds()).padStart(2, '0')}`;
+const depthReason = (reason: string | null | undefined) => ({ baseline: tr('brak stanu sprzed uderzenia', 'missing pre-impact state'), range: tr('brak zasięgu', 'insufficient range'), gap: tr('przerwa obserwacji', 'observation gap'), step: tr('zmieniona agregacja', 'aggregation changed'), 'no-sample': tr('brak próbki po uderzeniu', 'no post-impact sample') })[reason ?? ''] ?? '—';
 const options = (): [FlowOption, string][] => [
   ['defense', tr('Obrona OB', 'OB defense')], ['initiative', tr('Sweep i retest', 'Sweep and retest')],
   ['anchored', tr('Delta / VWAP', 'Delta / VWAP')], ['formation', tr('Powstanie FVG', 'FVG formation')], ['memory', tr('Pamięć zdarzeń', 'Event memory')],
@@ -64,6 +66,16 @@ export function SmcFlowDetails({ s, opts, unit }: { s: FlowSnapshot; opts: SmcSt
       <p className="text-xs text-ink-3">{tr('Zaobserwowane kontakty', 'Observed contacts')}: {s.contacts} · {tr('zakończone', 'ended')}: {s.completed}</p>
       {s.recent.map((c, i) => <p key={`${c.from}:${i}`} className="mt-1 text-xs tabular-nums">{time(c.from)} · {({ active: tr('w toku', 'active'), retreat: tr('odejście', 'retreat'), broken: tr('przebicie', 'broken'), expired: tr('limit czasu', 'timed out') })[c.result]} · {tr('atak w strefie', 'attack inside zone')} {n(c.complete ? c.attack : null)} {unit} · {tr('penetracja / odbicie ATR', 'penetration / rebound ATR')} {n(c.complete && s.atr > 0 ? c.penetration / s.atr : null)} / {n(c.complete && s.atr > 0 ? c.rebound / s.atr : null)} · {tr('kupno / sprzedaż w strefie', 'buy / sell inside zone')} {n(c.complete ? c.flow.buy : null)} / {n(c.complete ? c.flow.sell : null)} {unit} · Δ {n(c.complete ? c.flow.delta : null)} {unit} · USD {n(c.complete ? c.flow.pv : null)}</p>)}
       <p className="mt-1 text-xs text-ink-3">{tr('Heurystyka kontaktów, nie dowód iceberg ani prognoza.', 'Contact heuristic, not evidence of an iceberg or a forecast.')}</p>
+      <div data-flow-matched-contacts className="mt-2 text-xs">
+        <h4>{tr('Penetracja przy jednakowym nominale agresji · MODEL', 'Penetration at equal aggression notional · MODEL')}</h4>
+        {s.recent.map((c, i) => <p key={c.from}>{i + 1}. {tr('Próg USD', 'USD budget')} {n(c.matched?.budgetUsd ?? null, 0)} · {tr('penetracja ATR', 'penetration ATR')} {n(c.matched?.penetrationAtr ?? null)} · {tr('nadwyżka transakcji USD', 'crossing-print excess USD')} {n(c.matched?.overshootUsd ?? null)}</p>)}
+        <p>{tr('Cała transakcja przekraczająca próg; cena bez interpolacji. — oznacza brak pokrycia lub nieosiągnięty próg.', 'Whole print crossing the budget; no price interpolation. — means incomplete coverage or budget not reached.')}</p>
+      </div>
+      <div data-flow-depth-recovery className="mt-2 text-xs">
+        <h4>{tr('Widoczna L2 po uderzeniu · MODEL (stałe ceny)', 'Visible L2 after impact · MODEL (fixed prices)')}</h4>
+        {s.recent.map((c, i) => <p key={c.from}>{i + 1}. {s.dir === 1 ? 'Bids' : 'Asks'} · {tr('względem stanu przed', 'relative to pre-impact')} {n(c.recovery?.ratio != null ? c.recovery.ratio * 100 : null)}% · USD {n(c.recovery?.currentUsd ?? null)} / {n(c.recovery?.baselineUsd ?? null)} · {tr('poziomy', 'levels')} {c.recovery?.prices.length ?? 0} · {tr('luka maks. s', 'max gap s')} {n(c.recovery ? c.recovery.maxGapMs / 1000 : null)} · {tr('zasięg próbki', 'sample range')} {c.recovery?.range ? `${n(c.recovery.range[0])}–${n(c.recovery.range[1])}` : '—'} · {depthReason(c.recovery?.reason)}</p>)}
+        <p>{tr('Ta sama strona i ceny sprzed uderzenia. Luki, zmiana agregacji lub brak zasięgu unieważniają porównanie. Stosunek może przekroczyć 100%; nie dowodzi odnawiania zleceń.', 'Same side and pre-impact prices. Gaps, aggregation changes or insufficient range invalidate comparison. Ratio can exceed 100%; it does not prove order replenishment.')}</p>
+      </div>
     </section>}
     {opts.initiative !== false && s.sweep && <section data-flow-section="initiative"><h3 className="font-semibold">{tr('Sweep → powrót → retest', 'Sweep → return → retest')}</h3>
       <p>{({ observing: tr('Obserwacja trzech pełnych świec', 'Observing three full candles'), initiative: tr('Powrót z inicjatywą przepływu', 'Return with flow initiative'), 'return-only': tr('Powrót bez potwierdzonej inicjatywy', 'Return without confirmed initiative'), beyond: tr('Ponowne zamknięcie za poziomem', 'Closed beyond the level again'), unknown: tr('— Niepełne pokrycie okna', '— Incomplete window coverage') })[s.sweep.state]} <span className="text-xs text-ink-3">MODEL</span></p>
@@ -71,6 +83,13 @@ export function SmcFlowDetails({ s, opts, unit }: { s: FlowSnapshot; opts: SmcSt
       <p className="text-xs text-ink-3">{time(s.knownAt)} → {time(s.knownAt + 3 * s.intervalMs)}</p>
       <p className="text-xs">{tr('Agresja kupna / sprzedaży, całe okno', 'Aggressive buy / sell, whole window')}: {n(s.sweep.flow?.buy ?? null)} / {n(s.sweep.flow?.sell ?? null)} {unit}</p>
       <p className="text-xs">{tr('Na i nad poziomem', 'At and above level')}: {n(s.sweep.above?.buy ?? null)} / {n(s.sweep.above?.sell ?? null)} · {tr('Pod poziomem', 'Below level')}: {n(s.sweep.below?.buy ?? null)} / {n(s.sweep.below?.sell ?? null)} {unit}</p>
+      <div className="mt-2 text-xs" data-sweep-excursion>
+        <p>{tr('Pierwotny sweep · MODEL (odstępy ostatniej ceny)', 'Original sweep · MODEL (last-price intervals)')}</p>
+        <p>{tr('Czas poza granicą / nieznany', 'Time outside / unknown')}: {n(s.sweep.excursion?.startAt != null ? s.sweep.excursion.outsideMs / 1000 : null)} / {n(s.sweep.excursion?.startAt != null ? s.sweep.excursion.unknownMs / 1000 : null)} s · {tr('pokrycie czasu', 'time coverage')} {n(s.sweep.excursion?.timeCoverage != null ? s.sweep.excursion.timeCoverage * 100 : null)}%</p>
+        <p>{tr('Obrót kontaktu poza granicą', 'Contact turnover outside')}: {n(s.sweep.excursion?.outsideShare != null ? s.sweep.excursion.outsideShare * 100 : null)}% · {tr('Zaobserwowany USD poza / cały kontakt', 'Observed USD outside / whole contact')}: {n(s.sweep.excursion?.observedOutsideUsd ?? null)} / {n(s.sweep.excursion?.observedUsd ?? null)}</p>
+        <p>{s.sweep.excursion?.frozen ? tr('Zamrożone przy pierwszym zaobserwowanym powrocie', 'Frozen at first observed return') : tr('— Brak kompletnego powrotu w obserwacji', '— No complete return observed')} · {s.sweep.excursion?.complete ? tr('pełna taśma', 'complete tape') : tr('niepełna taśma', 'incomplete tape')}</p>
+        <p>{tr('Bez ekstrapolacji ostatniej ceny. Odstępy >12 s są nieznane.', 'No last-price extrapolation. Intervals >12 s are unknown.')}</p>
+      </div>
     </section>}
     {opts.formation !== false && f && <section data-flow-section="formation"><h3 className="font-semibold">{tr('Profil trzech świec powstania', 'Three-candle formation profile')} <span className="text-xs text-ink-3">LIVE / MODEL</span></h3>
       <p className="text-xs text-ink-3">{time(f.from)} → {time(f.to)}</p>
@@ -91,34 +110,55 @@ export function SmcFlowDetails({ s, opts, unit }: { s: FlowSnapshot; opts: SmcSt
       <p className="text-xs">{structureText}; {alignment === 'unavailable' ? unavailable : side === null ? tr('brak przewagi agresora 60%', 'no 60% aggressor dominance') : `${side === 'buy' ? tr('przewaga agresywnego kupna', 'aggressive buying dominant') : tr('przewaga agresywnej sprzedaży', 'aggressive selling dominant')} ${n(share === null ? null : share * 100)}%`}</p>
       <p className="text-xs text-ink-3">{tr('Porównanie dotyczy całej delty od kontaktu, nie tylko wnętrza strefy; próg przewagi strony 60%.', 'Comparison uses all delta since contact, not only trades inside the zone; side dominance threshold 60%.')}</p>
     </section>}
+    {opts.memory !== false && opts.anchored !== false && s.comparison && <section data-flow-section="control"><h3 className="font-semibold">{tr('Reakcja SMC i zwykły poziom · MODEL', 'SMC reaction and ordinary level · MODEL')}</h3>
+      <p className="text-xs">{tr('Dobór przed kontaktem', 'Selection before contact')}: {time(s.comparison.selectedAt)} · {tr('od wykonania w strefie: 3 × interwał, czyli', 'from execution in the zone: 3 × timeframe, or')} {n(s.comparison.horizonMs / 60000, 1)} min</p>
+      <p className="text-xs">{tr('Kontrola', 'Control')}: {s.comparison.control ? `${n(s.comparison.control.lo)}–${n(s.comparison.control.hi)}` : tr('— brak dopasowanego poziomu', '— no matched level')}</p>
+      <p className="text-xs">n SMC / {tr('kontroli / par', 'control / pairs')}: {s.comparison.nSmc} / {s.comparison.nControl} / {s.comparison.n}</p>
+      <p className="text-xs">{tr('Reakcja SMC / kontrola / różnica ATR', 'SMC / control / difference ATR')}: {n(s.comparison.smcAtr)} / {n(s.comparison.controlAtr)} / {n(s.comparison.differenceAtr)}</p>
+      <p className="text-xs text-ink-3">{tr('Zwykłe high/low z 24 zamkniętych świec; ta sama szerokość, odległość ±0,25 ATR, zmienność tej samej chwili. Kontakt dopiero po rejestracji. Pojedyncza para nie określa skuteczności; brak próby pozostaje —.', 'Ordinary highs/lows from 24 closed candles; equal width, distance ±0.25 ATR, same-time volatility. Contact only after registration. A single pair does not establish effectiveness; absent samples remain —.')}</p>
+      {s.comparison.incomplete && <p className="text-xs">{tr('Niepełna obserwacja — próba unieważniona', 'Incomplete observation — trial invalidated')}</p>}
+    </section>}
   </div>;
 }
 
-export function SmcOrderflowPanel({ model, selected, opts, unit, onSelect, onOption, onClose }: {
+export function SmcOrderflowPanel({ model, selected, replay, opts, unit, onSelect, onReplay, onOption, onClose, contactChoice }: {
   model: SmcOrderflow; selected: string; opts: SmcStyle; unit: string;
+  replay: number | null; onReplay: (at: number | null) => void;
   onSelect: (id: string) => void; onOption: (key: FlowOption, on: boolean) => void; onClose: () => void;
+  contactChoice?: { ordinal: number | null; onChoose: (ordinal: number | null) => void };
 }) {
-  const [replay, setReplay] = useState<number | null>(null), close = useRef<HTMLButtonElement>(null);
-  useEffect(() => { setReplay(null); }, [model, selected]);
+  const close = useRef<HTMLButtonElement>(null);
   useEffect(() => { close.current?.focus({ preventScroll: true }); const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); onClose(); } }; window.addEventListener('keydown', esc); return () => window.removeEventListener('keydown', esc); }, [onClose]);
   const s = replay === null ? model.current(selected) : model.at(selected, replay);
   const events = model.events(selected), list = model.list();
   const latest = [...events].reverse().find(e => e.kind !== 'metrics' && (replay === null || e.observedAt <= replay));
+  const contacts = s && contactChoice ? numberedContacts(s) : [];
   return <aside role="dialog" aria-label={tr('SMC — obserwacja przepływu', 'SMC — flow observation')} className="fixed z-40 bottom-16 left-2 right-2 max-h-[78dvh] overflow-y-auto overscroll-contain rounded-xl border border-white/15 bg-surface-1 p-3 shadow-2xl sm:absolute sm:bottom-2 sm:left-auto sm:max-h-[78%] sm:w-[420px]" data-smc-flow-panel>
     <div className="flex items-center justify-between gap-2"><h2 className="font-semibold text-ink-1">SMC · {tr('obserwacja przepływu', 'flow observation')}</h2><button ref={close} type="button" onClick={onClose} className="min-h-11 min-w-11 rounded-lg hover:bg-white/10" aria-label={tr('Zamknij panel SMC', 'Close SMC panel')}>×</button></div>
     <label className="block text-xs text-ink-3">{tr('Element', 'Element')}<select value={selected} onChange={e => onSelect(e.target.value)} className="my-2 block min-h-11 w-full rounded-lg border border-white/15 bg-surface-2 px-2 text-ink-1">{list.map(x => <option key={x.id} value={x.id}>{x.kind.toUpperCase()} · {n(x.lo)}–{n(x.hi)} · {time(x.knownAt)}</option>)}</select></label>
+    {contactChoice && contacts.length > 0 && <label className="block text-xs text-ink-3">{tr('Kontakt na profilu delty', 'Contact on the delta profile')}
+      <select value={contactChoice.ordinal ?? ''} onChange={e => contactChoice.onChoose(e.target.value ? Number(e.target.value) : null)}
+        className="my-2 block min-h-11 w-full rounded-lg border border-white/15 bg-surface-2 px-2 text-ink-1">
+        <option value="">{tr('Najnowszy', 'Latest')}</option>
+        {contacts.map(({ ordinal, contact }) => <option key={ordinal} value={ordinal}>#{ordinal} · {time(contact.from)}{contact.result === 'active' ? tr(' · trwa', ' · ongoing') : ''}</option>)}
+        {contactChoice.ordinal !== null && !contacts.some(c => c.ordinal === contactChoice.ordinal) && <option value={contactChoice.ordinal} disabled>#{contactChoice.ordinal} · {tr('brak w tej chwili', 'unavailable at this time')}</option>}
+      </select>
+    </label>}
     <div className="mb-3 flex flex-wrap gap-x-3">{options().map(([key, label]) => <label key={key} className="flex min-h-11 items-center gap-1 text-xs"><input type="checkbox" checked={opts[key] !== false} onChange={e => onOption(key, e.target.checked)} />{label}</label>)}</div>
     {s ? <>
-      {latest && <button type="button" className="mb-3 w-full rounded-lg border border-white/10 p-2 text-left text-xs" onClick={() => setReplay(latest.observedAt)}><strong>{tr('Co się zmieniło', 'What changed')}</strong><br />{time(latest.observedAt)} · {flowEventReason(latest)}</button>}
+      {latest && <div className="mb-3 rounded-lg border border-white/10 p-2 text-xs">
+        <strong>{tr('Co się zmieniło', 'What changed')}</strong><br />{time(latest.observedAt)} · {flowEventReason(latest)}
+        {opts.memory !== false && <button type="button" className="block min-h-11 text-accent" onClick={() => onReplay(latest.observedAt)}>{tr('Pokaż tę obserwację', 'Show this observation')}</button>}
+      </div>}
       <SmcFlowDetails s={s} opts={opts} unit={unit} />
     </> : <p>{tr('Brak zachowanego stanu z tej chwili.', 'No retained state at this time.')}</p>}
-    {opts.memory !== false && <section className="mt-3 border-t border-white/10 pt-3" data-flow-section="memory"><h3 className="font-semibold">{tr('Pamięć obserwowanych zdarzeń', 'Observed event memory')}</h3>
+    {opts.memory !== false && <details className="mt-3 border-t border-white/10 pt-3" data-flow-section="memory" open={replay !== null || undefined}><summary className="min-h-11 cursor-pointer font-semibold">{tr('Pamięć obserwowanych zdarzeń', 'Observed event memory')}</summary>
       <p className="text-xs text-ink-3">{tr('Zachowane od', 'Retained since')} {time(events[0]?.observedAt ?? null)}</p>
-      <p className="text-xs text-ink-3">{tr('Historia tylko tej sesji strony, do 256 zapisów na element. Pomiary próbkowane co 10 s i przy zmianach. Najstarsze próbki wypadają, ostatnia istotna zmiana zostaje. Odtwarzasz zachowany panel, wykres pozostaje bieżący. Po przeładowaniu wcześniejsza obserwacja nie jest dostępna.', 'History of this page session only, up to 256 records per element. Measurements sampled every 10 s and on changes. Oldest samples expire; the latest meaningful change is retained. Replay shows the retained panel; the chart stays current. Earlier observations are unavailable after reload.')}</p>
-      <div className="my-2 flex items-center justify-between"><span className="text-xs">{replay === null ? 'LIVE' : `${tr('Obserwacja z', 'Observation at')} ${time(replay)}`}</span><button type="button" className="min-h-11 rounded-lg border border-white/15 px-3 text-xs" onClick={() => setReplay(null)}>{tr('Teraz', 'Now')}</button></div>
-      <label className="block text-xs">{tr('Zachowane punkty obserwacji', 'Retained observation points')}<input aria-label={tr('Chwila obserwacji SMC', 'SMC observation time')} type="range" className="min-h-11 w-full" min={0} max={Math.max(0, events.length - 1)} value={replay === null ? Math.max(0, events.length - 1) : Math.max(0, events.findIndex(e => e.observedAt >= replay))} onChange={e => setReplay(events[Number(e.target.value)]?.observedAt ?? null)} /></label>
-      <ol className="max-h-40 overflow-y-auto">{events.filter(e => e.kind !== 'metrics').slice(-24).reverse().map((e, i) => <li key={`${e.observedAt}:${i}`}><button type="button" className="min-h-11 w-full rounded-lg px-1 text-left text-xs hover:bg-white/5" onClick={() => setReplay(e.observedAt)}>{time(e.observedAt)} · {flowEventReason(e)}<span className="block text-ink-3">{tr('Czas giełdy', 'Exchange time')}: {time(e.exchangeAt)}</span></button></li>)}</ol>
-    </section>}
+      <p className="text-xs text-ink-3">{tr('Historia tylko tej sesji strony, do 256 zapisów na element. Wybór chwili odtwarza adnotacje i panel SMC. Świece pozostają bieżące. Po przeładowaniu zapis znika.', 'History of this page session only, up to 256 records per element. Selecting a time replays the SMC annotations and panel. Candles stay current. Reloading clears the record.')}</p>
+      <div className="my-2 flex flex-wrap items-center justify-between gap-1"><span className="text-xs">{replay === null ? 'LIVE' : `${tr('Obserwacja z', 'Observation at')} ${time(replay)}`}</span><button type="button" className="min-h-11 rounded-lg border border-white/15 px-3 text-xs" onClick={() => onReplay(null)}>{tr('Teraz', 'Now')}</button><button type="button" className="min-h-11 rounded-lg border border-white/15 px-3 text-xs" onClick={onClose}>{tr('Pokaż wykres', 'Show chart')}</button></div>
+      <label className="block text-xs">{tr('Zachowane punkty obserwacji', 'Retained observation points')}<input aria-label={tr('Chwila obserwacji SMC', 'SMC observation time')} type="range" className="min-h-11 w-full" min={0} max={Math.max(0, events.length - 1)} value={replay === null ? Math.max(0, events.length - 1) : Math.max(0, events.findIndex(e => e.observedAt >= replay))} onChange={e => onReplay(events[Number(e.target.value)]?.observedAt ?? null)} /></label>
+      <ol className="max-h-40 overflow-y-auto">{events.filter(e => e.kind !== 'metrics').slice(-24).reverse().map((e, i) => <li key={`${e.observedAt}:${i}`}><button type="button" className="min-h-11 w-full rounded-lg px-1 text-left text-xs hover:bg-white/5" onClick={() => onReplay(e.observedAt)}>{time(e.observedAt)} · {flowEventReason(e)}<span className="block text-ink-3">{tr('Czas giełdy', 'Exchange time')}: {time(e.exchangeAt)}</span></button></li>)}</ol>
+    </details>}
     <p className="mt-3 text-[11px] text-ink-3">{s?.version} · {tr('Źródło: publiczne trades / l2Book Hyperliquid. LIVE: pomiary, MODEL: heurystyki interfejsu. Bez prognozy i obietnicy przewagi.', 'Source: public Hyperliquid trades / l2Book. LIVE: measurements, MODEL: interface heuristics. No forecast or claim of an edge.')}</p>
   </aside>;
 }
