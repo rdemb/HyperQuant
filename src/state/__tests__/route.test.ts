@@ -33,7 +33,8 @@ describe('adres strony → widok', () => {
   it('#agents: zakładka Agenci AI (piąta pozycja menu głównego, po Blogu), w kolejności paska po fazach dnia', () => {
     expect(resolveHash('#agents')).toEqual({ view: 'agents', rewrite: null });
     expect(resolveHash('#agents?x=1').view).toBe('agents');
-    expect(VIEWS).toEqual(['before', 'charts', 'after', 'markets', 'agents', 'research', 'lessons', 'sources', 'start']);
+    expect(VIEWS).toEqual(['before', 'charts', 'after', 'markets', 'agents', 'research', 'lessons', 'sources', 'start', 'orderflow']);
+    expect(resolveHash('#orderflow?m=xyz%3AGOLD')).toEqual({ view: 'orderflow', rewrite: null });
   });
 
   it('nieznany adres: W sesji, także nazwy pól obiektu', () => {

@@ -4,6 +4,11 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Samodzielny panel Order Flow (2026-11-19)
+<!-- co-nowego: grupa=wykres | pl=Order Flow Pro dla BTC, GOLD i S&P 500 | en=Order Flow Pro for BTC, GOLD and S&P 500 -->
+- Order Flow w menu otwiera taśmę i drabinkę DOM dla BTC, GOLD i S&P 500. W trybie Pro można przypiąć cenę i sprawdzić stan arkusza przed i po oraz wykonania między migawkami.
+- Kliknięcie delty 30 s w trybie Pro porównuje pełną kwotę z wynikiem po pominięciu transakcji z jednej najbardziej wpływowej milisekundy. Panel oznacza niepełne okno taśmy i osobno sprawdza świeżość arkusza.
+
 ### Taśma i DOM kontraktów HIP-3 (2026-11-19)
 <!-- co-nowego: grupa=wykres | pl=Publiczne wykonania i głębokość GOLD oraz S&P 500 | en=Public trades and depth for GOLD and S&P 500 -->
 - W sesji kontrakty GOLD i S&P 500 mają panel pojedynczych wykonań, arkusza i danych kontraktu. Na telefonie jest pod wykresem. Stan i data odczytu rozróżniają dostępne migawki, zapis w przeglądarce i publiczne archiwum.

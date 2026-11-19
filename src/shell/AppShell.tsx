@@ -21,6 +21,7 @@ import {
   Sunrise,
   Sunset,
   Table2,
+  Rows3,
   Volume2,
   VolumeX,
 } from 'lucide-react';
@@ -83,6 +84,7 @@ export const AGENTS: NavItem = { id: 'agents', label: tr('Agenci AI', 'AI agents
 
 /** Rynki (tabela rynków z rejestru): na desktopie w pasku zaraz po fazach dnia, na telefonie w menu „Więcej”. */
 export const MARKETS: NavItem = { id: 'markets', label: tr('Rynki', 'Markets'), icon: <Table2 className="w-4 h-4" /> };
+const ORDER_FLOW: NavItem = { id: 'orderflow', label: 'Order Flow', icon: <Rows3 className="w-4 h-4" /> };
 
 export const STATUS_TONE: Record<string, BadgeTone> = { LIVE: 'live', STALE: 'stale', SYNTH: 'stale', PAUSED: 'neutral' };
 export const STATUS_TITLE: Record<string, string> = {
@@ -405,7 +407,7 @@ export type PageLink = { href: string; label: string; icon: React.ReactNode };
  * dzień tradera (trzy fazy), rynki i wiedza, strony serwisu. Kolejność grup i pozycji jest kolejnością na ekranie.
  */
 export const NAV_DZIEN: NavItem[] = PHASES;
-export const NAV_WIEDZA: NavItem[] = [MARKETS, ...MORE, AGENTS];
+export const NAV_WIEDZA: NavItem[] = [MARKETS, ORDER_FLOW, ...MORE, AGENTS];
 export const NAV_STRONY: PageLink[] = [
   { href: './blog/', label: BLOG_LABEL, icon: <Newspaper className="w-4 h-4" /> },
   { href: tr('./wyniki/', './en/results/'), label: RESULTS_LABEL, icon: <ListChecks className="w-4 h-4" /> },
