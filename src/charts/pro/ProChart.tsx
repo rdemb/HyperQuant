@@ -49,6 +49,7 @@ import { BUBBLES_BARS, BUBBLES_EVIDENCE, BUBBLES_K, BUBBLES_MAX } from './chart/
 import { AUCTIONS_PER_SIDE, ZONES_EVIDENCE, ZONES_PER_SIDE } from './chart/zonesSelect';
 import { MarketStateBar } from './chart/MarketStateBar';
 import { SmcOrderflowPanel, type FlowOption } from './chart/SmcOrderflowPanel';
+import { MobileSmcRangeProfile, SmcTapeLegend } from './chart/MobileSmcRangeProfile';
 import { SmcContactProfileControls } from './chart/SmcContactProfileControls';
 import type { RangeProfileInfo } from './chart/smcRangeProfileLayer';
 import { DayFrameBar } from './chart/DayFrameBar';
@@ -342,7 +343,7 @@ export const ProChart: React.FC<{
     if (panel === 0 && !inReplay && noticePending()) setDroppedNote(true);
   }, [panel, inReplay, settings]);
   const ctxRef = useRef<HTMLDivElement>(null);
-  const cardRef = useRef<HTMLDivElement>(null);
+  const chartFrame = useRef<HTMLDivElement>(null);
   // Warstwy ukryte okiem z listy „Warstwy” zostają na niej (do przywrócenia), dopóki wykres jest otwarty
   const [hiddenLayers, setHiddenLayers] = useState<ReadonlyMap<string, LayerChip>>(() => new Map());
   const stateId = useId();
@@ -405,6 +406,7 @@ export const ProChart: React.FC<{
   useStoreVersion(store, 400);
   const smcVisible = settings.indicators.some(i => i.id === 'smc' && i.visible);
   const smcProfileOn = smcVisible && supportsSmcContactDelta(store.coin);
+  const mobileSmcProfile = narrow && smcProfileOn;
   const smcContactZone = smcProfileOn && smcSelected && /^(ob|fvg):/.test(smcSelected) ? smcSelected : null;
   const smcProfiles = smcContactZone !== null
     ? ctrlRef.current?.smcObservations()?.contactProfiles(smcContactZone, smcReplay, smcContact, smcCompare) ?? null
@@ -671,7 +673,10 @@ export const ProChart: React.FC<{
   }, [blogMaps, blogSettle, store]);
 
   useEffect(() => {
-    const onFs = () => setFullscreen(document.fullscreenElement === cardRef.current);
+    const onFs = () => {
+      const el = document.fullscreenElement;
+      setFullscreen(el !== null && el === chartFrame.current);
+    };
     document.addEventListener('fullscreenchange', onFs);
     return () => document.removeEventListener('fullscreenchange', onFs);
   }, []);
@@ -694,7 +699,7 @@ export const ProChart: React.FC<{
   }, [menu]);
 
   const toggleFullscreen = () => {
-    const el = cardRef.current;
+    const el = chartFrame.current;
     if (!el) return;
     if (document.fullscreenElement) void document.exitFullscreen();
     else void el.requestFullscreen?.();
@@ -979,9 +984,26 @@ export const ProChart: React.FC<{
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  return (
+  const focusFrame = landscape ? 'fixed inset-0 z-50' : 'fixed inset-x-0 top-0 bottom-[calc(3.5rem+1px+env(safe-area-inset-bottom))] z-[35]';
+  const smcDetails = smcRangeInfo?.active
+    ? <SmcRangeDetails active={smcRangeInfo.active} inReplay={inReplay || smcReplay !== null} />
+    : <span data-smc-range-visits className="text-xs text-ink-2">{tr('Wizyty', 'Visits')} {DASH}</span>;
+  const smcContactControls = smcContactZone && !smcPanelOpen && <div className="max-w-full">
+    <SmcContactProfileControls profiles={smcProfiles} compare={smcCompare} onCompare={() => setSmcCompare(v => !v)} replay={smcReplay !== null} />
+  </div>;
+  const smcActions = <div className="flex flex-wrap gap-1">
+    <button ref={smcButton} type="button" className="min-h-11 sm:min-h-7 rounded-md border border-line-strong bg-surface-2 px-3 text-xs text-ink-1 hover:bg-surface-3" onClick={() => {
+      if (!smcSelected) selectSmc(ctrlRef.current?.smcObservations()?.list()[0]?.id ?? '');
+      setSmcPanelOpen(true);
+    }}>SMC · {tr('obserwacje', 'observations')}</button>
+    {smcReplay !== null && <button type="button" className="min-h-11 sm:min-h-7 rounded-md border border-line-strong bg-surface-2 px-3 text-xs" onClick={() => setSmcReplay(null)}>{tr('SMC · wróć do teraz', 'SMC · back to now')}</button>}
+    {smcSelected && <button type="button" className="min-h-11 min-w-11 sm:min-h-7 sm:min-w-7 rounded-md border border-line-strong bg-surface-2 text-xs" aria-label={tr('Odznacz strefę SMC', 'Clear SMC selection')} onClick={() => { resetSmc(); smcButton.current?.focus({ preventScroll: true }); }}>×</button>}
+    {chartOnly && !mobileSmcProfile && <FocusExit onExit={exitFocus} inFooter />}
+  </div>;
+  const replayAt = inReplay || smcReplay !== null ? Math.min(store.serverNow(), smcReplay ?? Infinity) : null;
+
+  const chartCard = (
     <div
-      ref={cardRef}
       // Karta wykresu jest zawsze ciemna (paleta „Głębia”), także w motywie jasnym strony
       data-theme="dark"
       data-focus={chartOnly ? (landscape ? 'landscape' : 'focus') : undefined}
@@ -989,10 +1011,8 @@ export const ProChart: React.FC<{
       // samo pole wykresu
       className={`${chartOnly ? '' : 'relative '}flex flex-col bg-surface-1 border border-line-strong ${
         chartOnly
-          ? // Nad przypiętym nagłówkiem (z-30); w trybie skupienia pod dolnym menu (z-40), poziomo na cały ekran
-            landscape
-            ? 'fixed inset-0 z-50'
-            : 'fixed inset-x-0 top-0 bottom-[calc(3.5rem+1px+env(safe-area-inset-bottom))] z-[35]'
+          ? // W trybie skupienia profil i karta przewijają się we wspólnym obszarze.
+            mobileSmcProfile ? 'relative h-full' : focusFrame
           : fullscreen
           ? 'w-full h-full'
           : layoutFs?.active
@@ -1186,7 +1206,7 @@ export const ProChart: React.FC<{
               <aside className="fixed bottom-16 left-2 right-2 z-40 max-h-[78dvh] overflow-y-auto rounded-xl border border-line bg-surface-1 p-3 text-sm sm:absolute sm:bottom-2 sm:left-auto sm:w-80" role="dialog" aria-label="SMC"><button type="button" onClick={closeSmc} className="float-right min-h-11 min-w-11" aria-label={tr('Zamknij panel SMC', 'Close SMC panel')}>×</button>{tr('Brak elementu w zachowanej obserwacji. Historyczne świece nie zastępują nagranej taśmy i L2.', 'No element in retained observations. Historical candles do not replace recorded tape and L2.')}</aside>;
           })()}
           <AutoScaleBtn scale={scale} onToggle={() => ctrlRef.current?.setAutoScale(!scale.auto)} />
-          {chartOnly && !smcVisible && <FocusExit onExit={exitFocus} />}
+          {chartOnly && (!smcVisible || mobileSmcProfile) && <FocusExit onExit={exitFocus} />}
           <Legend
             signal={signal}
             intervalMs={iv.ms}
@@ -1382,7 +1402,7 @@ export const ProChart: React.FC<{
         )}
       </div>
 
-      {smcVisible && <div data-smc-footer className="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-t border-line px-2 py-1">
+      {smcVisible && !mobileSmcProfile && <div data-smc-footer className="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-t border-line px-2 py-1">
         {smcProfileOn && <div className="max-w-full text-xs text-ink-2" data-smc-range-profile={smcRangeInfo?.levels ?? 0}>
           <span className="font-semibold">{tr('Profil zakresu', 'Range profile')}</span>
           {!smcRangeInfo?.levels ? <> · {tr('brak wykonań w zakresie', 'no trades in range')}</> : <> · {smcRangeInfo.step} USD</>}
@@ -1391,46 +1411,14 @@ export const ProChart: React.FC<{
             {smcRangeInfo.coverage < 100 && <span className="text-warn"> · {tr('luki', 'gaps')}</span>}
             <span className="hidden sm:inline"> · {fmtDayTime(smcRangeInfo.from, smcRangeInfo.to)}–{fmtHm(smcRangeInfo.to)}</span>
           </>}
-          {(inReplay || smcReplay !== null) && <> · {tr('powtórka do', 'replay through')} {fmtHms(Math.min(store.serverNow(), smcReplay ?? Infinity))}</>}
+          {replayAt !== null && <> · {tr('powtórka do', 'replay through')} {fmtHms(replayAt)}</>}
         </div>}
-        {smcProfileOn && (smcRangeInfo?.active
-          ? <SmcRangeDetails active={smcRangeInfo.active} inReplay={inReplay || smcReplay !== null} />
-          : <span data-smc-range-visits className="text-xs text-ink-2">{tr('Wizyty', 'Visits')} {DASH}</span>)}
-        {smcContactZone && !smcPanelOpen && <div className="max-w-full">
-          <SmcContactProfileControls profiles={smcProfiles} compare={smcCompare} onCompare={() => setSmcCompare(v => !v)} replay={smcReplay !== null} />
+        {smcProfileOn && smcDetails}
+        {smcContactControls}
+        {smcActions}
+        {smcProfileOn && <div className="max-w-full">
+          <SmcTapeLegend windows={smcRangeInfo?.tapeWindows ?? []} compact={false} id={smcTapeId} />
         </div>}
-        <div className="flex flex-wrap gap-1">
-        {smcProfileOn && narrow && <button type="button" aria-expanded={smcTapeExpanded} aria-controls={smcTapeExpanded ? smcTapeId : undefined}
-          className="min-h-11 rounded-md border border-line-strong bg-surface-2 px-3 text-xs"
-          onClick={() => setSmcTapeExpanded(expanded => !expanded)}>
-          {smcTapeExpanded ? tr('Zwiń profil', 'Collapse profile') : tr('Rozwiń profil', 'Expand profile')}
-        </button>}
-        <button ref={smcButton} type="button" className="min-h-11 sm:min-h-7 rounded-md border border-line-strong bg-surface-2 px-3 text-xs text-ink-1 hover:bg-surface-3" onClick={() => {
-          if (!smcSelected) selectSmc(ctrlRef.current?.smcObservations()?.list()[0]?.id ?? '');
-          setSmcPanelOpen(true);
-        }}>SMC · {tr('obserwacje', 'observations')}</button>
-        {smcReplay !== null && <button type="button" className="min-h-11 sm:min-h-7 rounded-md border border-line-strong bg-surface-2 px-3 text-xs" onClick={() => setSmcReplay(null)}>{tr('SMC · wróć do teraz', 'SMC · back to now')}</button>}
-        {smcSelected && <button type="button" className="min-h-11 min-w-11 sm:min-h-7 sm:min-w-7 rounded-md border border-line-strong bg-surface-2 text-xs" aria-label={tr('Odznacz strefę SMC', 'Clear SMC selection')} onClick={() => { resetSmc(); smcButton.current?.focus({ preventScroll: true }); }}>×</button>}
-        {chartOnly && <FocusExit onExit={exitFocus} inFooter />}
-        </div>
-        {smcProfileOn && (
-          // Telefon rezerwuje dwa wiersze stopki, żeby legenda i luki nie przeskalowały osi ceny.
-          <div className={narrow ? 'h-8 w-full' : 'max-w-full'}>
-            {(!narrow || smcTapeExpanded) && (
-              <div id={smcTapeId} data-smc-tape-trace className={narrow ? 'text-xs leading-4 text-ink-2' : 'flex flex-wrap items-center gap-x-2 text-xs text-ink-2'}>
-                <div className="flex flex-wrap items-center gap-x-2">
-                  <span>{tr('Taśma 30 s · 3 × 10 s →', 'Tape 30 s · 3 × 10 s →')}</span>
-                  <span className="text-sell-ink">{tr('← sprzedaż', '← sell')}</span>
-                  <span className="text-buy-ink">{tr('kupno →', 'buy →')}</span>
-                </div>
-                {smcRangeInfo?.tapeWindows.some(window => window.coverage !== 'full') && <div className="text-warn">
-                  {smcRangeInfo.tapeWindows.flatMap(({ coverage }, index) => coverage === 'full' ? [] :
-                    [`${index + 1} ${coverage === 'gap' ? tr('brak', 'missing') : tr('fragment', 'partial')}`]).join(' · ')}
-                </div>}
-              </div>
-            )}
-          </div>
-        )}
       </div>}
       {/* Schrödi (prognoza BTC na godzinę) w pasku stanu, tylko w pierwszym panelu i poza powtórką */}
       {!chartOnly && <StatusBar
@@ -1440,6 +1428,15 @@ export const ProChart: React.FC<{
         narrow={narrow}
         cat={panel === 0 && !inReplay ? <SchrodiLauncher className="shrink-0 pl-1 sm:pl-1.5" /> : null}
       />}
+    </div>
+  );
+  return (
+    <div ref={chartFrame} className={fullscreen ? `h-full min-w-0${mobileSmcProfile ? ' overflow-y-auto' : ''}`
+      : mobileSmcProfile ? chartOnly ? `${focusFrame} overflow-y-auto bg-surface-1` : 'min-w-0' : 'contents'}>
+      {chartCard}
+      {mobileSmcProfile && <MobileSmcRangeProfile id={smcTapeId} info={smcRangeInfo} expanded={smcTapeExpanded}
+        onToggle={() => setSmcTapeExpanded(expanded => !expanded)} replayAt={replayAt}
+        details={<div className="space-y-2">{smcDetails}{smcContactControls}{smcActions}</div>} />}
     </div>
   );
 };
