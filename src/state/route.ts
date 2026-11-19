@@ -8,7 +8,7 @@ import type { ViewId } from './types';
 const DOCK_KEY = 'hq.charts.dock.v1';
 
 /** Widoki aplikacji w kolejności paska: trzy fazy dnia, Rynki, Agenci AI (po Blogu, który jest osobnymi stronami), potem menu „Więcej”. */
-export const VIEWS: readonly ViewId[] = ['before', 'charts', 'after', 'markets', 'agents', 'research', 'lessons', 'sources', 'start'];
+export const VIEWS: readonly ViewId[] = ['before', 'charts', 'after', 'markets', 'agents', 'research', 'lessons', 'sources', 'start', 'orderflow'];
 
 /** Widok nieznanego adresu: W sesji. Pusty adres rozstrzyga `landingView` (pierwsza wizyta → Start). */
 export const DEFAULT_VIEW: ViewId = 'charts';

@@ -10,7 +10,7 @@ export function hip3TapeFilters(coin: string): readonly number[] {
 }
 
 /** Odczyt wstecz z istniejącej taśmy, bez kopiowania pełnej historii. */
-export function visibleExecutions(tape: Tape, through: number, minUsd: number, limit: number, from = -Infinity, side?: Side): Array<TradeRow & { usd: number }> {
+export function visibleExecutions(tape: Tape, through: number, minUsd: number, limit: number, from = -Infinity, side?: Side, price?: number): Array<TradeRow & { usd: number }> {
   const out: Array<TradeRow & { usd: number }> = [];
   for (const minute of tape.minutes().reverse()) {
     if (minute > through) continue;
@@ -20,7 +20,7 @@ export function visibleExecutions(tape: Tape, through: number, minUsd: number, l
       if (out.length >= limit) return out;
       if (c.t[i] < from) return out;
       const usd = c.px[i] * c.sz[i];
-      if (c.t[i] > through || usd < minUsd || (side !== undefined && c.side[i] !== side)) continue;
+      if (c.t[i] > through || usd < minUsd || (side !== undefined && c.side[i] !== side) || (price !== undefined && c.px[i] !== price)) continue;
       out.push({ t: c.t[i], px: c.px[i], sz: c.sz[i], side: c.side[i], tid: c.tid[i], usd });
     }
   }
