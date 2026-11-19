@@ -113,6 +113,8 @@ export const DESK_MARKETS: readonly DeskMarket[] = [
 /** Rynki włączone w aplikacji, w kolejności konfiguracji. */
 export const ENABLED_MARKETS: readonly DeskMarket[] = DESK_MARKETS.filter((m) => m.enabled);
 
+export const isHip3DeskMarket = (coin: string): boolean => coin === 'xyz:GOLD' || coin === 'xyz:SP500';
+
 /** Wpis konfiguracji dla rynku Hyperliquid; null poza listą. */
 export function deskMarketOf(coin: string): DeskMarket | null {
   return DESK_MARKETS.find((m) => m.coin === coin) ?? null;

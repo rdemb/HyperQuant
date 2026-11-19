@@ -23,6 +23,8 @@ import { tpoInterval } from './core/tpo';
 import { VENUE_GROUPS } from './core/stats';
 import { type HideKey, type PaneKey, ProChartController, type ScaleState } from './chart/controller';
 import { DomLadder, PickCard, TapePanel, compact } from './chart/FlowPanels';
+import { Hip3PublicFlow, type Hip3FlowTab } from '../../views/flow/Hip3PublicFlow';
+import { isHip3DeskFlow } from '../../views/flow/hip3Flow';
 import { HoverSignal, Legend } from './chart/Legend';
 import { LOT_FLOOR, type LiquidityPick } from './chart/liquidity';
 import { type FrameQuality, IMAGE_FAILED, brandedScreenshot, downloadCanvas, fileStamp } from './chart/screenshot';
@@ -298,6 +300,8 @@ export const ProChart: React.FC<{
   const [fullscreen, setFullscreen] = useState(false);
   const narrow = useSyncExternalStore(subscribeNarrow, isNarrow);
   const [tab, setTab] = useState<PhoneTab>('chart');
+  const [hip3FlowTab, setHip3FlowTab] = useState<Hip3FlowTab>('tape');
+  const hip3FlowRef = useRef<HTMLDivElement>(null);
   // Telefon: tryb skupienia (dotknięcie pustego miejsca wykresu chowa wszystko poza wykresem i dolnym menu, drugie
   // przywraca) i telefon poziomo (sam wykres na cały ekran)
   const [focus, setFocus] = useState(false);
@@ -407,6 +411,14 @@ export const ProChart: React.FC<{
   const smcVisible = settings.indicators.some(i => i.id === 'smc' && i.visible);
   const smcProfileOn = smcVisible && supportsSmcContactDelta(store.coin);
   const mobileSmcProfile = narrow && smcProfileOn;
+  const inlineHip3Flow = (narrow || inReplay) && isHip3DeskFlow(store.coin);
+  const openPhoneTab = (id: PhoneTab) => {
+    if (inlineHip3Flow && (id === 'tape' || id === 'dom')) {
+      setTab('chart');
+      setHip3FlowTab(id);
+      hip3FlowRef.current?.scrollIntoView({ block: 'start' });
+    } else setTab(id);
+  };
   const smcContactZone = smcProfileOn && smcSelected && /^(ob|fvg):/.test(smcSelected) ? smcSelected : null;
   const smcProfiles = smcContactZone !== null
     ? ctrlRef.current?.smcObservations()?.contactProfiles(smcContactZone, smcReplay, smcContact, smcCompare) ?? null
@@ -1132,7 +1144,7 @@ export const ProChart: React.FC<{
                   type="button"
                   role="tab"
                   aria-selected={tab === t.id}
-                  onClick={() => setTab(t.id)}
+                  onClick={() => openPhoneTab(t.id)}
                   className={`h-11 px-2.5 rounded-lg border text-xs font-medium whitespace-nowrap transition-colors duration-150 ${
                     tab === t.id ? 'bg-surface-3 text-ink-1 border-line-strong' : 'text-ink-3 border-transparent hover:text-ink-1'
                   }`}
@@ -1257,7 +1269,7 @@ export const ProChart: React.FC<{
           <DrawList tools={tools} />
           <DrawHint tools={tools} />
           <LoadOverlay series={series} onRetry={() => void series.load(true)} />
-          {narrow && tab === 'tape' && (
+          {narrow && !inlineHip3Flow && tab === 'tape' && (
             <TapePanel
               store={store}
               settings={settings}
@@ -1270,7 +1282,7 @@ export const ProChart: React.FC<{
               onClose={() => setTab('chart')}
             />
           )}
-          {narrow && tab === 'dom' && <DomLadder store={store} className="absolute inset-0 z-20" />}
+          {narrow && !inlineHip3Flow && tab === 'dom' && <DomLadder store={store} className="absolute inset-0 z-20" />}
           {narrow && tab === 'numbers' && (
             <div className="absolute inset-0 z-20 flex flex-col bg-surface-1">
               {phoneNumbersTop && <div className="shrink-0 p-1.5 border-b border-line">{phoneNumbersTop}</div>}
@@ -1437,6 +1449,9 @@ export const ProChart: React.FC<{
       {mobileSmcProfile && <MobileSmcRangeProfile id={smcTapeId} info={smcRangeInfo} expanded={smcTapeExpanded}
         onToggle={() => setSmcTapeExpanded(expanded => !expanded)} replayAt={replayAt}
         details={<div className="space-y-2">{smcDetails}{smcContactControls}{smcActions}</div>} />}
+      {inlineHip3Flow && !chartOnly && !fullscreen && <div ref={hip3FlowRef} className="scroll-mt-28">
+        <Hip3PublicFlow key={store.coin} store={store} tab={hip3FlowTab} onTab={setHip3FlowTab} mobile />
+      </div>}
     </div>
   );
 };

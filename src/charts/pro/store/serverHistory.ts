@@ -1,4 +1,6 @@
 import { DATA_BASE } from '../../../state/usePublished';
+import { acceptHistoryIndex, publishedHistoryRange } from '../../../state/historyAvailability';
+import { isHip3DeskMarket } from '../../../config/deskMarkets';
 import { HIST_HOUR_MS, HIST_PART_MS, HIST_PUBLISH_LAG_MS, type HistFrame, type HistoryIndex, type IdScope, decodeBook, decodeTrades, historyBaseOf, historyPath, isHistoryIndex } from '../../../utils/tapeHistory';
 import type { BookFrame } from '../core/book';
 import { DAY } from '../core/time';
@@ -95,6 +97,10 @@ export class ServerHistory {
     this.timer = null;
   }
 
+  publishedRange(): ReturnType<typeof publishedHistoryRange> {
+    return publishedHistoryRange(this.index, this.store.coin);
+  }
+
   /** Jeden przebieg: pliki z brakującym czasem, od najnowszych. */
   async round(): Promise<void> {
     if (this.busy) {
@@ -109,7 +115,7 @@ export class ServerHistory {
         const want = this.wanted(Math.max(this.from, now - RETENTION_MS), now);
         if (want.length === 0) break;
         const index = await this.loadIndex(now);
-        if (!index) break;
+        if (!index?.markets[this.store.coin]) break;
         const jobs = want.flatMap((u) => this.resolve(u, index, now));
         let i = 0;
         const worker = async () => {
@@ -154,8 +160,9 @@ export class ServerHistory {
       if (isHistoryIndex(j)) {
         this.index = j;
         this.indexAt = now;
-        // Rynek bez nagrania — nie pytamy dalej
-        if (!j.markets[this.store.coin]) this.off = true;
+        if (this.base === HISTORY_BASE) acceptHistoryIndex(j);
+        // Kontrakty HIP-3 mogą pojawić się w następnym indeksie, gdy wystartuje ich nagrywanie.
+        if (!j.markets[this.store.coin] && !isHip3DeskMarket(this.store.coin)) this.off = true;
       }
     } catch {
       // Następny przebieg spróbuje ponownie

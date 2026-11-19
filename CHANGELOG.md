@@ -4,6 +4,12 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Taśma i DOM kontraktów HIP-3 (2026-11-19)
+<!-- co-nowego: grupa=wykres | pl=Publiczne wykonania i głębokość GOLD oraz S&P 500 | en=Public trades and depth for GOLD and S&P 500 -->
+- W sesji kontrakty GOLD i S&P 500 mają panel pojedynczych wykonań, arkusza i danych kontraktu. Na telefonie jest pod wykresem. Stan i data odczytu rozróżniają dostępne migawki, zapis w przeglądarce i publiczne archiwum.
+- DOM pokazuje liczbę zleceń na każdym widocznym poziomie. Panel rynku prowadzi do powtórki, gdy indeks zawiera nagranie.
+- Taśma pokazuje obrót, agresywne kupno i sprzedaż, VWAP oraz profil cen dla okien 1, 5 i 15 minut z pełnym pokryciem. DOM pokazuje nierównowagę pierwszych pięciu poziomów. Rozliczony funding ma datę i oznaczenie wieku odczytu.
+
 ### Profil SMC pod wykresem na telefonie (2026-11-19)
 <!-- co-nowego: grupa=wykres | pl=Więcej miejsca na świece na telefonie | en=More room for candles on phones -->
 - Mobilny profil BTC wyświetla bieżący przedział pod wykresem. Rozwinięcie pokazuje wszystkie widoczne przedziały oraz ślad taśmy i nie zmienia wymiarów wykresu.

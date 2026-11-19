@@ -1,10 +1,10 @@
 @import "tailwindcss";
 
-/* Na wykresie z profilem SMC wejście do Załogi zostaje w nagłówku. Pływający przycisk może przykryć profil lub pasek. */
-body:has([data-smc-range-profile]) [data-dok-launcher] {
+/* Przy profilu lub mobilnej taśmie Załoga jest dostępna z paska aplikacji. Pływający przycisk przykrywał dane. */
+body:has([data-smc-range-profile], [data-hip3-mobile]) [data-dok-launcher] {
   visibility: hidden;
 }
-body:has([data-smc-range-profile]) [data-dok]:not(:has([data-wyspa-flash])) {
+body:has([data-smc-range-profile], [data-hip3-mobile]) [data-dok]:not(:has([data-wyspa-flash])) {
   pointer-events: none;
 }
 

@@ -1,3 +1,5 @@
+import { historyMarketDir } from './tapeHistory.ts';
+
 /**
  * Profil doby UTC z nagranej taśmy (bez importów zewnętrznych; uruchamiany także natywnie przez Node 24 w rejestratorze).
  *
@@ -61,7 +63,7 @@ const pad = (x: number) => String(x).padStart(2, '0');
 /** Ścieżka pliku w gałęzi historii: `BTC/2026-10-31/profile.json.gz`. */
 export function dayProfilePath(coin: string, day: number): string {
   const d = new Date(day);
-  return `${coin}/${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}/profile.json.gz`;
+  return `${historyMarketDir(coin)}/${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}/profile.json.gz`;
 }
 
 /**
