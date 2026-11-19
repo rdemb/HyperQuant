@@ -59,6 +59,7 @@ const LessonsView = lazy(() => import('../views/LessonsView'));
 const SourcesView = lazy(() => import('../views/SourcesView'));
 const AgentsView = lazy(() => import('../views/agents/AgentsView'));
 const MarketsView = lazy(() => import('../views/MarketsView'));
+const OrderFlowView = lazy(() => import('../views/flow/OrderFlowView'));
 
 export type NavItem = { id: ViewId; label: string; icon: React.ReactNode };
 
@@ -278,7 +279,7 @@ const ViewFallback = () => (
 );
 
 // Bez globalnego przełącznika interwału: widoki z własnymi interwałami (wykresy faz dnia, Lekcje) i bez wykresów (Agenci AI)
-export const OWN_INTERVALS: ViewId[] = ['before', 'charts', 'after', 'lessons', 'agents', 'markets'];
+export const OWN_INTERVALS: ViewId[] = ['before', 'charts', 'after', 'lessons', 'agents', 'markets', 'orderflow'];
 
 /** Zmienna CSS z wysokością przypiętego nagłówka aplikacji (px); widoki używają jej w klasie `top-[var(--hq-header-h,0px)]`. */
 export const HEADER_H_VAR = '--hq-header-h';
@@ -362,6 +363,7 @@ export const ViewOutlet: React.FC<{ startedAt: number }> = ({ startedAt }) => {
           {view === 'sources' && <SourcesView />}
           {view === 'agents' && <AgentsView />}
           {view === 'markets' && <MarketsView />}
+          {view === 'orderflow' && <OrderFlowView />}
         </>
       )}
     </Suspense>
@@ -599,6 +601,7 @@ export const AppShell: React.FC = () => {
   const wiecejId = useId();
   const transition = reduce ? { initial: { opacity: 0 }, animate: { opacity: 1 }, exit: { opacity: 0 } } : VIEW_TRANSITION;
   const replay = useSyncExternalStore(subscribeHash, inReplay) && view === 'charts';
+  const orderFlow = view === 'orderflow';
   const NowyWidok = NOWE_WIDOKI[view];
 
   const go = useCallback(
@@ -694,7 +697,7 @@ export const AppShell: React.FC = () => {
               </span>
             </ViewLink>
             {/* Cena i liczby rynku; w powtórce W sesji bez ceny na żywo */}
-            <div className="flex-1 min-w-0">{!replay && <TickerInline />}</div>
+            <div className="flex-1 min-w-0">{!replay && !orderFlow && <TickerInline />}</div>
             <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
               <button
                 type="button"
@@ -726,9 +729,9 @@ export const AppShell: React.FC = () => {
                   </span>
                 )}
               </button>
-              <Badge tone={STATUS_TONE[feed.dataStatus]} title={STATUS_TITLE[feed.dataStatus]} testId="data-status">
+              {!orderFlow && <Badge tone={STATUS_TONE[feed.dataStatus]} title={STATUS_TITLE[feed.dataStatus]} testId="data-status">
                 {feed.dataStatus}
-              </Badge>
+              </Badge>}
               {/* Globalny interwał tylko w widokach bez własnego (wykresy faz dnia, Lekcje, Rynki i Agenci mają swój albo żaden) */}
               {!OWN_INTERVALS.includes(view) && (
                 <div className="hidden 2xl:block">

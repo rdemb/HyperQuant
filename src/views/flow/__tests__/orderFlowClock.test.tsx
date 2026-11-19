@@ -14,6 +14,16 @@ vi.mock('react', async (importOriginal) => {
 const start = Date.UTC(2026, 10, 19, 11);
 const markets = [['BTC', 64_000], ['xyz:GOLD', 3_700], ['xyz:SP500', 7_400]] as const;
 
+it('głęboki link ustawia rynek i wykres bez dodatkowego main, motywu lub obcych odczytów', () => {
+  vi.stubGlobal('window', { location: { hash: '#orderflow?m=xyz%3AGOLD' } });
+  const markup = renderToStaticMarkup(<OrderFlowView />);
+  expect(markup).toContain('id="orderflow-title"');
+  expect(markup).toContain('href="#charts?m=xyz%3AGOLD"');
+  expect(markup).toContain('href="#orderflow?m=xyz%3AGOLD" aria-current="page"');
+  expect(markup).toContain('data-of-market="xyz:GOLD"');
+  expect(markup).not.toMatch(/<main|data-theme=|data-of-market="BTC"|data-of-trade-price=/);
+});
+
 afterEach(() => {
   for (const [coin] of markets) dropStore(coin);
   vi.restoreAllMocks();
