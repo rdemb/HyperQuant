@@ -4,6 +4,10 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Profil SMC pod wykresem na telefonie (2026-11-19)
+<!-- co-nowego: grupa=wykres | pl=Więcej miejsca na świece na telefonie | en=More room for candles on phones -->
+- Mobilny profil BTC wyświetla bieżący przedział pod wykresem. Rozwinięcie pokazuje wszystkie widoczne przedziały oraz ślad taśmy i nie zmienia wymiarów wykresu.
+
 ### Ślad taśmy w profilu SMC BTC (2026-11-18)
 <!-- co-nowego: grupa=wykres | pl=Ostatnie 30 sekund taśmy przy cenach w profilu SMC BTC | en=The last 30 seconds of trades by price in the BTC SMC profile -->
 - Przy cenach trzy kolejne okna po 10 sekund pokazują nominał agresywnego kupna i sprzedaży. Pod wykresem widać, które okna są niepełne.

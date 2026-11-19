@@ -1,5 +1,5 @@
 import { expect, it, vi } from 'vitest';
-import { rangeProfileWidth, SmcRangeProfileLayer, type RangeProfileInfo } from '../chart/smcRangeProfileLayer';
+import { RANGE_PROFILE_WIDTH, SmcRangeProfileLayer, type RangeProfileInfo } from '../chart/smcRangeProfileLayer';
 import { PRO } from '../chart/theme';
 import { Coverage } from '../core/coverage';
 import { Tape, type TradeRow } from '../core/tape';
@@ -7,18 +7,17 @@ import { Tape, type TradeRow } from '../core/tape';
 const start = 120_000;
 const price = 64_670;
 
-function paint(trades: TradeRow[], compact = false) {
+function paint(trades: TradeRow[]) {
   const tape = new Tape();
   tape.insert(trades);
   const span = { from: start, to: trades[trades.length - 1].t + 1 };
   const layer = new SmcRangeProfileLayer(tape, new Coverage([[span.from, span.to]]), () => span, true, () => [], new Coverage(), () => span.to);
   // The chart spans 18 USD on 180 pixels; both 64,670 and 64,671 fit in one row.
-  const width = rangeProfileWidth(compact);
   const output: { info: RangeProfileInfo | null } = { info: null };
   layer.onInfo = info => { output.info = info; };
-  layer.setLayout(width, 0);
+  layer.setLayout({ kind: 'axis', inset: 0 });
   attach(layer);
-  return { ...render(layer, width), info: output.info };
+  return { ...render(layer), info: output.info };
 }
 
 function attach(layer: SmcRangeProfileLayer) {
@@ -33,7 +32,7 @@ function attach(layer: SmcRangeProfileLayer) {
   layer.updateAllViews();
 }
 
-function render(layer: SmcRangeProfileLayer, width: number) {
+function render(layer: SmcRangeProfileLayer) {
   const deltaWidths: number[] = [];
   const fills: { x: number; y: number; width: number; height: number; color: string }[] = [];
   const texts: { value: string; x: number; y: number }[] = [];
@@ -47,7 +46,7 @@ function render(layer: SmcRangeProfileLayer, width: number) {
     },
   };
   const renderer = layer.priceAxisPaneViews()[0].renderer()!;
-  const target = { useMediaCoordinateSpace: (draw: (scope: object) => void) => draw({ context, mediaSize: { width, height: 180 } }) };
+  const target = { useMediaCoordinateSpace: (draw: (scope: object) => void) => draw({ context, mediaSize: { width: RANGE_PROFILE_WIDTH, height: 180 } }) };
   renderer.draw(target as Parameters<typeof renderer.draw>[0]);
   return { labels: texts.slice(0, 2).map(t => t.value), deltaWidths: deltaWidths.filter(width => width > 0), texts, fills };
 }
@@ -62,11 +61,11 @@ it.each([[1, 0], [-1, 0], [1, 60_000], [-1, 60_000]] as const)('plots a neutral 
   expect(paint(fills)).toMatchObject({ labels: ['388', '0'], deltaWidths: [] });
 });
 
-it.each([false, true])('zachowuje oba kierunki w śladzie przy delcie 0 (kompakt %s)', compact => {
+it('zachowuje oba kierunki w śladzie przy delcie 0', () => {
   const view = paint([
     { t: start, px: price, sz: 1, side: 1, tid: 1 },
     { t: start + 1, px: price, sz: 1, side: -1, tid: 2 },
-  ], compact);
+  ]);
   const sell = view.fills.find(f => f.height === 3 && f.color === PRO.sell);
   const buy = view.fills.find(f => f.height === 3 && f.color === PRO.buy);
   expect(view.labels).toEqual(['129,3K', '0']);
@@ -87,12 +86,11 @@ it.each([false, true])('przesuwa ślad z zegarem i respektuje pauzę oraz cofni�
       { t: start + 31_000, px: price, sz: 1, side: -1, tid: 2 },
     ]);
     let now = start + 29_500, playing = true;
-    const width = rangeProfileWidth(true);
     const layer = new SmcRangeProfileLayer(tape, new Coverage([[start, Infinity]]), () => ({ from: start, to: now }),
       replay, () => [], new Coverage(), () => now, () => playing);
-    layer.setLayout(width, 0);
+    layer.setLayout({ kind: 'axis', inset: 0 });
     attach(layer);
-    const sides = () => render(layer, width).fills.filter(f => f.height === 3 && (f.color === PRO.buy || f.color === PRO.sell)).map(f => f.color);
+    const sides = () => render(layer).fills.filter(f => f.height === 3 && (f.color === PRO.buy || f.color === PRO.sell)).map(f => f.color);
     expect(sides()).toEqual([PRO.buy]);
     now += 600;
     vi.advanceTimersByTime(600);
@@ -108,7 +106,7 @@ it.each([false, true])('przesuwa ślad z zegarem i respektuje pauzę oraz cofni�
     expect(sides()).toEqual([PRO.buy]);
     layer.setTraceVisible(false);
     expect(sides()).toEqual([]);
-    expect(render(layer, width).labels[1]).not.toBe('0');
+    expect(render(layer).labels[1]).not.toBe('0');
     layer.detached();
     expect(vi.getTimerCount()).toBe(0);
   } finally {
@@ -125,7 +123,7 @@ it.each([1, -1] as const)('keeps a real signed difference of 0.00001 USD (first 
   expect(result.deltaWidths).toHaveLength(1);
 });
 
-it.each([false, true])('draws two aligned numbers on a plain background with bars below (compact %s)', compact => {
+it('draws two aligned numbers on a plain background with bars below', () => {
   const trade = (tid: number, px: number, sz: number, side: TradeRow['side']): TradeRow =>
     ({ t: start + tid, tid, px, sz, side });
   const { fills, texts, info } = paint([
@@ -134,8 +132,8 @@ it.each([false, true])('draws two aligned numbers on a plain background with bar
     trade(4, price, .02, -1),
     trade(5, price + 8, .01, 1), trade(6, price + 8, .01, -1),
     trade(7, price, .01, 1), trade(8, price, .01, -1),
-  ], compact);
-  expect(fills[0]).toEqual({ x: 0, y: 0, width: rangeProfileWidth(compact), height: 180, color: PRO.bg });
+  ]);
+  expect(fills[0]).toEqual({ x: 0, y: 0, width: RANGE_PROFILE_WIDTH, height: 180, color: PRO.bg });
   expect(texts.map(t => t.value)).toEqual(['2,6K', '0', '3,2K', '−647', 'Obrót USD', 'Δ USD']);
   expect(texts[0].x).toBe(texts[2].x);
   expect(texts[1].x).toBe(texts[3].x);

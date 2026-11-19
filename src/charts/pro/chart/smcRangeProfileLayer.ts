@@ -16,6 +16,7 @@ export interface RangeProfileInfo extends ProfileSpan {
   coverage: number;
   tapeWindows: TapeWindow[];
   active: (PriceBucket & { visits: VisitSummary; reaction: PriceReaction }) | null;
+  panel: { rows: ProfileDisplayRow[]; trace: ReturnType<typeof readRangeTape> | null } | null;
 }
 
 const REFRESH_MS = 250;
@@ -24,15 +25,20 @@ const HEADER_PX = 20;
 const ROW_PX = 26;
 const LABEL_MARGIN_PX = 10;
 const TRACE_BOTTOM_PX = 16;
-export const rangeProfileWidth = (compact: boolean): number => compact ? 112 : 144;
+export const RANGE_PROFILE_WIDTH = 144;
 
-interface DrawRow extends PriceBucket {
-  top: number;
-  bottom: number;
-  labelY: number;
+export interface ProfileDisplayRow extends PriceBucket {
   turnoverUsd: number;
   deltaUsd: number;
 }
+
+interface DrawRow extends ProfileDisplayRow {
+  top: number;
+  bottom: number;
+  labelY: number;
+}
+
+type ProfileLayout = { kind: 'off' } | { kind: 'axis'; inset: number } | { kind: 'panel' };
 
 export function rangeProfileLabel(usd: number | null, signed: boolean): string {
   if (usd === null || !Number.isFinite(usd)) return DASH;
@@ -84,8 +90,7 @@ type DrawTape = ReturnType<typeof readRangeTape> & {
 
 export class SmcRangeProfileLayer implements ISeriesPrimitive<Time> {
   private adapter: SeriesAttachedParameter<Time> | null = null;
-  private width = 0;
-  private inset = 0;
+  private layout: ProfileLayout = { kind: 'off' };
   private headerTop = 0;
   private cutoff: number | null = null;
   private updated = -Infinity;
@@ -118,10 +123,11 @@ export class SmcRangeProfileLayer implements ISeriesPrimitive<Time> {
     this.adapter = null;
   }
 
-  setLayout(width: number, inset: number): void {
-    if (this.width === width && this.inset === inset) return;
-    this.width = width;
-    this.inset = inset;
+  setLayout(layout: ProfileLayout): void {
+    const previous = this.layout;
+    if (previous.kind === layout.kind && (previous.kind !== 'axis' || (layout.kind === 'axis' && previous.inset === layout.inset))) return;
+    this.layout = layout;
+    this.updated = -Infinity;
     this.adapter?.requestUpdate();
   }
 
@@ -185,7 +191,7 @@ export class SmcRangeProfileLayer implements ISeriesPrimitive<Time> {
 
   updateAllViews(): void {
     const adapter = this.adapter;
-    const range = this.width > 0 && adapter ? this.span() : null;
+    const range = this.layout.kind !== 'off' && adapter ? this.span() : null;
     const span = range && { from: range.from, to: Math.min(range.to, this.cutoff ?? Infinity) };
     const height = adapter?.chart.paneSize(0).height ?? 0;
     const top = adapter?.series.coordinateToPrice(0);
@@ -201,10 +207,10 @@ export class SmcRangeProfileLayer implements ISeriesPrimitive<Time> {
       }
       return;
     }
-    const compact = this.width <= rangeProfileWidth(true);
+    const compact = this.layout.kind === 'panel';
     const rowLimit = Math.min(compact ? 9 : 14, Math.floor((height - this.headerTop - HEADER_PX) / ROW_PX));
     const step = rangeProfileStep(Math.min(top, bottom), Math.max(top, bottom), rowLimit);
-    const geometry = `${this.width}:${this.headerTop}:${height}:${top}:${bottom}`;
+    const geometry = `${this.layout.kind}:${this.headerTop}:${height}:${top}:${bottom}`;
     const now = performance.now();
     const prior = this.data;
     if (prior?.span.from === span.from && prior.step === step && now - this.updated < REFRESH_MS &&
@@ -242,51 +248,53 @@ export class SmcRangeProfileLayer implements ISeriesPrimitive<Time> {
     this.data = { span, step, geometry, rows };
     this.updated = now;
     const coverage = profile.spanMs > 0 ? Math.floor(1000 * profile.coveredMs / profile.spanMs) / 10 : 0;
-    const info = { ...span, step, levels: rows.length, coverage, active, tapeWindows };
+    const panel = compact ? { rows: [...rows].sort((a, b) => b.low - a.low), trace: this.trace } : null;
+    const info = { ...span, step, levels: rows.length, coverage, active, tapeWindows, panel };
     const stateKey = (side: PriceReaction['buy']) =>
       `${side.mean?.toFixed(2)}:${side.totalUsd ? (100 * side.matchedUsd / side.totalUsd).toFixed(1) : '-'}:${side.pendingUsd > 0}:${side.missingUsd > 0}`;
     const activeKey = active && `${active.low}:${active.high}/${active.visits.count}:${active.visits.deltaMicros}:${active.visits.partial}/${stateKey(active.reaction.buy)}/${stateKey(active.reaction.sell)}`;
-    const key = `${info.from}:${Math.floor(info.to / (this.replay ? 1000 : 60000))}:${step}:${info.levels}:${coverage}:${activeKey}:${tapeWindows.map(window => window.coverage).join(',')}`;
+    const panelKey = panel && `${panel.rows.map(({ low, high, turnoverUsd, deltaUsd }) => `${low}:${high}:${turnoverUsd}:${deltaUsd}`).join(',')}/${this.trace?.updated}`;
+    const key = `${info.from}:${Math.floor(info.to / (this.replay ? 1000 : 60000))}:${step}:${info.levels}:${coverage}:${activeKey}:${tapeWindows.map(window => window.coverage).join(',')}:${panelKey}`;
     if (key === this.infoKey) return;
     this.infoKey = key;
     this.onInfo?.(info);
   }
 
   private readonly axis: readonly IPrimitivePaneView[] = [{ zOrder: () => 'normal', renderer: () => ({
-    draw: (target) => target.useMediaCoordinateSpace(({ context, mediaSize }) =>
-      this.draw(context, mediaSize.width - this.inset, mediaSize.height)),
+    draw: (target) => target.useMediaCoordinateSpace(({ context, mediaSize }) => {
+      if (this.layout.kind === 'axis') this.draw(context, mediaSize.width - this.layout.inset, mediaSize.height);
+    }),
   }) }];
 
-  priceAxisPaneViews(): readonly IPrimitivePaneView[] { return this.axis; }
+  priceAxisPaneViews(): readonly IPrimitivePaneView[] { return this.layout.kind === 'axis' ? this.axis : []; }
 
   private draw(ctx: CanvasRenderingContext2D, right: number, height: number): void {
-    const left = right - this.width;
-    if (!this.width || left < 0 || !this.adapter || height <= 0) return;
+    const left = right - RANGE_PROFILE_WIDTH;
+    if (left < 0 || !this.adapter || height <= 0) return;
     const rows = this.data?.rows ?? [];
     let maxVolume = 0, maxDelta = 0;
     for (const row of rows) {
       maxVolume = Math.max(maxVolume, row.turnoverUsd);
       maxDelta = Math.max(maxDelta, Math.abs(row.deltaUsd));
     }
-    const compact = this.width <= rangeProfileWidth(true);
     const divider = Math.round((left + right) / 2);
     const zero = Math.round((divider + right) / 2);
     const gutter = 5;
     const columnWidth = divider - left - 2 * gutter;
     const halfDelta = right - zero - gutter;
-    const traceCellWidth = (this.width - 2 * gutter) / 3;
+    const traceCellWidth = (RANGE_PROFILE_WIDTH - 2 * gutter) / 3;
     const traceHalf = traceCellWidth / 2 - 2;
     const traceScale = Number(this.trace?.maxSide ?? 0n);
     ctx.save();
     ctx.beginPath();
-    ctx.rect(left, 0, this.width, height);
+    ctx.rect(left, 0, RANGE_PROFILE_WIDTH, height);
     ctx.clip();
     ctx.fillStyle = PRO.bg;
-    ctx.fillRect(left, 0, this.width, height);
+    ctx.fillRect(left, 0, RANGE_PROFILE_WIDTH, height);
     ctx.fillStyle = rgba(PRO.ink2, .12);
     for (const x of [left, divider]) ctx.fillRect(x, 0, 1, height);
-    ctx.fillRect(left, this.headerTop + HEADER_PX - 1, this.width, 1);
-    ctx.font = `600 ${compact ? 11 : 12}px ${MONO}`;
+    ctx.fillRect(left, this.headerTop + HEADER_PX - 1, RANGE_PROFILE_WIDTH, 1);
+    ctx.font = `600 12px ${MONO}`;
     ctx.textBaseline = 'middle';
     ctx.textAlign = 'right';
     for (const row of rows) {

@@ -1,5 +1,5 @@
 import { expect, it, vi } from 'vitest';
-import { rangeProfileLabel, rangeProfileRows, rangeProfileWidth, SmcRangeProfileLayer } from '../chart/smcRangeProfileLayer';
+import { rangeProfileLabel, rangeProfileRows, SmcRangeProfileLayer } from '../chart/smcRangeProfileLayer';
 import { Coverage } from '../core/coverage';
 import { Tape } from '../core/tape';
 
@@ -65,7 +65,7 @@ it('closes an unmatched window on the live clock and reopens it when replay move
       false, () => [], new Coverage(), () => now);
     const info = vi.fn();
     layer.onInfo = info;
-    layer.setLayout(rangeProfileWidth(false), 0);
+    layer.setLayout({ kind: 'axis', inset: 0 });
     layer.attached({
       chart: { paneSize: () => ({ width: 500, height: 200 }) },
       series: { coordinateToPrice: (y: number) => 110 - y / 10, priceToCoordinate: (p: number) => (110 - p) * 10 },
