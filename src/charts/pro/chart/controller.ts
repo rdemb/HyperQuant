@@ -60,7 +60,7 @@ import { IvbLayer, type IvbStyle } from './ivbLayer';
 import { type SmcHigherFeed, SmcLayer, type SmcStyle } from './smcLayer';
 import { TAG_GAP_PX } from './tagColumn';
 import { contactProfileWidth, type ContactProfileView } from './smcContactProfile';
-import { rangeProfileWidth, SmcRangeProfileLayer, type RangeProfileInfo } from './smcRangeProfileLayer';
+import { RANGE_PROFILE_WIDTH, SmcRangeProfileLayer, type RangeProfileInfo } from './smcRangeProfileLayer';
 import { supportsSmcContactDelta } from '../../../utils/marketCaps';
 import { pickHtf } from '../core/smcMtf';
 import type { Candle } from '../hl/parse';
@@ -742,12 +742,13 @@ export class ProChartController {
    */
   private applyDomInset(): void {
     const ladder = this.domShown() ? DOM_W_PX + 8 : 0;
-    const rangeWidth = this.smcRangeOn(this.settings) ? rangeProfileWidth(this.phone) : 0;
+    const rangeOn = this.smcRangeOn(this.settings);
+    const rangeWidth = rangeOn && !this.phone ? RANGE_PROFILE_WIDTH : 0;
     const axisWidth = rangeWidth || this.smcContactWidth ? Math.max(70, AXIS_W_PX) : AXIS_W_PX;
     const extra = ladder + this.smcContactWidth + rangeWidth;
     this.chart.priceScale('right').applyOptions({ minimumWidth: extra ? axisWidth + extra : 0 });
     this.smc.setContactAxisInset(ladder);
-    this.smcRange.setLayout(rangeWidth, ladder + this.smcContactWidth);
+    this.smcRange.setLayout(!rangeOn ? { kind: 'off' } : this.phone ? { kind: 'panel' } : { kind: 'axis', inset: ladder + this.smcContactWidth });
     const px = 0;
     this.overlay.setRightInset(px);
     this.zones.setRightInset(px);
