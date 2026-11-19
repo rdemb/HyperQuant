@@ -8,6 +8,7 @@ import { deskMarketOf } from '../../config/deskMarkets';
 import { locale, tr } from '../../i18n';
 import { useNow } from '../../shell/dzien';
 import { subscribeHash } from '../../state/route';
+import { SectionHeading } from '../../ui';
 import { DASH, fmtCompact, fmtFixed, fmtNum, fmtSigned } from '../../ui/format';
 import { bookMetrics, hip3TapeFilters, isHip3DeskFlow, visibleExecutions } from './hip3Flow';
 import { DeltaMomentCard } from './DeltaMomentCard';
@@ -64,11 +65,11 @@ function SessionSummary({
         </div>
       </div>
       <div>
-        <div className="of-label">{tr('Widoczne paliwo · po 5 poziomów', 'Visible depth · 5 levels each')}</div>
-        <div className="of-metric" data-of-depth>
-          <span className="of-buy">{amount(bidDepth)}</span><span className="of-unit"> / </span>
-          <span className="of-sell">{amount(askDepth)}</span><span className="of-unit"> USD</span>
-        </div>
+        <div className="of-label">{tr('Głębokość · po 5 poziomów · USD', 'Depth · 5 levels each · USD')}</div>
+        <dl className="of-depth-pair" data-of-depth>
+          <div><dt>Bid</dt><dd className="of-buy">{amount(bidDepth)}</dd></div>
+          <div><dt>Ask</dt><dd className="of-sell">{amount(askDepth)}</dd></div>
+        </dl>
         {bidShare !== null ? (
           <div className="of-balance" aria-label={tr(`Kupno ${Math.round(bidShare)}% widocznej głębokości`, `Bids are ${Math.round(bidShare)}% of visible depth`)}>
             <span style={{ width: `${bidShare}%` }} />
@@ -342,12 +343,13 @@ function FlowMarket({ coin, pro }: { coin: string; pro: boolean }) {
   return (
     <div data-of-market={coin}>
       <div className="of-status">
-        <span className={isLive && bookFresh ? 'of-buy' : 'of-muted'} data-of-status>
+        <span className={isLive && bookFresh ? 'of-status-live' : undefined} data-of-status>
           <span className="of-status-dot" aria-hidden="true" />
+          <strong>{deskMarketOf(coin)?.label ?? coin}</strong>{' · '}
           {isLive && bookFresh ? 'Hyperliquid · LIVE'
             : frame && bookAge !== null && !bookFresh
               ? tr(`Ostatnia migawka arkusza · ${Math.floor(bookAge / 1000)} s temu`, `Last book snapshot · ${Math.floor(bookAge / 1000)} s ago`)
-              : tr('Hyperliquid · brak świeżego kompletu danych', 'Hyperliquid · waiting for a fresh book and tape')}
+              : tr('Czekam na świeży arkusz i taśmę', 'Waiting for fresh book and tape')}
         </span>
         {Number.isFinite(store.tape.lastPx) && <span>{tr('Ostatnie wykonanie', 'Last trade')} <strong>{store.fmtPx(store.tape.lastPx)}</strong></span>}
       </div>
@@ -375,27 +377,23 @@ export default function OrderFlowView() {
   const coin = useSyncExternalStore(subscribeHash, readHash);
   const [pro, setPro] = useState(false);
   return (
-    <main className="of-desk" data-theme="dark">
-      <div className="of-shell">
-        <header className="of-header">
-          <div className="of-heading">
-            <a href={`#charts?m=${encodeURIComponent(coin)}`} className="of-chart-link"><ChevronLeft size={16} />{tr('Wykres', 'Chart')}</a>
-            <h1>Order Flow</h1>
-          </div>
-          <div className="of-controls">
-            <nav aria-label={tr('Rynki order flow', 'Order flow markets')}>
-              {ORDER_FLOW_MARKETS.map(market => (
-                <a key={market.coin} href={`#orderflow?m=${encodeURIComponent(market.coin)}`} aria-current={market.coin === coin ? 'page' : undefined}>{market.label}</a>
-              ))}
-            </nav>
-            <button type="button" className="of-mode" aria-pressed={pro} onClick={() => setPro(value => !value)}><SlidersHorizontal size={15} />Pro</button>
-          </div>
-        </header>
-        <FlowMarket key={coin} coin={coin} pro={pro} />
-        <a className="of-link" href="https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/websocket/subscriptions" target="_blank" rel="noreferrer">
-          {tr('Źródło danych Hyperliquid', 'Hyperliquid data source')}<ArrowUpRight size={14} />
-        </a>
+    <section className="of-desk" data-order-flow aria-labelledby="orderflow-title">
+      <div className="of-page-heading">
+        <SectionHeading id="orderflow-title" level={1} title="Order Flow" />
+        <a href={`#charts?m=${encodeURIComponent(coin)}`} className="of-chart-link"><ChevronLeft size={16} aria-hidden="true" />{tr('Wykres', 'Chart')}</a>
+        <div className="of-controls">
+          <nav aria-label={tr('Rynki order flow', 'Order flow markets')}>
+            {ORDER_FLOW_MARKETS.map(market => (
+              <a key={market.coin} href={`#orderflow?m=${encodeURIComponent(market.coin)}`} aria-current={market.coin === coin ? 'page' : undefined}>{market.label}</a>
+            ))}
+          </nav>
+          <button type="button" className="of-mode" aria-pressed={pro} onClick={() => setPro(value => !value)}><SlidersHorizontal size={15} aria-hidden="true" />Pro</button>
+        </div>
       </div>
-    </main>
+      <FlowMarket key={coin} coin={coin} pro={pro} />
+      <a className="of-link" href="https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/websocket/subscriptions" target="_blank" rel="noreferrer">
+        {tr('Źródło danych Hyperliquid', 'Hyperliquid data source')}<ArrowUpRight size={14} aria-hidden="true" />
+      </a>
+    </section>
   );
 }
