@@ -65,6 +65,7 @@ export class ReplaySession {
   private iFill = 0;
   private iFrame = 0;
   private iOi = 0;
+  private iContext = 0;
   private timer: ReturnType<typeof setInterval> | null = null;
   private lastTick = 0;
   private readonly listeners = new Set<() => void>();
@@ -121,7 +122,8 @@ export class ReplaySession {
       this.emit();
     });
     if (this.closed) return;
-    if (data.fills.length === 0) {
+    const hip3Recording = data.context !== undefined && (data.frames.length > 0 || data.context.length > 0 || data.spans.length > 0);
+    if (data.fills.length === 0 && !hip3Recording) {
       this.state = 'empty';
       this.emit();
       return;
@@ -189,10 +191,10 @@ export class ReplaySession {
     this.storeGen++;
     this.catchUp = null;
     this.fed = Number.NEGATIVE_INFINITY;
-    this.iFill = this.iFrame = this.iOi = 0;
+    this.iFill = this.iFrame = this.iOi = this.iContext = 0;
     // Agregacje arkusza od ceny w chwili startu (ostatnia transakcja przed nią albo pierwsza nagrana)
-    const k = Math.max(0, upperBound(d.fills, this.t) - 1);
-    this.store.prepareReplay(d.fills[k].px);
+    const k = upperBound(d.fills, this.t) - 1;
+    this.store.prepareReplay(d.fills[d.context ? k : Math.max(0, k)]?.px ?? Number.NaN);
     this.feed();
   }
 
@@ -234,14 +236,17 @@ export class ReplaySession {
     while (this.iFrame < d.frames.length && d.frames[this.iFrame].t <= t) frames.push(d.frames[this.iFrame++]);
     const oi: [number, number][] = [];
     while (this.iOi < d.oi.length && d.oi[this.iOi][0] <= t) oi.push(d.oi[this.iOi++]);
+    while (d.context && this.iContext < d.context.length && d.context[this.iContext].t <= t) this.iContext++;
+    const context = d.context?.[this.iContext - 1];
     const lo = Number.isFinite(a) ? a : this.from;
     const clip = (xs: readonly [number, number][]) => xs.map(([x, y]): [number, number] => [Math.max(x, lo), Math.min(y, t)]).filter(([x, y]) => y > x);
     // Ślad może domknąć chwilę kursora tylko na podstawie potwierdzonego odcinka nagrania.
     const boundary = Math.floor(t);
     const coveredBoundary = d.spans.some(([from, to]) => from <= boundary && boundary + 1 <= to) ? boundary : null;
+    const bookAtCursor = d.context !== undefined && d.bookSpans.some(([from, to]) => from <= t && t < to);
     this.fed = t;
     st.feedReplay({ trades: { from: lo, to: t, spans: clip(d.spans), zeroSpans: clip(d.zeroSpans), fills, oi },
-      frames, bookSpans: clip(d.bookSpans) }, coveredBoundary);
+      frames, bookSpans: clip(d.bookSpans), bookAtCursor, context }, coveredBoundary);
   }
 
   /** Świece z API do końca nagrania (brakujące — z taśmy nagrania), pamiętane dla kolejnych magazynów tej powtórki. */

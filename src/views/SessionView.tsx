@@ -1,6 +1,7 @@
 import React, { Suspense, lazy, useState, useSyncExternalStore } from 'react';
 import type { PhaseId } from '../charts/pro/chart/stations';
 import { capsOf, subscribeMarkets } from '../state/markets';
+import { type PublishedHistory, usePublishedHistory } from '../state/historyAvailability';
 import { subscribeHash } from '../state/route';
 import { deskMarketOf, marketLabel } from '../config/deskMarkets';
 import { tr } from '../i18n';
@@ -39,6 +40,7 @@ const SessionView: React.FC<{ onPhase?: (phase: PhaseId) => void }> = ({ onPhase
   // Rynek pierwszego wykresu aktywnej karty (Pulse liczy drabinę i taśmę tego rynku)
   const [coin, setCoin] = useState<Market>(HOME_MARKET);
   const scanner = useSyncExternalStore(subscribeMarkets, () => capsOf(coin).scanner);
+  const archive = usePublishedHistory(coin);
   return (
     <div className="flex flex-col gap-4">
       {!replay && <FirstContact coin={coin} />}
@@ -59,7 +61,7 @@ const SessionView: React.FC<{ onPhase?: (phase: PhaseId) => void }> = ({ onPhase
           <SessionLiquidations coin={coin} />
         </Suspense>
       )}
-      {!replay && !scanner && <NoScannerNote coin={coin} />}
+      {!replay && !scanner && <NoScannerNote coin={coin} archive={archive} />}
     </div>
   );
 };
@@ -68,16 +70,22 @@ const SessionView: React.FC<{ onPhase?: (phase: PhaseId) => void }> = ({ onPhase
  * Rynek bez skanera kont (rynki HIP-3): zamiast dwóch pustych kart BTC („—, bez skanera”) jedno zdanie, co tu jest
  * na żywo, a czego nie ma i dlaczego.
  */
-export const NoScannerNote: React.FC<{ coin: Market }> = ({ coin }) => {
+export const NoScannerNote: React.FC<{ coin: Market; archive: PublishedHistory }> = ({ coin, archive }) => {
   const m = deskMarketOf(coin);
   const pl = m ? m.name.pl.gen : marketLabel(coin);
   const en = m ? m.name.en : marketLabel(coin);
   return (
-    <p data-bez-skanera className="rounded-xl border border-line bg-surface-1 p-4 text-sm leading-relaxed text-ink-2">
+    <p data-bez-skanera data-history={archive.kind} className="rounded-xl border border-line bg-surface-1 p-4 text-sm leading-relaxed text-ink-2">
       {tr(
-        `Przepływ kohort i zrealizowane likwidacje liczymy tylko dla BTC (skaner kont Hyperliquid). Dla ${pl} masz na żywo taśmę z numerami biorców, arkusz, footprint, deltę i CVD od otwarcia strony. Zapisu taśmy na serwerze dla tego rynku jeszcze nie ma, więc footprint sprzed otwarcia strony pokazuje „—”.`,
-        `Cohort flow and realised liquidations are computed for BTC only (Hyperliquid account scanner). For ${en} you get the live tape with taker numbers, the book, footprint, delta and CVD from when the page opened. The server does not record the tape for this market yet, so footprint before the page opened shows “—”.`
+        `Skaner kont Hyperliquid obsługuje tylko BTC i dostarcza przepływ kohort oraz zrealizowane likwidacje. Dla ${pl} masz na żywo taśmę, arkusz, footprint, deltę i CVD.`,
+        `The Hyperliquid account scanner covers BTC only and supplies cohort flow and realised liquidations. For ${en} you get live trades, the order book, footprint, delta and CVD.`
       )}
+      {' '}
+      {archive.kind === 'listed'
+        ? tr('Nagrania taśmy i arkusza są dostępne w zakresie podanym w karcie Rynek.', 'Tape and book recordings are available for the range shown in the Market tab.')
+        : archive.kind === 'unlisted'
+          ? tr('Indeks nie zawiera nagrań tego rynku.', 'The index contains no recordings for this market.')
+          : tr('Dostępność nagrań jest jeszcze nieustalona.', 'Recording availability is undetermined.')}
     </p>
   );
 };

@@ -80,6 +80,7 @@ describe('ServerHistory — historia z serwera do magazynu wykresu', () => {
     expect(f.calls.filter((c) => c.endsWith('.trades.json.gz')).sort()).toEqual(units.map((u) => historyPath('BTC', u.start, 'trades', u.part)).sort());
     // Taśma i pokrycie od H0 do końca ostatniej części
     const end = H0 + 2 * HIST_HOUR_MS + 3 * HIST_PART_MS;
+    expect(h.publishedRange()).toEqual({ kind: 'listed', from: H0, to: end });
     expect(store.coverage.covers(H0, end)).toBe(true);
     expect(store.bookCoverage.covers(H0, end)).toBe(true);
     expect(store.tape.count).toBe(((end - H0) / 30_000) * 2);
@@ -97,6 +98,16 @@ describe('ServerHistory — historia z serwera do magazynu wykresu', () => {
     const n = f.calls.length;
     await h.round();
     expect(f.calls.length).toBe(n);
+  });
+
+  it('rozróżnia brak odczytu indeksu od indeksu bez rynku HIP-3', async () => {
+    const f = fakeFetch(new Map(), index(NOW, [H0], []));
+    const gold = new ProStore(new HlStream(), 'xyz:GOLD');
+    h = new ServerHistory(gold, BASE, f.fetcher);
+    expect(h.publishedRange()).toEqual({ kind: 'unknown' });
+    await h.ensure(H0);
+    expect(h.publishedRange()).toEqual({ kind: 'unlisted' });
+    expect(f.calls).toEqual(['index.json']);
   });
 
   it('część spoza nieaktualnego spisu jest zgadywana; brak pliku — ponowienie w następnym przebiegu', async () => {

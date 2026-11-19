@@ -1,4 +1,5 @@
-import { HIST_HOUR_MS, HIST_PART_MS, type HistSpan, type HistoryIndex, clipSpans, decodeBook, decodeTrades, historyPath, isHistoryIndex } from '../../../utils/tapeHistory';
+import { HIST_HOUR_MS, HIST_PART_MS, type HistCtx, type HistSpan, type HistoryIndex, clipSpans, decodeBook, decodeTrades, historyPath, isHistoryIndex } from '../../../utils/tapeHistory';
+import { isHip3DeskMarket } from '../../../config/deskMarkets';
 import type { BookFrame } from '../core/book';
 import { barStart } from '../core/time';
 import type { Candle, Fill } from '../hl/parse';
@@ -20,6 +21,7 @@ export interface ReplayData {
   frames: BookFrame[];
   /** [czas, otwarte pozycje] co minutę. */
   oi: [number, number][];
+  context?: HistCtx[];
 }
 
 /** Plik godziny albo części. */
@@ -78,6 +80,7 @@ async function fetchGz(fetcher: Fetcher, url: string): Promise<unknown> {
 /** Sklejone pliki: taśma, migawki i otwarte pozycje rosnąco po czasie (pliki są rozłączne i ułożone po kolei). */
 export function joinUnits(coin: string, parts: readonly { unit: ReplayUnit; trades: unknown; book: unknown }[]): ReplayData {
   const out: ReplayData = { coin, spans: [], zeroSpans: [], bookSpans: [], fills: [], frames: [], oi: [] };
+  if (isHip3DeskMarket(coin)) out.context = [];
   for (const { unit, trades, book } of parts) {
     const t = decodeTrades(trades);
     if (t && t.coin === coin) {
@@ -85,6 +88,7 @@ export function joinUnits(coin: string, parts: readonly { unit: ReplayUnit; trad
       if (t.zeroKnown) out.zeroSpans.push(...t.spans);
       for (const f of toFills(t.trades, unit.start, t.idScope)) out.fills.push(f);
       for (const c of t.ctx) out.oi.push([c.t, c.oi]);
+      out.context?.push(...t.ctx);
     }
     const b = decodeBook(book);
     if (b && b.coin === coin) {
@@ -95,6 +99,7 @@ export function joinUnits(coin: string, parts: readonly { unit: ReplayUnit; trad
   out.fills.sort((a, b) => a.time - b.time);
   out.frames.sort((a, b) => a.t - b.t);
   out.oi.sort((a, b) => a[0] - b[0]);
+  out.context?.sort((a, b) => a.t - b.t);
   return out;
 }
 
@@ -109,6 +114,7 @@ export function clipReplay(d: ReplayData, from: number, to: number): ReplayData 
     fills: d.fills.filter((f) => inside(f.time)),
     frames: d.frames.filter((f) => inside(f.t)),
     oi: d.oi.filter(([t]) => inside(t)),
+    ...(d.context ? { context: d.context.filter(c => inside(c.t)) } : {}),
   };
 }
 

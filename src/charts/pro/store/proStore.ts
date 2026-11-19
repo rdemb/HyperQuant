@@ -18,6 +18,8 @@ import { indicatorScope, vwapSourceId } from '../core/indicators';
 import { DAY, Interval, aggregateCandles, barEnd, barStart, fromDaily, intervalById } from '../core/time';
 import { HOME_MARKET } from '../../../utils/marketCaps';
 import { marketOf, usdScaleOf } from '../../../state/markets';
+import { isHip3DeskMarket } from '../../../config/deskMarkets';
+import type { HistCtx } from '../../../utils/tapeHistory';
 
 /**
  * Magazyn wykresu Pro (bez Reacta, jeden na rynek): taśma transakcji od otwarcia widoku z pokryciem
@@ -72,6 +74,8 @@ export interface HistoryBatch {
   } | null;
   frames: BookFrame[];
   bookSpans?: readonly Span[];
+  bookAtCursor?: boolean;
+  context?: HistCtx;
 }
 
 /**
@@ -169,6 +173,9 @@ export class ProStore {
   /** Świece dzienne (00:00 UTC) — poziomy dnia niezależne od interwału wykresu. */
   daily: Candle[] = [];
   ctx: AssetCtx | null = null;
+  ctxReceivedAt = Number.NaN;
+  recordedContext: HistCtx | null = null;
+  replayBookCovered = false;
   status: StreamStatus = 'idle';
   version = 0;
   /** Rośnie po doczytaniu zleceń z historii: progi zamkniętych godzin (próg z chwili zdarzenia) liczone są od nowa. */
@@ -249,6 +256,7 @@ export class ProStore {
     void fetchAssetCtx(this.coin).then((c) => {
       if (c && !this.ctx) {
         this.ctx = c;
+        this.ctxReceivedAt = this.serverNow();
         this.oi.push(this.serverNow(), c.openInterest);
         this.pushPremium(c);
         this.ensureBookSubs(c.markPx);
@@ -466,6 +474,7 @@ export class ProStore {
       const ctx = parseAssetCtx(d.ctx);
       if (ctx) {
         this.ctx = ctx;
+        this.ctxReceivedAt = this.clock.toServer(recvAt);
         this.oi.push(this.serverNow(), ctx.openInterest);
         this.pushPremium(ctx);
         this.ensureBookSubs(ctx.markPx);
@@ -546,7 +555,7 @@ export class ProStore {
 
   /** Migawki arkusza bez agregacji ceny: osobny kanał albo bliska agregacja, gdy równa się tickowi. */
   exactBook(): BookHistory | null {
-    return this.exactSub ? this.exact : this.book('near');
+    return this.exactSub || (this.replay && isHip3DeskMarket(this.coin)) ? this.exact : this.book('near');
   }
 
   /** Kanał `bbo` (czoło kolejki) na czas obserwacji; zwraca wyłączenie. Kilka widoków dzieli jedną subskrypcję. */
@@ -655,6 +664,8 @@ export class ProStore {
    */
   feedReplay(b: HistoryBatch, tapeBoundary: number | null = null): void {
     this.replayTapeBoundary = tapeBoundary;
+    this.replayBookCovered = b.bookAtCursor ?? false;
+    if (b.context) this.recordedContext = b.context;
     this.restoreHistory({ trades: b.trades, frames: [], bookSpans: b.bookSpans });
     for (const f of b.frames) {
       if (f.exact) {
