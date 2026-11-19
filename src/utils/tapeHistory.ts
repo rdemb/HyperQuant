@@ -1,3 +1,5 @@
+import { deskMarketOf, isHip3DeskMarket } from '../config/deskMarkets.ts';
+
 /**
  * Historia taśmy i arkusza rynków Hyperliquid nagrywana przez serwer — format plików współdzielony przez rejestrator
  * i stronę (bez importów zewnętrznych; uruchamiany także natywnie przez Node 24).
@@ -41,7 +43,7 @@ export interface HistTrade {
   z?: true;
 }
 
-/** Kontekst rynku na koniec minuty: open interest (jednostki rynku), finansowanie za godzinę, cena mark. */
+/** Ostatni kontekst w minucie: OI (jednostki rynku), finansowanie, mark. HIP-3 zachowuje faktyczny czas odczytu. */
 export interface HistCtx {
   t: number;
   oi: number;
@@ -116,11 +118,19 @@ export const historyBaseOf = (dataBase: string): string => dataBase.replace(/\/m
 
 const pad = (x: number) => String(x).padStart(2, '0');
 
+/** Nazwa katalogu niezależna od symbolu giełdy używanego w danych i indeksie. */
+export function historyMarketDir(coin: string): string {
+  if (/^[A-Z0-9]{2,10}$/.test(coin)) return coin;
+  const market = isHip3DeskMarket(coin) ? deskMarketOf(coin) : null;
+  if (market) return market.historyDir;
+  throw new Error('Nieobsługiwany symbol katalogu historii');
+}
+
 /** Ścieżka pliku w gałęzi: `BTC/2026-10-24/13.trades.json.gz` (godzina) albo `BTC/2026-10-24/13-05.trades.json.gz` (część). */
 export function historyPath(coin: string, start: number, kind: HistKind, part: boolean): string {
   const d = new Date(start);
   const day = `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
-  return `${coin}/${day}/${pad(d.getUTCHours())}${part ? `-${pad(d.getUTCMinutes())}` : ''}.${kind}.json.gz`;
+  return `${historyMarketDir(coin)}/${day}/${pad(d.getUTCHours())}${part ? `-${pad(d.getUTCMinutes())}` : ''}.${kind}.json.gz`;
 }
 
 const fin = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x);

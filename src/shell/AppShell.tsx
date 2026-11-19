@@ -143,7 +143,7 @@ const STALE_TITLE = tr('Ostatnia znana wartość — dane nieświeże', 'Last kn
 const Change: React.FC<{ pct: number | null; span: string }> = ({ pct, span }) =>
   pct === null ? null : (
     <span className={`whitespace-nowrap ${pct >= 0 ? 'text-buy-ink' : 'text-sell-ink'}`}>
-      <span aria-hidden="true">{pct >= 0 ? '▲' : '▼'}</span> {numLang(Math.abs(pct).toFixed(2))}% <span className="text-ink-3">{span}</span>
+      <span aria-hidden="true">{pct >= 0 ? '▲' : '▼'}</span> {numLang(Math.abs(pct).toFixed(2))}% <span className="hidden min-[420px]:inline text-ink-3">{span}</span>
     </span>
   );
 
@@ -177,7 +177,7 @@ export const PriceButton: React.FC = () => {
         onClick={() => setOpen((o) => !o)}
         className="flex items-baseline gap-2 min-w-0 min-h-10 py-2 rounded-lg px-1.5 -mx-1.5 hover:bg-surface-2 transition-colors duration-150 text-xs"
       >
-        <span className="hidden min-[420px]:inline text-ink-2 font-medium">BTC-PERP</span>
+        <span className="text-ink-2 font-medium">BTC<span className="hidden min-[420px]:inline">-PERP</span></span>
         <AnimatedNumber value={k.price} format={(v) => fmtPrice(v)} className="text-base sm:text-lg font-semibold text-ink-1" />
         <Change pct={k.changePct} span={k.windowLabel} />
       </button>

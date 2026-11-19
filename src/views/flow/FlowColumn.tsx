@@ -4,7 +4,7 @@ import type { LiquidityPick } from '../../charts/pro/chart/liquidity';
 import { classify } from '../../charts/pro/core/clashes';
 import { bidShare } from '../../charts/pro/core/ladder';
 import type { AggressorOrder } from '../../charts/pro/core/orders';
-import type { ProStore } from '../../charts/pro/store/proStore';
+import { type ProStore, storeFor } from '../../charts/pro/store/proStore';
 import { Segmented, numLang } from '../../ui';
 import { tr } from '../../i18n';
 import { noScannerTitle, type StepId, scannerScope } from './flowColumnModel';
@@ -16,6 +16,8 @@ import { type TwapData, TwapPanel, useTwaps } from './TwapPanel';
 import { type FlowColumnData, useFlowColumn } from './useFlowColumn';
 import { WallFatesPanel } from './WallFatesPanel';
 import { type WhoData, WhoPanel, useWho } from './WhoPanel';
+import { Hip3PublicFlow, type Hip3FlowTab } from './Hip3PublicFlow';
+import { isHip3DeskFlow } from './hip3Flow';
 
 /**
  * Prawa kolumna DOM i taśmy obok wykresu (W sesji): na górze Pulse, pod nim drabina „kto stoi w kolejce”, a niżej
@@ -107,7 +109,27 @@ const WithScanner: React.FC<{ store: ProStore; narrow: boolean; children: (s: Sc
 
 type LowerTab = 'tape' | 'who' | 'twap' | 'walls';
 
-export const FlowColumn: React.FC<{ coin: string; narrow: boolean; variant: 'column' | 'pulse' }> = ({ coin, narrow, variant }) => {
+type FlowColumnProps = { coin: string; narrow: boolean; variant: 'column' | 'pulse' };
+
+export const FlowColumn: React.FC<FlowColumnProps> = props => props.variant === 'column' && isHip3DeskFlow(props.coin)
+  ? <Hip3FlowColumn key={props.coin} coin={props.coin} />
+  : <DetailedFlowColumn {...props} />;
+
+function Hip3FlowColumn({ coin }: { coin: string }) {
+  const [advanced, setAdvanced] = useState(false);
+  const [tab, setTab] = useState<Hip3FlowTab>('tape');
+  return <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-line bg-surface-1" data-theme="dark">
+    <div className="shrink-0 border-b border-line px-2 py-1">
+      <Segmented size="xs" ariaLabel={tr('Zakres odczytu', 'Data view')} value={advanced ? 'advanced' : 'market'} onChange={v => setAdvanced(v === 'advanced')}
+        options={[{ value: 'market', label: tr('Kontrakt', 'Contract') }, { value: 'advanced', label: tr('Zaawansowane', 'Advanced') }]} />
+    </div>
+    <div className="min-h-0 flex-1">
+      {advanced ? <DetailedFlowColumn coin={coin} narrow={false} variant="column" /> : <Hip3PublicFlow store={storeFor(coin)} tab={tab} onTab={setTab} />}
+    </div>
+  </div>;
+}
+
+const DetailedFlowColumn: React.FC<FlowColumnProps> = ({ coin, narrow, variant }) => {
   const f = useFlowColumn(coin);
   // Karta pod drabiną, panel powiększony kaflem Pulse (drugie kliknięcie wraca), kliknięte zlecenie i podświetlone konto
   const [lower, setLower] = useState<LowerTab>('tape');

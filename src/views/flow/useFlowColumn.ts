@@ -10,9 +10,11 @@ import { startRecording } from '../../charts/pro/store/recording';
 import { requestHistory } from '../../charts/pro/store/serverHistory';
 import { useStoreVersion } from '../../charts/pro/store/useStoreVersion';
 import { usePublished } from '../../state/usePublished';
+import { usdScaleOf } from '../../state/markets';
 import { WHALES_STALE_MS, type WhaleOrder, isWhaleLayer } from '../../utils/whaleLayer';
 import { DEFAULT_FLOW_PREFS, FLOW_PREFS_KEY, type FlowPrefs, type StepId, parseFlowPrefs } from './flowColumnModel';
 import { HEAD_FLOW_MS, type LadderHead } from './Ladder';
+import { isHip3DeskFlow } from './hip3Flow';
 
 /**
  * Obliczenia drabiny, taśmy i losów ścian dla jednego rynku (kolumna DOM i taśmy obok wykresu i pasek Pulse na telefonie): magazyn
@@ -100,11 +102,12 @@ export function useFlowColumn(coin: Market): FlowColumnData {
   }, []);
 
   const now = store.serverNow();
+  const scale = isHip3DeskFlow(coin) ? usdScaleOf(coin) : 1;
   const scan: TradeScan = useCallback((a, b, fn) => store.tape.forEach(a, b, fn), [store]);
 
   // Próg dużego zlecenia z rynku (odświeżany co kilka sekund, nie przy każdej transakcji)
   const autoKey = Math.floor(now / 5_000);
-  const bigUsd = useMemo(() => autoThreshold(store.orders.range(now - AUTO_WINDOW_MS, now + 1)), [store, autoKey]);
+  const bigUsd = useMemo(() => autoThreshold(store.orders.range(now - AUTO_WINDOW_MS, now + 1), scale), [store, autoKey, scale]);
 
   // Agregacje arkusza: dokładna (osobny kanał), bliska i daleka — bez powtórzeń, gdy bliska równa się tickowi
   const books = { exact: store.exactBook(), near: store.book('near'), far: store.book('far') };
@@ -117,14 +120,15 @@ export function useFlowColumn(coin: Market): FlowColumnData {
 
   // Losy ścian z ostatniej godziny wybranej agregacji (przeliczane przy nowej migawce)
   const walls = useMemo((): FlowWalls => {
-    if (!hist) return { fates: [], open: [], minUsd: WALL_FLOOR_USD, lotUsd: bigUsd * LOT_FLOOR, since: null };
+    const floor = WALL_FLOOR_USD * scale;
+    if (!hist) return { fates: [], open: [], minUsd: floor, lotUsd: bigUsd * LOT_FLOOR, since: null };
     const t = store.serverNow();
     const frames = hist.range(t - WALL_WINDOW_MS, t + 1);
-    const minUsd = wallThreshold(frames, WALL_FLOOR_USD);
+    const minUsd = wallThreshold(frames, floor);
     const { fates, open } = wallFates(frames, scan, minUsd);
     const lotUsd = lotThreshold(hist.range(t - LOT_WINDOW_MS, t + 1), bigUsd * LOT_FLOOR);
     return { fates, open, minUsd, lotUsd, since: frames.length > 0 ? frames[0].t : null };
-  }, [hist, histVersion, scan, store, bigUsd]);
+  }, [hist, histVersion, scan, store, bigUsd, scale]);
 
   const paceKey = Math.floor(now / 1_000);
   const pace = useMemo(() => tapePace(scan, store.serverNow(), (a, b) => store.coverage.covers(a, b)), [scan, store, paceKey]);
