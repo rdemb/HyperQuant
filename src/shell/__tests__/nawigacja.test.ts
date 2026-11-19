@@ -7,7 +7,8 @@ const ids = (xs: { id: string }[]) => xs.map((x) => x.id);
 describe('nawigacja aplikacji (jedno źródło: szyna, dolny pasek, menu „Więcej”, paleta ⌘K)', () => {
   it('szyna: dzień tradera (trzy fazy), potem Rynki i wiedza; Rynki pierwsze', () => {
     expect(ids(NAV_DZIEN)).toEqual(['before', 'charts', 'after']);
-    expect(ids(NAV_WIEDZA)).toEqual(['markets', 'lessons', 'research', 'sources', 'agents']);
+    expect(ids(NAV_WIEDZA)).toEqual(['markets', 'orderflow', 'lessons', 'research', 'sources', 'agents']);
+    expect(ids(NAV_TELEFON_WIECEJ)).toContain('orderflow');
     expect(MARKETS.label).toBe('Rynki');
   });
 

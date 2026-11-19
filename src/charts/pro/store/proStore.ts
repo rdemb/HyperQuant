@@ -198,6 +198,7 @@ export class ProStore {
   private exactSub = false;
   /** Dokładny arkusz (bez agregacji ceny) od otwarcia strony, gdy bliska agregacja jest grubsza niż tick; serwer go nie nagrywa. */
   private readonly exact = new BookHistory(Number.NaN);
+  private exactBookReceipt: { time: number; at: number } | null = null;
   private bookReopenAfter = -Infinity;
 
   constructor(
@@ -218,6 +219,7 @@ export class ProStore {
         if (sub.type === 'candle') for (const s of this.seriesById.values()) if (s.src === sub.interval) void s.refreshRecent();
       },
       onClosed: (at) => {
+        this.exactBookReceipt = null;
         this.observations.close(this.clock.toServer(at), this.serverNow(), 'disconnect');
         this.head.reset();
         this.coverage.close(this.clock.toServer(at));
@@ -439,7 +441,8 @@ export class ProStore {
         newest = Math.max(newest, f.time);
         oldest = Math.min(oldest, f.time);
       }
-      this.clock.observe(newest, recvAt);
+      // Początkowe wykonania, także po reconnect, pochodzą z historii giełdy.
+      if (!this.tradesPending) this.clock.observe(newest, recvAt);
       const observedAt = this.clock.toServer(recvAt);
       if (!this.observations.connected) this.observations.open(Math.min(oldest + 1, newest), observedAt);
       this.observations.trades(fills, observedAt, recvAt);
@@ -497,7 +500,7 @@ export class ProStore {
         this.walls.observeBook(snap);
         if (snap.time < this.bookReopenAfter) return;
         this.bookCoverage.open(snap.time);
-        this.exact.add({ ...toFrame(snap, bookStep(snap)), exact: true });
+        this.addLiveBook(this.exact, { ...toFrame(snap, bookStep(snap)), exact: true }, true);
         this.bump();
         return;
       }
@@ -508,7 +511,7 @@ export class ProStore {
       if (step === near && !this.exactSub) this.walls.observeBook(snap);
       let h = this.books.get(step);
       if (!h) this.books.set(step, (h = new BookHistory(step)));
-      h.add(toFrame(snap, step));
+      this.addLiveBook(h, toFrame(snap, step), step === near && !this.exactSub);
       this.bump();
     }
   }
@@ -530,6 +533,13 @@ export class ProStore {
     this.bookReopenAfter = at;
   }
 
+  private addLiveBook(history: BookHistory, frame: BookFrame, exact: boolean): void {
+    if (exact && frame.t > (history.latest()?.t ?? -Infinity)) {
+      this.exactBookReceipt = { time: frame.t, at: performance.now() };
+    }
+    history.add(frame);
+  }
+
   /** Agregacje arkusza dopasowane do rzędu wielkości ceny (zmiana tylko przy przejściu przez 10^k). */
   private ensureBookSubs(price: number): void {
     if (!(price > 0)) return;
@@ -537,6 +547,7 @@ export class ProStore {
     const digits = Math.floor(Math.log10(price)) + 1;
     const steps: [number, number] = [10 ** (digits - near), 10 ** (digits - far)];
     if (steps[0] === this.bookSteps[0] && steps[1] === this.bookSteps[1]) return;
+    this.exactBookReceipt = null;
     if (this.bookCoverage.isOpen) this.closeBookCoverage(this.serverNow());
     for (const sub of this.bookSubs) this.stream.remove(sub);
     this.bookSteps = steps;
@@ -556,6 +567,13 @@ export class ProStore {
   /** Migawki arkusza bez agregacji ceny: osobny kanał albo bliska agregacja, gdy równa się tickowi. */
   exactBook(): BookHistory | null {
     return this.exactSub || (this.replay && isHip3DeskMarket(this.coin)) ? this.exact : this.book('near');
+  }
+
+  /** Świeżość bieżącej migawki bez zegara skalibrowanego wykonaniami. */
+  liveBookAge(frame: BookFrame, now: number): number | null {
+    const receipt = this.exactBookReceipt;
+    if (receipt?.time !== frame.t || frame.t > now) return null;
+    return Math.max(now - frame.t, performance.now() - receipt.at);
   }
 
   /** Kanał `bbo` (czoło kolejki) na czas obserwacji; zwraca wyłączenie. Kilka widoków dzieli jedną subskrypcję. */
