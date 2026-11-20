@@ -289,10 +289,17 @@
   }
 }
 @container (max-width: 539px) {
+  .of-page-heading { column-gap: 4px; }
+  .of-page-heading #orderflow-title { font-size: 24px; }
+  .of-page-heading :is(.of-chart-link, .of-fullscreen-toggle) { gap: 4px; padding-inline: 6px; font-size: 12px; }
   .of-page-heading .of-controls { gap: 4px; }
   .of-page-heading .of-controls nav { gap: 2px; }
   .of-page-heading .of-controls :is(a, button) { padding-inline: 6px; font-size: 12px; }
   .of-page-heading .of-mode:not(.of-fullscreen-toggle) svg[aria-hidden="true"] { display: none; }
+}
+
+@container (width < 330px) {
+  .of-fullscreen-toggle span { display: none; }
 }
 
 @container (min-width: 540px) and (max-width: 620px) {
