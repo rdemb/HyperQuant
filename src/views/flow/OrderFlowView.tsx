@@ -12,6 +12,7 @@ import { SectionHeading } from '../../ui';
 import { DASH, fmtCompact, fmtFixed, fmtNum, fmtSigned } from '../../ui/format';
 import { bookMetrics, hip3TapeFilters, isHip3DeskFlow, visibleExecutions } from './hip3Flow';
 import { DeltaMomentCard } from './DeltaMomentCard';
+import { MomentLens } from './MomentLens';
 import { readDeltaMoment, type DeltaMoment } from './deltaMoment';
 import {
   BOOK_HIDE_AFTER_MS, FLOW_WINDOW_MS, MAX_BOOK_AGE_MS, ORDER_FLOW_MARKETS, PIN_MIN_MS, PIN_TAPE_LIMIT,
@@ -297,7 +298,9 @@ function TapePanel({ store, now, isLive, focus, clearFocus, refreshFocus, pro, a
   );
 }
 
-function FlowMarket({ coin, pro }: { coin: string; pro: boolean }) {
+function FlowMarket({ coin, pro, momentOpen, closeMoment }: {
+  coin: string; pro: boolean; momentOpen: boolean; closeMoment: () => void;
+}) {
   const store = storeFor(coin);
   useEffect(() => store.start(), [store]);
   useStoreVersion(store, 300);
@@ -342,6 +345,7 @@ function FlowMarket({ coin, pro }: { coin: string; pro: boolean }) {
   };
   return (
     <div data-of-market={coin}>
+      {momentOpen && <MomentLens store={store} close={closeMoment} />}
       <div className="of-status">
         <span className={isLive && bookFresh ? 'of-status-live' : undefined} data-of-status>
           <span className="of-status-dot" aria-hidden="true" />
@@ -376,6 +380,12 @@ function FlowMarket({ coin, pro }: { coin: string; pro: boolean }) {
 export default function OrderFlowView() {
   const coin = useSyncExternalStore(subscribeHash, readHash);
   const [pro, setPro] = useState(false);
+  const [momentOpen, setMomentOpen] = useState(false);
+  const momentButton = useRef<HTMLButtonElement>(null);
+  const closeMoment = () => {
+    setMomentOpen(false);
+    momentButton.current?.focus();
+  };
   return (
     <section className="of-desk" data-order-flow aria-labelledby="orderflow-title">
       <div className="of-page-heading">
@@ -388,9 +398,10 @@ export default function OrderFlowView() {
             ))}
           </nav>
           <button type="button" className="of-mode" aria-pressed={pro} onClick={() => setPro(value => !value)}><SlidersHorizontal size={15} aria-hidden="true" />Pro</button>
+          <button type="button" className="of-mode of-moment-launch" ref={momentButton} aria-haspopup="dialog" aria-expanded={momentOpen} onClick={() => setMomentOpen(true)}><Crosshair size={15} aria-hidden="true" />{tr('Przekrój chwili', 'Moment lens')}</button>
         </div>
       </div>
-      <FlowMarket key={coin} coin={coin} pro={pro} />
+      <FlowMarket key={coin} coin={coin} pro={pro} momentOpen={momentOpen} closeMoment={closeMoment} />
       <a className="of-link" href="https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/websocket/subscriptions" target="_blank" rel="noreferrer">
         {tr('Źródło danych Hyperliquid', 'Hyperliquid data source')}<ArrowUpRight size={14} aria-hidden="true" />
       </a>
