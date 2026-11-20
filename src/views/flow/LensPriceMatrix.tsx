@@ -167,18 +167,27 @@ function DeltaTotal({ scope, delta, adaptive }: { scope: 'price' | 'market'; del
 export function LensPriceTotals({ row, covered, marketDelta, adaptive = false }: {
   row: PriceRead | undefined; covered: boolean; marketDelta: LensDelta; adaptive?: boolean;
 }) {
+  const sides = (['buy', 'sell'] as const).map(side => {
+    const value = amountsAt(row, null, side, covered);
+    const label = (side === 'buy' ? '↑' : '↓') + ' ' + spokenSide(side);
+    const compact = value ? nominalUsd(value.usd) : DASH;
+    const brief = value ? compactDomUsd(value.usd) : DASH;
+    const exact = value ? formatAtoms(value.usd, 6) : DASH;
+    const amount = adaptive ? <strong>
+      <span className="dom-amount-wide">{compact}</span>
+      <span className="dom-amount-compact">{brief}</span>
+      {' '}<small>USD</small>
+    </strong> : <strong>{compact} <small>USD</small></strong>;
+    return <div key={side} className={side === 'buy' ? 'ml-bid' : 'ml-ask'} data-ml-total={side} data-count={value?.count} data-micros={value?.usd.toString()}>
+      <small>{label} · {value ? grouped.format(value.count) : DASH} {tr('wyk.', 'fills')}</small>
+      {adaptive && value && (compact !== exact || brief !== exact) ? <details className="dom-side-detail">
+        <summary aria-label={label + ' · ' + exact + ' USD · ' + tr('Dokładna kwota', 'Exact amount')}>{amount}</summary>
+        <span>{exact} USD</span>
+      </details> : amount}
+    </div>;
+  });
   return <div className="ml-price-totals">
-    {(['buy', 'sell'] as const).map(side => {
-      const value = amountsAt(row, null, side, covered);
-      return <div key={side} className={side === 'buy' ? 'ml-bid' : 'ml-ask'} data-ml-total={side} data-count={value?.count} data-micros={value?.usd.toString()}>
-        <small>{side === 'buy' ? '↑' : '↓'} {spokenSide(side)} · {value ? grouped.format(value.count) : DASH} {tr('wyk.', 'fills')}</small>
-        <strong>
-          <span className={adaptive ? 'dom-amount-wide' : undefined}>{value ? nominalUsd(value.usd) : DASH}</span>
-          {adaptive && <span className="dom-amount-compact">{value ? compactDomUsd(value.usd) : DASH}</span>}
-          {' '}<small>USD</small>
-        </strong>
-      </div>;
-    })}
+    {adaptive ? <div className="dom-side-totals">{sides}</div> : sides}
     <DeltaTotal scope="price" delta={priceDelta(row, covered)} adaptive={adaptive} />
     <DeltaTotal scope="market" delta={marketDelta} adaptive={adaptive} />
   </div>;

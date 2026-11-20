@@ -1,6 +1,6 @@
 .dom-modes { display: flex; flex-wrap: wrap; gap: 4px; }
 .dom-modes button[aria-pressed="true"] { border-bottom: 2px solid var(--color-accent); }
-.dom-board { min-width: 0; border: 1px solid var(--color-line); border-radius: 8px; background: var(--color-surface-2); overflow: hidden; }
+.dom-board { container: dom-book / inline-size; min-width: 0; border: 1px solid var(--color-line); border-radius: 8px; background: var(--color-surface-2); overflow: hidden; }
 .dom-board-head, .dom-board-foot { display: flex; flex-wrap: wrap; gap: 4px 12px; justify-content: space-between; align-items: center; padding: 6px 8px; }
 .dom-board-head h2 { margin: 0; font: 700 17px var(--font-display); }
 .dom-board-head small, .dom-board-foot { color: var(--color-ink-2); font: 11px var(--font-mono); }
@@ -9,7 +9,7 @@
 .dom-grid-scroll:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
 .dom-workspace .dom-grid { width: 100%; table-layout: fixed; }
 .dom-grid thead { position: sticky; top: 0; z-index: 1; background: var(--color-surface-3); }
-.dom-workspace .dom-grid thead th { text-align: center; font-size: clamp(9px, 1vw, 11px); padding: 5px 1px; overflow-wrap: anywhere; }
+.dom-workspace .dom-grid thead th { text-align: center; font-size: clamp(9px, 1vw, 11px); padding: 5px 1px; white-space: nowrap; }
 .dom-grid thead small { display: block; color: var(--color-ink-2); font-size: .92em; font-weight: 400; }
 .dom-grid :is(th, td) { border: 1px solid var(--color-line); }
 .dom-grid .dom-price { text-align: center; width: 14%; background: var(--color-surface-3); color: var(--color-level); }
@@ -21,7 +21,7 @@
 .dom-workspace .dom-grid .dom-selected .dom-price button { background: var(--color-level); color: var(--color-page); }
 .dom-depth { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr auto; align-items: center; gap: 3px; }
 .dom-depth > small { padding-right: 3px; color: var(--color-ink-2); font-size: 10px; }
-.dom-measure { display: block; position: relative; padding: 2px 3px; font-size: clamp(10px, 1.1vw, 13px); overflow-wrap: anywhere; }
+.dom-measure { display: block; position: relative; padding: 2px 3px; font-size: clamp(10px, 1.1vw, 13px); white-space: nowrap; }
 .dom-fill { position: absolute; inset: 1px auto 1px 0; background: currentColor; opacity: .18; pointer-events: none; }
 .dom-measure > :not(.dom-fill) { position: relative; }
 .dom-measure[data-missing] { color: var(--color-ink-2); background: repeating-linear-gradient(135deg, transparent 0 4px, var(--color-line) 4px 5px); }
@@ -30,17 +30,29 @@
 .dom-workspace { container-type: inline-size; }
 .dom-workspace .ml-main { padding-inline: 0; overflow: visible; }
 .dom-workspace .dom-tools { grid-column: 1 / -1; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 4px; }
-.dom-inspector { display: grid; align-content: start; gap: 8px; min-width: 0; }
+.dom-inspector { container: dom-readout / inline-size; display: grid; align-content: start; gap: 8px; min-width: 0; }
 .dom-inspector h2 { font: 700 17px var(--font-display); margin: 6px 10px 0; }
 .dom-inspector .ml-price-totals { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.dom-inspector .ml-price-totals > :nth-child(3) { border-left: 0; }
-.dom-inspector .ml-price-totals > :nth-child(n+3) { border-top: 1px solid var(--color-line); }
+.dom-inspector .ml-price-totals > [data-ml-delta] { border-top: 1px solid var(--color-line); }
+.dom-inspector .ml-price-totals > [data-ml-delta="price"] { border-left: 0; }
+.dom-inspector .dom-side-totals { display: contents; }
+.dom-side-totals > div { display: grid; align-content: start; gap: 1px; min-width: 0; padding: 5px 8px; }
+.dom-side-totals > div + div { border-left: 1px solid var(--color-line); }
+.dom-inspector .ml-price-totals strong { white-space: nowrap; overflow-wrap: normal; }
+.dom-inspector :is(.ml-delta-detail, .dom-side-detail) summary {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  min-height: 0;
+  cursor: pointer;
+  list-style: none;
+}
+.dom-inspector :is(.ml-delta-detail, .dom-side-detail) summary::marker { content: ""; }
+.dom-inspector :is(.ml-delta-detail, .dom-side-detail) summary::-webkit-details-marker { display: none; }
+.dom-inspector :is(.ml-delta-detail, .dom-side-detail) summary strong { text-decoration: underline dotted; text-underline-offset: 3px; }
+.dom-side-detail > span { font: 11px/1.3 var(--font-mono); overflow-wrap: anywhere; }
 .dom-workspace .ml-transport { grid-column: 1 / -1; }
 .dom-workspace .ml-side-panels { grid-template-columns: minmax(0, 1fr); }
-
-
-
-
 
 .dom-bids { background: color-mix(in srgb, var(--color-buy) 12%, var(--color-surface-2)); }
 .dom-asks { background: color-mix(in srgb, var(--color-sell) 12%, var(--color-surface-2)); }
@@ -58,10 +70,7 @@
 .dom-workspace .ml-steps { flex-wrap: wrap; }
 .dom-workspace .ml-scope:focus { outline: 1px solid var(--color-accent); }
 
-
-
 .dom-short-clock { display: none; }
-
 
 .dom-board-body { display: grid; grid-template-columns: auto minmax(0, 1fr); }
 .dom-balances { display: flex; gap: 2px; padding: 4px 2px; border-block: 1px solid var(--color-line); }
@@ -88,7 +97,6 @@
 .dom-workspace .dom-class-grid td button[aria-pressed="true"] { outline: 2px solid var(--color-accent); outline-offset: -2px; }
 .dom-class-grid .dom-measure { font-variant-numeric: tabular-nums; }
 
-
 .dom-workspace { container-name: order-flow; }
 .dom-amount-compact, .dom-column-controls, .dom-path-toggle, .dom-band-controls { display: none; }
 .dom-level-detail summary { cursor: pointer; color: var(--color-ink-1); }
@@ -114,20 +122,14 @@
   .dom-board-head button { min-height: 29px; padding-inline: 6px; }
   .dom-board-foot { font-size: 10px; }
   .dom-workspace .dom-board-foot button { min-height: 23px; padding-inline: 5px; font-size: 11px; }
-  .dom-workspace .dom-grid thead th { font-size: 11px; padding: 3px 1px; white-space: nowrap; }
-  .dom-grid thead small { font-size: 8px; }
-  .dom-grid thead th .dom-full-clock { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-  .dom-short-clock { display: inline; font-variant-numeric: tabular-nums; }
-  .dom-amount-wide { display: none; }
-  .dom-amount-compact { display: inline; }
-  .dom-grid .dom-price { width: 17%; }
-  .dom-workspace .dom-grid .dom-price button, .dom-workspace .dom-class-grid td button { min-height: 27px; font-size: 14px; }
-  .dom-workspace .dom-measure { font-size: 13px; line-height: 1.12; white-space: nowrap; overflow-wrap: normal; padding-inline: 3px; }
+  .dom-readout .dom-amount-wide { display: none; }
+  .dom-readout .dom-amount-compact { display: inline; }
   .dom-grid-scroll { max-height: 252px; }
+  .dom-workspace .dom-grid .dom-price button, .dom-workspace .dom-class-grid td button { min-height: 27px; font-size: 14px; }
+  .dom-balances { display: none; }
+  .dom-board-body { grid-template-columns: minmax(0, 1fr); }
   .dom-top-quote { white-space: nowrap; }
   .dom-top-quote strong { font-size: 13px; }
-  .dom-balances, .dom-extra { display: none; }
-  .dom-board-body { grid-template-columns: minmax(0, 1fr); }
   .dom-path-toggle { display: inline-flex; }
   .dom-path[data-expanded="false"] { display: none; }
   .dom-workspace .ml-transport { padding: 3px 6px; }
@@ -144,10 +146,9 @@
   .dom-inspector .ml-price-hero { padding: 4px 6px; gap: 2px 4px; }
   .dom-inspector .ml-price-hero > div > small { font-size: 10px; }
   .dom-workspace .ml-active-price { min-height: 27px; font-size: 24px; padding: 0 4px; }
-  .dom-inspector .ml-price-totals > div { padding: 3px 5px; gap: 0; }
+  .dom-inspector .ml-price-totals > div, .dom-side-totals > div { padding: 3px 5px; gap: 0; }
   .dom-inspector .ml-price-totals strong { font-size: clamp(17px, 4cqi, 23px); }
   .dom-inspector .ml-price-totals small { line-height: 1.1; font-size: 10px; }
-  .dom-inspector .ml-delta-detail summary { min-height: 19px; }
   .dom-inspector .ml-state { padding: 2px 5px; font-size: 11px; }
   .dom-band-controls { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px; align-items: center; padding: 3px 5px; }
   .dom-band-controls > div { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; }
@@ -176,14 +177,25 @@
   .dom-workspace .ml-timeline { grid-area: timeline; }
   .dom-workspace .ml-range { grid-area: range; }
   .dom-inspector .dom-readout { display: grid; grid-template-columns: minmax(115px, auto) minmax(0, 1fr); }
-  .dom-inspector .ml-price-totals { grid-template-columns: repeat(4, minmax(0, 1fr)); border-block: 0; }
-  .dom-inspector .ml-price-totals > :nth-child(n) { border-top: 0; border-left: 1px solid var(--color-line); }
-  .dom-inspector .ml-price-totals strong { font-size: clamp(17px, 3.7cqi, 22px); white-space: nowrap; overflow-wrap: normal; }
+  .dom-inspector .ml-price-totals { grid-template-columns: repeat(2, minmax(0, 1fr)) minmax(0, .95fr); border-block: 0; }
+  .dom-inspector .ml-price-totals > [data-ml-delta] { border-top: 0; border-left: 1px solid var(--color-line); }
+  .dom-inspector .ml-price-totals strong { font-size: clamp(17px, 3.7cqi, 22px); }
   .dom-inspector .ml-price-totals .ml-delta-subcent strong { font-size: min(20px, 16cqi); }
   .dom-inspector .ml-price-totals strong small { display: none; }
-  .dom-inspector .ml-delta-detail summary { width: 100%; list-style: none; }
-  .dom-inspector .ml-delta-detail summary::-webkit-details-marker { display: none; }
-  .dom-inspector .ml-delta-detail summary strong { text-decoration: underline dotted; text-underline-offset: 3px; }
+  .dom-inspector .ml-price-totals .dom-side-totals {
+    display: grid;
+    grid-area: 1 / 3;
+    align-content: start;
+    border-left: 1px solid var(--color-line);
+  }
+  .dom-inspector .dom-side-totals > div {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: baseline;
+    gap: 1px 3px;
+    padding: 0 0 2px;
+    border-left: 0;
+  }
+  .dom-inspector .dom-side-totals strong { font-size: 13px; }
   .dom-inspector .ml-price-hero > div { align-self: start; }
   .dom-inspector .dom-readout > .ml-state { grid-column: 1 / -1; grid-row: 2; }
   .dom-inspector .ml-price-picker { flex: 1; max-width: 145px; }
@@ -194,23 +206,13 @@
 }
 
 @container order-flow (max-width: 499px) {
-  .dom-workspace .dom-column-controls { display: flex; gap: 3px; }
-  [data-dom-columns="recent"] .dom-grid [data-group="older"],
-  [data-dom-columns="older"] .dom-grid [data-group="recent"],
-  [data-dom-columns="older"] .dom-grid .dom-book-change { display: none; }
-  .dom-grid .dom-price { width: 25%; }
   .dom-grid-scroll { max-height: 194px; }
-  .dom-depth { grid-auto-flow: row; gap: 0; }
-  .dom-workspace .dom-grid .dom-price button { font-size: 13px; }
-  .dom-workspace .dom-grid th { font-size: 10px; }
-  .dom-workspace .dom-class-grid .dom-measure { padding-inline: 2px; }
   .dom-band-controls > div { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .dom-band-controls { grid-template-columns: minmax(0, 1fr); justify-items: stretch; }
   .dom-band-controls .dom-band-expand { justify-self: start; }
   .dom-inspector .ml-price-totals { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .dom-inspector .ml-tape .ml-panel-head { flex-wrap: wrap; }
 }
-
 
 @container order-flow (min-width: 500px) and (max-width: 1139px) {
   .dom-board-head { padding-block: 3px; }
@@ -219,6 +221,39 @@
   .dom-board-head .dom-page button { padding-inline: 5px; }
   .dom-inspector .ml-delta-label { justify-content: flex-start; column-gap: 3px; }
   .dom-workspace .ml-executions th button { min-height: 22px; }
+}
+
+@container dom-book (max-width: 1039px) {
+  .dom-workspace .dom-grid thead th { font-size: 11px; padding: 3px 1px; }
+  .dom-grid thead small { font-size: 8px; }
+  .dom-grid thead th .dom-full-clock { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .dom-short-clock { display: inline; font-variant-numeric: tabular-nums; }
+  .dom-grid .dom-amount-wide { display: none; }
+  .dom-grid .dom-amount-compact { display: inline; }
+  .dom-workspace .dom-measure { font-size: 13px; line-height: 1.12; }
+}
+
+@container dom-book (max-width: 839px) {
+  .dom-grid .dom-extra { display: none; }
+  .dom-grid .dom-price { width: 17%; }
+}
+@container dom-book (max-width: 499px) {
+  .dom-workspace .dom-column-controls { display: flex; gap: 3px; }
+  [data-dom-columns="recent"] .dom-grid [data-group="older"],
+  [data-dom-columns="older"] .dom-grid [data-group="recent"],
+  [data-dom-columns="older"] .dom-grid .dom-book-change { display: none; }
+  .dom-grid .dom-price { width: 25%; }
+  .dom-depth { grid-auto-flow: row; gap: 0; }
+  .dom-workspace .dom-grid .dom-price button { font-size: 13px; }
+  .dom-workspace .dom-grid th { font-size: 10px; }
+  .dom-workspace .dom-class-grid .dom-measure { padding-inline: 2px; }
+}
+
+@container order-flow (min-width: 1140px) {
+  @container dom-readout (max-width: 429px) {
+    .dom-readout .dom-amount-wide { display: none; }
+    .dom-readout .dom-amount-compact { display: inline; }
+  }
 }
 
 @media (max-width: 1023px) {
