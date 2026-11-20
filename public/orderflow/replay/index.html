@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Powtórka Order Flow · HyperQuant</title>
+    <link rel="stylesheet" href="../../fonts/fonts.css" />
+    <link rel="stylesheet" href="./replay.css" />
+    <link rel="icon" href="../../favicon.svg" />
+  </head>
+  <body>
+    <main>
+      <header class="mast">
+        <div class="identity">
+          <span class="logo" aria-hidden="true"><i></i><i></i><i></i></span><b>HyperQuant</b
+          ><span class="slash">/</span>
+          <h1>Order Flow <span class="replay-label">Powtórka</span></h1>
+        </div>
+        <nav id="markets" aria-label="Rynek">
+          <button data-market="BTC" aria-pressed="true">BTC</button><button data-market="GOLD">Gold</button
+          ><button data-market="SP500">S&amp;P 500</button>
+        </nav>
+        <span id="source" class="status">Nagranie · 20.11.2026 · UTC</span
+        ><button id="help" aria-label="Jak czytać pokaz i źródła">?</button>
+      </header>
+      <section class="controls">
+        <nav class="layouts" aria-label="Układ kolumn">
+          <button data-mode="book" aria-pressed="true">Drabinka</button
+          ><button data-mode="memory">Pamięć arkusza</button><button data-mode="foot">Ślad transakcji</button>
+        </nav>
+        <div class="transport">
+          <button id="prev" title="Poprzednie zdarzenie" aria-label="Poprzednie zdarzenie">‹</button
+          ><button id="play" title="Odtwórz / pauza" aria-label="Odtwórz">▶</button
+          ><button id="next" title="Następne zdarzenie" aria-label="Następne zdarzenie">›</button>
+          <label class="speed"
+            ><span class="sr">Prędkość</span
+            ><select id="speed">
+              <option value=".25">¼×</option>
+              <option value="1" selected>1×</option>
+              <option value="4">4×</option>
+            </select></label
+          >
+          <label class="scrub"
+            ><span class="sr">Czas odtworzenia</span
+            ><input id="scrub" type="range" aria-label="Czas odtworzenia" step="1"
+          /></label>
+          <time id="clock"></time><button id="example">Pokaż przykład</button>
+        </div>
+      </section>
+      <section class="ribbon">
+        <div class="metric">
+          <span>Cena przekroju <em>USD</em></span
+          ><strong id="r-price"></strong>
+        </div>
+        <div class="metric">
+          <span>Δ ceny <em>1 ms</em></span
+          ><strong id="r-delta"></strong>
+        </div>
+        <div class="metric">
+          <span>Δ rynku <em>120 s</em></span
+          ><strong id="r-market"></strong>
+        </div>
+        <div class="activity">
+          <span>Obrót rynku <em>po 2 s</em></span
+          ><canvas id="spark" aria-label="Kupno i sprzedaż w ostatnich 120 sekundach"></canvas>
+        </div>
+        <div class="quote-summary">
+          <span>Najlepsze ceny · L2</span
+          ><b><i id="bestBid" class="pos"></i> <em>/</em> <i id="bestAsk" class="neg"></i></b>
+        </div>
+      </section>
+      <div class="scene">
+        <section class="board">
+          <header class="boardhead">
+            <div>
+              <h2 id="board-title">Drabinka zleceń</h2>
+              <span id="subtitle"></span>
+            </div>
+            <div class="board-actions">
+              <button id="bank" aria-pressed="false">7 klas</button><button id="half" hidden>Następne klasy</button
+              ><button
+                id="follow"
+                aria-pressed="false"
+                title="Utrzymuj w kadrze cenę o największym obrocie bieżącej milisekundy"
+              >
+                Śledź cenę
+              </button>
+            </div>
+          </header>
+          <div class="workspace">
+            <div class="meters" aria-label="Udziały stron rynku">
+              <div class="meter" id="meter-depth">
+                <b>L2</b><small>ASK</small><span class="share top"></span>
+                <div class="tower"><i></i><u></u></div>
+                <span class="share bottom"></span><small>BID</small>
+              </div>
+              <div class="meter" id="meter-flow">
+                <b>120 s</b><small>Sprz.</small><span class="share top"></span>
+                <div class="tower"><i></i><u></u></div>
+                <span class="share bottom"></span><small>Kup.</small>
+              </div>
+            </div>
+            <div
+              class="ladder"
+              id="ladder"
+              tabindex="0"
+              role="grid"
+              aria-label="Drabinka cen i danych rynku, strzałki zmieniają poziom ceny i czas"
+              aria-describedby="keyhelp"
+            >
+              <div id="headers" role="row"></div>
+              <div id="rows" role="rowgroup"></div>
+            </div>
+          </div>
+          <footer class="boardfoot">
+            <span id="bookstamp"></span>
+            <div>
+              <button id="up" aria-label="Wyższe ceny">↑</button><button id="center">Do ceny</button
+              ><button id="down" aria-label="Niższe ceny">↓</button>
+            </div>
+          </footer>
+        </section>
+        <aside class="inspector" aria-label="Przekrój chwili">
+          <header>
+            <h2>Przekrój chwili</h2>
+            <span id="lensclock"></span>
+          </header>
+          <div class="lensmain">
+            <div><span id="lenslabel">Δ klasy · 1 ms</span><strong id="lensamount"></strong></div>
+            <span id="lenspx"></span>
+          </div>
+          <div class="split"><span class="pos" id="lensbuy"></span><span class="neg" id="lenssell"></span></div>
+          <div class="classes">
+            <div class="subhead"><b>Nominał wykonania</b><span>USD · liczba w 120 s</span></div>
+            <div id="bands" aria-label="Filtr klasy nominalnej"></div>
+          </div>
+          <div class="related">
+            <div class="subhead">
+              <h3>Powiązane wykonania</h3>
+              <span id="matched"></span>
+            </div>
+            <div class="filters">
+              <select id="scope" aria-label="Okno taśmy">
+                <option value="1">1 ms</option>
+                <option value="120">120 s</option></select
+              ><select id="side" aria-label="Strona wykonania">
+                <option value="0">Obie strony</option>
+                <option value="1">Kupno</option>
+                <option value="-1">Sprzedaż</option></select
+              ><button id="paging" hidden>Następne</button>
+            </div>
+            <div id="tape"></div>
+          </div>
+          <div class="trailbox">
+            <div class="subhead">
+              <h3>Ścieżka wykonań</h3>
+              <button id="expandtrail" aria-label="Powiększ ścieżkę wykonań">20 s ↗</button>
+            </div>
+            <canvas id="trailplot" aria-label="Wykonania w czasie według ceny i nominału"></canvas>
+          </div>
+          <div class="market-tape">
+            <div class="subhead">
+              <h3>Ostatnie na rynku</h3>
+              <span>czas UTC · cena · USD</span>
+            </div>
+            <div id="last"></div>
+          </div>
+          <div class="coverage" id="coverage"></div>
+        </aside>
+      </div>
+      <footer class="footnote">
+        <span id="legend"></span><button id="openplot">Ścieżka 20 s</button
+        ><a class="live-link" id="live-link" href="../../#orderflow?m=BTC">Na żywo ↗</a
+        ><button id="motion" aria-pressed="true">Animacje wł.</button><button id="info">Opis i źródła</button>
+      </footer>
+      <p id="keyhelp" class="sr">
+        Strzałki góra i dół wybierają cenę, prawo i lewo wybierają zdarzenie. Spacja odtwarza. Escape czyści klasę.
+        Filtry i klasy są także dostępne klawiszem Tab.
+      </p>
+    </main>
+    <dialog id="plotdialog">
+      <form method="dialog"><button autofocus aria-label="Zamknij wykres">×</button></form>
+      <h2>Ścieżka wykonań · 20 s</h2>
+      <p>
+        Punkt łączy wykonania po jednej cenie w tej samej milisekundzie. Wielkość zależy od kwoty. Wybierz punkt,
+        aby przypiąć jego cenę i czas.
+      </p>
+      <canvas
+        id="bigplot"
+        aria-label="Ścieżka według czasu i ceny, strzałki wybierają punkt, Enter otwiera"
+        tabindex="0"
+      ></canvas>
+      <p id="pointinfo"></p>
+    </dialog>
+    <dialog id="manual">
+      <form method="dialog"><button autofocus aria-label="Zamknij">×</button></form>
+      <h2>Jak czytać kolumny</h2>
+      <p>
+        <b>Drabinka.</b> Niebieski BID i czerwony ASK pokazują zlecenia oczekujące w ostatnim pomiarze. Dwie
+        jaśniejsze kolumny wokół ceny pokazują zarejestrowane wykonania w wybranej milisekundzie. Ślad utrzymuje
+        ostatnią kwotę na poziomie przez 2 s czasu nagrania. Kwota jest stała, zanika jej tło.
+      </p>
+      <p>
+        <b>Pamięć arkusza.</b> Każdy pionowy przekrój to jeden pomiar L2. Nagłówek podaje jego czas UTC. Strzałka i
+        kolor określają stronę. Δ L2 porównuje saldo BID minus ASK z poprzednim pomiarem na tej cenie. Powód zmiany
+        między pomiarami pozostaje nieznany.
+      </p>
+      <p>
+        <b>Ślad transakcji.</b> Każda kolumna podaje kupno minus sprzedaż na danej cenie w osobnych 5 s. Czytaj od
+        najstarszej po lewej. Po prawej klasy sumują podpisane nominały wyłącznie z wybranej milisekundy. Dotknij
+        komórki klasy, by zobaczyć konkretne wykonania w taśmie.
+      </p>
+      <p>
+        <b>Słupki pionowe.</b> L2 pokazuje procent łącznej wartości USD po każdej stronie ostatniej migawki, do 20
+        poziomów na stronę. 120 s pokazuje udział kupna i sprzedaży w zarejestrowanym obrocie. Liczby przy kolorach
+        podają udział. W komórkach długość paska rośnie liniowo w obrębie jednej miary.
+      </p>
+      <p>
+        <b>Odtworzenie.</b> Kursor wskazuje czas pokazanego zdarzenia. Zdarzenia o tej samej milisekundzie są jedną
+        klatką. Odtwarzanie zachowuje odstępy czasowe. Można przewijać lub przechodzić zdarzenie po zdarzeniu.
+        „Pokaż przykład” ustawia zapisany moment dla bieżącego układu. Wybór komórki zatrzymuje czas. „Śledź cenę”
+        podczas odtwarzania wybiera poziom o największym obrocie w nowej milisekundzie. Przy samym pomiarze L2
+        używa ostatniej transakcji.
+      </p>
+      <p>
+        <b>Oznaczenia.</b> „·” oznacza brak zarejestrowanej aktywności, „—” brak pokrycia danego poziomu lub czasu.
+        Zero delty oznacza równowagę kupna i sprzedaży. Delta rynku wymaga pełnego pokrycia 120 s. Pokrycie taśmy
+        podaje czas odbioru w oknie. Przy częściowym pokryciu kwoty i udziały obejmują tylko odebrane wykonania.
+        Wiek L2 jest różnicą pomiędzy czasem kursora i ostatniej dostępnej migawki.
+      </p>
+      <p>
+        <b>Sterowanie.</b> Na drabince ↑ ↓ zmieniają cenę, ← → czas, spacja przełącza odtwarzanie. Escape czyści
+        filtr klasy. Przełącznik animacji respektuje ustawienia ograniczonego ruchu urządzenia.
+      </p>
+      <p>
+        <b>Pochodzenie danych.</b> BTC pochodzi z wersjonowanego publicznego archiwum HyperQuant. Gold i S&amp;P
+        500 pochodzą z lokalnego nagrania publicznych kanałów Hyperliquid z 20.11.2026. Przykłady obejmują po dwie
+        minuty odtwarzania. USD to cena razy ilość, a stronę podaje źródło transakcji. Silnik pracuje na
+        całkowitych milionowych częściach USD.
+      </p>
+      <p class="sources">
+        <a
+          href="https://github.com/rdemb/hyperquant-data/tree/d5441197494010261f41c22accaf8c10f6d7949e/BTC/2026-11-20"
+          >Archiwum BTC</a
+        >
+        ·
+        <a href="https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/websocket/subscriptions"
+          >Publiczne kanały Hyperliquid</a
+        >
+        · <a href="https://hyperquant.tech/#orderflow?m=BTC">Order Flow HyperQuant</a>
+      </p>
+      <p class="sources">
+        <a href="https://propnexus.pro/assets/dompro-demo.gif">PropNexus</a> ·
+        <a href="https://motivewave.com/img/DOM_4_op.png">MotiveWave</a> ·
+        <a href="https://www.trading-fuer-anfaenger.de/wp-content/uploads/Orderflow-Smart-DOM-1.png">Smart DOM</a>
+        · <a href="https://bookmap.com/knowledgebase/docs/KB-SettingUpAndOperating-Columns">Kolumny Bookmap</a>
+      </p>
+    </dialog>
+    <script type="module" src="./replay.js"></script>
+  </body>
+</html>

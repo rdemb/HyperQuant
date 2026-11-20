@@ -45,6 +45,18 @@ export const GROUPS: { title: string; rows: Row[] }[] = [
         refresh: tr('na żywo', 'live'),
       },
       {
+        metric: tr('Order Flow · pamięć arkusza i delty według nominału', 'Order Flow · book memory and deltas by notional'),
+        source: 'Hyperliquid WebSocket · l2Book + trades',
+        method: tr(
+          'Arkusz pokazuje do czterech kolejnych migawek na tej samej cenie. Delta wykonań to kupno minus sprzedaż w USD. Klasa opisuje wartość pojedynczego wykonania. Komórka klasy obejmuje jedną milisekundę, ślad cztery odcinki po 5 s, a delta rynku 120 s.',
+          'The book shows up to four successive snapshots at each price. Trade delta is buyer-initiated minus seller-initiated notional in USD. Each trade is classified by its own notional. A band cell covers one millisecond, the trace covers four 5 s intervals, and market delta spans 120 s.'
+        ),
+        kinds: ['LIVE'],
+        refresh: tr('według czasu giełdy przy kursorze', 'at the cursor in exchange time'),
+        caveat: tr('Przy luce panel podaje pokrycie. Powtórka z 20.11.2026 korzysta z publicznego nagrania.',
+          'The panel reports coverage across gaps. The 20 Nov 2026 replay uses a public-market recording.'),
+      },
+      {
         metric: tr('Taśma transakcji', 'Trade tape'),
         source: 'Hyperliquid WS trades',
         method: tr('Strona agresora z pola side; rozmiar = cena·ilość, bez podłóg', 'Aggressor side from the side field; size = price·quantity, no floors'),
