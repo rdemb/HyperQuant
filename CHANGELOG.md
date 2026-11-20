@@ -6,6 +6,7 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ### Pamięć arkusza i ślad transakcji w Order Flow (2026-11-20)
 <!-- co-nowego: grupa=wykres | pl=Pamięć arkusza i ślad transakcji | en=Book memory and trade trace -->
+- Na tablecie arkusz Order Flow zajmuje całą szerokość, a delty, klasy i wykonania są bezpośrednio pod nim. Na telefonie można przełączać grupy kolumn z zachowaniem ceny i czasu.
 - W widoku „7 klas” wybór komórki otwiera wykonania danej klasy przy tej cenie i w tej milisekundzie. Nagranie z 20.11.2026 pozwala odtworzyć te same układy na trzech rynkach.
 - Order Flow dla BTC, GOLD i S&P 500 otwiera Pamięć arkusza z czterema migawkami L2 na wspólnej osi cen. Drabinka pokazuje aktualną głębokość i liczbę zleceń, a Ślad transakcji pokazuje deltę w czterech odcinkach po 5 s do kursora. Przekrój chwili zachowuje klasy wykonań i taśmę dla wybranej ceny.
 

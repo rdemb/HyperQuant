@@ -19,6 +19,7 @@ import { INIT, PROBE, fixtureInit } from './probe.mjs';
 import { DATA_BASE_URL, FIXED_NOW, createFixtures, entryMapFixture, liqMapFixture, registry } from './fixtures.mjs';
 import { MARTWE_GNIAZDO, PLIKI_APLIKACJI, POMIAR_PUSTEGO, cyfryPozaEtykietami, noweWidoki } from './pustyStan.mjs';
 import { compareBaseline, margin, metricsOf } from './baseline.mjs';
+import { checkOrderFlowLayout } from './orderFlowLayout.mjs';
 import { buildBlog, siteFromPackage } from '../blog/build.mjs';
 
 const args = process.argv.slice(2);
@@ -1317,6 +1318,7 @@ async function main() {
       await page.key('Escape');
       report.opisLiczb[key] = { klik, ...x, errors: page.errors.slice(e0), consoleErrors: page.consoleErrors.slice(c0) };
     }
+    if (!LIVE) report.orderFlow = await checkOrderFlowLayout(page, BASE, fx, FIXED_NOW);
     await page.viewport(1440, 900, false);
 
     // Pusty stan: każdy widok nowego wyglądu (src/nowy/widoki.ts) bez API giełdy, danych skanera, strumienia i danych
@@ -1430,6 +1432,7 @@ async function main() {
   // SMC+HL: obiekty wyboru w limicie projektu, na komputerze co najmniej jeden (warstwa liczy i rysuje)
   const s10 = typeof r.smc?.desktop === 'number' && typeof r.smc?.phone === 'number' && r.smc.desktop >= 1 && r.smc.desktop <= SMC_MAX.desktop && r.smc.phone <= SMC_MAX.phone;
   r.summary = { t1, t2, t3, t4, t5, t6, s1, s2, s3, s4, s5, s6, s7, s8, s9, s10 };
+  if (!LIVE) r.summary.orderFlow = r.orderFlow?.ok === true;
   const sp = r.smc?.panelPhone;
   r.summary.smcPanel = r.smc?.profileStable && !!sp && sp.left >= 0 && sp.top >= 0 && sp.right <= sp.vw && sp.bottom <= sp.vh && sp.toggles === 5 && sp.enabled && !sp.badNumber && r.smc.panelPhoneClosed && r.smc.panelPhoneNoJump;
   // M1: na każdym rynku i w obu układach bez elementów nad świecami i nachodzących etykiet, bez błędów strony i NaN, właściwy rynek
@@ -1643,6 +1646,7 @@ async function main() {
       return x.okno ? `${key} (${x.klik}): ${x.left}–${x.right} px z ${x.vw}` : `${key}: BRAK OKNA (${x.klik ?? 'bez przycisku'})`;
     }).join('; ')} — ${ok(r.summary.opisLiczb)}`);
   }
+  if (r.orderFlow) lines.push(`Order Flow · pełne liczby na pięciu szerokościach i dwie transakcje nad dolnym menu tabletu — ${ok(r.summary.orderFlow)}`);
   const metrics = metricsOf(r);
   let baseDiff = [];
   if (!LIVE) {

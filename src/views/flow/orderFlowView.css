@@ -287,6 +287,13 @@
     scroll-margin-block: calc(var(--hq-header-h, 4rem) + .5rem) calc(4rem + env(safe-area-inset-bottom));
   }
 }
+@container (max-width: 539px) {
+  .of-page-heading .of-controls { gap: 4px; }
+  .of-page-heading .of-controls nav { gap: 2px; }
+  .of-page-heading .of-controls :is(a, button) { padding-inline: 6px; font-size: 12px; }
+  .of-page-heading .of-mode svg[aria-hidden="true"] { display: none; }
+}
+
 @container (min-width: 540px) and (max-width: 620px) {
   .of-page-heading { grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "title markets chart"; gap: 5px; }
   .of-page-heading #orderflow-title { font-size: 23px; white-space: nowrap; }
