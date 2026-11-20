@@ -249,6 +249,22 @@
   .dom-workspace .dom-class-grid .dom-measure { padding-inline: 2px; }
 }
 
+@container order-flow (max-width: 1139px) {
+  @container dom-book (min-width: 500px) {
+    /* Cena zajmuje 16%, a po jej lewej zawsze jest 42% tabeli. */
+    .dom-grid { --dom-price-left-track: 14%; }
+    .dom-grid .dom-price { width: 16%; }
+    .dom-grid thead th:has(~ .dom-price) { width: var(--dom-price-left-track); }
+    .dom-grid-scroll { scrollbar-gutter: stable; }
+    .dom-class-grid .dom-measure { padding-inline: 2px; }
+    :is([data-dom-mode="ladder"], [data-dom-mode="trace"]) .dom-grid:not(.dom-class-grid) { --dom-price-left-track: 21%; }
+  }
+  @container dom-book (min-width: 840px) {
+    [data-dom-mode="memory"] .dom-grid:not(.dom-class-grid) { --dom-price-left-track: 10.5%; }
+    [data-dom-mode="ladder"] .dom-grid:not(.dom-class-grid) { --dom-price-left-track: 14%; }
+  }
+}
+
 @container order-flow (min-width: 1140px) {
   @container dom-readout (max-width: 429px) {
     .dom-readout .dom-amount-wide { display: none; }

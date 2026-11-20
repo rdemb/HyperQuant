@@ -181,6 +181,8 @@ export function DomWorkspace({
     if (index < frame.nBids) bid += usd;
     else ask += usd;
   });
+  const bookBalance = balanceReadout(frame ? { buy: bid, sell: ask } : null, true);
+  const tapeBalance = balanceReadout(trades.totals, false);
   return (
     <section className="dom-board" aria-label={title} data-dom-mode={mode} data-dom-bands={showBands || undefined} data-dom-columns={columns ? "older" : "recent"}>
       <header className="dom-board-head">
@@ -212,8 +214,8 @@ export function DomWorkspace({
       </header>
       <div className="dom-board-body">
         <div className="dom-balances">
-          <Balance label="L2" buy={bid} sell={ask} bidAsk />
-          <Balance label="120 s" buy={trades.totals?.buy ?? 0} sell={trades.totals?.sell ?? 0} />
+          <Balance label="L2" readout={bookBalance} />
+          <Balance label="120 s" readout={tapeBalance} />
         </div>
         <div ref={scrollRef} className="dom-grid-scroll" tabIndex={0} role="region" aria-label={tr('Tabela cen w USD', 'Price table in USD')}>
           {showBands ? <BandGrid prices={visible} point={point} activePrice={activePrice} activeBand={activeBand} pick={pickBand} fmtPx={fmtPx} priceFirst={priceFirst} /> : <table className="dom-grid">
@@ -281,20 +283,35 @@ export function DomWorkspace({
         <button type="button" className="dom-path-toggle" aria-expanded={pathOpen} onClick={() => setPathOpen(value => !value)}>
           {tr('Ścieżka 20 s', '20 s path')}
         </button>
-        {activePrice !== null && <LevelReadout px={activePrice} books={books} mode={mode} rows={trades}
-          point={pointAtPrice.get(activePrice)} covered={point.covered} fmtPx={fmtPx} />}
+        <details className="dom-level-detail">
+          <summary>{tr('Dokładny poziom', 'Exact level')}</summary>
+          <dl>
+            <div><dt>{tr('Widoczna głębokość L2', 'Visible L2 depth')}</dt><dd data-dom-share="book">{bookBalance.text}</dd></div>
+            <div><dt>{tr('Udział obrotu · 120 s', 'Volume share · 120 s')}</dt><dd data-dom-share="tape">{tapeBalance.text}</dd></div>
+            {activePrice !== null && <LevelReadout px={activePrice} books={books} mode={mode} rows={trades}
+              point={pointAtPrice.get(activePrice)} covered={point.covered} fmtPx={fmtPx} />}
+          </dl>
+        </details>
       </footer>
       <TradePath trades={trades} pick={pickDot} fmtPx={fmtPx} expanded={pathOpen} />
     </section>
   );
 }
 
-function Balance({ label, buy, sell, bidAsk = false }: { label: string; buy: number; sell: number; bidAsk?: boolean }) {
-  const total = buy + sell;
-  const top = total ? Math.round(100 * sell / total) : null;
-  const description = top === null ? label + ' · ' + DASH
-    : label + ' · ' + (bidAsk ? 'ASK ' : tr('Sprzedaż ', 'Sell ')) + top + '% / '
-      + (bidAsk ? 'BID ' : tr('Kupno ', 'Buy ')) + (100 - top) + '%';
+function balanceReadout(totals: { buy: number; sell: number } | null, bidAsk: boolean) {
+  if (!totals) return { top: null, text: DASH };
+  const total = totals.buy + totals.sell;
+  if (total === 0) return { top: null, text: bidAsk
+    ? tr('Brak widocznej głębokości', 'No visible depth') : tr('Brak obrotu', 'No trades') };
+  const top = Math.round(100 * totals.sell / total);
+  const text = (bidAsk ? 'ASK ' : tr('Sprzedaż ', 'Sell ')) + top + '% / '
+    + (bidAsk ? 'BID ' : tr('Kupno ', 'Buy ')) + (100 - top) + '%';
+  return { top, text };
+}
+
+function Balance({ label, readout }: { label: string; readout: ReturnType<typeof balanceReadout> }) {
+  const { top, text } = readout;
+  const description = label + ' · ' + text;
   return <div className="dom-balance" title={description} role="img" aria-label={description}>
     <small>{label}</small>
     <span className="dom-share ml-ask" aria-hidden="true">{top === null ? DASH : top + '%'}</span>
@@ -344,28 +361,25 @@ function LevelReadout({ px, books, mode, rows, point, covered, fmtPx }: {
   const previous = bookQuote(books.at(-2) ?? null, px);
   const profile = rows.coverage.volume && !tradeRow?.missingVolume ? tradeRow?.volume ?? 0n : null;
   const recent = rows.coverage.recent && !tradeRow?.missingRecent ? tradeRow?.recent ?? 0n : null;
-  return <details className="dom-level-detail">
-    <summary>{tr('Dokładny poziom', 'Exact level')}</summary>
-    <dl>
-      <div><dt>{tr('Cena', 'Price')}</dt><dd>{fmtPx(px)} USD</dd></div>
-      {mode === 'memory' && books.map((book, i) => {
-        const quote = bookQuote(book, px);
-        return <div key={i}><dt>{book ? timestamp.format(book.t) + ' UTC' : 'L2 · ' + DASH}</dt>
-          <dd>{exactBook(quote ? quote.bid - quote.ask : null)}</dd></div>;
-      })}
-      {mode === 'memory' && <div><dt>Δ L2</dt><dd>{exactBook(current && previous ? current.bid - current.ask - previous.bid + previous.ask : null)}</dd></div>}
-      {mode !== 'trace' && <div><dt>{tr('Obrót 120 s', '120 s volume')}</dt><dd>{exactTrade(profile, false)}</dd></div>}
-      {mode === 'memory' && <div><dt>{tr('Ślad · 2 s', 'Trace · 2 s')}</dt><dd>{exactTrade(recent)}</dd></div>}
-      {mode === 'ladder' && <>
-        <div><dt>BID</dt><dd>{current ? bookNumber.format(current.bid) + ' USD' : DASH}</dd></div>
-        <div><dt>ASK</dt><dd>{current ? bookNumber.format(current.ask) + ' USD' : DASH}</dd></div>
-        <div><dt>{tr('Kupiono · 1 ms', 'Bought · 1 ms')}</dt><dd>{exactTrade(amountsAt(point, null, 'buy', covered)?.usd ?? null, false)}</dd></div>
-        <div><dt>{tr('Sprzedano · 1 ms', 'Sold · 1 ms')}</dt><dd>{exactTrade(amountsAt(point, null, 'sell', covered)?.usd ?? null, false)}</dd></div>
-      </>}
-      {mode === 'trace' && ['20–15 s', '15–10 s', '10–5 s', '5–0 s'].map((name, i) => <div key={name}>
-        <dt>{name}</dt><dd>{exactTrade(rows.coverage.slices[i] && !tradeRow?.missingSlices.has(i) ? tradeRow?.slices[i] ?? 0n : null)}</dd>
-      </div>)}
-      <div><dt>Δ · 1 ms</dt><dd>{exactTrade(valueOf(priceDelta(point, covered)))}</dd></div>
-    </dl>
-  </details>;
+  return <>
+    <div><dt>{tr('Cena', 'Price')}</dt><dd>{fmtPx(px)} USD</dd></div>
+    {mode === 'memory' && books.map((book, i) => {
+      const quote = bookQuote(book, px);
+      return <div key={i}><dt>{book ? timestamp.format(book.t) + ' UTC' : 'L2 · ' + DASH}</dt>
+        <dd>{exactBook(quote ? quote.bid - quote.ask : null)}</dd></div>;
+    })}
+    {mode === 'memory' && <div><dt>Δ L2</dt><dd>{exactBook(current && previous ? current.bid - current.ask - previous.bid + previous.ask : null)}</dd></div>}
+    {mode !== 'trace' && <div><dt>{tr('Obrót 120 s', '120 s volume')}</dt><dd>{exactTrade(profile, false)}</dd></div>}
+    {mode === 'memory' && <div><dt>{tr('Ślad · 2 s', 'Trace · 2 s')}</dt><dd>{exactTrade(recent)}</dd></div>}
+    {mode === 'ladder' && <>
+      <div><dt>BID</dt><dd>{current ? bookNumber.format(current.bid) + ' USD' : DASH}</dd></div>
+      <div><dt>ASK</dt><dd>{current ? bookNumber.format(current.ask) + ' USD' : DASH}</dd></div>
+      <div><dt>{tr('Kupiono · 1 ms', 'Bought · 1 ms')}</dt><dd>{exactTrade(amountsAt(point, null, 'buy', covered)?.usd ?? null, false)}</dd></div>
+      <div><dt>{tr('Sprzedano · 1 ms', 'Sold · 1 ms')}</dt><dd>{exactTrade(amountsAt(point, null, 'sell', covered)?.usd ?? null, false)}</dd></div>
+    </>}
+    {mode === 'trace' && ['20–15 s', '15–10 s', '10–5 s', '5–0 s'].map((name, i) => <div key={name}>
+      <dt>{name}</dt><dd>{exactTrade(rows.coverage.slices[i] && !tradeRow?.missingSlices.has(i) ? tradeRow?.slices[i] ?? 0n : null)}</dd>
+    </div>)}
+    <div><dt>Δ · 1 ms</dt><dd>{exactTrade(valueOf(priceDelta(point, covered)))}</dd></div>
+  </>;
 }
