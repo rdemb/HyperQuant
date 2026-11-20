@@ -1,6 +1,6 @@
 import type { BookHistory } from '../../charts/pro/core/book';
 import type { Coverage } from '../../charts/pro/core/coverage';
-import { MINUTE, minuteOf, type Tape, type TradeRow } from '../../charts/pro/core/tape';
+import { MINUTE, minuteOf, type MinuteChunk, type Tape, type TradeRow } from '../../charts/pro/core/tape';
 import { BOOK_HIDE_AFTER_MS } from './orderFlowDesk';
 
 export const LENS_MS = 120_000;
@@ -22,6 +22,75 @@ function notional(px: number, sz: number, szDecimals: number): bigint | null {
   const price = atoms(px, 10 ** (6 - szDecimals));
   const size = atoms(sz, 10 ** szDecimals);
   return price === null || size === null ? null : BigInt(price) * BigInt(size);
+}
+
+export type LensDelta =
+  | { kind: 'exact'; micros: bigint }
+  | { kind: 'coverage'; coveredMs: number }
+  | { kind: 'precision' };
+
+const DELTA_BLOCK = 256;
+type DeltaSum = { micros: bigint; invalid: number };
+type DeltaMinute = { version: number; prefixes: DeltaSum[] };
+
+/** Sumy co 256 wykonań. Kursor czyta typowo tylko dwa niepełne brzegi na minutę. */
+export class LensDeltaIndex {
+  private readonly minutes = new Map<MinuteChunk, DeltaMinute>();
+
+  constructor(private readonly tape: Tape, private readonly szDecimals: number) {}
+
+  read(coverage: Coverage, cursor: number): LensDelta {
+    const to = cursor + 1;
+    const from = to - LENS_MS;
+    if (!coverage.covers(from, to)) return { kind: 'coverage', coveredMs: coverage.coveredMs(from, to) };
+    const total: DeltaSum = { micros: 0n, invalid: 0 };
+    for (let minute = minuteOf(from); minute < to; minute += MINUTE) {
+      const chunk = this.tape.chunk(minute);
+      if (!chunk) continue;
+      const first = timeIndex(chunk.t, from);
+      const limit = timeIndex(chunk.t, to);
+      if (first === limit) continue;
+      const startBlock = Math.ceil(first / DELTA_BLOCK);
+      const endBlock = Math.floor(limit / DELTA_BLOCK);
+      if (endBlock <= startBlock) {
+        this.add(chunk, first, limit, total);
+        continue;
+      }
+      const prefix = this.prefixes(chunk, endBlock);
+      total.micros += prefix[endBlock].micros - prefix[startBlock].micros;
+      total.invalid += prefix[endBlock].invalid - prefix[startBlock].invalid;
+      this.add(chunk, first, startBlock * DELTA_BLOCK, total);
+      this.add(chunk, endBlock * DELTA_BLOCK, limit, total);
+    }
+    return total.invalid > 0 ? { kind: 'precision' } : { kind: 'exact', micros: total.micros };
+  }
+
+  private prefixes(chunk: MinuteChunk, endBlock: number): DeltaSum[] {
+    let cached = this.minutes.get(chunk);
+    this.minutes.delete(chunk);
+    if (cached?.version !== chunk.version) cached = { version: chunk.version, prefixes: [{ micros: 0n, invalid: 0 }] };
+    this.minutes.set(chunk, cached);
+    // Zachowaj mały zapas przy cofaniu kursora. Nie zatrzymuj starej taśmy.
+    if (this.minutes.size > 4) {
+      const oldest = this.minutes.keys().next();
+      if (!oldest.done) this.minutes.delete(oldest.value);
+    }
+    const { prefixes } = cached;
+    for (let block = prefixes.length; block <= endBlock; block++) {
+      const next = { ...prefixes[block - 1] };
+      this.add(chunk, (block - 1) * DELTA_BLOCK, block * DELTA_BLOCK, next);
+      prefixes.push(next);
+    }
+    return prefixes;
+  }
+
+  private add(chunk: MinuteChunk, first: number, limit: number, total: DeltaSum) {
+    for (let i = first; i < limit; i++) {
+      const usd = notional(chunk.px[i], chunk.sz[i], this.szDecimals);
+      if (usd === null) total.invalid++;
+      else total.micros += chunk.side[i] === 1 ? usd : -usd;
+    }
+  }
 }
 
 type LensFilter = { px: number | null; band: number | null; side?: TradeRow['side'] };
@@ -102,6 +171,13 @@ export function amountsAt(row: PriceRead | undefined, band: number | null, side:
     total.usd += cell[side].usd;
   }
   return total;
+}
+
+export function priceDelta(row: PriceRead | undefined, covered: boolean, band: number | null = null): LensDelta {
+  if (!covered) return { kind: 'coverage', coveredMs: 0 };
+  const buy = amountsAt(row, band, 'buy', true);
+  const sell = amountsAt(row, band, 'sell', true);
+  return buy && sell ? { kind: 'exact', micros: buy.usd - sell.usd } : { kind: 'precision' };
 }
 
 export function momentAt(tape: Tape, coverage: Coverage, t: number, szDecimals: number) {

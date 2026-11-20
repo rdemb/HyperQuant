@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { locale, tr } from '../../i18n';
 import { DASH } from '../../ui/format';
-import { NOMINAL_BANDS, amountsAt, type ExecutionAmounts, type LensPin, type LensTrade, type PriceRead, type readMomentWindow } from './momentLensModel';
+import { LENS_MS, NOMINAL_BANDS, amountsAt, priceDelta, type ExecutionAmounts, type LensDelta, type LensPin, type LensTrade, type PriceRead, type readMomentWindow } from './momentLensModel';
 
 const grouped = new Intl.NumberFormat(locale);
 const ungrouped = new Intl.NumberFormat(locale, { useGrouping: false });
@@ -120,23 +120,75 @@ export function LensPriceMatrix({ row, covered, pin, onSelect, context, cursor }
   );
 }
 
-export function LensPriceTotals({ row, covered }: { row: PriceRead | undefined; covered: boolean }) {
-  return <div className="ml-price-totals">{(['buy', 'sell'] as const).map(side => {
-    const value = amountsAt(row, null, side, covered);
-    return <div key={side} className={side === 'buy' ? 'ml-bid' : 'ml-ask'} data-ml-total={side} data-count={value?.count} data-micros={value?.usd.toString()}>
-      <small>{side === 'buy' ? '↑' : '↓'} {spokenSide(side)} · {value ? grouped.format(value.count) : DASH} {tr('wyk.', 'fills')}</small>
-      <strong>{value ? nominalUsd(value.usd) : DASH} <small>USD</small></strong>
+function deltaSign(micros: bigint) {
+  return micros === 0n ? '' : micros > 0n ? '+' : '−';
+}
+
+function exactDeltaUsd(micros: bigint) {
+  return `${deltaSign(micros)}${formatAtoms(micros < 0n ? -micros : micros, 6)} USD`;
+}
+
+function DeltaTotal({ scope, delta }: { scope: 'price' | 'market'; delta: LensDelta }) {
+  const label = scope === 'price' ? tr('Δ przy cenie · 1 ms', 'Δ at price · 1 ms') : tr('Δ rynku · 120 s', 'Market Δ · 120 s');
+  const heading = <small className="ml-delta-label"><span>{label}</span><span>USD</span></small>;
+  if (delta.kind !== 'exact') {
+    const status = delta.kind === 'precision' ? tr('Brak precyzji', 'Precision unavailable')
+      : scope === 'price' ? tr('Brak pokrycia', 'No coverage')
+      : `${tr('Pokrycie', 'Coverage')} ${ungrouped.format(delta.coveredMs / 1000)}/${LENS_MS / 1000} s`;
+    return <div className="ml-delta-total" data-ml-delta={scope} data-delta-state={delta.kind}>
+      {heading}
+      <strong>{DASH}</strong>
+      <span className="ml-delta-status">{status}</span>
     </div>;
-  })}</div>;
+  }
+  const { micros } = delta;
+  const sign = deltaSign(micros);
+  const magnitude = micros < 0n ? -micros : micros;
+  const exact = formatAtoms(magnitude, 6, false);
+  const subcent = magnitude > 0n && magnitude < 10_000n;
+  const compact = subcent ? exact : nominalUsd(magnitude);
+  const full = exactDeltaUsd(micros);
+  const amount = <strong>{sign}{compact}</strong>;
+  const side = micros > 0n ? 'ml-bid' : micros < 0n ? 'ml-ask' : '';
+  return <div className={`ml-delta-total ${side}${subcent ? ' ml-delta-subcent' : ''}`} data-ml-delta={scope} data-delta-micros={micros.toString()}>
+    {heading}
+    {compact === exact ? amount : <details className="ml-delta-detail">
+      <summary aria-label={`${label} · ${full} · ${tr('Dokładna kwota', 'Exact amount')}`}>{amount}</summary>
+      <span>{full}</span>
+    </details>}
+  </div>;
+}
+
+export function LensPriceTotals({ row, covered, marketDelta }: {
+  row: PriceRead | undefined; covered: boolean; marketDelta: LensDelta;
+}) {
+  return <div className="ml-price-totals">
+    {(['buy', 'sell'] as const).map(side => {
+      const value = amountsAt(row, null, side, covered);
+      return <div key={side} className={side === 'buy' ? 'ml-bid' : 'ml-ask'} data-ml-total={side} data-count={value?.count} data-micros={value?.usd.toString()}>
+        <small>{side === 'buy' ? '↑' : '↓'} {spokenSide(side)} · {value ? grouped.format(value.count) : DASH} {tr('wyk.', 'fills')}</small>
+        <strong>{value ? nominalUsd(value.usd) : DASH} <small>USD</small></strong>
+      </div>;
+    })}
+    <DeltaTotal scope="price" delta={priceDelta(row, covered)} />
+    <DeltaTotal scope="market" delta={marketDelta} />
+  </div>;
 }
 
 export function LensCellDetail({ selection, row, covered, fmtPx, decimals, unit }: {
   selection: LensPin; row: PriceRead | undefined; covered: boolean;
   fmtPx: (price: number) => string; decimals: number; unit: string;
 }) {
+  const delta = selection.band === null ? null : priceDelta(row, covered, selection.band);
   return (
     <section className="ml-detail" aria-label={tr('Dokładny odczyt filtra', 'Exact filter readout')}>
-      <strong>{fmtPx(selection.px)} USD · {selection.band === null ? tr('Wszystkie klasy', 'All bands') : `${NOMINAL_BANDS[selection.band]} USD`}</strong>
+      <div className="ml-detail-head">
+        <strong>{fmtPx(selection.px)} USD · {selection.band === null ? tr('Wszystkie klasy', 'All bands') : `${NOMINAL_BANDS[selection.band]} USD`}</strong>
+        {delta && <span data-ml-detail-delta data-delta-micros={delta.kind === 'exact' ? delta.micros.toString() : undefined}>
+          {tr('Δ klasy · 1 ms', 'Band Δ · 1 ms')} · {delta.kind === 'exact' ? exactDeltaUsd(delta.micros)
+            : `${DASH} USD · ${delta.kind === 'coverage' ? tr('Brak pokrycia', 'No coverage') : tr('Brak precyzji', 'Precision unavailable')}`}
+        </span>}
+      </div>
       {(['buy', 'sell'] as const).filter(side => selection.side === undefined || selection.side === (side === 'buy' ? 1 : -1)).map(side => {
         const value = amountsAt(row, selection.band, side, covered);
         return <span key={side} className={side === 'buy' ? 'ml-bid' : 'ml-ask'} data-ml-detail-side={side}>
