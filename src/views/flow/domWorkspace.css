@@ -18,12 +18,12 @@
   background: transparent; color: inherit; font: 720 clamp(11px, 1.5vw, 15px) var(--font-mono);
 }
 .dom-workspace .dom-grid tr.dom-selected :is(td, th) { box-shadow: inset 0 1px var(--color-level), inset 0 -1px var(--color-level); }
-.dom-workspace .dom-grid .dom-selected button { background: var(--color-level); color: var(--color-page); }
+.dom-workspace .dom-grid .dom-selected .dom-price button { background: var(--color-level); color: var(--color-page); }
 .dom-depth { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr auto; align-items: center; gap: 3px; }
 .dom-depth > small { padding-right: 3px; color: var(--color-ink-2); font-size: 10px; }
 .dom-measure { display: block; position: relative; padding: 2px 3px; font-size: clamp(10px, 1.1vw, 13px); overflow-wrap: anywhere; }
 .dom-fill { position: absolute; inset: 1px auto 1px 0; background: currentColor; opacity: .18; pointer-events: none; }
-.dom-measure > :last-child { position: relative; }
+.dom-measure > :not(.dom-fill) { position: relative; }
 .dom-measure[data-missing] { color: var(--color-ink-2); background: repeating-linear-gradient(135deg, transparent 0 4px, var(--color-line) 4px 5px); }
 .dom-empty { padding: 14px 8px; font-size: 13px; color: var(--color-ink-2); }
 .dom-board-foot { border-top: 1px solid var(--color-line); }
@@ -38,23 +38,10 @@
 .dom-workspace .ml-transport { grid-column: 1 / -1; }
 .dom-workspace .ml-side-panels { grid-template-columns: minmax(0, 1fr); }
 
-@container (min-width: 1000px) {
-  .dom-workspace .ml-main { grid-template-columns: minmax(0, 2.25fr) minmax(325px, 1fr); }
-  .dom-workspace .dom-jump { display: none; }
-}
-@container (max-width: 999px) {
-  .dom-workspace .ml-main { grid-template-columns: minmax(0, 1fr); }
-  .dom-grid-scroll { max-height: min(36vh, 382px); }
-  [data-dom-mode="memory"] .dom-extra { display: none; }
-}
-@container (min-width: 540px) and (max-width: 999px) {
-  .dom-workspace .ml-side-panels { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-@container (max-width: 539px) {
-  .dom-grid .dom-price { width: 18%; }
-  .dom-depth { grid-auto-flow: row; gap: 0; }
-  .dom-extra { display: none; }
-}
+
+
+
+
 .dom-bids { background: color-mix(in srgb, var(--color-buy) 12%, var(--color-surface-2)); }
 .dom-asks { background: color-mix(in srgb, var(--color-sell) 12%, var(--color-surface-2)); }
 .dom-measure { outline: 1px solid transparent; outline-offset: -1px; }
@@ -70,72 +57,12 @@
 .dom-path-empty { position: relative; display: block; padding: 5px; }
 .dom-workspace .ml-steps { flex-wrap: wrap; }
 .dom-workspace .ml-scope:focus { outline: 1px solid var(--color-accent); }
-@container (min-width: 540px) and (max-width: 999px) {
-  .dom-workspace .ml-main { grid-template-columns: minmax(0, 1fr) minmax(265px, .97fr); }
-  .dom-workspace .ml-side-panels { grid-template-columns: minmax(0, 1fr); }
-  .dom-workspace .dom-jump { display: none; }
-  .dom-grid-scroll { max-height: 430px; }
-  .dom-workspace .dom-grid :is(.dom-bids, .dom-asks) { min-width: 0; }
-  .dom-grid thead th[data-dom-snapshot] { word-break: break-all; }
-}
-@container (min-width: 540px) {
-  .dom-inspector .ml-side-panels > .ml-tape { grid-row: 1; }
-  .dom-inspector .ml-band-context-head small { display: none; }
-  .dom-inspector .ml-matrix thead th { padding-inline: 3px; }
-  .dom-inspector .ml-matrix thead th:first-child { width: 62px; }
-  .dom-inspector .ml-cell-measure { padding-inline: 3px; }
-  .dom-inspector .ml-price-totals strong { font-size: clamp(17px, 3vw, 22px); }
-}
-@container (min-width: 540px) and (max-width: 720px) {
-  .dom-workspace .ml-transport { padding: 3px 6px; }
-  .dom-workspace .ml-clock { gap: 0 7px; margin-bottom: 1px; }
-  .dom-workspace .ml-clock time { font-size: 14px; }
-  .dom-workspace .ml-clock small { font-size: 10px; }
-  .dom-workspace .ml-timeline { height: 21px; }
-  .dom-workspace .ml-range input { min-height: 16px; }
-  .dom-workspace .ml-steps button { min-height: 24px; }
-  .dom-inspector h2 { margin: 4px 6px 0; font-size: 15px; }
-  .dom-inspector .ml-price-hero { padding: 3px 6px; gap: 1px 3px; }
-  .dom-workspace .ml-active-price { min-height: 27px; font-size: 25px; padding: 0 4px; }
-  .dom-inspector .ml-price-totals > div { padding: 3px 4px; gap: 0; }
-  .dom-inspector .ml-price-totals small { line-height: 1.1; font-size: 10px; }
-  .dom-inspector .ml-delta-label { display: block; }
-  .dom-inspector .ml-delta-label small + small { margin-left: 3px; }
-  .dom-inspector .ml-delta-detail summary { min-height: 20px; }
-  .dom-inspector .ml-matrix thead th { padding-block: 2px; font-size: 10px; }
-  .dom-inspector .ml-band-context-head { width: 23%; }
-  .dom-inspector .ml-band-trace { height: 13px; }
-  .dom-inspector .ml-band-context { gap: 0; padding-inline: 3px; }
-  .dom-workspace .ml-matrix th button { min-height: 29px; padding-inline: 4px; font-size: 12px; }
-  .dom-workspace .ml-measure-button { min-height: 29px; }
-  .dom-inspector .ml-cell-measure { min-height: 29px; gap: 2px; padding-block: 0; }
-  .dom-inspector .ml-tape-stamp small { display: none; }
-  .dom-workspace .ml-executions tbody :is(th, td) { padding-block: 1px; }
-  .dom-inspector .ml-book { overflow: auto; }
-}
+
+
+
 .dom-short-clock { display: none; }
-@container (max-width: 999px) {
-  .dom-grid thead th .dom-full-clock { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-  .dom-short-clock { display: inline; font-variant-numeric: tabular-nums; }
-}
-@container (min-width: 540px) and (max-width: 720px) {
-  .dom-workspace .ml-transport {
-    display: grid; align-items: center; grid-template-columns: minmax(0, 1fr) minmax(0, auto);
-    grid-template-areas: "clock steps" "timeline range"; gap: 2px 5px;
-  }
-  .dom-workspace .ml-clock { grid-area: clock; line-height: 1.1; }
-  .dom-workspace .ml-clock small { margin-left: 0; }
-  .dom-workspace .ml-steps { grid-area: steps; }
-  .dom-workspace .ml-timeline-key { display: none; }
-  .dom-workspace .ml-timeline { grid-area: timeline; }
-  .dom-workspace .ml-range { grid-area: range; }
-  .dom-workspace .ml-range > span { max-width: 7ch; overflow: hidden; }
-  .dom-inspector .ml-delta-label span + span { margin-left: 3px; }
-  .dom-inspector .ml-cell-measure { font-size: 13px; }
-  .dom-workspace .ml-price-picker { flex: 1; }
-  .dom-workspace .ml-price-picker select { min-height: 24px; }
-  .dom-workspace .ml-panel-head button { min-height: 25px; }
-}
+
+
 .dom-board-body { display: grid; grid-template-columns: auto minmax(0, 1fr); }
 .dom-balances { display: flex; gap: 2px; padding: 4px 2px; border-block: 1px solid var(--color-line); }
 .dom-balance { display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 3px; min-width: 11px; }
@@ -146,20 +73,9 @@
 .dom-balance-bar span + span { background: var(--color-buy); }
 .dom-inspector .ml-side-panels > .ml-filter { border: 1px solid var(--color-line); border-radius: 8px; background: var(--color-surface-2); }
 .dom-inspector .ml-side-panels > .ml-filter button { white-space: normal; }
-@container (max-width: 539px) {
-  .dom-balances { gap: 1px; padding-inline: 1px; }
-  .dom-balance { min-width: 9px; }
-  .dom-balance small { font-size: 8px; }
-}
+
 .dom-workspace .dom-tools > .of-status { min-height: 0; }
-@container (min-width: 540px) and (max-width: 720px) {
-  .dom-workspace .dom-tools > .of-status > :nth-child(2) { display: none; }
-  .dom-workspace .dom-inspector .ml-tape { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; }
-  .dom-workspace .ml-tape > :nth-child(n+3) { grid-column: 1 / -1; }
-  .dom-workspace .ml-tape .ml-panel-head { padding: 3px; gap: 3px; }
-  .dom-workspace .ml-tape .ml-panel-head button { padding-inline: 4px; }
-  .dom-workspace .ml-tape-stamp { padding: 5px 4px 2px; line-height: 1.15; }
-}
+
 .dom-top-quote { display: flex; flex-wrap: wrap; gap: 1px 8px; font: 11px var(--font-mono); }
 .dom-top-quote strong { font-weight: 700; }
 .dom-balance { grid-template-rows: auto auto minmax(0, 1fr) auto; }
@@ -171,22 +87,142 @@
 }
 .dom-workspace .dom-class-grid td button[aria-pressed="true"] { outline: 2px solid var(--color-accent); outline-offset: -2px; }
 .dom-class-grid .dom-measure { font-variant-numeric: tabular-nums; }
-@container (min-width: 540px) and (max-width: 999px) {
-  .dom-workspace .ml-main:has([data-dom-bands]) .dom-board { grid-column: 1 / -1; }
-  [data-dom-bands] .dom-grid-scroll { max-height: clamp(155px, 25dvh, 230px); }
-  [data-dom-bands] .dom-path { display: none; }
-  [data-dom-bands] + .dom-inspector {
-    grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  }
-  [data-dom-bands] + .dom-inspector .ml-matrix { display: none; }
+
+
+.dom-workspace { container-name: order-flow; }
+.dom-amount-compact, .dom-column-controls, .dom-path-toggle, .dom-band-controls { display: none; }
+.dom-level-detail summary { cursor: pointer; color: var(--color-ink-1); }
+.dom-level-detail[open] { flex-basis: 100%; }
+.dom-level-detail dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(145px, 100%), 1fr)); gap: 4px 8px; padding-block: 5px; }
+.dom-level-detail dd { margin: 0; color: var(--color-ink-1); }
+.dom-inspector .ml-side-panels { align-content: start; }
+.dom-band-controls button small { color: var(--color-ink-2); font: inherit; }
+.dom-workspace .dom-grid .dom-price button { font-variant-numeric: tabular-nums; }
+
+@container order-flow (min-width: 1140px) {
+  .dom-workspace .ml-main { grid-template-columns: minmax(0, 2.25fr) minmax(345px, 1fr); }
+  .dom-workspace .dom-jump { display: none; }
 }
-@container (max-width: 539px) {
-  [data-dom-bands] .dom-balances { display: none; }
-  [data-dom-bands] .dom-board-body { grid-template-columns: minmax(0, 1fr); }
-  .dom-workspace .dom-class-grid th, .dom-workspace .dom-class-grid td { padding-inline: 0; }
-  .dom-class-grid .dom-measure { padding-inline: 0; font-size: 10px; }
-}
-@container (max-width: 720px) {
-  .dom-top-quote { flex-basis: 100%; }
+@container order-flow (max-width: 1139px) {
+  .dom-workspace .ml-main { grid-template-columns: minmax(0, 1fr); gap: 5px; padding-block: 4px; }
+  .dom-workspace .dom-tools { gap: 3px 6px; }
+  .dom-workspace .dom-tools .ml-paused { font: 11px var(--font-mono); }
+  .dom-workspace .dom-modes button { min-height: 33px; }
+  .dom-board-head, .dom-board-foot { padding: 4px 6px; gap: 3px 7px; }
+  .dom-board-head h2 { font-size: 15px; }
+  .dom-board-head small { font-size: 10px; }
+  .dom-board-head button { min-height: 29px; padding-inline: 6px; }
+  .dom-board-foot { font-size: 10px; }
+  .dom-workspace .dom-board-foot button { min-height: 23px; padding-inline: 5px; font-size: 11px; }
+  .dom-workspace .dom-grid thead th { font-size: 11px; padding: 3px 1px; white-space: nowrap; }
+  .dom-grid thead small { font-size: 8px; }
+  .dom-grid thead th .dom-full-clock { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .dom-short-clock { display: inline; font-variant-numeric: tabular-nums; }
+  .dom-amount-wide { display: none; }
+  .dom-amount-compact { display: inline; }
+  .dom-grid .dom-price { width: 17%; }
+  .dom-workspace .dom-grid .dom-price button, .dom-workspace .dom-class-grid td button { min-height: 27px; font-size: 14px; }
+  .dom-workspace .dom-measure { font-size: 13px; line-height: 1.12; white-space: nowrap; overflow-wrap: normal; padding-inline: 3px; }
+  .dom-grid-scroll { max-height: 252px; }
+  .dom-top-quote { white-space: nowrap; }
   .dom-top-quote strong { font-size: 13px; }
+  .dom-balances, .dom-extra { display: none; }
+  .dom-board-body { grid-template-columns: minmax(0, 1fr); }
+  .dom-path-toggle { display: inline-flex; }
+  .dom-path[data-expanded="false"] { display: none; }
+  .dom-workspace .ml-transport { padding: 3px 6px; }
+  .dom-workspace .ml-clock { gap: 1px 6px; margin: 0; line-height: 1.15; }
+  .dom-workspace .ml-clock time { font-size: 13px; }
+  .dom-workspace .ml-clock small { font-size: 10px; }
+  .dom-workspace .ml-timeline { height: 16px; }
+  .dom-workspace .ml-range input { min-height: 20px; }
+  .dom-workspace .ml-range { font-size: 9px; }
+  .dom-workspace .ml-steps button { min-height: 26px; padding-inline: 4px; }
+  .dom-workspace .ml-timeline-key { display: none; }
+  .dom-inspector, .dom-workspace .ml-side-panels { gap: 5px; }
+  .dom-inspector .ml-scope > h2 { display: none; }
+  .dom-inspector .ml-price-hero { padding: 4px 6px; gap: 2px 4px; }
+  .dom-inspector .ml-price-hero > div > small { font-size: 10px; }
+  .dom-workspace .ml-active-price { min-height: 27px; font-size: 24px; padding: 0 4px; }
+  .dom-inspector .ml-price-totals > div { padding: 3px 5px; gap: 0; }
+  .dom-inspector .ml-price-totals strong { font-size: clamp(17px, 4cqi, 23px); }
+  .dom-inspector .ml-price-totals small { line-height: 1.1; font-size: 10px; }
+  .dom-inspector .ml-delta-detail summary { min-height: 19px; }
+  .dom-inspector .ml-state { padding: 2px 5px; font-size: 11px; }
+  .dom-band-controls { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px; align-items: center; padding: 3px 5px; }
+  .dom-band-controls > div { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; }
+  .dom-workspace .dom-band-controls button { min-height: 29px; padding-inline: 1px; font: 650 10px var(--font-mono); }
+  .dom-workspace .dom-band-controls .dom-band-expand { padding-inline: 4px; font: 600 11px var(--font-sans); }
+  .dom-inspector .dom-band-matrix[data-expanded="false"] { display: none; }
+  .dom-inspector .ml-tape { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; }
+  .dom-inspector .ml-tape > :nth-child(n+3) { grid-column: 1 / -1; }
+  .dom-inspector .ml-tape .ml-panel-head { justify-content: start; gap: 6px; padding: 3px 5px; }
+  .dom-inspector .ml-tape .ml-panel-head button { min-height: 25px; }
+  .dom-inspector .ml-tape-stamp small { display: none; }
+  .dom-inspector .ml-tape-stamp { padding: 5px; }
+  .dom-workspace .ml-executions :is(th, td) { padding-block: 1px; }
+  .dom-inspector .ml-book { overflow: auto; }
+}
+
+@container order-flow (min-width: 500px) and (max-width: 1139px) {
+  .dom-workspace .dom-jump, .dom-workspace .dom-tools > .of-status > :nth-child(2) { display: none; }
+  .dom-workspace .ml-transport {
+    display: grid; align-items: center; grid-template-columns: minmax(0, 1fr) minmax(0, auto);
+    grid-template-areas: "clock steps" "timeline range"; gap: 1px 5px;
+  }
+  .dom-workspace .ml-clock { grid-area: clock; }
+  .dom-workspace .ml-clock small { margin-left: 0; }
+  .dom-workspace .ml-steps { grid-area: steps; }
+  .dom-workspace .ml-timeline { grid-area: timeline; }
+  .dom-workspace .ml-range { grid-area: range; }
+  .dom-inspector .dom-readout { display: grid; grid-template-columns: minmax(115px, auto) minmax(0, 1fr); }
+  .dom-inspector .ml-price-totals { grid-template-columns: repeat(4, minmax(0, 1fr)); border-block: 0; }
+  .dom-inspector .ml-price-totals > :nth-child(n) { border-top: 0; border-left: 1px solid var(--color-line); }
+  .dom-inspector .ml-price-totals strong { font-size: clamp(17px, 3.7cqi, 22px); white-space: nowrap; overflow-wrap: normal; }
+  .dom-inspector .ml-price-totals .ml-delta-subcent strong { font-size: min(20px, 16cqi); }
+  .dom-inspector .ml-price-totals strong small { display: none; }
+  .dom-inspector .ml-delta-detail summary { width: 100%; list-style: none; }
+  .dom-inspector .ml-delta-detail summary::-webkit-details-marker { display: none; }
+  .dom-inspector .ml-delta-detail summary strong { text-decoration: underline dotted; text-underline-offset: 3px; }
+  .dom-inspector .ml-price-hero > div { align-self: start; }
+  .dom-inspector .dom-readout > .ml-state { grid-column: 1 / -1; grid-row: 2; }
+  .dom-inspector .ml-price-picker { flex: 1; max-width: 145px; }
+  .dom-inspector .ml-price-picker select { min-height: 24px; }
+  .dom-inspector .dom-band-controls { border-top: 1px solid var(--color-line); }
+  .dom-inspector .ml-executions tbody :is(th, td) { font-size: 14px; }
+  .dom-inspector [data-ml-tid] td { width: 25%; }
+}
+
+@container order-flow (max-width: 499px) {
+  .dom-workspace .dom-column-controls { display: flex; gap: 3px; }
+  [data-dom-columns="recent"] .dom-grid [data-group="older"],
+  [data-dom-columns="older"] .dom-grid [data-group="recent"],
+  [data-dom-columns="older"] .dom-grid .dom-book-change { display: none; }
+  .dom-grid .dom-price { width: 25%; }
+  .dom-grid-scroll { max-height: 194px; }
+  .dom-depth { grid-auto-flow: row; gap: 0; }
+  .dom-workspace .dom-grid .dom-price button { font-size: 13px; }
+  .dom-workspace .dom-grid th { font-size: 10px; }
+  .dom-workspace .dom-class-grid .dom-measure { padding-inline: 2px; }
+  .dom-band-controls > div { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .dom-band-controls { grid-template-columns: minmax(0, 1fr); justify-items: stretch; }
+  .dom-band-controls .dom-band-expand { justify-self: start; }
+  .dom-inspector .ml-price-totals { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dom-inspector .ml-tape .ml-panel-head { flex-wrap: wrap; }
+}
+
+
+@container order-flow (min-width: 500px) and (max-width: 1139px) {
+  .dom-board-head { padding-block: 3px; }
+  .dom-board-head > :first-child > small { display: none; }
+  .dom-board-head .dom-page { gap: 2px; }
+  .dom-board-head .dom-page button { padding-inline: 5px; }
+  .dom-inspector .ml-delta-label { justify-content: flex-start; column-gap: 3px; }
+  .dom-workspace .ml-executions th button { min-height: 22px; }
+}
+
+@media (max-width: 1023px) {
+  .dom-workspace :is(button, input, select, summary) {
+    scroll-margin-block-end: calc(64px + env(safe-area-inset-bottom));
+  }
 }

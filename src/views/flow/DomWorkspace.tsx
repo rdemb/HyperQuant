@@ -5,6 +5,7 @@ import { bookQuote, type readDomTrades } from './domWorkspaceModel';
 import type { BookFrame } from '../../charts/pro/core/book';
 import { NOMINAL_BANDS, amountsAt, priceDelta, type LensDelta, type PriceRead } from './momentLensModel';
 import { formatAtoms, nominalUsd } from './LensPriceMatrix';
+import { compactDomUsd } from './domDisplay';
 
 export type DomMode = 'ladder' | 'memory' | 'trace';
 const modes: readonly DomMode[] = ['ladder', 'memory', 'trace'];
@@ -30,7 +31,7 @@ const shortTimestamp = new Intl.DateTimeFormat(locale, { hourCycle: 'h23', hour:
 const bookNumber = new Intl.NumberFormat(locale, { maximumFractionDigits: 6 });
 const PAGE_SIZE = 28;
 
-function Measure({ value, text, exact, side, max }: { value: number | null; text: string; exact: string; side?: 'bid' | 'ask'; max: number }) {
+function Measure({ value, text, compact, exact, side, max }: { value: number | null; text: string; compact: string; exact: string; side?: 'bid' | 'ask'; max: number }) {
   const className = side === 'bid' ? 'ml-bid' : side === 'ask' ? 'ml-ask' : '';
   const width = value === null ? 0 : 100 * Math.min(1, Math.abs(value) / max);
   const ref = useRef<HTMLSpanElement>(null);
@@ -48,7 +49,8 @@ function Measure({ value, text, exact, side, max }: { value: number | null; text
   }, [value]);
   return <span ref={ref} className={'dom-measure ' + className} data-missing={value === null || undefined} title={exact}>
     <span className="dom-fill" style={{ width: width + '%' }} aria-hidden="true" />
-    <span>{value === null ? DASH : value === 0 ? '0' : text}</span>
+    <span className="dom-amount-wide">{value === null ? DASH : text}</span>
+    <span className="dom-amount-compact">{value === null ? DASH : compact}</span>
   </span>;
 }
 
@@ -56,15 +58,15 @@ function bookMeasure(value: number | null, max: number, signed = false, side?: '
   const sign = signed && value ? (value < 0 ? '−' : '+') : '';
   const abs = Math.abs(value ?? 0);
   const digits = abs < 0.01 ? bookNumber.format(abs) : nominalUsd(BigInt(Math.round(abs * 1_000_000)));
-  return <Measure value={value} text={sign + digits} exact={value === null ? DASH : sign + bookNumber.format(Math.abs(value)) + ' USD'} side={side ?? (signed && value ? value < 0 ? 'ask' : 'bid' : undefined)} max={max} />;
+  return <Measure value={value} text={sign + digits} compact={compactDomUsd(BigInt(Math.round((value ?? 0) * 1_000_000)), signed)} exact={value === null ? DASH : sign + bookNumber.format(Math.abs(value)) + ' USD'} side={side ?? (signed && value ? value < 0 ? 'ask' : 'bid' : undefined)} max={max} />;
 }
 
-function SnapshotHeading({ book }: { book: BookFrame | null }) {
+function SnapshotHeading({ book, group }: { book: BookFrame | null; group: 'older' | 'recent' | 'both' }) {
   const time = book ? timestamp.format(book.t) : DASH;
-  return <th scope="col" data-dom-snapshot={book?.t} title={time + ' UTC'}>
+  return <th scope="col" data-group={group} data-dom-snapshot={book?.t} title={time + ' UTC'}>
     <span className="dom-full-clock">{time}</span>
     <span className="dom-short-clock" aria-hidden="true">{book ? shortTimestamp.format(book.t) : DASH}</span>
-    <small>L2 · UTC</small>
+    <small>UTC</small>
   </th>;
 }
 
@@ -73,7 +75,7 @@ function tradeMeasure(value: bigint | null, max: number, signed = false, side?: 
   const abs = value === null ? 0n : value < 0n ? -value : value;
   const sign = signed && value ? (value < 0 ? '−' : '+') : '';
   const digits = abs > 0n && abs < 10_000n ? formatAtoms(abs, 6) : nominalUsd(abs);
-  return <Measure value={amount} text={sign + digits} exact={value === null ? DASH : sign + formatAtoms(abs, 6) + ' USD'} side={side ?? (signed && value ? value < 0n ? 'ask' : 'bid' : undefined)} max={max} />;
+  return <Measure value={amount} text={sign + digits} compact={compactDomUsd(value ?? 0n, signed)} exact={value === null ? DASH : sign + formatAtoms(abs, 6) + ' USD'} side={side ?? (signed && value ? value < 0n ? 'ask' : 'bid' : undefined)} max={max} />;
 }
 
 const valueOf = (delta: LensDelta) => delta.kind === 'exact' ? delta.micros : null;
@@ -92,12 +94,12 @@ function BandGrid({ prices, point, activePrice, activeBand, pick, fmtPx }: {
   return <table className="dom-grid dom-class-grid" aria-label={tr('Delta według ceny i nominału · 1 ms', 'Delta by price and notional · 1 ms')}>
     <thead><tr>{columns.map(band => band === null
       ? <th scope="col" className="dom-price" key="price">{tr('Cena', 'Price')}<small>USD</small></th>
-      : <th scope="col" key={band}>{NOMINAL_BANDS[band]}<small>Δ USD</small></th>)}</tr></thead>
+      : <th scope="col" data-group={band < 4 ? "recent" : "older"} key={band}>{NOMINAL_BANDS[band]}<small>Δ USD</small></th>)}</tr></thead>
     <tbody>{rows.map(({ px, deltas }) => <tr key={px} data-dom-price={px} className={activePrice === px ? 'dom-selected' : undefined}>
       {columns.map(band => band === null
         ? <th className="dom-price" scope="row" key="price"><button type="button"
             aria-pressed={activePrice === px} onClick={() => pick(px, null)}>{fmtPx(px)}</button></th>
-        : <td key={band}><button type="button" data-dom-band={band} aria-pressed={activePrice === px && activeBand === band}
+        : <td key={band} data-group={band < 4 ? "recent" : "older"}><button type="button" data-dom-band={band} aria-pressed={activePrice === px && activeBand === band}
             onClick={() => pick(px, band)}>
             <span className="sr-only">{fmtPx(px)} USD · {NOMINAL_BANDS[band]} · Δ </span>
             {tradeMeasure(deltas[band], largest, true)}
@@ -116,19 +118,30 @@ export function DomWorkspace({
 }) {
   const [offset, setOffset] = useState(0);
   const [showBands, setShowBands] = useState(false);
+  const [olderColumns, setOlderColumns] = useState(false);
+  const [higherBands, setHigherBands] = useState(false);
+  const [pathOpen, setPathOpen] = useState(false);
+  const columns = showBands ? higherBands : olderColumns;
   const scrollRef = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const scroll = scrollRef.current;
-    const row = scroll?.querySelector('tr.dom-selected');
-    if (!scroll || !row) return;
-    const viewport = scroll.getBoundingClientRect();
-    const target = row.getBoundingClientRect();
-    const header = scroll.querySelector('thead')?.getBoundingClientRect().height ?? 0;
-    if (target.top < viewport.top + header || target.bottom > viewport.bottom) {
-      const center = (header + viewport.height - target.height) / 2;
-      scroll.scrollTop += target.top - viewport.top - center;
-    }
-  }, [mode, activePrice, showBands]);
+    if (!scroll) return;
+    const reveal = () => {
+      const row = scroll.querySelector('tr.dom-selected');
+      if (!row) return;
+      const viewport = scroll.getBoundingClientRect();
+      const target = row.getBoundingClientRect();
+      const header = scroll.querySelector('thead')?.getBoundingClientRect().height ?? 0;
+      if (target.top < viewport.top + header || target.bottom > viewport.bottom) {
+        const center = (header + viewport.height - target.height) / 2;
+        scroll.scrollTop += target.top - viewport.top - center;
+      }
+    };
+    reveal();
+    const resize = new ResizeObserver(reveal);
+    resize.observe(scroll);
+    return () => resize.disconnect();
+  }, [mode, activePrice, showBands, columns]);
   const frame = books.at(-1) ?? null;
   const prices = new Set<number>(point.covered ? point.prices.map(row => row.px) : []);
   for (const book of books) book?.px.forEach(price => prices.add(price));
@@ -162,7 +175,7 @@ export function DomWorkspace({
     else ask += usd;
   });
   return (
-    <section className="dom-board" aria-label={title} data-dom-mode={mode} data-dom-bands={showBands || undefined}>
+    <section className="dom-board" aria-label={title} data-dom-mode={mode} data-dom-bands={showBands || undefined} data-dom-columns={columns ? "older" : "recent"}>
       <header className="dom-board-head">
         <div><h2>{showBands ? tr('Klasy nominału', 'Notional bands') : title}</h2><small>{showBands
           ? tr('Delta klasy przy cenie · 1 ms', 'Class delta at each price · 1 ms') : mode === 'memory'
@@ -172,6 +185,14 @@ export function DomWorkspace({
         <div className="dom-top-quote" aria-label={tr('Najlepsze ceny L2 przy kursorze', 'Best L2 prices at the cursor')}>
           <span className="ml-bid" data-dom-best-bid={bestBid ?? undefined}>BID <strong>{bestBid === null ? DASH : fmtPx(bestBid)}</strong></span>
           <span className="ml-ask" data-dom-best-ask={bestAsk ?? undefined}>ASK <strong>{bestAsk === null ? DASH : fmtPx(bestAsk)}</strong></span>
+        </div>
+        <div className="dom-column-controls" role="group" aria-label={tr('Kolumny tabeli', 'Table columns')}>
+          <button type="button" aria-pressed={!columns} onClick={() => (showBands ? setHigherBands : setOlderColumns)(false)}>
+            {showBands ? '< 100k' : mode === 'memory' ? tr('Najnowsze', 'Latest') : mode === 'ladder' ? 'BID' : '10–0 s'}
+          </button>
+          <button type="button" aria-pressed={columns} onClick={() => (showBands ? setHigherBands : setOlderColumns)(true)}>
+            {showBands ? '≥ 100k' : mode === 'memory' ? tr('Starsze', 'Earlier') : mode === 'ladder' ? 'ASK' : '20–10 s'}
+          </button>
         </div>
         <div className="dom-page">
           <button type="button" aria-pressed={showBands} onClick={() => setShowBands(value => !value)}>
@@ -191,18 +212,18 @@ export function DomWorkspace({
           {showBands ? <BandGrid prices={visible} point={point} activePrice={activePrice} activeBand={activeBand} pick={pickBand} fmtPx={fmtPx} /> : <table className="dom-grid">
             <thead><tr>
               {mode !== 'trace' && <th scope="col" className="dom-extra">{tr('Profil', 'Profile')}<small>{tr('Obrót 120 s', '120 s volume')}</small></th>}
-              {mode === 'memory' && books.slice(0, -1).map((book, i) => <SnapshotHeading key={i} book={book} />)}
-              {mode === 'ladder' && <><th scope="col" className="dom-bids">Bid<small>USD / n</small></th><th scope="col">{tr('↓ Sprz.', '↓ Sell')}<small>1 ms</small></th></>}
-              {mode === 'trace' && <><th scope="col">20–15 s</th><th scope="col">15–10 s</th></>}
+              {mode === 'memory' && books.slice(0, -1).map((book, i) => <SnapshotHeading key={i} book={book} group={i < 2 ? "older" : "both"} />)}
+              {mode === 'ladder' && <><th scope="col" className="dom-bids" data-group="recent">Bid<small>USD / n</small></th><th scope="col" data-group="recent">{tr('↓ Sprz.', '↓ Sell')}<small>1 ms</small></th></>}
+              {mode === 'trace' && <><th scope="col" data-group="older">20–15 s</th><th scope="col" data-group="older">15–10 s</th></>}
               <th scope="col" className="dom-price">{tr('Cena', 'Price')}<small>USD</small></th>
               {mode === 'memory' && <>
-                <SnapshotHeading book={frame} />
-                <th scope="col">Δ L2<small>{tr('netto USD', 'net USD')}</small></th>
+                <SnapshotHeading book={frame} group="recent" />
+                <th scope="col" className="dom-book-change">Δ L2<small>{tr('netto USD', 'net USD')}</small></th>
                 <th scope="col" className="dom-extra dom-bids">Bid<small>USD</small></th><th scope="col" className="dom-extra dom-asks">Ask<small>USD</small></th>
                 <th scope="col" className="dom-extra">{tr('Ślad', 'Trace')}<small>{tr('Ostatnie 2 s', 'Last 2 s')}</small></th>
               </>}
-              {mode === 'ladder' && <><th scope="col">{tr('↑ Kup.', '↑ Buy')}<small>1 ms</small></th><th scope="col" className="dom-asks">Ask<small>USD / n</small></th></>}
-              {mode === 'trace' && <><th scope="col">10–5 s</th><th scope="col">5–0 s</th></>}
+              {mode === 'ladder' && <><th scope="col" data-group="older">{tr('↑ Kup.', '↑ Buy')}<small>1 ms</small></th><th scope="col" className="dom-asks" data-group="older">Ask<small>USD / n</small></th></>}
+              {mode === 'trace' && <><th scope="col" data-group="recent">10–5 s</th><th scope="col" data-group="recent">5–0 s</th></>}
               <th scope="col" className={mode === 'memory' ? 'dom-extra' : undefined}>Δ {tr('ceny', 'price')}<small>1 ms</small></th>
             </tr></thead>
             <tbody>{visible.map(px => {
@@ -220,19 +241,19 @@ export function DomWorkspace({
               </div>;
               return <tr key={px} className={selected ? 'dom-selected' : undefined} data-dom-price={px}>
                 {mode !== 'trace' && <td className="dom-extra">{tradeMeasure(trades.coverage.volume && !row?.missingVolume ? row?.volume ?? 0n : null, tapeMax)}</td>}
-                {mode === 'memory' && quotes.slice(0, -1).map((quote, i) => <td key={i}>{bookMeasure(quote ? quote.bid - quote.ask : null, depthMax, true)}</td>)}
-                {mode === 'ladder' && <><td className="dom-bids">{depth('bid', latest?.bidOrders ?? null)}</td><td>{tradeMeasure(amountsAt(instant, null, 'sell', point.covered)?.usd ?? null, tapeMax, false, 'ask')}</td></>}
-                {mode === 'trace' && <><td>{slice(0)}</td><td>{slice(1)}</td></>}
+                {mode === 'memory' && quotes.slice(0, -1).map((quote, i) => <td key={i} data-group={i < 2 ? 'older' : 'both'}>{bookMeasure(quote ? quote.bid - quote.ask : null, depthMax, true)}</td>)}
+                {mode === 'ladder' && <><td className="dom-bids" data-group="recent">{depth('bid', latest?.bidOrders ?? null)}</td><td data-group="recent">{tradeMeasure(amountsAt(instant, null, 'sell', point.covered)?.usd ?? null, tapeMax, false, 'ask')}</td></>}
+                {mode === 'trace' && <><td data-group="older">{slice(0)}</td><td data-group="older">{slice(1)}</td></>}
                 <th scope="row" className="dom-price"><button type="button" data-of-level={frame ? px : undefined} aria-pressed={selected}
                   aria-label={tr('Wybierz cenę ', 'Select price ') + fmtPx(px) + ' USD'} onClick={() => { setOffset(0); pickPrice(px); }}>{fmtPx(px)}</button></th>
                 {mode === 'memory' && <>
-                  <td>{bookMeasure(latest ? latest.bid - latest.ask : null, depthMax, true)}</td>
-                  <td>{bookMeasure(delta, depthMax, true)}</td>
+                  <td data-group="recent">{bookMeasure(latest ? latest.bid - latest.ask : null, depthMax, true)}</td>
+                  <td className="dom-book-change">{bookMeasure(delta, depthMax, true)}</td>
                   <td className="dom-extra dom-bids">{depth('bid', null)}</td><td className="dom-extra dom-asks">{depth('ask', null)}</td>
                   <td className="dom-extra">{tradeMeasure(trades.coverage.recent && !row?.missingRecent ? row?.recent ?? 0n : null, tapeMax, true)}</td>
                 </>}
-                {mode === 'ladder' && <><td>{tradeMeasure(amountsAt(instant, null, 'buy', point.covered)?.usd ?? null, tapeMax, false, 'bid')}</td><td className="dom-asks">{depth('ask', latest?.askOrders ?? null)}</td></>}
-                {mode === 'trace' && <><td>{slice(2)}</td><td>{slice(3)}</td></>}
+                {mode === 'ladder' && <><td data-group="older">{tradeMeasure(amountsAt(instant, null, 'buy', point.covered)?.usd ?? null, tapeMax, false, 'bid')}</td><td className="dom-asks" data-group="older">{depth('ask', latest?.askOrders ?? null)}</td></>}
+                {mode === 'trace' && <><td data-group="recent">{slice(2)}</td><td data-group="recent">{slice(3)}</td></>}
                 <td className={mode === 'memory' ? 'dom-extra' : undefined}>{tradeMeasure(valueOf(priceDelta(instant, point.covered)), tapeMax, true)}</td>
               </tr>;
             })}</tbody>
@@ -244,9 +265,16 @@ export function DomWorkspace({
         <span>{frame ? 'L2 ' + timestamp.format(frame.t) + ' UTC · ' + bookNumber.format((cursor - frame.t) / 1000) + ' s'
           : tr('L2 · brak migawki do kursora', 'L2 · no snapshot through the cursor')}</span>
         {stale && <span>{tr('Brak świeżego L2', 'Fresh L2 unavailable')}</span>}
-        <span>{tr('— brak pokrycia, pomiaru lub precyzji', '— missing coverage, observation or precision')}</span>
+        <span title={tr('Brak pokrycia, pomiaru lub precyzji', 'Missing coverage, observation or precision')}>
+          {tr('— brak danych', '— missing data')}
+        </span>
+        <button type="button" className="dom-path-toggle" aria-expanded={pathOpen} onClick={() => setPathOpen(value => !value)}>
+          {tr('Ścieżka 20 s', '20 s path')}
+        </button>
+        {activePrice !== null && <LevelReadout px={activePrice} books={books} mode={mode} rows={trades}
+          point={pointAtPrice.get(activePrice)} covered={point.covered} fmtPx={fmtPx} />}
       </footer>
-      <TradePath trades={trades} pick={pickDot} fmtPx={fmtPx} />
+      <TradePath trades={trades} pick={pickDot} fmtPx={fmtPx} expanded={pathOpen} />
     </section>
   );
 }
@@ -268,8 +296,8 @@ function Balance({ label, buy, sell, bidAsk = false }: { label: string; buy: num
 }
 
 // Jeden rzeczywisty punkt na 0,5 s, z dostępem do ceny i milisekundy.
-function TradePath({ trades, pick, fmtPx }: {
-  trades: ReturnType<typeof readDomTrades>; pick: (time: number, px: number) => void; fmtPx: (px: number) => string;
+function TradePath({ trades, pick, fmtPx, expanded }: {
+  trades: ReturnType<typeof readDomTrades>; pick: (time: number, px: number) => void; fmtPx: (px: number) => string; expanded: boolean;
 }) {
   const { dots, traceFrom, to, spans } = trades;
   const x = (t: number) => (t - traceFrom) / (to - traceFrom);
@@ -277,7 +305,7 @@ function TradePath({ trades, pick, fmtPx }: {
   const hi = Math.max(...dots.map(dot => dot.px));
   const y = (price: number) => hi === lo ? 50 : 90 - 80 * (price - lo) / (hi - lo);
   return (
-    <section className="dom-path" aria-label={tr('Ścieżka wykonań z 20 sekund', '20-second execution path')}>
+    <section className="dom-path" data-expanded={expanded} aria-label={tr('Ścieżka wykonań z 20 sekund', '20-second execution path')}>
       <header><h3>{tr('Ścieżka wykonań', 'Execution path')} · 20 s</h3>
         <small>{tr('Do 1 wykonania na 0,5 s', 'Up to 1 fill per 0.5 s')}</small></header>
       <div className="dom-plot">
@@ -291,4 +319,43 @@ function TradePath({ trades, pick, fmtPx }: {
       </div>
     </section>
   );
+}
+
+function LevelReadout({ px, books, mode, rows, point, covered, fmtPx }: {
+  px: number; books: readonly (BookFrame | null)[]; mode: DomMode;
+  rows: ReturnType<typeof readDomTrades>; point: PriceRead | undefined; covered: boolean; fmtPx: (px: number) => string;
+}) {
+  const exactBook = (value: number | null) => value === null ? DASH
+    : (value > 0 ? '+' : '') + bookNumber.format(value) + ' USD';
+  const exactTrade = (value: bigint | null, signed = true) => value === null ? DASH
+    : (value > 0n && signed ? '+' : value < 0n ? '−' : '') + formatAtoms(value < 0n ? -value : value, 6) + ' USD';
+  const tradeRow = rows.rows.get(px);
+  const current = bookQuote(books.at(-1) ?? null, px);
+  const previous = bookQuote(books.at(-2) ?? null, px);
+  const profile = rows.coverage.volume && !tradeRow?.missingVolume ? tradeRow?.volume ?? 0n : null;
+  const recent = rows.coverage.recent && !tradeRow?.missingRecent ? tradeRow?.recent ?? 0n : null;
+  return <details className="dom-level-detail">
+    <summary>{tr('Dokładny poziom', 'Exact level')}</summary>
+    <dl>
+      <div><dt>{tr('Cena', 'Price')}</dt><dd>{fmtPx(px)} USD</dd></div>
+      {mode === 'memory' && books.map((book, i) => {
+        const quote = bookQuote(book, px);
+        return <div key={i}><dt>{book ? timestamp.format(book.t) + ' UTC' : 'L2 · ' + DASH}</dt>
+          <dd>{exactBook(quote ? quote.bid - quote.ask : null)}</dd></div>;
+      })}
+      {mode === 'memory' && <div><dt>Δ L2</dt><dd>{exactBook(current && previous ? current.bid - current.ask - previous.bid + previous.ask : null)}</dd></div>}
+      {mode !== 'trace' && <div><dt>{tr('Obrót 120 s', '120 s volume')}</dt><dd>{exactTrade(profile, false)}</dd></div>}
+      {mode === 'memory' && <div><dt>{tr('Ślad · 2 s', 'Trace · 2 s')}</dt><dd>{exactTrade(recent)}</dd></div>}
+      {mode === 'ladder' && <>
+        <div><dt>BID</dt><dd>{current ? bookNumber.format(current.bid) + ' USD' : DASH}</dd></div>
+        <div><dt>ASK</dt><dd>{current ? bookNumber.format(current.ask) + ' USD' : DASH}</dd></div>
+        <div><dt>{tr('Kupiono · 1 ms', 'Bought · 1 ms')}</dt><dd>{exactTrade(amountsAt(point, null, 'buy', covered)?.usd ?? null, false)}</dd></div>
+        <div><dt>{tr('Sprzedano · 1 ms', 'Sold · 1 ms')}</dt><dd>{exactTrade(amountsAt(point, null, 'sell', covered)?.usd ?? null, false)}</dd></div>
+      </>}
+      {mode === 'trace' && ['20–15 s', '15–10 s', '10–5 s', '5–0 s'].map((name, i) => <div key={name}>
+        <dt>{name}</dt><dd>{exactTrade(rows.coverage.slices[i] && !tradeRow?.missingSlices.has(i) ? tradeRow?.slices[i] ?? 0n : null)}</dd>
+      </div>)}
+      <div><dt>Δ · 1 ms</dt><dd>{exactTrade(valueOf(priceDelta(point, covered)))}</dd></div>
+    </dl>
+  </details>;
 }
