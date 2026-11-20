@@ -1,5 +1,5 @@
-import { type Ref, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { ArrowUpRight, ChevronLeft, Crosshair, SlidersHorizontal, X } from 'lucide-react';
+import { type Ref, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { ArrowUpRight, ChevronLeft, Crosshair, Maximize2, Minimize2, SlidersHorizontal, X } from 'lucide-react';
 import type { BookFrame } from '../../charts/pro/core/book';
 import type { Side } from '../../charts/pro/hl/parse';
 import { storeFor, type ProStore } from '../../charts/pro/store/proStore';
@@ -15,6 +15,7 @@ import { DeltaMomentCard } from './DeltaMomentCard';
 import type { DomMode } from './DomWorkspace';
 import { MomentLens } from './MomentLens';
 import { readDeltaMoment, type DeltaMoment } from './deltaMoment';
+import { useOrderFlowFullscreen } from './useOrderFlowFullscreen';
 import {
   BOOK_HIDE_AFTER_MS, FLOW_WINDOW_MS, MAX_BOOK_AGE_MS, ORDER_FLOW_MARKETS, PIN_MIN_MS, PIN_TAPE_LIMIT,
   captureLevel, deskMarketFromHash, depthChangeAtPrice, referenceBook, tradeActivity,
@@ -389,15 +390,35 @@ export default function OrderFlowView() {
   const [mode, setMode] = useState<DomMode>('memory');
   const [momentOpen, setMomentOpen] = useState(false);
   const momentButton = useRef<HTMLButtonElement>(null);
+  const fullscreen = useOrderFlowFullscreen();
+  const momentScroll = useRef<number | null>(null);
+  const fullscreenLabel = fullscreen.mode ? tr('Zamknij pełny ekran Order Flow', 'Exit Order Flow full screen')
+    : tr('Pełny ekran Order Flow', 'Order Flow full screen');
+  const FullscreenIcon = fullscreen.mode ? Minimize2 : Maximize2;
+  const openMoment = () => {
+    if (fullscreen.mode) momentScroll.current = fullscreen.sectionRef.current?.scrollTop ?? 0;
+    setMomentOpen(true);
+  };
   const closeMoment = () => {
     setMomentOpen(false);
-    momentButton.current?.focus();
+    momentButton.current?.focus({ preventScroll: fullscreen.mode !== null });
   };
+  useLayoutEffect(() => {
+    if (momentOpen || momentScroll.current === null) return;
+    fullscreen.sectionRef.current?.scrollTo({ top: momentScroll.current, behavior: 'instant' });
+    momentScroll.current = null;
+  }, [momentOpen, fullscreen.sectionRef]);
   return (
-    <section className="of-desk" data-order-flow aria-labelledby="orderflow-title">
+    <section ref={fullscreen.sectionRef} className="of-desk" data-order-flow data-of-maximized={fullscreen.mode ?? undefined}
+      aria-labelledby="orderflow-title">
       <div className="of-page-heading">
         <SectionHeading id="orderflow-title" level={1} title="Order Flow" />
         <a href={`#charts?m=${encodeURIComponent(coin)}`} className="of-chart-link"><ChevronLeft size={16} aria-hidden="true" />{tr('Wykres', 'Chart')}</a>
+        <button ref={fullscreen.buttonRef} type="button" className="of-mode of-fullscreen-toggle" data-of-fullscreen-toggle
+          aria-keyshortcuts="F" aria-label={fullscreenLabel} title={fullscreenLabel + ' (F)'} onClick={fullscreen.toggle}>
+          <FullscreenIcon size={17} aria-hidden="true" />
+          <span>{fullscreen.mode ? tr('Wyjdź', 'Exit') : tr('Pełny ekran', 'Full screen')}</span>
+        </button>
         <div className="of-controls">
           <nav aria-label={tr('Rynki order flow', 'Order flow markets')}>
             {ORDER_FLOW_MARKETS.map(market => (
@@ -405,7 +426,7 @@ export default function OrderFlowView() {
             ))}
           </nav>
           <button type="button" className="of-mode" aria-pressed={pro} onClick={() => setPro(value => !value)}><SlidersHorizontal size={15} aria-hidden="true" />Pro</button>
-          <button type="button" className="of-mode of-moment-launch" ref={momentButton} aria-haspopup="dialog" aria-expanded={momentOpen} onClick={() => setMomentOpen(true)}><Crosshair size={15} aria-hidden="true" />{tr('Przekrój chwili', 'Moment lens')}</button>
+          <button type="button" className="of-mode of-moment-launch" ref={momentButton} aria-haspopup="dialog" aria-expanded={momentOpen} onClick={openMoment}><Crosshair size={15} aria-hidden="true" />{tr('Przekrój chwili', 'Moment lens')}</button>
         </div>
       </div>
       <FlowMarket key={coin} coin={coin} pro={pro} momentOpen={momentOpen} closeMoment={closeMoment} mode={mode} setMode={setMode} />
