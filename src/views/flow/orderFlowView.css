@@ -1,8 +1,9 @@
 /* Układ drabinki zależy od szerokości po odjęciu wspólnej szyny. */
 .of-desk { min-width: 0; container-type: inline-size; }
 .of-controls, .of-card-header, .of-focus-title, .of-status { display: flex; align-items: center; }
-.of-page-heading { display: grid; align-items: center; grid-template-columns: minmax(0, 1fr) auto auto; grid-template-areas: "title chart markets"; gap: 0 8px; }
+.of-page-heading { display: grid; align-items: center; grid-template-columns: minmax(0, 1fr) auto auto auto; grid-template-areas: "title chart markets fullscreen"; gap: 0 8px; }
 .of-page-heading > :first-child { grid-area: title; }
+.of-mode.of-fullscreen-toggle { grid-area: fullscreen; justify-self: end; min-width: 44px; min-height: 44px; }
 
 .of-controls { grid-area: markets; gap: 7px; flex-wrap: wrap; }
 .of-controls nav { display: flex; gap: 3px; padding: 3px; background: var(--color-surface-1); border: 1px solid var(--color-line); border-radius: 8px; }
@@ -253,7 +254,7 @@
 }
 
 @container (width < 620px) {
-  .of-page-heading { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "title chart" "markets markets"; }
+  .of-page-heading { grid-template-columns: minmax(0, 1fr) auto auto; grid-template-areas: "title chart fullscreen" "markets markets markets"; }
 }
 
 @container (width < 465px) {
@@ -291,14 +292,39 @@
   .of-page-heading .of-controls { gap: 4px; }
   .of-page-heading .of-controls nav { gap: 2px; }
   .of-page-heading .of-controls :is(a, button) { padding-inline: 6px; font-size: 12px; }
-  .of-page-heading .of-mode svg[aria-hidden="true"] { display: none; }
+  .of-page-heading .of-mode:not(.of-fullscreen-toggle) svg[aria-hidden="true"] { display: none; }
 }
 
 @container (min-width: 540px) and (max-width: 620px) {
-  .of-page-heading { grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "title markets chart"; gap: 5px; }
+  .of-page-heading { grid-template-columns: auto minmax(0, 1fr) auto auto; grid-template-areas: "title markets chart fullscreen"; gap: 5px; }
   .of-page-heading #orderflow-title { font-size: 23px; white-space: nowrap; }
   .of-page-heading .of-controls { justify-content: flex-end; gap: 3px; }
-  .of-page-heading :is(.of-mode, .of-controls a, .of-chart-link) { padding-inline: 5px; font-size: 11px; min-height: 38px; }
-  .of-page-heading .of-mode svg { display: none; }
+  .of-page-heading :is(.of-mode, .of-controls a, .of-chart-link) { padding-inline: 5px; font-size: 11px; }
+  .of-page-heading :is(.of-mode:not(.of-fullscreen-toggle), .of-controls a, .of-chart-link) { min-height: 38px; }
+  .of-page-heading .of-mode:not(.of-fullscreen-toggle) svg { display: none; }
   .of-page-heading .of-chart-link svg { width: 12px; }
 }
+
+.of-desk:is(:fullscreen, [data-of-maximized]) {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100dvh;
+  padding: env(safe-area-inset-top) max(14px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
+  overflow: auto;
+  overscroll-behavior: contain;
+  background: var(--color-page);
+}
+.of-desk:is(:fullscreen, [data-of-maximized]) .of-page-heading {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--color-page);
+  border-bottom: 1px solid var(--color-line);
+}
+.of-desk[data-of-maximized="page"] { position: fixed; inset: 0; z-index: 60; }
+body:has(.of-desk[data-of-maximized="page"]) { overflow: hidden; }
+[data-app-shell]:has(.of-desk[data-of-maximized="page"]) :is([data-app-header], [data-app-nav], [data-szyna], [data-dok]) {
+  display: none;
+}
+[data-app-shell] > div:has(> main .of-desk[data-of-maximized="page"]) > footer { display: none; }
+[data-view-root]:has(.of-desk[data-of-maximized="page"]) { transform: none !important; }
