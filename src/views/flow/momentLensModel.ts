@@ -24,7 +24,10 @@ function notional(px: number, sz: number, szDecimals: number): bigint | null {
   return price === null || size === null ? null : BigInt(price) * BigInt(size);
 }
 
-export function readMomentWindow(tape: Tape, coverage: Coverage, to: number, szDecimals: number) {
+type LensFilter = { px: number | null; band: number | null; side?: TradeRow['side'] };
+export type LensPin = LensFilter & { px: number };
+
+export function readMomentWindow(tape: Tape, coverage: Coverage, to: number, szDecimals: number, pin: LensPin | null = null) {
   const from = to - LENS_MS;
   const totals = NOMINAL_BANDS.map(() => 0);
   const lanes = NOMINAL_BANDS.map(() => new Float64Array(240));
@@ -34,6 +37,8 @@ export function readMomentWindow(tape: Tape, coverage: Coverage, to: number, szD
   let max = 0;
   let peak: number | null = null;
   let unclassified = 0;
+  const spans = coverage.list().map(([a, b]) => [Math.max(a, from), Math.min(b, to)]).filter(([a, b]) => b > a);
+  let span = 0;
   tape.forEach(from, to, (t, px, sz, side) => {
     if (t !== last) {
       times.push(t);
@@ -45,18 +50,27 @@ export function readMomentWindow(tape: Tape, coverage: Coverage, to: number, szD
       max = count;
       peak = t;
     }
+    while (span < spans.length && spans[span][1] <= t) span++;
+    if (span === spans.length || t < spans[span][0]) return;
+    if (pin && (px !== pin.px || (pin.side !== undefined && side !== pin.side))) return;
     const usd = notional(px, sz, szDecimals);
     if (usd === null) {
-      unclassified++;
+      if (pin?.band == null) unclassified++;
       return;
     }
     const band = notionalBand(usd);
+    if (pin?.band != null && band !== pin.band) return;
     const cell = 2 * Math.floor((t - from) / 1000) + (side === 1 ? 0 : 1);
     lanes[band][cell] += Number(usd) / Number(MICROS);
     totals[band]++;
   });
-  const spans = coverage.list().map(([a, b]) => [Math.max(a, from), Math.min(b, to)]).filter(([a, b]) => b > a);
-  return { from, to, times, peak, totals, lanes, spans, unclassified, coveredMs: coverage.coveredMs(from, to) };
+  const gaps: { start: number; end: number }[] = [];
+  let through = from;
+  for (const [start, end] of [...spans, [to, to]]) {
+    if (start > through) gaps.push({ start: through, end: start });
+    through = end;
+  }
+  return { from, to, times, peak, totals, lanes, gaps, unclassified, coveredMs: coverage.coveredMs(from, to) };
 }
 
 export function timeIndex(times: readonly number[], target: number): number {
@@ -70,7 +84,7 @@ export function timeIndex(times: readonly number[], target: number): number {
   return lo;
 }
 
-type LensTrade = TradeRow & { usd: bigint | null; band: number | null };
+export type LensTrade = TradeRow & { usd: bigint | null; band: number | null };
 type Aggressor = 'buy' | 'sell';
 export type ExecutionAmounts = { count: number; units: bigint; usd: bigint };
 type BandRead = Record<Aggressor, ExecutionAmounts>;
@@ -92,11 +106,18 @@ export function amountsAt(row: PriceRead | undefined, band: number | null, side:
 
 export function momentAt(tape: Tape, coverage: Coverage, t: number, szDecimals: number) {
   const prices = new Map<number, PriceRead>();
+  let lastPrice: number | null = null;
+  let lastTid = Number.NEGATIVE_INFINITY;
   const chunk = tape.chunk(minuteOf(t));
   const scale = 10 ** szDecimals;
   const priceScale = 10 ** (6 - szDecimals);
   if (chunk) for (let i = timeIndex(chunk.t, t); chunk.t[i] === t; i++) {
     const px = chunk.px[i];
+    // W tej samej milisekundzie rozstrzyga tid, niezależnie od kolejności dostawy.
+    if (chunk.tid[i] > lastTid) {
+      lastTid = chunk.tid[i];
+      lastPrice = px;
+    }
     const sz = chunk.sz[i];
     const side = chunk.side[i];
     const quantity = atoms(sz, scale);
@@ -118,7 +139,7 @@ export function momentAt(tape: Tape, coverage: Coverage, t: number, szDecimals: 
     cell[direction].units += BigInt(quantity);
     cell[direction].usd += usd;
   }
-  return { prices: [...prices.values()].sort((a, b) => b.px - a.px), covered: coverage.covers(t, t + 1) };
+  return { prices: [...prices.values()].sort((a, b) => b.px - a.px), lastPrice, covered: coverage.covers(t, t + 1) };
 }
 
 export function bookAtMoment(history: BookHistory | null, coverage: Coverage, t: number) {
@@ -134,7 +155,7 @@ export function lensTapeRange(availableFrom: number, cursor: number) {
 
 export function lensTapePage(
   tape: Tape, coverage: Coverage, range: { from: number; to: number }, szDecimals: number,
-  filters: { px: number | null; band: number | null }, requestedPage: number, pageSize: number,
+  filters: LensFilter, requestedPage: number, pageSize: number,
 ) {
   let rows: LensTrade[] = [];
   let total = 0;
@@ -143,7 +164,9 @@ export function lensTapePage(
     if (!chunk) continue;
     for (let i = timeIndex(chunk.t, range.to) - 1; i >= 0 && chunk.t[i] >= range.from; i--) {
       const px = chunk.px[i];
+      const side = chunk.side[i];
       if (filters.px !== null && filters.px !== px) continue;
+      if (filters.side !== undefined && filters.side !== side) continue;
       const page = Math.floor(total / pageSize);
       if (page > requestedPage && filters.band === null) {
         total++;
@@ -155,7 +178,7 @@ export function lensTapePage(
       if (filters.band !== null && filters.band !== band) continue;
       if (page <= requestedPage) {
         if (total % pageSize === 0) rows = [];
-        rows.push({ t: chunk.t[i], px, sz, side: chunk.side[i], tid: chunk.tid[i], usd, band });
+        rows.push({ t: chunk.t[i], px, sz, side, tid: chunk.tid[i], usd, band });
       }
       total++;
     }
