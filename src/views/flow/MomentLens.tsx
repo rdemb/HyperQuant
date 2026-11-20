@@ -1,4 +1,4 @@
-import { type MouseEvent, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { type MouseEvent, type ReactNode, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { ChevronLeft, ChevronRight, Crosshair, X } from 'lucide-react';
 import type { BookFrame } from '../../charts/pro/core/book';
 import type { ProStore } from '../../charts/pro/store/proStore';
@@ -9,8 +9,11 @@ import {
   LENS_MS, LensDeltaIndex, bookAtMoment, lensTapePage, lensTapeRange, momentAt, readMomentWindow, timeIndex, type LensPin, type LensTrade,
 } from './momentLensModel';
 import { LensCellDetail, LensPriceMatrix, LensPriceTotals, formatAtoms, nominalUsd } from './LensPriceMatrix';
-import { ORDER_FLOW_MARKETS } from './orderFlowDesk';
+import { DomModeControls, DomWorkspace, type DomMode } from './DomWorkspace';
+import { bookMemory, readDomTrades } from './domWorkspaceModel';
+import { MAX_BOOK_AGE_MS, ORDER_FLOW_MARKETS } from './orderFlowDesk';
 import './momentLens.css';
+import './domWorkspace.css';
 
 const tradesPerPage = 4;
 const roomyQuery = '(min-width: 951px) and (min-height: 780px)';
@@ -191,10 +194,13 @@ function TapePane({ inspected, store, scope, from, to, setScope, setPage, pick, 
   );
 }
 
-export function MomentLens({ store, close }: { store: ProStore; close: () => void }) {
+export function MomentLens({ store, close, expanded, status, mode, setMode }: {
+  store: ProStore; close: () => void; expanded: boolean; status: ReactNode; mode: DomMode; setMode: (mode: DomMode) => void;
+}) {
   const dialog = useRef<HTMLDialogElement>(null);
   const label = useId();
   const seekId = useId();
+  const inspectorRef = useRef<HTMLElement>(null);
   const big = useSyncExternalStore(subscribeRoomy, roomy, () => false);
   const [paused, setPaused] = useState<{ end: number; t: number } | null>(null);
   const [pin, setPin] = useState<LensPin | null>(null);
@@ -202,7 +208,7 @@ export function MomentLens({ store, close }: { store: ProStore; close: () => voi
   const [tapeScope, setTapeScope] = useState<TapeScope>('window');
   const [bookPage, setBookPage] = useState(0);
   const [tapePage, setTapePage] = useState(0);
-  const end = paused?.end ?? Math.floor(store.serverNow() / 1000) * 1000;
+  const end = paused?.end ?? Math.floor(store.serverNow() / 1000) * 1000 + 1;
   const sizeDecimals = store.szDecimals ?? deskMarketOf(store.coin)?.szDecimals ?? 0;
   const unit = store.coin.split(':').at(-1) ?? store.coin;
   const signature = store.tape.signature(end - LENS_MS, end);
@@ -211,13 +217,22 @@ export function MomentLens({ store, close }: { store: ProStore; close: () => voi
   const trace = useMemo(() => pin
     ? readMomentWindow(store.tape, store.coverage, end, sizeDecimals, pin)
     : data, [store, end, sizeDecimals, pin, data]);
-  const t = paused?.t ?? data.times.at(-1) ?? end - 1;
+  const latestTrade = data.times.at(-1);
+  const t = paused?.t ?? (latestTrade !== undefined && store.coverage.covers(latestTrade, end) && end - latestTrade <= 5_000
+    ? latestTrade : end - 1);
   const point = useMemo(() => momentAt(store.tape, store.coverage, t, sizeDecimals), [store, t, sizeDecimals, signature, coverageKey]);
-  const currentRow = point.prices.find(row => row.px === (pin?.px ?? point.lastPrice));
+  const history = store.exactBook();
+  const frame = bookAtMoment(history, store.bookCoverage, t);
+  const activePrice = pin?.px ?? point.lastPrice ?? frame?.px[0] ?? null;
+  const currentRow = point.prices.find(row => row.px === activePrice);
+  const books = useMemo(() => expanded ? [] : bookMemory(history, store.bookCoverage, t),
+    [expanded, history, history?.version, store, t, frame]);
+  const domSignature = store.tape.signature(t + 1 - LENS_MS, t + 1);
+  const domTrades = useMemo(() => expanded ? null : readDomTrades(store.tape, store.coverage, t, sizeDecimals),
+    [expanded, store, t, sizeDecimals, domSignature, coverageKey]);
   const deltaIndex = useMemo(() => new LensDeltaIndex(store.tape, sizeDecimals), [store, sizeDecimals]);
   const deltaSignature = store.tape.signature(t + 1 - LENS_MS, t + 1);
   const marketDelta = useMemo(() => deltaIndex.read(store.coverage, t), [deltaIndex, store, t, deltaSignature, coverageKey]);
-  const frame = bookAtMoment(store.exactBook(), store.bookCoverage, t);
   const before = data.times[timeIndex(data.times, t) - 1];
   const after = data.times[timeIndex(data.times, t + 1)];
   const coveredFrom = store.coverage.first();
@@ -234,13 +249,13 @@ export function MomentLens({ store, close }: { store: ProStore; close: () => voi
     setBookPage(0);
     setTapePage(0);
   };
-  const pickPrice = (px: number) => {
-    seek(t, { px, band: null });
+  const pickPrice = (px: number, time = t) => {
+    seek(time, { px, band: null });
     setTapeScope('moment');
   };
   const pickBand = (band: number, side?: LensTrade['side']) => {
-    if (!currentRow) return;
-    seek(t, { px: currentRow.px, band, side });
+    if (activePrice === null) return;
+    seek(t, { px: activePrice, band, side });
     setTapeScope('moment');
   };
   const pickPrint = (trade: LensTrade) => {
@@ -259,18 +274,33 @@ export function MomentLens({ store, close }: { store: ProStore; close: () => voi
     setBookPage(0);
     setTapeScope('window');
   };
-  useEffect(() => { dialog.current?.showModal(); }, []);
-  return (
-    <dialog ref={dialog} className="ml-dialog" aria-labelledby={label} onClose={close}>
+  useEffect(() => {
+    if (expanded && !dialog.current?.open) dialog.current?.showModal();
+  }, [expanded]);
+  const filterDetail = pin && <div className="ml-filter">
+    <LensCellDetail selection={pin} row={currentRow} covered={point.covered} fmtPx={price => store.fmtPx(price)} unit={unit} decimals={sizeDecimals} />
+    <button type="button" onClick={clear}>{tr('Wyczyść filtr', 'Clear filter')}</button>
+  </div>;
+  const bookPane = <BookPane store={store} frame={frame} cursor={t} page={bookPage} size={big ? 6 : 3} setPage={setBookPage} />;
+  const tapePane = <TapePane inspected={inspected} store={store} scope={tapeScope} from={range.from} to={range.to}
+    setScope={scope => { setTapeScope(scope); setTapePage(0); }} setPage={setTapePage} pick={pickPrint} selected={print} unit={unit} />;
+  const workspace = (
       <div className="ml-workspace">
-        <header className="ml-top">
+        {expanded && <header className="ml-top">
           <h2 id={label}>{tr('Przekrój chwili', 'Moment lens')}</h2>
           <nav aria-label={tr('Rynki order flow', 'Order flow markets')}>
             {ORDER_FLOW_MARKETS.map(market => <a key={market.coin} href={`#orderflow?m=${encodeURIComponent(market.coin)}`} aria-current={market.coin === store.coin ? 'page' : undefined}>{market.label}</a>)}
           </nav>
           <button className="ml-close" type="button" autoFocus onClick={() => dialog.current?.close()} aria-label={tr('Zamknij', 'Close')}><X size={18} aria-hidden="true" /><span>{tr('Zamknij', 'Close')}</span></button>
-        </header>
+        </header>}
         <div className="ml-main">
+          {!expanded && <div className="dom-tools">
+            <DomModeControls mode={mode} select={setMode} />
+            {status}
+            <button type="button" className="dom-jump" onClick={() => inspectorRef.current?.focus()}>
+              {tr('Do Przekroju chwili', 'Go to Moment lens')}
+            </button>
+          </div>}
           <section className="ml-transport" aria-label={tr('Kursor chwili', 'Moment cursor')}>
             <div className="ml-clock">
               <label htmlFor={seekId}><time data-ml-cursor={t}>{clock.format(t)} UTC</time></label>
@@ -290,40 +320,45 @@ export function MomentLens({ store, close }: { store: ProStore; close: () => voi
               <button type="button" aria-label={tr('Poprzednia chwila z wykonaniem', 'Previous execution moment')} disabled={before === undefined} onClick={() => { if (before !== undefined) seek(before); }}><ChevronLeft size={17} /></button>
               <button type="button" disabled={data.peak === null} onClick={() => { if (data.peak !== null) seek(data.peak); }}><Crosshair size={15} aria-hidden="true" />{tr('Najwięcej wyk.', 'Most executions')}</button>
               <button type="button" aria-label={tr('Następna chwila z wykonaniem', 'Next execution moment')} disabled={after === undefined} onClick={() => { if (after !== undefined) seek(after); }}><ChevronRight size={17} /></button>
+              {!expanded && !paused && <button type="button" onClick={() => seek(t, pin)}>{tr('Zamroź', 'Freeze')}</button>}
               <button type="button" aria-pressed={!paused} onClick={goLive}>{tr('Na żywo', 'Live')}</button>
             </div>
           </section>
-          <section className="ml-scope" aria-label={tr('Wykonania przy aktywnej cenie', 'Executions at active price')}>
-            <header className="ml-price-hero">
-              <div>
-                <small>{tr('Cena wykonania', 'Execution price')} · 1 ms</small>
-                {currentRow
-                  ? <button className="ml-active-price" type="button" aria-label={`${tr('Filtruj cenę', 'Filter price')} ${store.fmtPx(currentRow.px)} USD`} aria-pressed={pin !== null} data-ml-active-price={currentRow.px} onClick={() => pickPrice(currentRow.px)}>{store.fmtPx(currentRow.px)} <small>USD</small></button>
-                  : <strong className="ml-active-price">{DASH}</strong>}
-              </div>
-              {point.prices.length > 1 && currentRow && <label className="ml-price-picker">
-                <span>{tr('Ceny w tej chwili', 'Prices at this moment')} · {whole.format(point.prices.length)}</span>
-                <select value={currentRow.px} onChange={event => pickPrice(Number(event.currentTarget.value))}>
-                  {point.prices.map(row => <option key={row.px} value={row.px}>{store.fmtPx(row.px)} USD</option>)}
-                </select>
-              </label>}
-            </header>
-            {!point.covered && <p className="ml-state">{tr('1 ms · brak potwierdzonego pokrycia', '1 ms · no confirmed coverage')}</p>}
-            {point.covered && !currentRow && <p className="ml-state">{tr('1 ms · 0 wykonań', '1 ms · 0 executions')}</p>}
-            <LensPriceTotals row={currentRow} covered={point.covered} marketDelta={marketDelta} />
-            <LensPriceMatrix row={currentRow} covered={point.covered} pin={pin} onSelect={pickBand} context={data} cursor={t} />
-            {pin && <div className="ml-filter">
-              <LensCellDetail selection={pin} row={currentRow} covered={point.covered} fmtPx={price => store.fmtPx(price)} unit={unit} decimals={sizeDecimals} />
-              <button type="button" onClick={clear}>{tr('Wyczyść filtr', 'Clear filter')}</button>
-            </div>}
-          </section>
-          <div className="ml-side-panels">
-            <BookPane store={store} frame={frame} cursor={t} page={bookPage} size={big ? 6 : 3} setPage={setBookPage} />
-            <TapePane inspected={inspected} store={store} scope={tapeScope} from={range.from} to={range.to}
-              setScope={scope => { setTapeScope(scope); setTapePage(0); }} setPage={setTapePage} pick={pickPrint} selected={print} unit={unit} />
+          {domTrades && <DomWorkspace key={mode} mode={mode} books={books} trades={domTrades} point={point}
+            cursor={t} activePrice={activePrice} pickPrice={pickPrice} pickDot={(time, px) => pickPrice(px, time)} fmtPx={price => store.fmtPx(price)}
+            stale={!paused && (!frame || t - frame.t > MAX_BOOK_AGE_MS || !store.bookCoverage.isOpen)} />}
+          <div className={expanded ? 'ml-panes' : 'dom-inspector'}>
+            <section ref={inspectorRef} tabIndex={expanded ? undefined : -1} className="ml-scope" aria-label={tr('Wykonania przy aktywnej cenie', 'Executions at active price')}>
+              {!expanded && <h2>{tr('Przekrój chwili', 'Moment lens')}</h2>}
+              <header className="ml-price-hero">
+                <div>
+                  <small>{tr('Cena wykonania', 'Execution price')} · 1 ms</small>
+                  {activePrice !== null
+                    ? <button className="ml-active-price" type="button" aria-label={`${tr('Filtruj cenę', 'Filter price')} ${store.fmtPx(activePrice)} USD`} aria-pressed={pin !== null} data-ml-active-price={activePrice} onClick={() => pickPrice(activePrice)}>{store.fmtPx(activePrice)} <small>USD</small></button>
+                    : <strong className="ml-active-price">{DASH}</strong>}
+                </div>
+                {point.prices.length > 1 && activePrice !== null && <label className="ml-price-picker">
+                  <span>{tr('Ceny w tej chwili', 'Prices at this moment')} · {whole.format(point.prices.length)}</span>
+                  <select value={activePrice} onChange={event => pickPrice(Number(event.currentTarget.value))}>
+                    {!currentRow && <option value={activePrice}>{store.fmtPx(activePrice)} USD</option>}
+                    {point.prices.map(row => <option key={row.px} value={row.px}>{store.fmtPx(row.px)} USD</option>)}
+                  </select>
+                </label>}
+              </header>
+              {!point.covered && <p className="ml-state">{tr('1 ms · brak potwierdzonego pokrycia', '1 ms · no confirmed coverage')}</p>}
+              {point.covered && !currentRow && <p className="ml-state">{tr('1 ms · 0 wykonań', '1 ms · 0 executions')}</p>}
+              <LensPriceTotals row={currentRow} covered={point.covered} marketDelta={marketDelta} />
+              <LensPriceMatrix row={currentRow} hasPrice={activePrice !== null} covered={point.covered} pin={pin} onSelect={pickBand} context={data} cursor={t} />
+              {expanded && filterDetail}
+            </section>
+            <div className="ml-side-panels">
+              {expanded ? <>{bookPane}{tapePane}</> : <>{tapePane}{filterDetail}{bookPane}</>}
+            </div>
           </div>
         </div>
       </div>
-    </dialog>
   );
+  return expanded
+    ? <dialog ref={dialog} className="ml-dialog ml-surface" aria-labelledby={label} onClose={close}>{workspace}</dialog>
+    : <div className="dom-workspace ml-surface">{workspace}</div>;
 }

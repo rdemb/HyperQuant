@@ -12,6 +12,7 @@ import { SectionHeading } from '../../ui';
 import { DASH, fmtCompact, fmtFixed, fmtNum, fmtSigned } from '../../ui/format';
 import { bookMetrics, hip3TapeFilters, isHip3DeskFlow, visibleExecutions } from './hip3Flow';
 import { DeltaMomentCard } from './DeltaMomentCard';
+import type { DomMode } from './DomWorkspace';
 import { MomentLens } from './MomentLens';
 import { readDeltaMoment, type DeltaMoment } from './deltaMoment';
 import {
@@ -298,8 +299,8 @@ function TapePanel({ store, now, isLive, focus, clearFocus, refreshFocus, pro, a
   );
 }
 
-function FlowMarket({ coin, pro, momentOpen, closeMoment }: {
-  coin: string; pro: boolean; momentOpen: boolean; closeMoment: () => void;
+function FlowMarket({ coin, pro, momentOpen, closeMoment, mode, setMode }: {
+  coin: string; pro: boolean; momentOpen: boolean; closeMoment: () => void; mode: DomMode; setMode: (mode: DomMode) => void;
 }) {
   const store = storeFor(coin);
   useEffect(() => store.start(), [store]);
@@ -343,36 +344,41 @@ function FlowMarket({ coin, pro, momentOpen, closeMoment }: {
     const earlier = anchor === null ? null : history?.range(anchor, anchor + 1).at(-1) ?? null;
     return captureLevel({ price, side, current: frame, previous: earlier, bookCoverage: store.bookCoverage, tape: store.tape, tapeCoverage: store.coverage });
   };
+  const status = (
+    <div className="of-status">
+      <span className={isLive && bookFresh ? 'of-status-live' : undefined} data-of-status>
+        <span className="of-status-dot" aria-hidden="true" />
+        <strong>{deskMarketOf(coin)?.label ?? coin}</strong>{' · '}
+        {isLive && bookFresh ? 'Hyperliquid · LIVE'
+          : frame && bookAge !== null && !bookFresh
+            ? tr(`Ostatnia migawka arkusza · ${Math.floor(bookAge / 1000)} s temu`, `Last book snapshot · ${Math.floor(bookAge / 1000)} s ago`)
+            : tr('Czekam na świeży arkusz i taśmę', 'Waiting for fresh book and tape')}
+      </span>
+      {Number.isFinite(store.tape.lastPx) && <span>{tr('Ostatnie wykonanie', 'Last trade')} <strong>{store.fmtPx(store.tape.lastPx)}</strong></span>}
+    </div>
+  );
   return (
     <div data-of-market={coin}>
-      {momentOpen && <MomentLens store={store} close={closeMoment} />}
-      <div className="of-status">
-        <span className={isLive && bookFresh ? 'of-status-live' : undefined} data-of-status>
-          <span className="of-status-dot" aria-hidden="true" />
-          <strong>{deskMarketOf(coin)?.label ?? coin}</strong>{' · '}
-          {isLive && bookFresh ? 'Hyperliquid · LIVE'
-            : frame && bookAge !== null && !bookFresh
-              ? tr(`Ostatnia migawka arkusza · ${Math.floor(bookAge / 1000)} s temu`, `Last book snapshot · ${Math.floor(bookAge / 1000)} s ago`)
-              : tr('Czekam na świeży arkusz i taśmę', 'Waiting for fresh book and tape')}
-        </span>
-        {Number.isFinite(store.tape.lastPx) && <span>{tr('Ostatnie wykonanie', 'Last trade')} <strong>{store.fmtPx(store.tape.lastPx)}</strong></span>}
-      </div>
-      <SessionSummary book={book} activity={activity} store={store} windowMs={windowMs}
-        coverageSeconds={Math.floor(store.coverage.coveredMs(activityThrough - windowMs, activityThrough) / 1000)}
-        compare={pro ? { open: !!pinned, button: compareButton, toggle: pinned ? closeDelta : refreshDelta } : null} />
-      <div className={pro ? 'of-grid of-grid-pro' : 'of-grid'}>
-        {pinned && <DeltaMomentCard to={pinned.to} readout={capture?.pin === pinned ? capture.result : null} store={store}
-          refresh={refreshDelta} close={closeDelta} />}
-        <Ladder book={book} frame={frame} previous={previous} store={store} activity={activity} focus={focus}
-          setFocus={(px, side) => setFocus(focus?.price === px && focus.side === side ? null : readLevel(px, side))}
-          pro={pro} windowMs={windowMs} setWindowMs={setProWindow} />
-        <TapePanel store={store} now={now} isLive={isLive} focus={focus} clearFocus={() => setFocus(null)} pro={pro} activity={activity}
-          refreshFocus={() => { if (focus) setFocus(readLevel(focus.price, focus.side)); }} />
-      </div>
-      <p className="of-note">{tr(
-        'Głębokość to widoczne zlecenia. Zmiana między migawkami pokazuje zmianę netto na cenie. Taśma liczy wyłącznie faktyczne wykonania.',
-        'Depth measures visible orders. The change between snapshots is the net change at a price. The tape counts only actual trades.',
-      )}</p>
+      {pro && status}
+      {(!pro || momentOpen) && <MomentLens store={store} close={closeMoment} expanded={momentOpen} status={status} mode={mode} setMode={setMode} />}
+      {pro && <>
+        <SessionSummary book={book} activity={activity} store={store} windowMs={windowMs}
+          coverageSeconds={Math.floor(store.coverage.coveredMs(activityThrough - windowMs, activityThrough) / 1000)}
+          compare={pro ? { open: !!pinned, button: compareButton, toggle: pinned ? closeDelta : refreshDelta } : null} />
+        <div className={pro ? 'of-grid of-grid-pro' : 'of-grid'}>
+          {pinned && <DeltaMomentCard to={pinned.to} readout={capture?.pin === pinned ? capture.result : null} store={store}
+            refresh={refreshDelta} close={closeDelta} />}
+          <Ladder book={book} frame={frame} previous={previous} store={store} activity={activity} focus={focus}
+            setFocus={(px, side) => setFocus(focus?.price === px && focus.side === side ? null : readLevel(px, side))}
+            pro={pro} windowMs={windowMs} setWindowMs={setProWindow} />
+          <TapePanel store={store} now={now} isLive={isLive} focus={focus} clearFocus={() => setFocus(null)} pro={pro} activity={activity}
+            refreshFocus={() => { if (focus) setFocus(readLevel(focus.price, focus.side)); }} />
+        </div>
+        <p className="of-note">{tr(
+          'Głębokość to widoczne zlecenia. Zmiana między migawkami pokazuje zmianę netto na cenie. Taśma liczy wyłącznie faktyczne wykonania.',
+          'Depth measures visible orders. The change between snapshots is the net change at a price. The tape counts only actual trades.',
+        )}</p>
+      </>}
     </div>
   );
 }
@@ -380,6 +386,7 @@ function FlowMarket({ coin, pro, momentOpen, closeMoment }: {
 export default function OrderFlowView() {
   const coin = useSyncExternalStore(subscribeHash, readHash);
   const [pro, setPro] = useState(false);
+  const [mode, setMode] = useState<DomMode>('memory');
   const [momentOpen, setMomentOpen] = useState(false);
   const momentButton = useRef<HTMLButtonElement>(null);
   const closeMoment = () => {
@@ -401,7 +408,7 @@ export default function OrderFlowView() {
           <button type="button" className="of-mode of-moment-launch" ref={momentButton} aria-haspopup="dialog" aria-expanded={momentOpen} onClick={() => setMomentOpen(true)}><Crosshair size={15} aria-hidden="true" />{tr('Przekrój chwili', 'Moment lens')}</button>
         </div>
       </div>
-      <FlowMarket key={coin} coin={coin} pro={pro} momentOpen={momentOpen} closeMoment={closeMoment} />
+      <FlowMarket key={coin} coin={coin} pro={pro} momentOpen={momentOpen} closeMoment={closeMoment} mode={mode} setMode={setMode} />
       <a className="of-link" href="https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/websocket/subscriptions" target="_blank" rel="noreferrer">
         {tr('Źródło danych Hyperliquid', 'Hyperliquid data source')}<ArrowUpRight size={14} aria-hidden="true" />
       </a>
