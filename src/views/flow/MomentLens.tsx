@@ -6,7 +6,7 @@ import { deskMarketOf } from '../../config/deskMarkets';
 import { locale, tr } from '../../i18n';
 import { DASH } from '../../ui/format';
 import {
-  LENS_MS, LensDeltaIndex, bookAtMoment, lensTapePage, lensTapeRange, momentAt, readMomentWindow, timeIndex, type LensPin, type LensTrade,
+  LENS_MS, NOMINAL_BANDS, LensDeltaIndex, amountsAt, bookAtMoment, lensTapePage, lensTapeRange, momentAt, readMomentWindow, timeIndex, type LensPin, type LensTrade,
 } from './momentLensModel';
 import { LensCellDetail, LensPriceMatrix, LensPriceTotals, formatAtoms, nominalUsd } from './LensPriceMatrix';
 import { DomModeControls, DomWorkspace, type DomMode } from './DomWorkspace';
@@ -200,7 +200,9 @@ export function MomentLens({ store, close, expanded, status, mode, setMode }: {
   const dialog = useRef<HTMLDialogElement>(null);
   const label = useId();
   const seekId = useId();
+  const bandsId = useId();
   const inspectorRef = useRef<HTMLElement>(null);
+  const bandDetailsButton = useRef<HTMLButtonElement>(null);
   const big = useSyncExternalStore(subscribeRoomy, roomy, () => false);
   const [paused, setPaused] = useState<{ end: number; t: number } | null>(null);
   const [pin, setPin] = useState<LensPin | null>(null);
@@ -208,6 +210,7 @@ export function MomentLens({ store, close, expanded, status, mode, setMode }: {
   const [tapeScope, setTapeScope] = useState<TapeScope>('window');
   const [bookPage, setBookPage] = useState(0);
   const [tapePage, setTapePage] = useState(0);
+  const [bandDetails, setBandDetails] = useState(false);
   const end = paused?.end ?? Math.floor(store.serverNow() / 1000) * 1000 + 1;
   const sizeDecimals = store.szDecimals ?? deskMarketOf(store.coin)?.szDecimals ?? 0;
   const unit = store.coin.split(':').at(-1) ?? store.coin;
@@ -331,25 +334,52 @@ export function MomentLens({ store, close, expanded, status, mode, setMode }: {
           <div className={expanded ? 'ml-panes' : 'dom-inspector'}>
             <section ref={inspectorRef} tabIndex={expanded ? undefined : -1} className="ml-scope" aria-label={tr('Wykonania przy aktywnej cenie', 'Executions at active price')}>
               {!expanded && <h2>{tr('Przekrój chwili', 'Moment lens')}</h2>}
-              <header className="ml-price-hero">
-                <div>
-                  <small>{tr('Cena wykonania', 'Execution price')} · 1 ms</small>
-                  {activePrice !== null
-                    ? <button className="ml-active-price" type="button" aria-label={`${tr('Filtruj cenę', 'Filter price')} ${store.fmtPx(activePrice)} USD`} aria-pressed={pin !== null} data-ml-active-price={activePrice} onClick={() => pickPrice(activePrice)}>{store.fmtPx(activePrice)} <small>USD</small></button>
-                    : <strong className="ml-active-price">{DASH}</strong>}
+              <div className="dom-readout">
+                <header className="ml-price-hero">
+                  <div>
+                    <small>{tr('Cena wykonania', 'Execution price')} · 1 ms</small>
+                    {activePrice !== null
+                      ? <button className="ml-active-price" type="button" aria-label={`${tr('Filtruj cenę', 'Filter price')} ${store.fmtPx(activePrice)} USD`} aria-pressed={pin !== null} data-ml-active-price={activePrice} onClick={() => pickPrice(activePrice)}>{store.fmtPx(activePrice)} <small>USD</small></button>
+                      : <strong className="ml-active-price">{DASH}</strong>}
+                  </div>
+                  {point.prices.length > 1 && activePrice !== null && <label className="ml-price-picker">
+                    <span>{tr('Ceny w tej chwili', 'Prices at this moment')} · {whole.format(point.prices.length)}</span>
+                    <select value={activePrice} onChange={event => pickPrice(Number(event.currentTarget.value))}>
+                      {!currentRow && <option value={activePrice}>{store.fmtPx(activePrice)} USD</option>}
+                      {point.prices.map(row => <option key={row.px} value={row.px}>{store.fmtPx(row.px)} USD</option>)}
+                    </select>
+                  </label>}
+                </header>
+                {!point.covered && <p className="ml-state">{tr('1 ms · brak potwierdzonego pokrycia', '1 ms · no confirmed coverage')}</p>}
+                {point.covered && !currentRow && <p className="ml-state">{tr('1 ms · 0 wykonań', '1 ms · 0 executions')}</p>}
+                <LensPriceTotals row={currentRow} covered={point.covered} marketDelta={marketDelta} adaptive={!expanded} />
+              </div>
+              {!expanded && <div className="dom-band-controls">
+                <div role="group" aria-label={tr('Klasy wykonań przy cenie', 'Execution bands at price')}>
+                  {NOMINAL_BANDS.map((band, index) => {
+                    const buy = amountsAt(currentRow, index, 'buy', point.covered);
+                    const sell = amountsAt(currentRow, index, 'sell', point.covered);
+                    const count = buy && sell ? whole.format(buy.count + sell.count) : DASH;
+                    return <button type="button" key={band} data-dom-compact-band={index}
+                      disabled={activePrice === null || !point.covered}
+                      aria-pressed={pin?.band === index && pin.side === undefined}
+                      aria-label={band + ' USD · ' + count + ' ' + tr('wyk.', 'fills')}
+                      onClick={() => pickBand(index)}>{band}<small>{count}</small></button>;
+                  })}
                 </div>
-                {point.prices.length > 1 && activePrice !== null && <label className="ml-price-picker">
-                  <span>{tr('Ceny w tej chwili', 'Prices at this moment')} · {whole.format(point.prices.length)}</span>
-                  <select value={activePrice} onChange={event => pickPrice(Number(event.currentTarget.value))}>
-                    {!currentRow && <option value={activePrice}>{store.fmtPx(activePrice)} USD</option>}
-                    {point.prices.map(row => <option key={row.px} value={row.px}>{store.fmtPx(row.px)} USD</option>)}
-                  </select>
-                </label>}
-              </header>
-              {!point.covered && <p className="ml-state">{tr('1 ms · brak potwierdzonego pokrycia', '1 ms · no confirmed coverage')}</p>}
-              {point.covered && !currentRow && <p className="ml-state">{tr('1 ms · 0 wykonań', '1 ms · 0 executions')}</p>}
-              <LensPriceTotals row={currentRow} covered={point.covered} marketDelta={marketDelta} />
-              <LensPriceMatrix row={currentRow} hasPrice={activePrice !== null} covered={point.covered} pin={pin} onSelect={pickBand} context={data} cursor={t} />
+                <button ref={bandDetailsButton} type="button" className="dom-band-expand" aria-expanded={bandDetails} aria-controls={bandDetails ? bandsId : undefined}
+                  onClick={() => setBandDetails(value => !value)}>{tr('Szczegóły klas', 'Band details')}</button>
+              </div>}
+              <div id={bandsId} className="dom-band-matrix" data-expanded={bandDetails}>
+                <LensPriceMatrix row={currentRow} hasPrice={activePrice !== null} covered={point.covered} pin={pin}
+                  onSelect={(band, side) => {
+                    pickBand(band, side);
+                    if (!expanded && bandDetails) {
+                      setBandDetails(false);
+                      bandDetailsButton.current?.focus({ preventScroll: true });
+                    }
+                  }} context={data} cursor={t} />
+              </div>
               {expanded && filterDetail}
             </section>
             <div className="ml-side-panels">
