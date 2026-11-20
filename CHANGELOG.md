@@ -4,6 +4,10 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Dwie delty w Przekroju chwili (2026-11-20)
+<!-- co-nowego: grupa=wykres | pl=Delta przy cenie i delta rynku w Przekroju chwili | en=Price and market delta in Moment lens -->
+- Przekrój chwili pokazuje różnicę kupna i sprzedaży w USD przy wybranej cenie w 1 ms oraz dla całego kontraktu przez 120 s do kursora. Niepełne okno pokazuje pokrycie taśmy.
+
 ### Samodzielny panel Order Flow (2026-11-19)
 <!-- co-nowego: grupa=wykres | pl=Order Flow Pro dla BTC, GOLD i S&P 500 | en=Order Flow Pro for BTC, GOLD and S&P 500 -->
 - Order Flow w menu otwiera taśmę i drabinkę DOM dla BTC, GOLD i S&P 500. W trybie Pro można przypiąć cenę i sprawdzić stan arkusza przed i po oraz wykonania między migawkami.
