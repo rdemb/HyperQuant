@@ -85,9 +85,15 @@ export function useOrderFlowFullscreen() {
     if (!section || !onOrderFlow.current) return;
     if (document.fullscreenElement === section) {
       requested.current = false;
-      await document.exitFullscreen().catch(() => {
-        requested.current = document.fullscreenElement === section;
-      });
+      try {
+        await document.exitFullscreen();
+        if (!requested.current && sectionRef.current === section) setMode(null);
+      } catch {
+        if (onOrderFlow.current && sectionRef.current === section && document.fullscreenElement === section) {
+          requested.current = true;
+          setMode('native');
+        }
+      }
       return;
     }
     if (requested.current) {
@@ -103,6 +109,9 @@ export function useOrderFlowFullscreen() {
       typeof document.exitFullscreen !== 'function') return;
     try {
       await section.requestFullscreen();
+      if ((!onOrderFlow.current || sectionRef.current !== section) && document.fullscreenElement === section) {
+        await document.exitFullscreen();
+      }
     } catch {
       // Panel wypełnia kartę, jeżeli system odmówi pełnego ekranu.
     }
@@ -113,10 +122,12 @@ export function useOrderFlowFullscreen() {
       if (!onOrderFlow.current || event.defaultPrevented || event.repeat || event.isComposing || event.altKey || event.ctrlKey || event.metaKey ||
         document.querySelector(MODAL)) return;
       const exit = mode !== null && event.key === 'Escape';
+      const target = event.target;
+      if (target instanceof HTMLElement && target.closest('select')) return;
       if (!exit) {
         if (chartKeyAction(event)?.kind !== 'fullscreen') return;
-        if (event.target instanceof HTMLElement &&
-          (event.target.isContentEditable || event.target.closest('input, textarea, select, [role="textbox"]'))) return;
+        if (target instanceof HTMLElement &&
+          (target.isContentEditable || target.closest('input, textarea, [role="textbox"]'))) return;
       }
       event.preventDefault();
       void toggle();
