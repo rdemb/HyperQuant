@@ -93,6 +93,58 @@ describe('Przekrój chwili', () => {
     expect(amountsAt(point.prices[0], 1, 'sell', point.covered)?.count).toBe(0);
   });
 
+  it('wybiera cenę ostatniego wykonania tej chwili niezależnie od wielkości ceny i kolejności dostaw', () => {
+    const tape = new Tape();
+    tape.insert([
+      { t: 1001, px: 501, sz: 2, side: 1, tid: 21 },
+      { t: 1001, px: 502, sz: 2, side: -1, tid: 20 },
+      { t: 1002, px: 503, sz: 2, side: 1, tid: 22 },
+    ]);
+    const coverage = new Coverage([[1000, 1010]]);
+    expect(momentAt(tape, coverage, 1001, 3).lastPrice).toBe(501);
+    expect(momentAt(tape, coverage, 1000, 3).lastPrice).toBeNull();
+  });
+
+  it('zawęża ślad do tej samej ceny i klasy co taśmę, a kursor i pokrycie zachowuje dla całego kontekstu', () => {
+    const tape = new Tape();
+    tape.insert([
+      { t: 150_000, px: 5000, sz: 2, side: 1, tid: 1 },
+      { t: 150_000, px: 5000, sz: 3, side: -1, tid: 2 },
+      { t: 150_000, px: 5001, sz: 2, side: -1, tid: 3 },
+      { t: 151_000, px: 5000, sz: 1, side: 1, tid: 4 },
+      { t: 200_000, px: 5000, sz: 2, side: 1, tid: 5 },
+    ]);
+    const coverage = new Coverage([[80_000, 170_000], [190_000, 200_000]]);
+    const pin = { px: 5000, band: 2 };
+    const context = readMomentWindow(tape, coverage, 200_000, 3, pin);
+    expect(context).toMatchObject({ times: [150_000, 151_000], peak: 150_000, coveredMs: 100_000 });
+    expect(context.totals).toEqual([0, 0, 2, 0, 0, 0, 0]);
+    expect(context.lanes[2].slice(140, 144)).toEqual(new Float64Array([10_000, 15_000, 0, 0]));
+    const fills = lensTapePage(tape, coverage, lensTapeRange(80_000, 150_000), 3, pin, 0, 4);
+    expect(fills.rows.map(row => row.tid)).toEqual([2, 1]);
+    const sell = { ...pin, side: -1 as const };
+    expect(lensTapePage(tape, coverage, lensTapeRange(80_000, 150_000), 3, sell, 0, 4).rows.map(row => row.tid)).toEqual([2]);
+    expect(readMomentWindow(tape, coverage, 200_000, 3, sell).lanes[2].slice(140, 142)).toEqual(new Float64Array([0, 15_000]));
+    expect(lensTapePage(tape, coverage, { from: 151_000, to: 151_001 }, 3, { ...sell, band: 1 }, 0, 4))
+      .toMatchObject({ total: 0, coveredMs: 1, durationMs: 1 });
+  });
+
+  it('liczy ślady klas z pokrytej części pełnego rynku, zachowując otrzymane wykonania do nawigacji', () => {
+    const tape = new Tape();
+    tape.insert([
+      { t: 80_000, px: 5000, sz: 0.1, side: 1, tid: 1 },
+      { t: 100_000, px: 5000, sz: 2, side: -1, tid: 2 },
+      { t: 150_000, px: 5100, sz: 2, side: -1, tid: 3 },
+    ]);
+    const coverage = new Coverage([[80_000, 100_000], [140_000, 200_000]]);
+    const context = readMomentWindow(tape, coverage, 200_000, 3);
+    expect(context.coveredMs).toBe(80_000);
+    expect(context.times).toEqual([80_000, 100_000, 150_000]);
+    expect(context.totals).toEqual([1, 0, 1, 0, 0, 0, 0]);
+    expect(context.lanes[2][41]).toBe(0);
+    expect(context.lanes[2][141]).toBe(10_200);
+  });
+
   it('taśma kończy się po milisekundzie kursora i przycina początek do pełnych dwóch minut', () => {
     const tape = new Tape();
     tape.insert([80_000, 80_001, 200_000, 200_001].map((t, tid) => ({ t, px: 500, sz: 1, side: 1 as const, tid })));
@@ -111,15 +163,19 @@ describe('Przekrój chwili', () => {
     tape.insert([{ t: 1001, px: 500, sz: 2, side: 1, tid: 1 }]);
     const point = momentAt(tape, new Coverage([[1001, 1002]]), 1001, 3);
     const render = (covered: boolean) => renderToStaticMarkup(createElement(LensPriceMatrix, {
-      rows: point.prices, covered, selected: null, onSelect: () => {}, fmtPx: String, graphical: false,
+      row: point.prices[0], covered, pin: { px: 500, band: 1, side: 1 }, onSelect: () => {},
+      context: readMomentWindow(tape, new Coverage(covered ? [[1001, 1002]] : []), 1002, 3), cursor: 1001,
     }));
     const measured = render(true);
     expect(measured.match(/data-ml-band=/g)).toHaveLength(7);
     expect(measured.match(/class="ml-cell-measure/g)).toHaveLength(14);
     expect(measured.match(/data-count="0" data-micros="0"/g)).toHaveLength(13);
     expect(measured).toContain('data-count="1" data-micros="1000000000"');
+    expect(measured.match(/class="ml-band-trace"/g)).toHaveLength(7);
+    expect(measured.match(/data-ml-context-count="\d+"/g)).toHaveLength(7);
     const gap = render(false);
     expect(gap.match(/class="ml-cell-measure/g)).toHaveLength(14);
     expect(gap).not.toContain('data-micros=');
+    expect(gap).not.toContain('data-ml-context-count=');
   });
 });
