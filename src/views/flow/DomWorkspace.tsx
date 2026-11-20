@@ -3,7 +3,7 @@ import { locale, tr } from '../../i18n';
 import { DASH } from '../../ui/format';
 import { bookQuote, type readDomTrades } from './domWorkspaceModel';
 import type { BookFrame } from '../../charts/pro/core/book';
-import { amountsAt, priceDelta, type LensDelta, type PriceRead } from './momentLensModel';
+import { NOMINAL_BANDS, amountsAt, priceDelta, type LensDelta, type PriceRead } from './momentLensModel';
 import { formatAtoms, nominalUsd } from './LensPriceMatrix';
 
 export type DomMode = 'ladder' | 'memory' | 'trace';
@@ -78,19 +78,48 @@ function tradeMeasure(value: bigint | null, max: number, signed = false, side?: 
 
 const valueOf = (delta: LensDelta) => delta.kind === 'exact' ? delta.micros : null;
 
+function BandGrid({ prices, point, activePrice, activeBand, pick, fmtPx }: {
+  prices: number[]; point: { prices: PriceRead[]; covered: boolean };
+  activePrice: number | null; activeBand: number | null; pick: (px: number, band: number | null) => void;
+  fmtPx: (px: number) => string;
+}) {
+  const atPrice = new Map(point.prices.map(row => [row.px, row]));
+  const rows = prices.map(px => ({
+    px, deltas: NOMINAL_BANDS.map((_, band) => valueOf(priceDelta(atPrice.get(px), point.covered, band))),
+  }));
+  const largest = rows.reduce((max, row) => Math.max(max, ...row.deltas.map(v => Math.abs(Number(v ?? 0n)) / 1e6)), 1);
+  const columns = [0, 1, 2, null, 3, 4, 5, 6] as const;
+  return <table className="dom-grid dom-class-grid" aria-label={tr('Delta według ceny i nominału · 1 ms', 'Delta by price and notional · 1 ms')}>
+    <thead><tr>{columns.map(band => band === null
+      ? <th scope="col" className="dom-price" key="price">{tr('Cena', 'Price')}<small>USD</small></th>
+      : <th scope="col" key={band}>{NOMINAL_BANDS[band]}<small>Δ USD</small></th>)}</tr></thead>
+    <tbody>{rows.map(({ px, deltas }) => <tr key={px} data-dom-price={px} className={activePrice === px ? 'dom-selected' : undefined}>
+      {columns.map(band => band === null
+        ? <th className="dom-price" scope="row" key="price"><button type="button"
+            aria-pressed={activePrice === px} onClick={() => pick(px, null)}>{fmtPx(px)}</button></th>
+        : <td key={band}><button type="button" data-dom-band={band} aria-pressed={activePrice === px && activeBand === band}
+            onClick={() => pick(px, band)}>
+            <span className="sr-only">{fmtPx(px)} USD · {NOMINAL_BANDS[band]} · Δ </span>
+            {tradeMeasure(deltas[band], largest, true)}
+          </button></td>)}
+    </tr>)}</tbody>
+  </table>;
+}
+
 export function DomWorkspace({
-  mode, books, trades, point, cursor, activePrice, pickPrice, pickDot, fmtPx, stale,
+  mode, books, trades, point, cursor, activePrice, activeBand, pickBand, pickPrice, pickDot, fmtPx, stale,
 }: {
   mode: DomMode; books: readonly (BookFrame | null)[]; trades: ReturnType<typeof readDomTrades>;
   point: { prices: PriceRead[]; covered: boolean }; cursor: number; activePrice: number | null;
+  activeBand: number | null; pickBand: (px: number, band: number | null) => void;
   pickPrice: (px: number) => void; pickDot: (time: number, px: number) => void; fmtPx: (px: number) => string; stale: boolean;
 }) {
   const [offset, setOffset] = useState(0);
+  const [showBands, setShowBands] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const selectedRow = useRef<HTMLTableRowElement>(null);
   useLayoutEffect(() => {
     const scroll = scrollRef.current;
-    const row = selectedRow.current;
+    const row = scroll?.querySelector('tr.dom-selected');
     if (!scroll || !row) return;
     const viewport = scroll.getBoundingClientRect();
     const target = row.getBoundingClientRect();
@@ -99,7 +128,7 @@ export function DomWorkspace({
       const center = (header + viewport.height - target.height) / 2;
       scroll.scrollTop += target.top - viewport.top - center;
     }
-  }, [mode, activePrice]);
+  }, [mode, activePrice, showBands]);
   const frame = books.at(-1) ?? null;
   const prices = new Set<number>(point.covered ? point.prices.map(row => row.px) : []);
   for (const book of books) book?.px.forEach(price => prices.add(price));
@@ -133,9 +162,10 @@ export function DomWorkspace({
     else ask += usd;
   });
   return (
-    <section className="dom-board" aria-label={title} data-dom-mode={mode}>
+    <section className="dom-board" aria-label={title} data-dom-mode={mode} data-dom-bands={showBands || undefined}>
       <header className="dom-board-head">
-        <div><h2>{title}</h2><small>{mode === 'memory'
+        <div><h2>{showBands ? tr('Klasy nominału', 'Notional bands') : title}</h2><small>{showBands
+          ? tr('Delta klasy przy cenie · 1 ms', 'Class delta at each price · 1 ms') : mode === 'memory'
           ? tr('Cztery migawki L2 · od najstarszej do najnowszej', 'Four L2 snapshots · oldest to newest')
           : mode === 'trace' ? tr('Delta wykonań · cztery odcinki po 5 s do kursora', 'Trade delta · four 5 s intervals through the cursor')
             : tr('Głębokość L2, liczba zleceń i wykonania w 1 ms', 'L2 depth, order count and executions in 1 ms')}</small></div>
@@ -144,6 +174,9 @@ export function DomWorkspace({
           <span className="ml-ask" data-dom-best-ask={bestAsk ?? undefined}>ASK <strong>{bestAsk === null ? DASH : fmtPx(bestAsk)}</strong></span>
         </div>
         <div className="dom-page">
+          <button type="button" aria-pressed={showBands} onClick={() => setShowBands(value => !value)}>
+            {showBands ? tr('Wróć do układu', 'Back to layout') : tr('7 klas', '7 bands')}
+          </button>
           <button type="button" disabled={start === 0} aria-label={tr('Wyższe ceny', 'Higher prices')} onClick={() => setOffset(start - center + Math.floor(PAGE_SIZE / 2) - PAGE_SIZE)}>↑</button>
           <button type="button" disabled={!offset} onClick={() => setOffset(0)}>{tr('Do ceny', 'To price')}</button>
           <button type="button" disabled={start === limit} aria-label={tr('Niższe ceny', 'Lower prices')} onClick={() => setOffset(start - center + Math.floor(PAGE_SIZE / 2) + PAGE_SIZE)}>↓</button>
@@ -155,7 +188,7 @@ export function DomWorkspace({
           <Balance label="120 s" buy={trades.totals?.buy ?? 0} sell={trades.totals?.sell ?? 0} />
         </div>
         <div ref={scrollRef} className="dom-grid-scroll" tabIndex={0} role="region" aria-label={tr('Tabela cen w USD', 'Price table in USD')}>
-          <table className="dom-grid">
+          {showBands ? <BandGrid prices={visible} point={point} activePrice={activePrice} activeBand={activeBand} pick={pickBand} fmtPx={fmtPx} /> : <table className="dom-grid">
             <thead><tr>
               {mode !== 'trace' && <th scope="col" className="dom-extra">{tr('Profil', 'Profile')}<small>{tr('Obrót 120 s', '120 s volume')}</small></th>}
               {mode === 'memory' && books.slice(0, -1).map((book, i) => <SnapshotHeading key={i} book={book} />)}
@@ -185,7 +218,7 @@ export function DomWorkspace({
                 {bookMeasure(latest?.[side] ?? null, depthMax, false, side)}
                 {mode === 'ladder' && <small title={tr('Liczba zleceń', 'Order count')}>{orders ?? DASH}</small>}
               </div>;
-              return <tr key={px} ref={selected ? selectedRow : undefined} className={selected ? 'dom-selected' : undefined} data-dom-price={px}>
+              return <tr key={px} className={selected ? 'dom-selected' : undefined} data-dom-price={px}>
                 {mode !== 'trace' && <td className="dom-extra">{tradeMeasure(trades.coverage.volume && !row?.missingVolume ? row?.volume ?? 0n : null, tapeMax)}</td>}
                 {mode === 'memory' && quotes.slice(0, -1).map((quote, i) => <td key={i}>{bookMeasure(quote ? quote.bid - quote.ask : null, depthMax, true)}</td>)}
                 {mode === 'ladder' && <><td className="dom-bids">{depth('bid', latest?.bidOrders ?? null)}</td><td>{tradeMeasure(amountsAt(instant, null, 'sell', point.covered)?.usd ?? null, tapeMax, false, 'ask')}</td></>}
@@ -203,7 +236,7 @@ export function DomWorkspace({
                 <td className={mode === 'memory' ? 'dom-extra' : undefined}>{tradeMeasure(valueOf(priceDelta(instant, point.covered)), tapeMax, true)}</td>
               </tr>;
             })}</tbody>
-          </table>
+          </table>}
           {!visible.length && <p className="dom-empty">{tr('Czekam na ceny z publicznego strumienia Hyperliquid.', 'Waiting for prices from the public Hyperliquid stream.')}</p>}
         </div>
       </div>
@@ -226,9 +259,11 @@ function Balance({ label, buy, sell, bidAsk = false }: { label: string; buy: num
       + (bidAsk ? 'BID ' : tr('Kupno ', 'Buy ')) + (100 - top) + '%';
   return <div className="dom-balance" title={description} role="img" aria-label={description}>
     <small>{label}</small>
+    <span className="dom-share ml-ask" aria-hidden="true">{top === null ? DASH : top + '%'}</span>
     <div className="dom-balance-bar" data-empty={top === null || undefined}>
       {top !== null && <><span style={{ height: top + '%' }} /><span style={{ height: 100 - top + '%' }} /></>}
     </div>
+    <span className="dom-share ml-bid" aria-hidden="true">{top === null ? DASH : 100 - top + '%'}</span>
   </div>;
 }
 

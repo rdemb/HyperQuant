@@ -296,7 +296,7 @@ export function MomentLens({ store, close, expanded, status, mode, setMode }: {
         <div className="ml-main">
           {!expanded && <div className="dom-tools">
             <DomModeControls mode={mode} select={setMode} />
-            {status}
+            {paused ? <span className="ml-paused">{unit} · {tr('Zamrożone', 'Frozen')} · {clock.format(t)} UTC</span> : status}
             <button type="button" className="dom-jump" onClick={() => inspectorRef.current?.focus()}>
               {tr('Do Przekroju chwili', 'Go to Moment lens')}
             </button>
@@ -325,6 +325,7 @@ export function MomentLens({ store, close, expanded, status, mode, setMode }: {
             </div>
           </section>
           {domTrades && <DomWorkspace key={mode} mode={mode} books={books} trades={domTrades} point={point}
+            activeBand={pin?.band ?? null} pickBand={(px, band) => { seek(t, { px, band }); setTapeScope('moment'); }}
             cursor={t} activePrice={activePrice} pickPrice={pickPrice} pickDot={(time, px) => pickPrice(px, time)} fmtPx={price => store.fmtPx(price)}
             stale={!paused && (!frame || t - frame.t > MAX_BOOK_AGE_MS || !store.bookCoverage.isOpen)} />}
           <div className={expanded ? 'ml-panes' : 'dom-inspector'}>

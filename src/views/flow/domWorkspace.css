@@ -7,7 +7,7 @@
 .dom-page { display: flex; gap: 4px; }
 .dom-grid-scroll { max-height: min(62vh, 705px); overflow: auto; overscroll-behavior: contain; }
 .dom-grid-scroll:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
-.dom-workspace .dom-grid { table-layout: fixed; }
+.dom-workspace .dom-grid { width: 100%; table-layout: fixed; }
 .dom-grid thead { position: sticky; top: 0; z-index: 1; background: var(--color-surface-3); }
 .dom-workspace .dom-grid thead th { text-align: center; font-size: clamp(9px, 1vw, 11px); padding: 5px 1px; overflow-wrap: anywhere; }
 .dom-grid thead small { display: block; color: var(--color-ink-2); font-size: .92em; font-weight: 400; }
@@ -162,6 +162,30 @@
 }
 .dom-top-quote { display: flex; flex-wrap: wrap; gap: 1px 8px; font: 11px var(--font-mono); }
 .dom-top-quote strong { font-weight: 700; }
+.dom-balance { grid-template-rows: auto auto minmax(0, 1fr) auto; }
+.dom-share { text-align: center; font: 10px var(--font-mono); }
+.dom-workspace .dom-class-grid td { padding: 0; }
+.dom-workspace .dom-class-grid td button {
+  width: 100%; min-height: 28px; padding: 0; border: 0; border-radius: 0;
+  background: transparent; font: inherit; color: inherit;
+}
+.dom-workspace .dom-class-grid td button[aria-pressed="true"] { outline: 2px solid var(--color-accent); outline-offset: -2px; }
+.dom-class-grid .dom-measure { font-variant-numeric: tabular-nums; }
+@container (min-width: 540px) and (max-width: 999px) {
+  .dom-workspace .ml-main:has([data-dom-bands]) .dom-board { grid-column: 1 / -1; }
+  [data-dom-bands] .dom-grid-scroll { max-height: clamp(155px, 25dvh, 230px); }
+  [data-dom-bands] .dom-path { display: none; }
+  [data-dom-bands] + .dom-inspector {
+    grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  [data-dom-bands] + .dom-inspector .ml-matrix { display: none; }
+}
+@container (max-width: 539px) {
+  [data-dom-bands] .dom-balances { display: none; }
+  [data-dom-bands] .dom-board-body { grid-template-columns: minmax(0, 1fr); }
+  .dom-workspace .dom-class-grid th, .dom-workspace .dom-class-grid td { padding-inline: 0; }
+  .dom-class-grid .dom-measure { padding-inline: 0; font-size: 10px; }
+}
 @container (max-width: 720px) {
   .dom-top-quote { flex-basis: 100%; }
   .dom-top-quote strong { font-size: 13px; }
