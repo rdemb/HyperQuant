@@ -4,6 +4,11 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Pamięć arkusza i ślad transakcji w Order Flow (2026-11-20)
+<!-- co-nowego: grupa=wykres | pl=Pamięć arkusza i ślad transakcji | en=Book memory and trade trace -->
+- W widoku „7 klas” wybór komórki otwiera wykonania danej klasy przy tej cenie i w tej milisekundzie. Nagranie z 20.11.2026 pozwala odtworzyć te same układy na trzech rynkach.
+- Order Flow dla BTC, GOLD i S&P 500 otwiera Pamięć arkusza z czterema migawkami L2 na wspólnej osi cen. Drabinka pokazuje aktualną głębokość i liczbę zleceń, a Ślad transakcji pokazuje deltę w czterech odcinkach po 5 s do kursora. Przekrój chwili zachowuje klasy wykonań i taśmę dla wybranej ceny.
+
 ### Dwie delty w Przekroju chwili (2026-11-20)
 <!-- co-nowego: grupa=wykres | pl=Delta przy cenie i delta rynku w Przekroju chwili | en=Price and market delta in Moment lens -->
 - Przekrój chwili pokazuje różnicę kupna i sprzedaży w USD przy wybranej cenie w 1 ms oraz dla całego kontraktu przez 120 s do kursora. Niepełne okno pokazuje pokrycie taśmy.

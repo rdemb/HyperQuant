@@ -75,8 +75,8 @@ function BandTrace({ context, bins, max, cursor, count, countWidth }: {
   );
 }
 
-export function LensPriceMatrix({ row, covered, pin, onSelect, context, cursor }: {
-  row: PriceRead | undefined; covered: boolean; pin: LensPin | null;
+export function LensPriceMatrix({ row, hasPrice = row !== undefined, covered, pin, onSelect, context, cursor }: {
+  row: PriceRead | undefined; hasPrice?: boolean; covered: boolean; pin: LensPin | null;
   onSelect: (band: number, side?: LensTrade['side']) => void;
   context: ContextWindow; cursor: number;
 }) {
@@ -101,13 +101,13 @@ export function LensPriceMatrix({ row, covered, pin, onSelect, context, cursor }
         const pressed = pin?.band === band;
         return (
           <tr key={label} data-ml-band={band} className={pressed ? 'ml-selected-band' : undefined}>
-            <th scope="row"><button type="button" disabled={!row} aria-pressed={pressed && pin?.side === undefined} onClick={() => onSelect(band)}>{label}</button></th>
+            <th scope="row"><button type="button" disabled={!hasPrice || !covered} aria-pressed={pressed && pin?.side === undefined} onClick={() => onSelect(band)}>{label}</button></th>
             <td className="ml-band-context-cell"><BandTrace context={context} bins={traces.lanes[band]} max={traces.maximum} cursor={cursor} count={context.totals[band]} countWidth={countWidth} /></td>
             {(['buy', 'sell'] as const).map(side => {
               const value = side === 'buy' ? buy : sell;
               const direction = side === 'buy' ? 1 : -1;
               return <td key={side}>
-                <button type="button" className="ml-measure-button" disabled={!row} aria-pressed={pressed && pin?.side === direction} onClick={() => onSelect(band, direction)}
+                <button type="button" className="ml-measure-button" disabled={!hasPrice || !covered} aria-pressed={pressed && pin?.side === direction} onClick={() => onSelect(band, direction)}
                   aria-label={`${label} · ${spokenSide(side)} · ${value ? `${value.count} / ${formatAtoms(value.usd, 6)} USD` : DASH}`}>
                   <CellMeasure side={side} value={value} max={max} />
                 </button>

@@ -30,7 +30,7 @@ body:has(.ml-dialog[open]) { overflow: hidden; }
 .ml-close { justify-self: end; }
 .ml-top nav, .ml-steps, .ml-views { display: flex; align-items: center; gap: 4px; }
 
-.ml-dialog :is(button, a, select) {
+.ml-surface :is(button, a, select) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -44,11 +44,11 @@ body:has(.ml-dialog[open]) { overflow: hidden; }
   font-size: 12px;
 }
 
-.ml-dialog :is(button, a) { white-space: nowrap; }
+.ml-surface :is(button, a) { white-space: nowrap; }
 .ml-dialog button:disabled { opacity: .46; }
-.ml-dialog :is(button, a):is([aria-pressed="true"], [aria-current="page"]) { color: var(--color-accent); border-color: currentColor; background: var(--color-surface-3); }
-.ml-dialog :is(button, a):hover:not(:disabled) { background: var(--color-surface-3); }
-.ml-dialog :is(button, a, input, select):focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
+.ml-surface :is(button, a):is([aria-pressed="true"], [aria-current="page"]) { color: var(--color-accent); border-color: currentColor; background: var(--color-surface-3); }
+.ml-surface :is(button, a):hover:not(:disabled) { background: var(--color-surface-3); }
+.ml-surface :is(button, a, input, select):focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
 
 .ml-main {
   width: 100%;
@@ -64,6 +64,7 @@ body:has(.ml-dialog[open]) { overflow: hidden; }
   padding: 8px clamp(8px, 1.7vw, 24px) max(4px, env(safe-area-inset-bottom));
 }
 
+.ml-panes { display: contents; }
 .ml-side-panels { min-width: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; align-items: start; }
 .ml-book, .ml-scope, .ml-tape, .ml-transport {
   min-width: 0;
@@ -90,7 +91,7 @@ body:has(.ml-dialog[open]) { overflow: hidden; }
 .ml-range input { width: 100%; min-height: 24px; margin: 0; accent-color: var(--color-level); }
 .ml-steps { justify-content: flex-end; }
 .ml-timeline-key { display: inline-flex; flex-wrap: wrap; gap: 3px 8px; margin-right: auto; font-size: 11px; }
-.ml-dialog .ml-steps button { min-height: 30px; }
+.ml-surface .ml-steps button { min-height: 30px; }
 .ml-bid { color: var(--color-buy-ink); }
 .ml-ask { color: var(--color-sell-ink); }
 
@@ -105,7 +106,7 @@ body:has(.ml-dialog[open]) { overflow: hidden; }
 
 .ml-price-hero > div, .ml-price-picker { display: grid; justify-items: start; gap: 2px; }
 .ml-price-hero > div > small, .ml-price-picker span { color: var(--color-ink-2); font-size: 11px; }
-.ml-dialog .ml-active-price {
+.ml-surface .ml-active-price {
   font: 750 clamp(31px, 5vw, 42px)/1.1 var(--font-sans);
   font-variant-numeric: tabular-nums;
   gap: 6px;
@@ -147,7 +148,7 @@ body:has(.ml-dialog[open]) { overflow: hidden; }
 .ml-band-trace .ml-cursor { stroke-width: 1px; }
 .ml-matrix tbody tr { border-top: 1px solid var(--color-line); }
 .ml-matrix .ml-selected-band { background: var(--color-surface-3); }
-.ml-dialog .ml-matrix th button {
+.ml-surface .ml-matrix th button {
   display: flex;
   width: 100%;
   min-height: 35px;
@@ -158,7 +159,7 @@ body:has(.ml-dialog[open]) { overflow: hidden; }
   font: 650 13px var(--font-mono);
 }
 
-.ml-dialog .ml-measure-button {
+.ml-surface .ml-measure-button {
   display: block;
   width: 100%;
   border: 0;
@@ -169,7 +170,7 @@ body:has(.ml-dialog[open]) { overflow: hidden; }
   text-align: right;
 }
 
-.ml-dialog .ml-measure-button:disabled { opacity: 1; }
+.ml-surface .ml-measure-button:disabled { opacity: 1; }
 .ml-cell-measure {
   position: relative;
   display: grid;
@@ -213,24 +214,24 @@ body:has(.ml-dialog[open]) { overflow: hidden; }
 }
 
 .ml-panel-head h3 { margin: 0; font-size: 14px; color: var(--color-ink-1); }
-.ml-dialog .ml-panel-head button { min-height: 30px; }
+.ml-surface .ml-panel-head button { min-height: 30px; }
 .ml-book-stamp, .ml-tape-stamp { flex-wrap: wrap; font-family: var(--font-mono); }
 .ml-tape-stamp small { font-size: 10px; }
 .ml-book-sides { display: grid; grid-template-columns: repeat(2, minmax(min-content, 1fr)); border-block: 1px solid var(--color-line); overflow-x: auto; }
 .ml-book-sides table + table { border-left: 1px solid var(--color-line-strong); }
-.ml-dialog :is(.ml-book-sides, .ml-executions) :is(th, td) { padding: 3px 4px; font-size: 12px; line-height: 1.25; }
+.ml-surface :is(.ml-book-sides, .ml-executions) :is(th, td) { padding: 3px 4px; font-size: 12px; line-height: 1.25; }
 .ml-book-sides :is(th, td) { white-space: nowrap; }
 .ml-book-sides [data-ml-native] [data-ml-book-size] { white-space: normal; overflow-wrap: anywhere; }
-.ml-dialog :is(.ml-book-sides, .ml-executions) thead th { color: var(--color-ink-2); font-size: 11px; font-weight: 500; }
-.ml-dialog :is(.ml-book-sides, .ml-executions) tbody tr { border-top: 1px solid var(--color-line); }
+.ml-surface :is(.ml-book-sides, .ml-executions) thead th { color: var(--color-ink-2); font-size: 11px; font-weight: 500; }
+.ml-surface :is(.ml-book-sides, .ml-executions) tbody tr { border-top: 1px solid var(--color-line); }
 .ml-book-sides th:not(:first-child), .ml-executions th:nth-child(n+3) { text-align: right; }
-.ml-dialog .ml-executions th button { min-height: 24px; padding: 0 2px; border: 0; background: transparent; font: inherit; }
-.ml-dialog .ml-executions th button:hover { text-decoration: underline; }
+.ml-surface .ml-executions th button { min-height: 24px; padding: 0 2px; border: 0; background: transparent; font: inherit; }
+.ml-surface .ml-executions th button:hover { text-decoration: underline; }
 .ml-book-note { margin: 0; padding: 2px 8px 4px; font-size: 11px; color: var(--color-ink-2); }
 .ml-print-detail { display: flex; flex-wrap: wrap; gap: 1px 8px; border-top: 1px solid var(--color-line); padding: 5px 8px; font: 11px/1.4 var(--font-mono); }
 .ml-pager { display: flex; align-items: center; justify-content: flex-end; gap: 4px; padding: 3px 6px; color: var(--color-ink-2); font: 11px var(--font-mono); }
 .ml-pager span { margin-right: auto; }
-.ml-dialog .ml-pager button { min-height: 26px; }
+.ml-surface .ml-pager button { min-height: 26px; }
 
 @media (min-width: 951px) {
   .ml-main { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); }
@@ -239,9 +240,9 @@ body:has(.ml-dialog[open]) { overflow: hidden; }
 
 @media (min-width: 540px) and (max-width: 950px) {
   .ml-side-panels { grid-template-columns: minmax(0, 1.08fr) minmax(0, 1fr); }
-  .ml-dialog :is(.ml-book-sides, .ml-executions) tbody :is(th, td) { font-size: 14px; padding-inline: 2px; }
-  .ml-dialog .ml-book-sides tbody :is(th, td) { padding-inline: 1.5px; }
-  .ml-dialog .ml-executions th button { padding-inline: 0; }
+  .ml-surface :is(.ml-book-sides, .ml-executions) tbody :is(th, td) { font-size: 14px; padding-inline: 2px; }
+  .ml-surface .ml-book-sides tbody :is(th, td) { padding-inline: 1.5px; }
+  .ml-surface .ml-executions th button { padding-inline: 0; }
 }
 
 @media (max-width: 539px) {
@@ -254,7 +255,7 @@ body:has(.ml-dialog[open]) { overflow: hidden; }
   .ml-clock small { width: 100%; margin-left: 0; }
   .ml-side-panels { grid-template-columns: minmax(0, 1fr); }
   .ml-timeline-key { font-size: 10px; }
-  .ml-dialog .ml-steps button { padding-inline: 5px; }
+  .ml-surface .ml-steps button { padding-inline: 5px; }
   .ml-cell-measure, .ml-matrix thead th { padding-inline: 6px; }
   .ml-matrix, .ml-matrix :is(tbody, thead) { display: block; }
   .ml-matrix tr {
@@ -270,8 +271,8 @@ body:has(.ml-dialog[open]) { overflow: hidden; }
   .ml-band-context-head small { display: none; }
   .ml-band-context { padding-bottom: 4px; font-size: 11px; }
   .ml-band-trace { height: 15px; }
-  .ml-dialog .ml-matrix th button { min-height: 26px; }
-  .ml-dialog .ml-matrix td :is(.ml-measure-button, .ml-cell-measure) { height: 100%; }
+  .ml-surface .ml-matrix th button { min-height: 26px; }
+  .ml-surface .ml-matrix td :is(.ml-measure-button, .ml-cell-measure) { height: 100%; }
 }
 
 @media (max-width: 340px) {

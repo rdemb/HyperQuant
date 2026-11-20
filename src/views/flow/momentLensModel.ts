@@ -18,7 +18,7 @@ function atoms(value: number, scale: number) {
   return Number.isSafeInteger(units) && units > 0 && units / scale === value ? units : null;
 }
 
-function notional(px: number, sz: number, szDecimals: number): bigint | null {
+export function tradeNotionalMicros(px: number, sz: number, szDecimals: number): bigint | null {
   const price = atoms(px, 10 ** (6 - szDecimals));
   const size = atoms(sz, 10 ** szDecimals);
   return price === null || size === null ? null : BigInt(price) * BigInt(size);
@@ -86,7 +86,7 @@ export class LensDeltaIndex {
 
   private add(chunk: MinuteChunk, first: number, limit: number, total: DeltaSum) {
     for (let i = first; i < limit; i++) {
-      const usd = notional(chunk.px[i], chunk.sz[i], this.szDecimals);
+      const usd = tradeNotionalMicros(chunk.px[i], chunk.sz[i], this.szDecimals);
       if (usd === null) total.invalid++;
       else total.micros += chunk.side[i] === 1 ? usd : -usd;
     }
@@ -122,7 +122,7 @@ export function readMomentWindow(tape: Tape, coverage: Coverage, to: number, szD
     while (span < spans.length && spans[span][1] <= t) span++;
     if (span === spans.length || t < spans[span][0]) return;
     if (pin && (px !== pin.px || (pin.side !== undefined && side !== pin.side))) return;
-    const usd = notional(px, sz, szDecimals);
+    const usd = tradeNotionalMicros(px, sz, szDecimals);
     if (usd === null) {
       if (pin?.band == null) unclassified++;
       return;
@@ -249,7 +249,7 @@ export function lensTapePage(
         continue;
       }
       const sz = chunk.sz[i];
-      const usd = notional(px, sz, szDecimals);
+      const usd = tradeNotionalMicros(px, sz, szDecimals);
       const band = usd === null ? null : notionalBand(usd);
       if (filters.band !== null && filters.band !== band) continue;
       if (page <= requestedPage) {
