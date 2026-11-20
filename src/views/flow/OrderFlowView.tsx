@@ -409,6 +409,9 @@ export default function OrderFlowView() {
         </div>
       </div>
       <FlowMarket key={coin} coin={coin} pro={pro} momentOpen={momentOpen} closeMoment={closeMoment} mode={mode} setMode={setMode} />
+      <a className="of-link" href={`./orderflow/replay/?m=${deskMarketOf(coin)?.slug.toUpperCase() ?? 'BTC'}`}>
+        {tr('Odtwórz nagranie z 20.11.2026', 'Replay the 20 Nov 2026 recording (Polish)')}
+      </a>
       <a className="of-link" href="https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/websocket/subscriptions" target="_blank" rel="noreferrer">
         {tr('Źródło danych Hyperliquid', 'Hyperliquid data source')}<ArrowUpRight size={14} aria-hidden="true" />
       </a>
