@@ -6,7 +6,7 @@ import { deskMarketOf } from '../../config/deskMarkets';
 import { locale, tr } from '../../i18n';
 import { DASH } from '../../ui/format';
 import {
-  LENS_MS, bookAtMoment, lensTapePage, lensTapeRange, momentAt, readMomentWindow, timeIndex, type LensPin, type LensTrade,
+  LENS_MS, LensDeltaIndex, bookAtMoment, lensTapePage, lensTapeRange, momentAt, readMomentWindow, timeIndex, type LensPin, type LensTrade,
 } from './momentLensModel';
 import { LensCellDetail, LensPriceMatrix, LensPriceTotals, formatAtoms, nominalUsd } from './LensPriceMatrix';
 import { ORDER_FLOW_MARKETS } from './orderFlowDesk';
@@ -214,6 +214,9 @@ export function MomentLens({ store, close }: { store: ProStore; close: () => voi
   const t = paused?.t ?? data.times.at(-1) ?? end - 1;
   const point = useMemo(() => momentAt(store.tape, store.coverage, t, sizeDecimals), [store, t, sizeDecimals, signature, coverageKey]);
   const currentRow = point.prices.find(row => row.px === (pin?.px ?? point.lastPrice));
+  const deltaIndex = useMemo(() => new LensDeltaIndex(store.tape, sizeDecimals), [store, sizeDecimals]);
+  const deltaSignature = store.tape.signature(t + 1 - LENS_MS, t + 1);
+  const marketDelta = useMemo(() => deltaIndex.read(store.coverage, t), [deltaIndex, store, t, deltaSignature, coverageKey]);
   const frame = bookAtMoment(store.exactBook(), store.bookCoverage, t);
   const before = data.times[timeIndex(data.times, t) - 1];
   const after = data.times[timeIndex(data.times, t + 1)];
@@ -307,7 +310,7 @@ export function MomentLens({ store, close }: { store: ProStore; close: () => voi
             </header>
             {!point.covered && <p className="ml-state">{tr('1 ms · brak potwierdzonego pokrycia', '1 ms · no confirmed coverage')}</p>}
             {point.covered && !currentRow && <p className="ml-state">{tr('1 ms · 0 wykonań', '1 ms · 0 executions')}</p>}
-            <LensPriceTotals row={currentRow} covered={point.covered} />
+            <LensPriceTotals row={currentRow} covered={point.covered} marketDelta={marketDelta} />
             <LensPriceMatrix row={currentRow} covered={point.covered} pin={pin} onSelect={pickBand} context={data} cursor={t} />
             {pin && <div className="ml-filter">
               <LensCellDetail selection={pin} row={currentRow} covered={point.covered} fmtPx={price => store.fmtPx(price)} unit={unit} decimals={sizeDecimals} />
