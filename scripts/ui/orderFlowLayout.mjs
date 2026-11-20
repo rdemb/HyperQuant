@@ -11,7 +11,7 @@ function inspectNumbers() {
   const selector = '.dom-measure > span:not(.dom-fill), .dom-price button, th[data-dom-snapshot] > span, ' +
     '.ml-price-totals strong > span, .ml-price-totals strong:not(:has(span))';
   for (const element of document.querySelectorAll(selector)) {
-    const cell = element.closest('td, th, .ml-price-totals > div');
+    const cell = element.closest('td, th, .dom-side-totals > div, .ml-price-totals > div');
     const box = element.getBoundingClientRect();
     if (!cell || box.width < 2 || box.height < 2 || !/\d/.test(element.textContent)) continue;
     const range = document.createRange();
@@ -70,9 +70,11 @@ async function checkPriceAxis(checkColumnGroups) {
 }
 
 export async function checkOrderFlowLayout(page, base, fixtures, now) {
-  const { identifier } = await page.send('Page.addScriptToEvaluateOnNewDocument', {
+  const { result } = await page.send('Page.addScriptToEvaluateOnNewDocument', {
     source: fixtureInit(now, orderFlowTestStream(fixtures, now)),
   });
+  const identifier = result?.identifier;
+  if (!identifier) throw new Error('Could not install the Order Flow layout fixture');
   try {
     await page.go(base + 'robots.txt', 200);
     await page.go(base + '#orderflow?m=BTC', 300);
@@ -102,9 +104,10 @@ export async function checkOrderFlowLayout(page, base, fixtures, now) {
         rows.every(row => row.getBoundingClientRect().bottom <= lowerEdge + 1) && scrollY === 0;
     })()`, 5000);
     const fits = Object.values(sizes).every(s => s.tested > 10 && s.broken.length === 0 && s.pageOverflow <= 1);
-    const ok = fits && !sizes[600].sideBySide && sizes[1440].sideBySide && fixedAxis && tabletAxis && !!twoFills;
+    const ok = fits && !sizes[600].sideBySide && sizes[1440].sideBySide && fixedAxis === true && tabletAxis === true && !!twoFills;
     return { sizes, fixedAxis, tabletAxis, twoFills: !!twoFills, ok };
   } finally {
-    await page.send('Page.removeScriptToEvaluateOnNewDocument', { identifier });
+    const { error } = await page.send('Page.removeScriptToEvaluateOnNewDocument', { identifier });
+    if (error) throw new Error('Could not remove the Order Flow layout fixture: ' + error.message);
   }
 }
