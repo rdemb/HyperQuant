@@ -21,6 +21,7 @@ it('głęboki link ustawia rynek i wykres bez dodatkowego main, motywu lub obcyc
   expect(markup).toContain('href="#charts?m=xyz%3AGOLD"');
   expect(markup).toContain('href="#orderflow?m=xyz%3AGOLD" aria-current="page"');
   expect(markup).toContain('data-of-market="xyz:GOLD"');
+  expect(markup).toMatch(/<button[^>]+data-of-fullscreen-toggle[^>]+aria-keyshortcuts="F"[^>]+aria-label="Pełny ekran Order Flow"/);
   expect(markup).not.toMatch(/<main|data-theme=|data-of-market="BTC"|data-of-trade-price=/);
 });
 

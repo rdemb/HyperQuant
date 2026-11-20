@@ -4,6 +4,10 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Pełny ekran Order Flow (2026-11-20)
+<!-- co-nowego: grupa=wykres | pl=Pełny ekran Order Flow | en=Order Flow full screen -->
+- Przycisk Pełny ekran lub klawisz F powiększa cały Order Flow, także w trybie Pro. Powrót zachowuje czas, filtr i pozycję. Gdy przeglądarka odmawia pełnego ekranu, panel powiększa się w obrębie karty.
+
 ### Pamięć arkusza i ślad transakcji w Order Flow (2026-11-20)
 <!-- co-nowego: grupa=wykres | pl=Pamięć arkusza i ślad transakcji | en=Book memory and trade trace -->
 - Na tablecie arkusz Order Flow zajmuje całą szerokość, a delty, klasy i wykonania są bezpośrednio pod nim. Na telefonie można przełączać grupy kolumn z zachowaniem ceny i czasu.
