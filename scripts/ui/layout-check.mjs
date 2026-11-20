@@ -1647,6 +1647,7 @@ async function main() {
     }).join('; ')} — ${ok(r.summary.opisLiczb)}`);
   }
   if (r.orderFlow) lines.push(`Order Flow · pełne liczby na pięciu szerokościach i dwie transakcje nad dolnym menu tabletu — ${ok(r.summary.orderFlow)}`);
+  if (r.orderFlow?.fullscreen) lines.push(`Order Flow · pełny ekran (${r.orderFlow.fullscreen.initialMode ?? r.orderFlow.fullscreen.reason}) i powrót na tablecie — ${ok(r.orderFlow.fullscreen.ok)}`);
   const metrics = metricsOf(r);
   let baseDiff = [];
   if (!LIVE) {

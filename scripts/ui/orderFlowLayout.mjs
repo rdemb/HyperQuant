@@ -1,4 +1,5 @@
 import { fixtureInit } from './probe.mjs';
+import { checkOrderFlowFullscreen } from './orderFlowFullscreen.mjs';
 
 // Executed inside the built application. Count painted text lines, including the sign
 // and suffix. Element widths alone missed clipped prices on the portrait tablet.
@@ -104,8 +105,9 @@ export async function checkOrderFlowLayout(page, base, fixtures, now) {
         rows.every(row => row.getBoundingClientRect().bottom <= lowerEdge + 1) && scrollY === 0;
     })()`, 5000);
     const fits = Object.values(sizes).every(s => s.tested > 10 && s.broken.length === 0 && s.pageOverflow <= 1);
-    const ok = fits && !sizes[600].sideBySide && sizes[1440].sideBySide && fixedAxis === true && tabletAxis === true && !!twoFills;
-    return { sizes, fixedAxis, tabletAxis, twoFills: !!twoFills, ok };
+    const fullscreen = await checkOrderFlowFullscreen(page);
+    const ok = fits && !sizes[600].sideBySide && sizes[1440].sideBySide && fixedAxis === true && tabletAxis === true && !!twoFills && fullscreen.ok;
+    return { sizes, fixedAxis, tabletAxis, twoFills: !!twoFills, fullscreen, ok };
   } finally {
     const { error } = await page.send('Page.removeScriptToEvaluateOnNewDocument', { identifier });
     if (error) throw new Error('Could not remove the Order Flow layout fixture: ' + error.message);
