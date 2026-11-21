@@ -28,8 +28,7 @@ afterEach(() => {
 
 /** Funkcja wiadomości po angielsku: język strony ustalany przy imporcie i18n (zapisany wybór „en” w przeglądarce). */
 async function english(): Promise<typeof openbotSetupMessage> {
-  vi.stubGlobal('document', {});
-  vi.stubGlobal('localStorage', { getItem: () => 'en' });
+  vi.stubGlobal('window', { location: { search: '' }, localStorage: { getItem: () => 'en' } });
   vi.resetModules();
   const i18n = await import('../../../i18n');
   expect(i18n.lang).toBe('en');

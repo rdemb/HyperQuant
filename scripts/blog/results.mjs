@@ -6,7 +6,7 @@
 import { LEDGER_MIN_N, isDeskLedgerSummary } from '../../src/utils/deskLedger.ts';
 import { LAB_NAMES, isLabReport } from '../../src/utils/folkloreLab.ts';
 import { VERIFY_LATEST_URL, verifyStale } from '../../src/utils/verifyFreshness.ts';
-import { esc, layout } from './render.mjs';
+import { esc, layout, siteHref } from './render.mjs';
 
 /**
  * Jednorazowe badanie z progami zapisanymi przed testem (nie z dziennika): czy inne rynki Hyperliquid poprawiają szansę
@@ -437,7 +437,7 @@ export function resultsPage(site, lang, results = {}) {
   const intro = `<section class="block" id="intro">
 <p class="lead">${esc(t.lead)}</p>
 <p>${s ? esc(t.asOf(f.time(s.asOf))) : `${esc(t.asOf('')).replace(/\s*\.$/, '')} ${na(S.why)}`}</p>
-<p><a href="${root}#after">${esc(t.live)}</a></p>
+<p><a href="${siteHref(root, lang, '#after')}">${esc(t.live)}</a></p>
 </section>`;
 
   // 2. Zwroty

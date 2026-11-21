@@ -43,8 +43,8 @@ const PAGE_NOW = LIVE ? Date.now() : FIXED_NOW;
 /** Progi testów akceptacyjnych. */
 const LIMITS = { desktop: 0.62, desktopDom: 0.6, phone: 0.6, focus: 0.8 };
 
-/** Stały użytkownik: dymki pierwszej wizyty zamknięte (karta pierwszego kontaktu nie zmienia pomiaru). */
-const RETURNING = { 'hq.onboarding.v1': JSON.stringify({ firstAt: PAGE_NOW - 8 * 86_400_000, done: true }) };
+/** Pomiar istniejącego układu używa polskich etykiet i zakończonego przewodnika. */
+const RETURNING = { 'hq.lang': 'pl', 'hq.onboarding.v1': JSON.stringify({ firstAt: PAGE_NOW - 8 * 86_400_000, done: true }) };
 
 /** Rejestr rynków z danych stałych (`markets.json`) podawany stronie — włączany przed przebiegiem rynków. */
 let serveRegistry = false;

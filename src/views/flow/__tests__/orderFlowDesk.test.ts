@@ -56,7 +56,7 @@ describe('samodzielny panel order flow', () => {
     const covered = new Coverage([[1_000, 2_000]]);
     const read = tradeActivity(tape, covered, 1_000, 2_000);
     expect(read).toMatchObject({ count: 2, buyUsd: 200, sellUsd: 100 });
-    expect(read?.atPrice.get(100)).toEqual({ buyUsd: 200, sellUsd: 100 });
+    expect(read?.atPrice.get(100)).toEqual({ buyUsd: 200, sellUsd: 100, buySize: 2, sellSize: 1 });
     expect(read?.atPrice.has(101)).toBe(false);
     expect(tradeActivity(tape, covered, 1_000, 2_001)).toBeNull();
     expect(tradeActivity(new Tape(), covered, 1_000, 2_000)?.count).toBe(0);

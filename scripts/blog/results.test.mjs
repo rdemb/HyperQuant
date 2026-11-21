@@ -153,7 +153,7 @@ describe('strona /wyniki: rozliczenie prognoz dziennika', () => {
     const t = text(pl.html);
     // 1. stan na chwilę podsumowania i link do Po sesji z liczbami na żywo
     expect(t).toContain('Stan na 12.11.2026, 03:35 UTC');
-    expect(pl.html).toContain('href="../#after"');
+    expect(pl.html).toContain('href="../?lang=pl#after"');
     // 2. zwroty: n, CRPSS z przedziałem i liczbą dób, pokrycia, Kupiec, ACI
     expect(t).toContain('1980');
     expect(t).toContain('0,0170 [0,0018; 0,0349], 22 doby');

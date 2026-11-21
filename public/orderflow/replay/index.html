@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="pl">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Powtórka Order Flow · HyperQuant</title>
+    <title data-pl="Powtórka Order Flow · HyperQuant">Order Flow replay · HyperQuant</title>
     <link rel="stylesheet" href="../../fonts/fonts.css" />
     <link rel="stylesheet" href="./replay.css" />
     <link rel="icon" href="../../favicon.svg" />
@@ -14,26 +14,26 @@
         <div class="identity">
           <span class="logo" aria-hidden="true"><i></i><i></i><i></i></span><b>HyperQuant</b
           ><span class="slash">/</span>
-          <h1>Order Flow <span class="replay-label">Powtórka</span></h1>
+          <h1>Order Flow <span class="replay-label" data-pl="Powtórka">Replay</span></h1>
         </div>
-        <nav id="markets" aria-label="Rynek">
+        <nav id="markets" aria-label="Market" data-pl-aria-label="Rynek">
           <button data-market="BTC" aria-pressed="true">BTC</button><button data-market="GOLD">Gold</button
           ><button data-market="SP500">S&amp;P 500</button>
         </nav>
-        <span id="source" class="status">Nagranie · 20.11.2026 · UTC</span
-        ><button id="help" aria-label="Jak czytać pokaz i źródła">?</button>
+        <span id="source" class="status" data-pl="Nagranie · 20.11.2026 · UTC">Recording · 20 Nov 2026 · UTC</span
+        ><button id="help" aria-label="Guide and sources" data-pl-aria-label="Jak czytać pokaz i źródła">?</button>
       </header>
       <section class="controls">
-        <nav class="layouts" aria-label="Układ kolumn">
-          <button data-mode="book" aria-pressed="true">Drabinka</button
-          ><button data-mode="memory">Pamięć arkusza</button><button data-mode="foot">Ślad transakcji</button>
+        <nav class="layouts" aria-label="Column layout" data-pl-aria-label="Układ kolumn">
+          <button data-mode="book" aria-pressed="true" data-pl="Drabinka">Ladder</button
+          ><button data-mode="memory" data-pl="Pamięć arkusza">Book memory</button><button data-mode="foot" data-pl="Ślad transakcji">Trade trace</button>
         </nav>
         <div class="transport">
-          <button id="prev" title="Poprzednie zdarzenie" aria-label="Poprzednie zdarzenie">‹</button
-          ><button id="play" title="Odtwórz / pauza" aria-label="Odtwórz">▶</button
-          ><button id="next" title="Następne zdarzenie" aria-label="Następne zdarzenie">›</button>
+          <button id="prev" title="Previous event" data-pl-title="Poprzednie zdarzenie" aria-label="Previous event" data-pl-aria-label="Poprzednie zdarzenie">‹</button
+          ><button id="play" title="Play / pause" data-pl-title="Odtwórz / pauza" aria-label="Play" data-pl-aria-label="Odtwórz">▶</button
+          ><button id="next" title="Next event" data-pl-title="Następne zdarzenie" aria-label="Next event" data-pl-aria-label="Następne zdarzenie">›</button>
           <label class="speed"
-            ><span class="sr">Prędkość</span
+            ><span class="sr" data-pl="Prędkość">Speed</span
             ><select id="speed">
               <option value=".25">¼×</option>
               <option value="1" selected>1×</option>
@@ -41,31 +41,31 @@
             </select></label
           >
           <label class="scrub"
-            ><span class="sr">Czas odtworzenia</span
-            ><input id="scrub" type="range" aria-label="Czas odtworzenia" step="1"
+            ><span class="sr" data-pl="Czas odtworzenia">Replay time</span
+            ><input id="scrub" type="range" aria-label="Replay time" data-pl-aria-label="Czas odtworzenia" step="1"
           /></label>
-          <time id="clock"></time><button id="example">Pokaż przykład</button>
+          <time id="clock"></time><button id="example" data-pl="Pokaż przykład">Show example</button>
         </div>
       </section>
       <section class="ribbon">
         <div class="metric">
-          <span>Cena przekroju <em>USD</em></span
+          <span><span data-pl="Cena przekroju">Selected price</span> <em>USD</em></span
           ><strong id="r-price"></strong>
         </div>
         <div class="metric">
-          <span>Δ ceny <em>1 ms</em></span
+          <span><span data-pl="Δ ceny">Price Δ</span> <em>1 ms</em></span
           ><strong id="r-delta"></strong>
         </div>
         <div class="metric">
-          <span>Δ rynku <em>120 s</em></span
+          <span><span data-pl="Δ rynku">Market Δ</span> <em>120 s</em></span
           ><strong id="r-market"></strong>
         </div>
         <div class="activity">
-          <span>Obrót rynku <em>po 2 s</em></span
-          ><canvas id="spark" aria-label="Kupno i sprzedaż w ostatnich 120 sekundach"></canvas>
+          <span><span data-pl="Obrót rynku">Market turnover</span> <em data-pl="po 2 s">per 2 s</em></span
+          ><canvas id="spark" aria-label="Buys and sells in the last 120 seconds" data-pl-aria-label="Kupno i sprzedaż w ostatnich 120 sekundach"></canvas>
         </div>
         <div class="quote-summary">
-          <span>Najlepsze ceny · L2</span
+          <span data-pl="Najlepsze ceny · L2">Best quotes · L2</span
           ><b><i id="bestBid" class="pos"></i> <em>/</em> <i id="bestAsk" class="neg"></i></b>
         </div>
       </section>
@@ -73,31 +73,30 @@
         <section class="board">
           <header class="boardhead">
             <div>
-              <h2 id="board-title">Drabinka zleceń</h2>
+              <h2 id="board-title" data-pl="Drabinka zleceń">Order ladder</h2>
               <span id="subtitle"></span>
             </div>
             <div class="board-actions">
-              <button id="bank" aria-pressed="false">7 klas</button><button id="half" hidden>Następne klasy</button
+              <button id="bank" aria-pressed="false" data-pl="7 klas">7 bands</button><button id="half" hidden data-pl="Następne klasy">Next bands</button
               ><button
                 id="follow"
                 aria-pressed="false"
-                title="Utrzymuj w kadrze cenę o największym obrocie bieżącej milisekundy"
-              >
-                Śledź cenę
+                title="Keep the price with the largest turnover in the current millisecond in view" data-pl-title="Utrzymuj w kadrze cenę o największym obrocie bieżącej milisekundy" data-pl="Śledź cenę">
+                Follow price
               </button>
             </div>
           </header>
           <div class="workspace">
-            <div class="meters" aria-label="Udziały stron rynku">
+            <div class="meters" aria-label="Market shares by side" data-pl-aria-label="Udziały stron rynku">
               <div class="meter" id="meter-depth">
                 <b>L2</b><small>ASK</small><span class="share top"></span>
                 <div class="tower"><i></i><u></u></div>
                 <span class="share bottom"></span><small>BID</small>
               </div>
               <div class="meter" id="meter-flow">
-                <b>120 s</b><small>Sprz.</small><span class="share top"></span>
+                <b>120 s</b><small data-pl="Sprz.">Sell</small><span class="share top"></span>
                 <div class="tower"><i></i><u></u></div>
-                <span class="share bottom"></span><small>Kup.</small>
+                <span class="share bottom"></span><small data-pl="Kup.">Buy</small>
               </div>
             </div>
             <div
@@ -105,7 +104,7 @@
               id="ladder"
               tabindex="0"
               role="grid"
-              aria-label="Drabinka cen i danych rynku, strzałki zmieniają poziom ceny i czas"
+              aria-label="Price and market data ladder. Use arrow keys to change the price and time." data-pl-aria-label="Drabinka cen i danych rynku, strzałki zmieniają poziom ceny i czas"
               aria-describedby="keyhelp"
             >
               <div id="headers" role="row"></div>
@@ -115,53 +114,53 @@
           <footer class="boardfoot">
             <span id="bookstamp"></span>
             <div>
-              <button id="up" aria-label="Wyższe ceny">↑</button><button id="center">Do ceny</button
-              ><button id="down" aria-label="Niższe ceny">↓</button>
+              <button id="up" aria-label="Higher prices" data-pl-aria-label="Wyższe ceny">↑</button><button id="center" data-pl="Do ceny">Centre on price</button
+              ><button id="down" aria-label="Lower prices" data-pl-aria-label="Niższe ceny">↓</button>
             </div>
           </footer>
         </section>
-        <aside class="inspector" aria-label="Przekrój chwili">
+        <aside class="inspector" aria-label="Moment lens" data-pl-aria-label="Przekrój chwili">
           <header>
-            <h2>Przekrój chwili</h2>
+            <h2 data-pl="Przekrój chwili">Moment lens</h2>
             <span id="lensclock"></span>
           </header>
           <div class="lensmain">
-            <div><span id="lenslabel">Δ klasy · 1 ms</span><strong id="lensamount"></strong></div>
+            <div><span id="lenslabel" data-pl="Δ klasy · 1 ms">Band Δ · 1 ms</span><strong id="lensamount"></strong></div>
             <span id="lenspx"></span>
           </div>
           <div class="split"><span class="pos" id="lensbuy"></span><span class="neg" id="lenssell"></span></div>
           <div class="classes">
-            <div class="subhead"><b>Nominał wykonania</b><span>USD · liczba w 120 s</span></div>
-            <div id="bands" aria-label="Filtr klasy nominalnej"></div>
+            <div class="subhead"><b data-pl="Nominał wykonania">Trade size</b><span data-pl="USD · liczba w 120 s">USD · count in 120 s</span></div>
+            <div id="bands" aria-label="Trade size filter" data-pl-aria-label="Filtr klasy nominalnej"></div>
           </div>
           <div class="related">
             <div class="subhead">
-              <h3>Powiązane wykonania</h3>
+              <h3 data-pl="Powiązane wykonania">Related trades</h3>
               <span id="matched"></span>
             </div>
             <div class="filters">
-              <select id="scope" aria-label="Okno taśmy">
+              <select id="scope" aria-label="Tape window" data-pl-aria-label="Okno taśmy">
                 <option value="1">1 ms</option>
                 <option value="120">120 s</option></select
-              ><select id="side" aria-label="Strona wykonania">
-                <option value="0">Obie strony</option>
-                <option value="1">Kupno</option>
-                <option value="-1">Sprzedaż</option></select
-              ><button id="paging" hidden>Następne</button>
+              ><select id="side" aria-label="Trade side" data-pl-aria-label="Strona wykonania">
+                <option value="0" data-pl="Obie strony">Both sides</option>
+                <option value="1" data-pl="Kupno">Buy</option>
+                <option value="-1" data-pl="Sprzedaż">Sell</option></select
+              ><button id="paging" hidden data-pl="Następne">Next</button>
             </div>
             <div id="tape"></div>
           </div>
           <div class="trailbox">
             <div class="subhead">
-              <h3>Ścieżka wykonań</h3>
-              <button id="expandtrail" aria-label="Powiększ ścieżkę wykonań">20 s ↗</button>
+              <h3 data-pl="Ścieżka wykonań">Trade path</h3>
+              <button id="expandtrail" aria-label="Enlarge trade path" data-pl-aria-label="Powiększ ścieżkę wykonań">20 s ↗</button>
             </div>
-            <canvas id="trailplot" aria-label="Wykonania w czasie według ceny i nominału"></canvas>
+            <canvas id="trailplot" aria-label="Trades over time by price and size" data-pl-aria-label="Wykonania w czasie według ceny i nominału"></canvas>
           </div>
           <div class="market-tape">
             <div class="subhead">
-              <h3>Ostatnie na rynku</h3>
-              <span>czas UTC · cena · USD</span>
+              <h3 data-pl="Ostatnie na rynku">Latest market trades</h3>
+              <span data-pl="czas UTC · cena · USD">UTC time · price · USD</span>
             </div>
             <div id="last"></div>
           </div>
@@ -169,91 +168,92 @@
         </aside>
       </div>
       <footer class="footnote">
-        <span id="legend"></span><button id="openplot">Ścieżka 20 s</button
-        ><a class="live-link" id="live-link" href="../../#orderflow?m=BTC">Na żywo ↗</a
-        ><button id="motion" aria-pressed="true">Animacje wł.</button><button id="info">Opis i źródła</button>
+        <span id="legend"></span><button id="openplot" data-pl="Ścieżka 20 s">20 s trade path</button
+        ><a class="live-link" id="live-link" href="../../?lang=en#orderflow?m=BTC" data-pl="Na żywo ↗">Live ↗</a
+        ><button id="motion" aria-pressed="true" data-pl="Animacje wł.">Motion on</button><button id="info" data-pl="Opis i źródła">Guide and sources</button>
       </footer>
-      <p id="keyhelp" class="sr">
-        Strzałki góra i dół wybierają cenę, prawo i lewo wybierają zdarzenie. Spacja odtwarza. Escape czyści klasę.
-        Filtry i klasy są także dostępne klawiszem Tab.
+      <p id="keyhelp" class="sr" data-pl="Strzałki góra i dół wybierają cenę, prawo i lewo wybierają zdarzenie. Spacja odtwarza. Escape czyści klasę. Filtry i klasy są także dostępne klawiszem Tab.">
+        Use Up and Down to select a price, and Left and Right to select an event. Space plays or pauses. Escape clears the band filter. Use Tab to reach the filters and bands.
       </p>
     </main>
     <dialog id="plotdialog">
-      <form method="dialog"><button autofocus aria-label="Zamknij wykres">×</button></form>
-      <h2>Ścieżka wykonań · 20 s</h2>
-      <p>
-        Punkt łączy wykonania po jednej cenie w tej samej milisekundzie. Wielkość zależy od kwoty. Wybierz punkt,
-        aby przypiąć jego cenę i czas.
+      <form method="dialog"><button autofocus aria-label="Close chart" data-pl-aria-label="Zamknij wykres">×</button></form>
+      <h2 data-pl="Ścieżka wykonań · 20 s">Trade path · 20 s</h2>
+      <p data-pl="Punkt łączy wykonania po jednej cenie w tej samej milisekundzie. Wielkość zależy od kwoty. Wybierz punkt, aby przypiąć jego cenę i czas.">
+        Each point groups trades at the same price and millisecond. Its size reflects the USD amount. Select a point to pin its price and time.
       </p>
       <canvas
         id="bigplot"
-        aria-label="Ścieżka według czasu i ceny, strzałki wybierają punkt, Enter otwiera"
+        aria-label="Trade path over time and price. Use arrow keys to select a point and Enter to open it." data-pl-aria-label="Ścieżka według czasu i ceny, strzałki wybierają punkt, Enter otwiera"
         tabindex="0"
       ></canvas>
       <p id="pointinfo"></p>
     </dialog>
     <dialog id="manual">
-      <form method="dialog"><button autofocus aria-label="Zamknij">×</button></form>
-      <h2>Jak czytać kolumny</h2>
+      <form method="dialog"><button autofocus aria-label="Close" data-pl-aria-label="Zamknij">×</button></form>
+      <h2 data-pl="Jak czytać kolumny">How to read the columns</h2>
       <p>
-        <b>Drabinka.</b> Niebieski BID i czerwony ASK pokazują zlecenia oczekujące w ostatnim pomiarze. Dwie
-        jaśniejsze kolumny wokół ceny pokazują zarejestrowane wykonania w wybranej milisekundzie. Ślad utrzymuje
-        ostatnią kwotę na poziomie przez 2 s czasu nagrania. Kwota jest stała, zanika jej tło.
+        <b data-pl="Drabinka.">Ladder.</b>
+        <span data-pl="Niebieski BID i czerwony ASK pokazują zlecenia oczekujące w ostatnim pomiarze. Dwie jaśniejsze kolumny wokół ceny pokazują zarejestrowane wykonania w wybranej milisekundzie. Ślad utrzymuje ostatnią kwotę na poziomie przez 2 s czasu nagrania. Kwota jest stała, zanika jej tło.">
+          Blue BID and red ASK show resting orders in the latest snapshot. The two lighter columns next to the price show recorded trades in the selected millisecond. The trace holds the last amount at each level for 2 seconds of replay time. The amount stays visible while its background fades.
+        </span>
       </p>
       <p>
-        <b>Pamięć arkusza.</b> Każdy pionowy przekrój to jeden pomiar L2. Nagłówek podaje jego czas UTC. Strzałka i
-        kolor określają stronę. Δ L2 porównuje saldo BID minus ASK z poprzednim pomiarem na tej cenie. Powód zmiany
-        między pomiarami pozostaje nieznany.
+        <b data-pl="Pamięć arkusza.">Book memory.</b>
+        <span data-pl="Każdy pionowy przekrój to jeden pomiar L2. Nagłówek podaje jego czas UTC. Strzałka i kolor określają stronę. Δ L2 porównuje saldo BID minus ASK z poprzednim pomiarem na tej cenie. Powód zmiany między pomiarami pozostaje nieznany.">
+          Each column is one L2 snapshot. The heading shows its UTC time. The arrow and colour indicate the side. L2 Δ compares the net BID minus ASK at that price with the previous snapshot. The cause of a change between snapshots is unknown.
+        </span>
       </p>
       <p>
-        <b>Ślad transakcji.</b> Każda kolumna podaje kupno minus sprzedaż na danej cenie w osobnych 5 s. Czytaj od
-        najstarszej po lewej. Po prawej klasy sumują podpisane nominały wyłącznie z wybranej milisekundy. Dotknij
-        komórki klasy, by zobaczyć konkretne wykonania w taśmie.
+        <b data-pl="Ślad transakcji.">Trade trace.</b>
+        <span data-pl="Każda kolumna podaje kupno minus sprzedaż na danej cenie w osobnych 5 s. Czytaj od najstarszej po lewej. Po prawej klasy sumują podpisane nominały wyłącznie z wybranej milisekundy. Dotknij komórki klasy, by zobaczyć konkretne wykonania w taśmie.">
+          Each column shows buys minus sells at that price in a separate 5-second window, oldest first. The bands on the right sum signed USD amounts for the selected millisecond. Select a band cell to see its trades on the tape.
+        </span>
       </p>
       <p>
-        <b>Słupki pionowe.</b> L2 pokazuje procent łącznej wartości USD po każdej stronie ostatniej migawki, do 20
-        poziomów na stronę. 120 s pokazuje udział kupna i sprzedaży w zarejestrowanym obrocie. Liczby przy kolorach
-        podają udział. W komórkach długość paska rośnie liniowo w obrębie jednej miary.
+        <b data-pl="Słupki pionowe.">Vertical bars.</b>
+        <span data-pl="L2 pokazuje procent łącznej wartości USD po każdej stronie ostatniej migawki, do 20 poziomów na stronę. 120 s pokazuje udział kupna i sprzedaży w zarejestrowanym obrocie. Liczby przy kolorach podają udział. W komórkach długość paska rośnie liniowo w obrębie jednej miary.">
+          L2 shows each side’s share of the total USD value in the latest snapshot, up to 20 levels on each side. The 120 s meter shows the buy and sell shares of recorded turnover. The numbers next to the colours show the shares. Cell bar length grows linearly within each measure.
+        </span>
       </p>
       <p>
-        <b>Odtworzenie.</b> Kursor wskazuje czas pokazanego zdarzenia. Zdarzenia o tej samej milisekundzie są jedną
-        klatką. Odtwarzanie zachowuje odstępy czasowe. Można przewijać lub przechodzić zdarzenie po zdarzeniu.
-        „Pokaż przykład” ustawia zapisany moment dla bieżącego układu. Wybór komórki zatrzymuje czas. „Śledź cenę”
-        podczas odtwarzania wybiera poziom o największym obrocie w nowej milisekundzie. Przy samym pomiarze L2
-        używa ostatniej transakcji.
+        <b data-pl="Odtworzenie.">Replay.</b>
+        <span data-pl="Kursor wskazuje czas pokazanego zdarzenia. Zdarzenia o tej samej milisekundzie są jedną klatką. Odtwarzanie zachowuje odstępy czasowe. Można przewijać lub przechodzić zdarzenie po zdarzeniu. „Pokaż przykład” ustawia zapisany moment dla bieżącego układu. Wybór komórki zatrzymuje czas. „Śledź cenę” podczas odtwarzania wybiera poziom o największym obrocie w nowej milisekundzie. Przy samym pomiarze L2 używa ostatniej transakcji.">
+          The cursor marks the time of the current event. Events in the same millisecond form one frame. Playback preserves the time between events. You can scrub or step through events. “Show example” opens the saved moment for the current layout. Selecting a cell pauses playback. “Follow price” selects the level with the largest turnover in the next millisecond during playback. If there is only an L2 snapshot, it uses the last trade.
+        </span>
       </p>
       <p>
-        <b>Oznaczenia.</b> „·” oznacza brak zarejestrowanej aktywności, „—” brak pokrycia danego poziomu lub czasu.
-        Zero delty oznacza równowagę kupna i sprzedaży. Delta rynku wymaga pełnego pokrycia 120 s. Pokrycie taśmy
-        podaje czas odbioru w oknie. Przy częściowym pokryciu kwoty i udziały obejmują tylko odebrane wykonania.
-        Wiek L2 jest różnicą pomiędzy czasem kursora i ostatniej dostępnej migawki.
+        <b data-pl="Oznaczenia.">Symbols.</b>
+        <span data-pl="„·” oznacza brak zarejestrowanej aktywności, „—” brak pokrycia danego poziomu lub czasu. Zero delty oznacza równowagę kupna i sprzedaży. Delta rynku wymaga pełnego pokrycia 120 s. Pokrycie taśmy podaje czas odbioru w oknie. Przy częściowym pokryciu kwoty i udziały obejmują tylko odebrane wykonania. Wiek L2 jest różnicą pomiędzy czasem kursora i ostatniej dostępnej migawki.">
+          “·” means no recorded activity. “—” means that the level or time is outside coverage. A zero delta means buys and sells balance. Market delta requires the full 120 s. Tape coverage shows how much time was recorded in the window. With partial coverage, amounts and shares include only the trades received. L2 age is the time from the most recent snapshot to the cursor.
+        </span>
       </p>
       <p>
-        <b>Sterowanie.</b> Na drabince ↑ ↓ zmieniają cenę, ← → czas, spacja przełącza odtwarzanie. Escape czyści
-        filtr klasy. Przełącznik animacji respektuje ustawienia ograniczonego ruchu urządzenia.
+        <b data-pl="Sterowanie.">Controls.</b>
+        <span data-pl="Na drabince ↑ ↓ zmieniają cenę, ← → czas, spacja przełącza odtwarzanie. Escape czyści filtr klasy. Przełącznik animacji respektuje ustawienia ograniczonego ruchu urządzenia.">
+          On the ladder, ↑ and ↓ change the price, ← and → change the time, and Space plays or pauses. Escape clears the band filter. The animation toggle respects your device’s reduced-motion setting.
+        </span>
       </p>
       <p>
-        <b>Pochodzenie danych.</b> BTC pochodzi z wersjonowanego publicznego archiwum HyperQuant. Gold i S&amp;P
-        500 pochodzą z lokalnego nagrania publicznych kanałów Hyperliquid z 20.11.2026. Przykłady obejmują po dwie
-        minuty odtwarzania. USD to cena razy ilość, a stronę podaje źródło transakcji. Silnik pracuje na
-        całkowitych milionowych częściach USD.
+        <b data-pl="Pochodzenie danych.">Data sources.</b>
+        <span data-pl="BTC pochodzi z wersjonowanego publicznego archiwum HyperQuant. Gold i S&amp;P 500 pochodzą z lokalnego nagrania publicznych kanałów Hyperliquid z 20.11.2026. Przykłady obejmują po dwie minuty odtwarzania. USD to cena razy ilość, a stronę podaje źródło transakcji. Silnik pracuje na całkowitych milionowych częściach USD.">
+          BTC is from the versioned public HyperQuant archive. Gold and the S&amp;P 500 are from a local recording of public Hyperliquid channels on 20 Nov 2026. Each example covers two minutes of replay. The USD value is price multiplied by quantity. The trade source provides the side. The engine uses integer millionths of a US dollar.
+        </span>
       </p>
       <p class="sources">
         <a
-          href="https://github.com/rdemb/hyperquant-data/tree/d5441197494010261f41c22accaf8c10f6d7949e/BTC/2026-11-20"
-          >Archiwum BTC</a
+          href="https://github.com/rdemb/hyperquant-data/tree/d5441197494010261f41c22accaf8c10f6d7949e/BTC/2026-11-20" data-pl="Archiwum BTC">BTC archive</a
         >
         ·
-        <a href="https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/websocket/subscriptions"
-          >Publiczne kanały Hyperliquid</a
+        <a href="https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/api/websocket/subscriptions" data-pl="Publiczne kanały Hyperliquid">Public Hyperliquid channels</a
         >
-        · <a href="https://hyperquant.tech/#orderflow?m=BTC">Order Flow HyperQuant</a>
+        · <a id="guide-live-link" href="../../?lang=en#orderflow?m=BTC" data-pl="Order Flow HyperQuant">HyperQuant Order Flow</a>
       </p>
       <p class="sources">
         <a href="https://propnexus.pro/assets/dompro-demo.gif">PropNexus</a> ·
         <a href="https://motivewave.com/img/DOM_4_op.png">MotiveWave</a> ·
         <a href="https://www.trading-fuer-anfaenger.de/wp-content/uploads/Orderflow-Smart-DOM-1.png">Smart DOM</a>
-        · <a href="https://bookmap.com/knowledgebase/docs/KB-SettingUpAndOperating-Columns">Kolumny Bookmap</a>
+        · <a href="https://bookmap.com/knowledgebase/docs/KB-SettingUpAndOperating-Columns" data-pl="Kolumny Bookmap">Bookmap columns</a>
       </p>
     </dialog>
     <script type="module" src="./replay.js"></script>

@@ -31,7 +31,7 @@ describe('dolny pasek stron statycznych (telefon i tablet)', () => {
     expect(b).toMatch(/class="bottom-nav__link is-here" href="\.\.\/co-nowego\/" aria-current="page"/);
     const w = bar(page('pl', 'charts', 'wykresy/'));
     // Strona Wykresów to dział „W sesji”, ale inny dokument niż aplikacja: podświetlenie bez aria-current
-    expect(w).toMatch(/class="bottom-nav__item is-here" href="\.\.\/#charts">/);
+    expect(w).toMatch(/class="bottom-nav__item is-here" href="\.\.\/\?lang=pl#charts">/);
     expect(w).not.toMatch(/aria-current/);
   });
 });
