@@ -337,7 +337,7 @@ const NAV = {
     ['after', 'Post-session', '#after'],
     ['markets', 'Markets', '#markets'],
     ['lessons', 'Lessons', 'en/lessons/'],
-    ['blog', 'Blog (PL)', 'blog/'],
+    ['blog', 'Blog', 'blog/'],
     ['results', 'Results', 'en/results/'],
     ['news', "What's new", 'en/whats-new/'],
   ],
@@ -369,7 +369,7 @@ const BOTTOM = {
       ['research', 'Research', '#research', 'flask-conical'],
       ['sources', 'Sources', '#sources', 'database'],
       ['agents', 'AI agents', '#agents', 'bot'],
-      ['blog', 'Blog (PL)', 'blog/', 'newspaper'],
+      ['blog', 'Blog', 'blog/', 'newspaper'],
       ['results', 'Results', 'en/results/', 'list-checks'],
       ['news', "What's new", 'en/whats-new/', 'rotate-ccw-clock'],
     ],
@@ -399,7 +399,7 @@ const RAIL = {
       ['Trading day', [['before', 'Pre-session', '#before', 'sunrise'], ['charts', 'In session', '#charts', 'chart-candlestick'], ['after', 'Post-session', '#after', 'sunset']]],
       ['Markets and knowledge', [['markets', 'Markets', '#markets', 'table-2'], ['lessons', 'Lessons', 'en/lessons/', 'graduation-cap'], ['research', 'Research', '#research', 'flask-conical'], ['sources', 'Sources', '#sources', 'database'], ['agents', 'AI agents', '#agents', 'bot']]],
     ],
-    pubs: [['blog', 'Blog (PL)', 'blog/', 'newspaper'], ['results', 'Results', 'en/results/', 'list-checks'], ['news', "What's new", 'en/whats-new/', 'rotate-ccw-clock']],
+    pubs: [['blog', 'Blog', 'blog/', 'newspaper'], ['results', 'Results', 'en/results/', 'list-checks'], ['news', "What's new", 'en/whats-new/', 'rotate-ccw-clock']],
     pubTitle: 'Publications',
     tag: `${esc(deskLabels())} · Hyperliquid`,
     aria: 'Navigation',
@@ -454,7 +454,7 @@ const FOOTER = {
   pl: (root, site) =>
     `<a href="${siteHref(root, 'pl')}">Desk HyperQuant</a> · <a href="${root}wykresy/">Wykresy</a> · <a href="${root}wyniki/">Wyniki prognoz</a> · <a href="${root}co-nowego/">Co nowego</a> · <a href="${root}prywatnosc/">Prywatność</a> ·<a href="${site.repo}">Kod na GitHubie</a> · <a href="${root}blog/feed.xml">RSS</a>`,
   en: (root, site) =>
-    `<a href="${siteHref(root, 'en')}">HyperQuant Desk</a> · <a href="${root}en/charts/">Charts</a> · <a href="${root}en/results/">Forecast results</a> · <a href="${root}en/whats-new/">What's new</a> · <a href="${root}en/privacy/">Privacy</a> ·<a href="${site.repo}">Code on GitHub</a> · <a href="${root}blog/feed.xml">Blog RSS (PL)</a>`,
+    `<a href="${siteHref(root, 'en')}">HyperQuant Desk</a> · <a href="${root}en/charts/">Charts</a> · <a href="${root}en/results/">Forecast results</a> · <a href="${root}en/whats-new/">What's new</a> · <a href="${root}en/privacy/">Privacy</a> ·<a href="${site.repo}">Code on GitHub</a> · <a href="${root}blog/feed.xml">Blog RSS</a>`,
 };
 /**
  * Polityka treści stron z tego szablonu (druga linia obrony, gdyby treść wpisu coś przemyciła): skrypty tylko z plików
@@ -523,7 +523,7 @@ export function layout(
 <title>${esc(title)}</title>
 <meta name="description" content="${esc(description)}">${robots ? `\n<meta name="robots" content="${robots}">` : ''}
 <link rel="canonical" href="${esc(url)}">${hreflang}
-<link rel="alternate" type="application/rss+xml" title="HyperQuant · Analizy BTC" href="${site.url}blog/feed.xml">
+<link rel="alternate" type="application/rss+xml" title="HyperQuant Blog" href="${site.url}blog/feed.xml">
 <link rel="icon" type="image/svg+xml" href="${root}favicon.svg?v=2">
 <link rel="apple-touch-icon" href="${root}icons/apple-touch-icon.png?v=2">
 <meta name="theme-color" content="#0C0D0F">
@@ -888,7 +888,7 @@ export function absolutize(html, base) {
 }
 
 /** Kanał RSS 2.0 z pełną treścią (content:encoded). Data kanału = najnowszy wpis, więc build jest powtarzalny. */
-export function feedXml(site, posts) {
+export function feedXml(site, posts, productBlog = false) {
   const items = posts.slice(0, FEED_LIMIT).map((p) => {
     const url = `${site.url}blog/${p.id}/`;
     const summary = p.summary.length ? `<ul>${p.summary.map((t) => `<li>${esc(t)}</li>`).join('')}</ul>` : '';
@@ -902,10 +902,10 @@ export function feedXml(site, posts) {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/">
 <channel>
-<title>HyperQuant · Analizy BTC</title>
+<title>${productBlog ? PRODUCT_BLOG_TITLE : 'HyperQuant · Analizy BTC'}</title>
 <link>${site.url}blog/</link>
-<description>${xmlEsc(INTRO)}</description>
-<language>pl</language>${last}
+<description>${xmlEsc(productBlog ? PRODUCT_BLOG_DESCRIPTION : INTRO)}</description>
+<language>${productBlog ? 'en' : 'pl'}</language>${last}
 <atom:link href="${site.url}blog/feed.xml" rel="self" type="application/rss+xml"/>
 ${items.join('\n')}
 </channel>
@@ -917,14 +917,14 @@ ${items.join('\n')}
  * Mapa strony dla wyszukiwarek: desk, strony serwisu z wersjami językowymi (`pages` = { loc, alternates }), blog, wpisy
  * i archiwa miesięcy.
  */
-export function sitemapXml(site, posts, pages = []) {
+export function sitemapXml(site, posts, pages = [], { archive = true } = {}) {
   const day = (ms) => new Date(ms).toISOString().slice(0, 10);
   const urls = [{ loc: site.url }, ...pages];
   if (posts.length) {
     urls.push({ loc: `${site.url}blog/`, lastmod: day(posts[0].ms) });
-    for (const p of posts) if (!isUnindexed(p.id)) urls.push({ loc: `${site.url}blog/${p.id}/`, lastmod: day(p.ms) });
+    for (const p of posts) if (!archive || !isUnindexed(p.id)) urls.push({ loc: `${site.url}blog/${p.id}/`, lastmod: day(p.ms) });
     const months = new Map();
-    for (const p of posts) if (!months.has(monthKey(p.ms))) months.set(monthKey(p.ms), p.ms);
+    for (const p of archive ? posts : []) if (!months.has(monthKey(p.ms))) months.set(monthKey(p.ms), p.ms);
     for (const [k, ms] of months) urls.push({ loc: `${site.url}blog/archiwum/${k}/`, lastmod: day(ms) });
   } else urls.push({ loc: `${site.url}blog/` });
   const alt = (u) => (u.alternates ?? []).map((a) => `<xhtml:link rel="alternate" hreflang="${a.lang}" href="${xmlEsc(a.url)}"/>`).join('');
@@ -933,4 +933,45 @@ export function sitemapXml(site, posts, pages = []) {
 ${urls.map((u) => `<url><loc>${xmlEsc(u.loc)}</loc>${u.lastmod ? `<lastmod>${u.lastmod}</lastmod>` : ''}${alt(u)}</url>`).join('\n')}
 </urlset>
 `;
+}
+
+const PRODUCT_BLOG_TITLE = 'HyperQuant Blog';
+const PRODUCT_BLOG_DESCRIPTION = 'Product updates and guides for HyperQuant.';
+const productDate = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: TIME_ZONE });
+
+export function productIndexPage(site, posts) {
+  const url = `${site.url}blog/`;
+  const entries = posts.map((post) => `<article class="card"><p class="card-meta"><time datetime="${esc(post.date)}">${productDate.format(post.ms)}</time></p><h2><a href="${post.id}/">${esc(post.title)}</a></h2><p>${esc(post.description)}</p></article>`).join('');
+  return layout(site, {
+    title: PRODUCT_BLOG_TITLE,
+    description: PRODUCT_BLOG_DESCRIPTION,
+    url,
+    root: '../',
+    image: `${site.url}blog/og.png`,
+    imageAlt: PRODUCT_BLOG_TITLE,
+    lang: 'en',
+    disclaimer: '',
+    jsonLd: { '@context': 'https://schema.org', '@type': 'Blog', name: PRODUCT_BLOG_TITLE, url, inLanguage: 'en', description: PRODUCT_BLOG_DESCRIPTION, publisher: PUBLISHER(site) },
+    main: `<div class="blog-index"><header class="intro intro--blog"><h1>${PRODUCT_BLOG_TITLE}</h1><p>${PRODUCT_BLOG_DESCRIPTION}</p></header>${entries ? `<div class="feed">${entries}</div>` : '<p class="empty">No posts yet.</p>'}</div>`,
+  });
+}
+
+export function productPostPage(site, post) {
+  const url = `${site.url}blog/${post.id}/`;
+  const summary = post.summary.length ? `<ul>${post.summary.map((item) => `<li>${esc(item)}</li>`).join('')}</ul>` : '';
+  return layout(site, {
+    title: `${post.title} · ${PRODUCT_BLOG_TITLE}`,
+    description: post.description,
+    url,
+    root: '../../',
+    image: `${url}og.png`,
+    imageAlt: post.title,
+    type: 'article',
+    published: post.date,
+    section: post.section,
+    lang: 'en',
+    disclaimer: '',
+    jsonLd: { '@context': 'https://schema.org', '@type': 'BlogPosting', headline: post.title, url, inLanguage: 'en', datePublished: post.date, publisher: PUBLISHER(site) },
+    main: `<article><header class="intro"><p><a href="../">Blog</a> · <time datetime="${esc(post.date)}">${productDate.format(post.ms)}</time></p><h1>${esc(post.title)}</h1><p>${esc(post.description)}</p></header><div class="prose">${summary}${renderMarkdown(post.body)}</div></article>`,
+  });
 }

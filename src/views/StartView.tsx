@@ -409,7 +409,7 @@ const StartView: React.FC = () => {
               ['lessons', <GraduationCap key="i" className="w-[22px] h-[22px]" />, tr('Lekcje', 'Lessons')],
               ['research', <FlaskConical key="i" className="w-[22px] h-[22px]" />, tr('Badania', 'Research')],
               ['agents', <Bot key="i" className="w-[22px] h-[22px]" />, tr('Agenci AI', 'AI agents')],
-              ['blog', <Newspaper key="i" className="w-[22px] h-[22px]" />, tr('Blog', 'Blog (PL)')],
+              ['blog', <Newspaper key="i" className="w-[22px] h-[22px]" />, 'Blog'],
             ] as const
           ).map(([id, icon, label]) => (
             <li key={id} className="bg-surface-1">

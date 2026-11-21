@@ -39,7 +39,7 @@ describe('index.html po angielsku', () => {
   });
 
   it('kanał RSS zostaje (polski) z tytułem „in Polish”; noscript po angielsku z polskimi odnośnikami jako drugimi', () => {
-    expect(html).toContain('<link rel="alternate" type="application/rss+xml" title="HyperQuant · BTC analysis (in Polish)" href="./blog/feed.xml" />');
+    expect(html).toContain('<link rel="alternate" type="application/rss+xml" title="HyperQuant Blog" href="./blog/feed.xml" />');
     const ns = /<noscript>([\s\S]*?)<\/noscript>/.exec(html)![1];
     expect(ns).toContain('Enable JavaScript to run the app.');
     expect(ns.indexOf('./en/charts/')).toBeLessThan(ns.indexOf('./wykresy/'));
