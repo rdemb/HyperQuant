@@ -101,7 +101,7 @@ export const LANGS: { value: Lang; label: string; title: string }[] = [
 ];
 
 // Blog jest tylko po polsku — w wersji angielskiej mówimy o tym w etykiecie
-export const BLOG_LABEL = tr('Blog', 'Blog (PL)');
+export const BLOG_LABEL = 'Blog';
 // „Co nowego”: statyczna strona historii zmian w obu językach (co-nowego/, en/whats-new/)
 export const NEWS_LABEL = tr('Co nowego', 'What’s new');
 // „Wyniki”: statyczna strona rozliczenia dziennika prognoz (wyniki/, en/results/)

@@ -4,6 +4,10 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Angielski blog produktowy HyperQuant (2026-11-21)
+<!-- co-nowego: grupa=blog | pl=Angielski blog produktowy | en=English product blog -->
+- Blog i RSS pokazują wyłącznie angielskie wpisy o HyperQuant. Dotychczasowe analizy znikają z publicznego bloga i mapy witryny.
+
 ### Drabinka cen Chronograph w Order Flow (2026-11-21)
 <!-- co-nowego: grupa=wykres | pl=Drabinka cen i niezależny filtr taśmy | en=Price ladder and independent tape filter -->
 - Order Flow pokazuje głębokość, deltę i obrót na wspólnej osi ceny obok taśmy. Minimalny nominał filtruje wyświetlane wykonania, a drabinka i odczyty rynku obejmują całe wybrane okno.

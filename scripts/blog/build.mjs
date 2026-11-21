@@ -13,7 +13,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { MEDIA_FILE } from './intake.mjs';
 import { loadPostFile, loadPosts } from './posts.mjs';
-import { feedXml, fmtDay, fmtTime, indexPage, monthKey, monthPage, postPage, sitemapXml } from './render.mjs';
+import { feedXml, fmtDay, fmtTime, indexPage, monthKey, monthPage, postPage, productIndexPage, productPostPage, sitemapXml } from './render.mjs';
 import { ogSvg, renderPng } from './og.mjs';
 import { coverSvg } from './cover.mjs';
 
@@ -144,14 +144,15 @@ export function nextRegistry(previous, hashes, now, { migrate = false } = {}) {
  * (nextRegistry) liczony od rejestru z raportu, bez raportu od zera. `blog/source.json` = { sha gałęzi, sha main, chwila
  * buildu, rejestr (posts), rewritten, pominięte }. Zwraca liczbę opublikowanych wpisów.
  */
-export async function buildBlog({ contentDir = CONTENT_DIR, outDir, site, drafts = false, pages = true, now = Date.now(), intake = null, main = null, results = {}, news = {} }) {
+export async function buildBlog({ contentDir = CONTENT_DIR, outDir, site, drafts = false, pages = true, now = Date.now(), intake = null, main = null, results = {}, news = {}, productBlog = false }) {
   const { posts, problems } = loadPosts(contentDir);
   const fromBranch = new Set((intake?.posts ?? []).map((p) => p.id));
   const isBranch = (file) => fromBranch.has(file.replace(/\.md$/, ''));
   const own = problems.filter((p) => !isBranch(p.file));
   if (own.length) throw new Error(`Błędne wpisy bloga:\n${formatProblems(own)}`);
   const skipped = [...(intake?.skipped ?? []), ...problems.filter((p) => isBranch(p.file)).map((p) => ({ id: p.file.replace(/\.md$/, ''), reason: p.errors.join('; ') }))];
-  const visible = posts.filter((p) => drafts || !p.draft);
+  const eligible = posts.filter((p) => drafts || !p.draft);
+  const visible = productBlog ? eligible.filter((p) => p.product && !fromBranch.has(p.id)) : eligible;
   const hashes = new Map();
   for (const p of visible) hashes.set(p.id, await postHash(contentDir, p.id));
   const registry = nextRegistry(intake?.registry ?? {}, hashes, now, { migrate: Boolean(intake) && intake.hashFormat !== HASH_FORMAT });
@@ -176,14 +177,14 @@ export async function buildBlog({ contentDir = CONTENT_DIR, outDir, site, drafts
     if (post.mediaDir)
       for (const f of await readdir(post.mediaDir))
         if (MEDIA_FILE.test(f) && (await lstat(path.join(post.mediaDir, f))).isFile()) await copyFile(path.join(post.mediaDir, f), path.join(dir, f));
-    await writeFile(path.join(dir, 'index.html'), postPage(s, post, { newer: visible[i - 1], older: visible[i + 1] }));
+    await writeFile(path.join(dir, 'index.html'), productBlog ? productPostPage(s, post) : postPage(s, post, { newer: visible[i - 1], older: visible[i + 1] }));
     const card = { section: post.section, title: post.title, dateLine: `${fmtDay(post.ms)}, ${fmtTime(post.ms)}`, price: post.price, levels: post.levels };
     await writeFile(path.join(dir, 'og.png'), renderPng(ogSvg(card)));
     await writeFile(path.join(dir, 'cover.svg'), coverSvg(post));
   }
 
-  await writeFile(path.join(blogDir, 'index.html'), indexPage(s, visible));
-  const months = [...new Set(visible.map((p) => monthKey(p.ms)))];
+  await writeFile(path.join(blogDir, 'index.html'), productBlog ? productIndexPage(s, visible) : indexPage(s, visible));
+  const months = productBlog ? [] : [...new Set(visible.map((p) => monthKey(p.ms)))];
   for (const m of months) {
     const dir = path.join(blogDir, 'archiwum', m);
     await mkdir(dir, { recursive: true });
@@ -197,8 +198,8 @@ export async function buildBlog({ contentDir = CONTENT_DIR, outDir, site, drafts
       )
     );
   }
-  await writeFile(path.join(blogDir, 'feed.xml'), feedXml(s, visible));
-  await writeFile(path.join(blogDir, 'maps.json'), JSON.stringify(mapsJson(visible, now)));
+  await writeFile(path.join(blogDir, 'feed.xml'), feedXml(s, visible, productBlog));
+  await writeFile(path.join(blogDir, 'maps.json'), JSON.stringify(mapsJson(eligible, now)));
   await writeFile(
     path.join(blogDir, 'source.json'),
     JSON.stringify({
@@ -213,10 +214,12 @@ export async function buildBlog({ contentDir = CONTENT_DIR, outDir, site, drafts
       skipped,
     })
   );
-  await writeFile(path.join(outDir, 'sitemap.xml'), sitemapXml(s, visible, pages ? await buildPages({ outDir, site: s, results, news }) : []));
+  await writeFile(path.join(outDir, 'sitemap.xml'), sitemapXml(s, visible, pages ? await buildPages({ outDir, site: s, results, news }) : [], { archive: !productBlog }));
   await writeFile(
     path.join(blogDir, 'og.png'),
-    renderPng(ogSvg({ section: 'Blog', title: 'Analizy BTC na Hyperliquid', subtitle: 'Mapa dnia, mapa przed Nowym Jorkiem, podsumowanie dnia' }))
+    renderPng(ogSvg(productBlog
+      ? { section: 'Blog', title: 'HyperQuant Blog', subtitle: 'Product updates and guides' }
+      : { section: 'Blog', title: 'Analizy BTC na Hyperliquid', subtitle: 'Mapa dnia, mapa przed Nowym Jorkiem, podsumowanie dnia' }))
   );
   return visible.length;
 }
@@ -258,7 +261,7 @@ async function main(argv) {
   // Strona „Co nowego”: CHANGELOG.md i tagi wersji z lokalnego gita (bez tagów kamienie milowe z nagłówków wersji CHANGELOG)
   const { gitTags } = await import('./whatsnew.mjs');
   const news = { changelog: await readFile(path.join(ROOT, 'CHANGELOG.md'), 'utf8'), tags: gitTags(ROOT) };
-  const n = await buildBlog({ outDir: path.join(ROOT, 'dist'), site: await siteFromPackage(), drafts: argv.includes('--drafts'), intake, main: mainHead(), results, news });
+  const n = await buildBlog({ outDir: path.join(ROOT, 'dist'), site: await siteFromPackage(), drafts: argv.includes('--drafts'), intake, main: mainHead(), results, news, productBlog: true });
   const got = ['summary', 'verify', 'lab'].filter((k) => results[k]);
   console.log(`Blog: ${n} wpisów → dist/blog; wyniki prognoz z plików: ${got.join(', ') || 'brak (strona z „—”)'}; co nowego: ${news.tags.length} tagów wersji`);
 }
