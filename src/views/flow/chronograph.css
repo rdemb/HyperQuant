@@ -1,0 +1,124 @@
+.oc-workspace { min-width: 0; display: grid; gap: 8px; font-family: var(--font-sans); }
+.oc-switch { display: flex; gap: 4px; flex-wrap: wrap; margin: 6px 0; }
+.oc-switch button, .oc-workspace :is(select, button:not([data-of-level])) {
+  min-height: 32px;
+  padding-inline: 7px;
+  border: 1px solid var(--color-line-strong);
+  border-radius: 5px;
+  background: var(--color-page);
+  color: var(--color-ink-1);
+  font-size: 12px;
+}
+.oc-switch button[aria-pressed="true"], .oc-workspace button[aria-pressed="true"]:not([data-of-level]) {
+  background: var(--color-surface-3);
+  color: var(--color-accent);
+}
+.oc-workspace button:disabled { color: var(--color-ink-3); opacity: .75; }
+.oc-workspace button:not(:disabled):hover, .oc-switch button:hover { background-color: var(--color-surface-3); }
+.oc-workspace :is(input, [role="region"]):focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
+.oc-control-card { border: 1px solid var(--color-line); background: var(--color-surface-1); border-radius: 10px; }
+.oc-controls, .oc-read, .oc-card-head, .oc-filters, .oc-price-action, .oc-trial header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px 10px;
+  padding: 6px 9px;
+  color: var(--color-ink-2);
+  font-size: 12px;
+}
+.oc-controls label, .oc-filters label { display: inline-flex; align-items: center; gap: 6px; }
+.oc-controls input { accent-color: var(--color-accent); }
+.oc-read { border-top: 1px solid var(--color-line); }
+.oc-read strong, .oc-read b { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.oc-read strong:not(.of-buy, .of-sell) { color: var(--color-ink-1); }
+.oc-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; align-items: stretch; }
+.oc-grid > * { min-width: 0; }
+.oc-card-head { min-height: 35px; border-bottom: 1px solid var(--color-line); }
+.oc-card-head h2, .oc-trial h3 { font: 680 15px/1.25 var(--font-display); color: var(--color-ink-1); margin: 0; }
+.oc-scroll { overflow: auto; overscroll-behavior: contain; min-width: 0; max-height: clamp(240px, 47dvh, 550px); scrollbar-width: thin; }
+.oc-ladder, .oc-tape { display: flex; flex-direction: column; }
+.oc-ladder .oc-scroll, .oc-tape .oc-scroll { flex: 1 1 auto; }
+.oc-ladder table, .oc-tape table {
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
+  width: 100%;
+  color: var(--color-ink-1);
+  font: 12px/1.35 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.oc-ladder :is(th, td), .oc-tape :is(th, td) { padding: 2px 5px; text-align: right; border-bottom: 1px solid var(--color-line); }
+.oc-workspace thead th { position: sticky; z-index: 1; top: 0; background: var(--color-surface-2); color: var(--color-ink-2); font-size: 11px; }
+.oc-workspace thead small { font-size: inherit; }
+.oc-ladder tbody tr:nth-child(even), .oc-tape tbody tr:nth-child(even) { background: var(--color-surface-2); }
+.oc-ladder col.oc-orders { width: 4.5ch; }
+.oc-ladder .oc-orders { color: var(--color-ink-2); }
+.oc-ladder .oc-price { text-align: center; background: color-mix(in oklab, var(--color-surface-3) 64%, var(--color-surface-1)); }
+.oc-price button { display: block; width: 100%; padding: 1px 2px; cursor: pointer; }
+.oc-ladder tbody .oc-price { padding: 0; }
+.oc-ladder tbody tr[data-oc-selected] > * { border-bottom-color: var(--color-level); }
+.oc-ladder tbody tr[data-oc-selected] .oc-price { color: var(--color-level); background: color-mix(in oklab, var(--color-level) 13%, var(--color-surface-1)); }
+.oc-amount { position: relative; display: inline-block; isolation: isolate; width: 100%; padding-inline: 2px; }
+.oc-amount::before { content: ''; position: absolute; z-index: -1; inset: 0 0 0 auto; width: var(--oc-fill, 0%); background: currentColor; opacity: .14; }
+.oc-amount[data-side="ask"]::before { inset-inline: 0 auto; }
+.oc-amount[data-side="ask"] { text-align: left; }
+.oc-change { display: block; font-size: 9px; line-height: 1.02; }
+.oc-change:not(.of-buy, .of-sell) { color: var(--color-ink-2); }
+.oc-book-foot, .oc-tape > footer { margin-top: auto; }
+.oc-price-action { border-top: 1px solid var(--color-line); }
+.oc-price-action strong, .oc-trial header > strong { color: var(--color-level); font-family: var(--font-mono); }
+.oc-tape .oc-card-head { justify-content: space-between; }
+.oc-filters { border-bottom: 1px solid var(--color-line); justify-content: space-between; }
+.oc-tape table th:first-child { width: 2.3ch; }
+.oc-tape table th:nth-child(2) { width: 9ch; }
+.oc-tape :is(th, td):first-child { text-align: center; }
+.oc-tape :is(th, td):nth-child(2) { text-align: left; }
+.oc-tape th:nth-child(4) { width: 10ch; }
+.oc-tape tr.of-buy > td { color: var(--color-buy-ink); }
+.oc-tape tr.of-sell > td { color: var(--color-sell-ink); }
+.oc-tape :is(tr[data-oc-at-price], tr[data-oc-highlight]) > td:first-child { box-shadow: inset 2px 0 var(--color-level); }
+.oc-tape tr[data-oc-highlight] > td { background: color-mix(in oklab, var(--color-level) 21%, var(--color-surface-1)); }
+.oc-tape-gap, .oc-replay-label { margin: 4px 0; padding: 3px 9px; color: var(--color-ink-2); font-size: 12px; }
+.oc-replay-label a { text-decoration: underline; text-underline-offset: 2px; }
+.oc-threshold, .oc-trial { font-size: 12px; background: var(--color-surface-2); color: var(--color-ink-2); padding: 5px 9px; }
+.oc-threshold { display: grid; gap: 5px; border-bottom: 1px solid var(--color-line-strong); }
+.oc-threshold > div { display: flex; justify-content: space-between; gap: 5px; }
+.oc-threshold strong { display: block; font-family: var(--font-mono); }
+.oc-threshold button { justify-self: start; }
+.oc-trial { border-top: 1px solid var(--color-line); }
+.oc-trial header { padding: 0; }
+.oc-trial header > div { display: flex; gap: 4px; }
+.oc-trial header > button { margin-inline-start: auto; }
+.oc-trial dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; margin-top: 5px; }
+.oc-trial dl > div { padding: 4px; background: var(--color-surface-1); border-radius: 3px; }
+.oc-trial dd { font-family: var(--font-mono); font-weight: 600; overflow-wrap: anywhere; }
+.oc-trial dd:not(.of-sell) { color: var(--color-ink-1); }
+
+@container (min-width: 900px) {
+  .oc-grid { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
+  .oc-scroll { max-height: clamp(210px, calc(100dvh - 470px), 550px); }
+  .oc-ladder:has(.oc-trial) .oc-scroll { max-height: clamp(190px, calc(100dvh - 545px), 480px); }
+  .of-desk[data-of-maximized] .oc-scroll { max-height: clamp(200px, calc(100dvh - 320px), 650px); }
+  .oc-ladder :is(th, td), .oc-tape :is(th, td) { padding-block: 1px; }
+  .oc-change { display: inline; margin-inline-start: 3px; }
+  .oc-ladder td:has(.oc-change) .oc-amount { width: auto; min-width: 54%; }
+}
+@media (pointer: coarse) {
+  .oc-switch button, .oc-workspace :is(select, button:not([data-of-level])) { min-height: 44px; }
+  .oc-price button { min-height: 44px; }
+}
+@container (width < 490px) {
+  .oc-ladder col.oc-orders, .oc-ladder :is(th, td).oc-orders { display: none; }
+  .oc-ladder :is(th, td), .oc-tape :is(th, td) { padding-inline: 3px; }
+  .oc-ladder table, .oc-tape table { font-size: 11px; }
+  .oc-ladder thead small { display: block; }
+  .oc-trial dl { grid-template-columns: 1fr; }
+  .oc-tape th:nth-child(4) { width: 9ch; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .oc-tape tr[data-oc-highlight] > td { animation: oc-show-print 250ms ease-out; }
+}
+@keyframes oc-show-print {
+  from { background: color-mix(in oklab, var(--color-level) 42%, var(--color-surface-1)); }
+}

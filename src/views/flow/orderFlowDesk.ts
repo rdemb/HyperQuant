@@ -66,22 +66,28 @@ export function tradeActivity(tape: Tape, coverage: Coverage, from: number, to: 
   if (!(to > from) || !coverage.covers(from, to)) return null;
   let buyUsd = 0;
   let sellUsd = 0;
+  let buySize = 0;
+  let sellSize = 0;
   let count = 0;
-  const atPrice = new Map<number, { buyUsd: number; sellUsd: number }>();
+  const atPrice = new Map<number, { buyUsd: number; sellUsd: number; buySize: number; sellSize: number }>();
   tape.forEach(from, to, (_time, price, size, side) => {
     const usd = price * size;
-    const totals = atPrice.get(price) ?? { buyUsd: 0, sellUsd: 0 };
+    const totals = atPrice.get(price) ?? { buyUsd: 0, sellUsd: 0, buySize: 0, sellSize: 0 };
     if (side === 1) {
       buyUsd += usd;
+      buySize += size;
       totals.buyUsd += usd;
+      totals.buySize += size;
     } else {
       sellUsd += usd;
+      sellSize += size;
       totals.sellUsd += usd;
+      totals.sellSize += size;
     }
     atPrice.set(price, totals);
     count++;
   });
-  return { buyUsd, sellUsd, count, atPrice };
+  return { buyUsd, sellUsd, buySize, sellSize, count, atPrice };
 }
 
 function depthOnSide(frame: BookFrame, price: number, side: BookSide): number | null {

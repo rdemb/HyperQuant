@@ -34,8 +34,7 @@ describe('fmtFixed z formatterem w pamięci', () => {
 
   it('po angielsku zapis identyczny jak dawny toLocaleString', async () => {
     // Język strony ustalany przy imporcie i18n: zapisany wybór „en” w przeglądarce
-    vi.stubGlobal('document', {});
-    vi.stubGlobal('localStorage', { getItem: () => 'en' });
+    vi.stubGlobal('window', { location: { search: '' }, localStorage: { getItem: () => 'en' } });
     vi.resetModules();
     const i18n = await import('../../i18n');
     const en = await import('../format');

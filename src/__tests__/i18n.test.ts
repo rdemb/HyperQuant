@@ -1,24 +1,59 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { detectLang, lang, tr } from '../i18n';
 import { fmtPx } from '../charts/pro/chart/layout';
 import { fmtFixed, fmtNum, numLang } from '../ui/format';
 
 describe('detectLang', () => {
-  it('zapisany wybór ma pierwszeństwo przed przeglądarką', () => {
-    expect(detectLang('en', ['pl-PL'])).toBe('en');
-    expect(detectLang('pl', ['en-US'])).toBe('pl');
+  it('używa zapisanego wyboru na zwykłym adresie', () => {
+    expect(detectLang('en')).toBe('en');
+    expect(detectLang('pl')).toBe('pl');
   });
 
-  it('bierze pierwszy polski lub angielski język przeglądarki', () => {
-    expect(detectLang(null, ['pl-PL', 'en-US'])).toBe('pl');
-    expect(detectLang(null, ['de-DE', 'en-GB', 'pl'])).toBe('en');
-    expect(detectLang(null, ['fr', 'PL'])).toBe('pl');
+  it('jawny język adresu wygrywa dla tej strony', () => {
+    expect(detectLang('en', 'pl')).toBe('pl');
+    expect(detectLang('pl', 'en')).toBe('en');
+    expect(detectLang('pl', 'fr')).toBe('pl');
   });
 
-  it('inne języki i błędny zapis → angielski', () => {
-    expect(detectLang(null, ['de-DE', 'fr-FR'])).toBe('en');
-    expect(detectLang(null, [])).toBe('en');
-    expect(detectLang('de', ['es'])).toBe('en');
+  it('brak wyboru lub błędny zapis oznacza angielski', () => {
+    expect(detectLang(null)).toBe('en');
+    expect(detectLang('de')).toBe('en');
+  });
+});
+
+describe('język w przeglądarce', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.resetModules();
+  });
+
+  it.each(['/', '/#charts', '/#orderflow?m=BTC'])('otwiera %s po angielsku przy polskich ustawieniach', async (path) => {
+    vi.stubGlobal('document', {});
+    vi.stubGlobal('navigator', { language: 'pl-PL', languages: ['pl-PL', 'en-GB'] });
+    vi.stubGlobal('window', {
+      location: new URL(path, 'https://example.test'),
+      localStorage: { getItem: () => null },
+    });
+    vi.resetModules();
+    expect((await import('../i18n')).lang).toBe('en');
+  });
+
+  it('po zmianie języka zachowuje pozostałe parametry i widok', async () => {
+    const setItem = vi.fn();
+    const replace = vi.fn();
+    const url = new URL('https://example.test/?lang=pl&layout=wide#orderflow?m=GOLD');
+    vi.stubGlobal('document', {});
+    vi.stubGlobal('window', {
+      location: { href: url.href, search: url.search, replace },
+      localStorage: { getItem: () => 'en', setItem },
+    });
+    vi.resetModules();
+    const i18n = await import('../i18n');
+    expect(i18n.lang).toBe('pl');
+    expect(setItem).not.toHaveBeenCalled();
+    i18n.setLang('en');
+    expect(setItem).toHaveBeenCalledWith('hq.lang', 'en');
+    expect(replace).toHaveBeenCalledWith('https://example.test/?layout=wide#orderflow?m=GOLD');
   });
 });
 

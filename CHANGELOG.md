@@ -4,6 +4,15 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Drabinka cen Chronograph w Order Flow (2026-11-21)
+<!-- co-nowego: grupa=wykres | pl=Drabinka cen i niezależny filtr taśmy | en=Price ladder and independent tape filter -->
+- Order Flow pokazuje głębokość, deltę i obrót na wspólnej osi ceny obok taśmy. Minimalny nominał filtruje wyświetlane wykonania, a drabinka i odczyty rynku obejmują całe wybrane okno.
+- Nagranie BTC pozwala sprawdzić zmianę znaku delty przy zmianie progu i porównać dwie próby jednego poziomu. Symulowana luka taśmy jest oznaczona, a odczyty wymagające pokrycia pozostają niedostępne.
+
+### Angielski przy pierwszym wejściu (2026-11-21)
+<!-- co-nowego: grupa=blog | pl=Angielski przy pierwszym wejściu | en=English on the first visit -->
+- Przy pierwszym wejściu HyperQuant otwiera się po angielsku. Przełącznik PL/EN zapamiętuje wybór. Strony informacyjne i powtórka Order Flow przekazują swój język w odnośnikach do aplikacji.
+
 ### Pełny ekran Order Flow (2026-11-20)
 <!-- co-nowego: grupa=wykres | pl=Pełny ekran Order Flow | en=Order Flow full screen -->
 - Przycisk Pełny ekran lub klawisz F powiększa cały Order Flow, także w trybie Pro. Powrót zachowuje czas, filtr i pozycję. Gdy przeglądarka odmawia pełnego ekranu, panel powiększa się w obrębie karty.

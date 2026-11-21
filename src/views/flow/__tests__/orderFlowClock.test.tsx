@@ -50,7 +50,7 @@ it.each(markets)('%s: wiek arkusza i okno obrotu nie cofają się do paczki hist
     handlers.onSubscribed?.({ type: 'trades', coin }, time);
   };
   const trade = (time: number, tid: number) => ({ coin, time, tid, side: 'B', px: String(price), sz: '1', hash: `0x${tid.toString(16)}` });
-  const seed = Array.from({ length: 30 }, (_, i) => trade(start - 118_000 + i * 2_000, i + 1));
+  const seed = Array.from({ length: 30 }, (_, i) => trade(start - 278_000 + i * 2_000, i + 1));
   const book = (time: number) => ({ coin, time, levels: [
     [{ px: String(price - 0.1), sz: '1', n: 1 }],
     [{ px: String(price + 0.1), sz: '1', n: 1 }],
@@ -69,7 +69,9 @@ it.each(markets)('%s: wiek arkusza i okno obrotu nie cofają się do paczki hist
   const idle = render(start + 20_000);
   expect.soft(idle).toMatch(/20 s temu|20 s ago/);
   expect.soft(idle).toMatch(/0 wyk\.|0 trades/);
-  expect.soft(render(start + 31_000)).not.toContain('data-of-level=');
+  const stale = render(start + 31_000);
+  expect.soft(stale).toMatch(/Brak migawki L2|No L2 snapshot/);
+  expect.soft(stale).not.toContain('data-side="bid"');
 
   handlers.onClosed?.(start + 20_000);
   handlers.onStatus?.('reconnecting');

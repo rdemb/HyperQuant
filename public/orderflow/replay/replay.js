@@ -1,25 +1,46 @@
 import * as HyperQuantReplay from './engine.js';
 const $ = (id) => document.getElementById(id);
-const num = new Intl.NumberFormat('pl-PL', { maximumFractionDigits: 6, useGrouping: 'always' });
-const shortNum = new Intl.NumberFormat('pl-PL', { maximumFractionDigits: 1, useGrouping: 'always' });
+const options = new URLSearchParams(location.search);
+const requestedLang = options.get('lang');
+let savedLang = null;
+try {
+  savedLang = localStorage.getItem('hq.lang');
+} catch {
+  // Język odnośnika działa również bez dostępu do pamięci.
+}
+const lang = requestedLang === 'pl' || requestedLang === 'en' ? requestedLang : savedLang === 'pl' ? 'pl' : 'en';
+const tr = (pl, en) => lang === 'pl' ? pl : en;
+const liveHref = (coin) => `../../?lang=${lang}#orderflow?m=${encodeURIComponent(coin)}`;
+document.documentElement.lang = lang;
+$('guide-live-link').href = liveHref('BTC');
+if (lang === 'pl') {
+  for (const element of document.querySelectorAll('[data-pl]')) element.textContent = element.dataset.pl;
+  for (const name of ['title', 'aria-label']) {
+    for (const element of document.querySelectorAll(`[data-pl-${name}]`)) {
+      element.setAttribute(name, element.getAttribute(`data-pl-${name}`));
+    }
+  }
+}
+const locale = tr('pl-PL', 'en-GB');
+const num = new Intl.NumberFormat(locale, { maximumFractionDigits: 6, useGrouping: 'always' });
+const shortNum = new Intl.NumberFormat(locale, { maximumFractionDigits: 1, useGrouping: 'always' });
 const labels = ['<1k', '1–10k', '10–50k', '50–100k', '100–500k', '500k–1M', '≥1M'];
-const titles = { book: 'Drabinka zleceń', memory: 'Pamięć arkusza', foot: 'Ślad transakcji' };
+const titles = { book: tr('Drabinka zleceń', 'Order ladder'), memory: tr('Pamięć arkusza', 'Book memory'), foot: tr('Ślad transakcji', 'Trade trace') };
 const examples = { book: 0, memory: 1, foot: 2 };
 const subtitles = {
-  book: 'Otwarte zlecenia i wykonania',
-  memory: 'Cztery ostatnie pomiary L2',
-  foot: 'Kolejne okna po 5 s i siedem klas USD',
+  book: tr('Otwarte zlecenia i wykonania', 'Resting orders and trades'),
+  memory: tr('Cztery ostatnie pomiary L2', 'Last four L2 snapshots'),
+  foot: tr('Kolejne okna po 5 s i siedem klas USD', 'Four 5 s windows and seven USD bands'),
 };
 const descriptions = {
-  book: 'BID i ASK: zlecenia oczekujące. ↑ i ↓: wykonania. Ślad gaśnie po 2 s.',
-  memory: 'Od starszej do nowszej migawki. ↑ BID, ↓ ASK. — poza zasięgiem pomiaru.',
-  foot: 'Cztery kolejne okna po 5 s. Klasy i Δ ceny dotyczą wybranej milisekundy.',
+  book: tr('BID i ASK: zlecenia oczekujące. ↑ i ↓: wykonania. Ślad gaśnie po 2 s.', 'BID and ASK: resting orders. ↑ and ↓: trades. The trace fades after 2 s.'),
+  memory: tr('Od starszej do nowszej migawki. ↑ BID, ↓ ASK. — poza zasięgiem pomiaru.', 'Oldest to newest snapshot. ↑ BID, ↓ ASK. — outside snapshot coverage.'),
+  foot: tr('Cztery kolejne okna po 5 s. Klasy i Δ ceny dotyczą wybranej milisekundy.', 'Four consecutive 5 s windows. Bands and price Δ show the selected millisecond.'),
 };
 const small = () => innerWidth <= 500,
   compact = () => innerWidth <= 1100;
 let engine, meta;
 const empty = HyperQuantReplay.emptyLevel();
-const options = new URLSearchParams(location.search);
 let market = 'BTC',
   mode = 'memory',
   time,
@@ -79,23 +100,23 @@ function chooseColumns() {
     def(
       'h' + j,
       h.at(j - 4) ? clock(h.at(j - 4)[0]).slice(compact() ? 3 : 0, 8) : '—',
-      j === 3 ? 'L2 teraz' : compact() ? 'L2 · min:s' : 'L2 · UTC',
+      j === 3 ? tr('L2 teraz', 'L2 now') : compact() ? 'L2 · min:s' : 'L2 · UTC',
       'hist',
       1.1,
     );
   const slice = (j) => def('s' + j, ['20–15 s', '15–10 s', '10–5 s', '5–0 s'][j], 'Δ USD', 'hist', 1);
   const cls = (j) => def('c' + j, labels[j], 'Δ · 1 ms', 'size', 1);
-  const p = def('p', 'Cena', 'USD', 'axis', 1.02),
-    delta = def('d', 'Δ ceny', '1 ms', 'delta', 1);
+  const p = def('p', tr('Cena', 'Price'), 'USD', 'axis', 1.02),
+    delta = def('d', tr('Δ ceny', 'Price Δ'), '1 ms', 'delta', 1);
   const bid = def('bid', 'BID', 'USD · L2', 'bids', 1.18),
     ask = def('ask', 'ASK', 'USD · L2', 'asks', 1.18);
-  const nb = def('nb', 'n BID', 'zlecenia', 'nCol', 0.62),
-    na = def('na', 'n ASK', 'zlecenia', 'nCol', 0.62);
-  const sell = def('sell', '↓ Sprz.', '1 ms', 'sellCol', 1.05),
-    buy = def('buy', '↑ Kup.', '1 ms', 'buyCol', 1.05);
-  const prof = def('prof', 'Profil', 'obrót 120 s', 'profile', 1.25),
-    trail = def('trail', 'Ślad', 'ostatnie 2 s', 'hist', 1.05);
-  const chg = def('chg', 'Δ L2', 'netto USD', 'delta', 1.02);
+  const nb = def('nb', 'n BID', tr('zlecenia', 'orders'), 'nCol', 0.62),
+    na = def('na', 'n ASK', tr('zlecenia', 'orders'), 'nCol', 0.62);
+  const sell = def('sell', tr('↓ Sprz.', '↓ Sell'), '1 ms', 'sellCol', 1.05),
+    buy = def('buy', tr('↑ Kup.', '↑ Buy'), '1 ms', 'buyCol', 1.05);
+  const prof = def('prof', tr('Profil', 'Profile'), tr('obrót 120 s', '120 s turnover'), 'profile', 1.25),
+    trail = def('trail', tr('Ślad', 'Trace'), tr('ostatnie 2 s', 'last 2 s'), 'hist', 1.05);
+  const chg = def('chg', 'Δ L2', tr('netto USD', 'net USD'), 'delta', 1.02);
   if (bank) {
     if (small()) return half ? [cls(4), cls(5), p, cls(6), buy, sell] : [cls(0), cls(1), p, cls(2), cls(3), delta];
     return compact()
@@ -216,7 +237,7 @@ function cellData(id, p, level, q, hist, max) {
       dir = id === 'ask';
       if (id === 'nb' || id === 'na') {
         label = String(raw);
-        tip = raw + ' zleceń';
+        tip = raw + tr(' zleceń', raw === 1 ? ' order' : ' orders');
       } else {
         label = amount(raw);
         maxi = max.book;
@@ -289,9 +310,9 @@ function cellData(id, p, level, q, hist, max) {
     if (present) hot = 0.35;
     missing = !F.instantCoverage;
   }
-  if (missing) return { label: '—', color: 'missing', tip: 'Poza pokryciem', dir: false, maxi: 0, raw: null };
+  if (missing) return { label: '—', color: 'missing', tip: tr('Poza pokryciem', 'Outside coverage'), dir: false, maxi: 0, raw: null };
   if (!present)
-    return { label: '·', color: 'quiet', tip: 'Brak zarejestrowanej aktywności', dir: false, maxi: 0, raw: null };
+    return { label: '·', color: 'quiet', tip: tr('Brak zarejestrowanej aktywności', 'No recorded activity'), dir: false, maxi: 0, raw: null };
   return { label: label || amount(raw), color, raw, maxi, dir, hot, tip: tip || amount(raw, true, true) + ' USD' };
 }
 function grid() {
@@ -338,10 +359,10 @@ function grid() {
   if (active) $('ladder').setAttribute('aria-activedescendant', active);
   else $('ladder').removeAttribute('aria-activedescendant');
   $('bookstamp').textContent =
-    (small() ? 'Archiwum · ' : '') +
+    (small() ? tr('Archiwum · ', 'Archive · ') : '') +
     (last
-      ? 'L2 ' + clock(last[0]) + ' · wiek ' + num.format((F.time - last[0]) / 1000) + ' s'
-      : 'L2 · brak pokrycia');
+      ? 'L2 ' + clock(last[0]) + tr(' · wiek ', ' · age ') + num.format((F.time - last[0]) / 1000) + ' s'
+      : tr('L2 · brak pokrycia', 'L2 · no coverage'));
   $('bestBid').textContent = b ? pstr(b) : '—';
   $('bestAsk').textContent = a ? pstr(a) : '—';
   if (last) $('bookstamp').title = 'BID ' + pstr(b) + ' / ASK ' + pstr(a) + ' USD';
@@ -356,7 +377,7 @@ function meter(id, buy, sell) {
   el.querySelector('.tower').style.setProperty('--ask', (sum ? (100 * sell) / sum : 50) + '%');
   el.querySelector('.tower').style.opacity = sum ? '1' : '.25';
   el.title =
-    'Strona kupna ' + amount(buy, false, true) + ' USD · strona sprzedaży ' + amount(sell, false, true) + ' USD';
+    tr('Strona kupna ', 'Buy side ') + amount(buy, false, true) + tr(' USD · strona sprzedaży ', ' USD · sell side ') + amount(sell, false, true) + ' USD';
 }
 function spark() {
   const canvas = $('spark'),
@@ -381,7 +402,7 @@ function spark() {
     ctx.fillRect(i * step, y + 1, Math.max(1, step - 1), ((y - 1) * s) / scale);
   });
 }
-function tr(row, marketTape = false) {
+function tradeRow(row, marketTape = false) {
   const [t, p, qty, sgn, u] = row,
     cl = tp(sgn),
     dir = sgn > 0 ? '↑' : '↓';
@@ -404,11 +425,13 @@ function tr(row, marketTape = false) {
         ' USD × ' +
         num.format(Number(qty)) +
         ' · ' +
-        (sgn > 0 ? 'kupno' : 'sprzedaż') +
+        (sgn > 0 ? tr('kupno', 'buy') : tr('sprzedaż', 'sell')) +
         '</small>') +
     '</div>'
   );
 }
+const tradeCount = (count) => count + tr(' wyk.', count === 1 ? ' trade' : ' trades');
+
 function inspect() {
   const level = F.levels[price] || empty;
   const op = F.atPrice.filter((r) => r[0] === F.time && (band < 0 || r[5] === band));
@@ -416,10 +439,10 @@ function inspect() {
     sells = op.filter((r) => r[3] < 0);
   const bu = buys.reduce((s, r) => s + r[4], 0),
     se = sells.reduce((s, r) => s + r[4], 0);
-  $('lenslabel').textContent = (band >= 0 ? 'Δ klasy ' + labels[band] : 'Δ wszystkich klas') + ' · 1 ms · USD';
+  $('lenslabel').textContent = (band >= 0 ? tr('Δ klasy ', 'Band Δ ') + labels[band] : tr('Δ wszystkich klas', 'All-band Δ')) + ' · 1 ms · USD';
   colorValue($('lensamount'), bu - se, F.instantCoverage ? amount(bu - se, true, true) : '—');
-  $('lensbuy').textContent = F.instantCoverage ? '↑ ' + amount(bu) + ' · ' + buys.length + ' wyk.' : '↑ —';
-  $('lenssell').textContent = F.instantCoverage ? '↓ ' + amount(se) + ' · ' + sells.length + ' wyk.' : '↓ —';
+  $('lensbuy').textContent = F.instantCoverage ? '↑ ' + amount(bu) + ' · ' + tradeCount(buys.length) : '↑ —';
+  $('lenssell').textContent = F.instantCoverage ? '↓ ' + amount(se) + ' · ' + tradeCount(sells.length) : '↓ —';
   $('lensclock').textContent = clock(F.time) + ' UTC';
   $('lenspx').textContent = pstr(price) + ' USD';
   [...$('bands').children].forEach((button, i) => {
@@ -436,24 +459,24 @@ function inspect() {
   const pageSize = innerWidth <= 850 ? 2 : 4,
     pages = Math.max(1, Math.ceil(chosen.length / pageSize));
   tapePage = Math.min(tapePage, pages - 1);
-  $('matched').textContent = chosen.length + ' wyk.';
+  $('matched').textContent = tradeCount(chosen.length);
   $('paging').hidden = pages < 2;
   $('paging').textContent = tapePage + 1 + '/' + pages + ' ›';
   $('tape').innerHTML =
     chosen
       .slice(tapePage * pageSize, (tapePage + 1) * pageSize)
-      .map((row) => tr(row))
-      .join('') || '<div class="muted">Brak wykonań dla tego wyboru.</div>';
+      .map((row) => tradeRow(row))
+      .join('') || '<div class="muted">' + tr('Brak wykonań dla tego wyboru.', 'No trades for this selection.') + '</div>';
   $('last').innerHTML = F.recent
     .slice(0, 5)
-    .map((r) => tr(r, true))
+    .map((r) => tradeRow(r, true))
     .join('');
   $('coverage').textContent =
-    'Pokrycie taśmy ' +
+    tr('Pokrycie taśmy ', 'Tape coverage ') +
     num.format(F.coverage / 1000) +
     '/120 s · ' +
-    F.count +
-    ' wyk. · ' +
+    tradeCount(F.count) +
+    ' · ' +
     (F.instantCoverage ? '1/1 ms' : '0/1 ms');
   $('r-price').textContent = pstr(price);
   colorValue(
@@ -461,13 +484,13 @@ function inspect() {
     level.now[0] - level.now[1],
     F.instantCoverage ? amount(level.now[0] - level.now[1], true) : '—',
   );
-  $('r-delta').title = F.instantCoverage ? amount(level.now[0] - level.now[1], true, true) + ' USD' : 'Brak pokrycia';
+  $('r-delta').title = F.instantCoverage ? amount(level.now[0] - level.now[1], true, true) + ' USD' : tr('Brak pokrycia', 'No coverage');
   const d = F.total[0] - F.total[1];
   colorValue($('r-market'), d, F.coverage === 120000 ? amount(d, true) : '—');
   $('r-market').title =
     F.coverage === 120000
       ? amount(d, true, true) + ' USD'
-      : 'Pokrycie ' + num.format(F.coverage / 1000) + '/120 s';
+      : tr('Pokrycie ', 'Coverage ') + num.format(F.coverage / 1000) + '/120 s';
 }
 let lastBookStamp = null,
   selectedDot = null;
@@ -555,7 +578,7 @@ function drawTrail(canvas) {
   }
   g.fillStyle = '#b8c5cc';
   g.fillText('−20 s', x0, h - 6);
-  g.fillText('teraz', x1 - 25, h - 6);
+  g.fillText(tr('teraz', 'now'), x1 - 25, h - 6);
   plotTargets.set(canvas, mapped);
 }
 function describeDot() {
@@ -569,7 +592,7 @@ function describeDot() {
       ' / ↓ ' +
       amount(p[3], false, true) +
       ' USD'
-    : 'Brak wykonań w ostatnich 20 s.';
+    : tr('Brak wykonań w ostatnich 20 s.', 'No trades in the last 20 s.');
 }
 function pinDot(index) {
   const p = F.trail20[index];
@@ -611,22 +634,22 @@ function draw() {
   meter('meter-depth', sum(shot?.[1]), sum(shot?.[2]));
   meter('meter-flow', ...F.total);
   $('clock').textContent = clock(F.time);
-  $('clock').title = 'Czas zdarzenia · UTC';
+  $('clock').title = tr('Czas zdarzenia · UTC', 'Event time · UTC');
   $('scrub').value = F.time - meta[market].start;
   $('scrub').setAttribute('aria-valuetext', clock(F.time) + ' UTC');
-  $('board-title').textContent = bank ? 'Klasy nominału' : titles[mode];
-  $('subtitle').textContent = bank ? 'Siedem klas · USD' : subtitles[mode];
-  $('legend').textContent = bank ? 'Klasy w 1 ms · dotknij kwoty, aby otworzyć wykonania.' : descriptions[mode];
-  $('bank').textContent = bank ? 'Wróć do układu' : '7 klas';
+  $('board-title').textContent = bank ? tr('Klasy nominału', 'Trade size bands') : titles[mode];
+  $('subtitle').textContent = bank ? tr('Siedem klas · USD', 'Seven bands · USD') : subtitles[mode];
+  $('legend').textContent = bank ? tr('Klasy w 1 ms · dotknij kwoty, aby otworzyć wykonania.', 'Bands in 1 ms · select an amount to see trades.') : descriptions[mode];
+  $('bank').textContent = bank ? tr('Wróć do układu', 'Back to layout') : tr('7 klas', '7 bands');
   $('bank').setAttribute('aria-pressed', String(bank));
   $('half').hidden = !(small() && bank);
-  $('half').textContent = half ? 'Klasy 1–4' : 'Klasy 5–7';
+  $('half').textContent = half ? tr('Klasy 1–4', 'Bands 1–4') : tr('Klasy 5–7', 'Bands 5–7');
   $('follow').setAttribute('aria-pressed', String(follow));
   $('prev').disabled = F.time <= meta[market].start;
   $('next').disabled = F.time >= meta[market].end;
   document.body.dataset.motion = motion ? 'on' : 'off';
   $('motion').setAttribute('aria-pressed', String(motion));
-  $('motion').textContent = motion ? 'Animacje wł.' : 'Animacje wył.';
+  $('motion').textContent = motion ? tr('Animacje wł.', 'Motion on') : tr('Animacje wył.', 'Motion off');
   const stamp = shot?.[0];
   if (playing && motion && stamp !== lastBookStamp) {
     for (const el of $('headers').children) {
@@ -657,7 +680,7 @@ function stop() {
   cancelAnimationFrame(raf);
   wanted = null;
   $('play').textContent = '▶';
-  $('play').setAttribute('aria-label', 'Odtwórz');
+  $('play').setAttribute('aria-label', tr('Odtwórz', 'Play'));
   if (F && document.querySelector('.expired')) grid();
 }
 async function playFrame(t) {
@@ -721,7 +744,7 @@ function togglePlay() {
   wallStart = performance.now();
   replayStart = time;
   $('play').textContent = 'Ⅱ';
-  $('play').setAttribute('aria-label', 'Pauza');
+  $('play').setAttribute('aria-label', tr('Pauza', 'Pause'));
   raf = requestAnimationFrame(tick);
 }
 function seek(t) {
@@ -746,7 +769,7 @@ function example() {
 function changeMarket(k) {
   market = k;
   const coin = k === 'BTC' ? 'BTC' : 'xyz:' + k;
-  $('live-link').href = '../../#orderflow?m=' + encodeURIComponent(coin);
+  $('live-link').href = liveHref(coin);
   const m = meta[k];
   $('scrub').min = 0;
   $('scrub').max = m.end - m.start;
@@ -768,9 +791,9 @@ function selectPrice(p, k = null) {
 }
 function bind() {
   $('bands').replaceChildren(
-    ...['Wszystkie', ...labels].map((label, i) => {
+    ...[tr('Wszystkie', 'All'), ...labels].map((label, i) => {
       const button = document.createElement('button');
-      button.title = label + ' · wybierz klasę';
+      button.title = label + tr(' · wybierz klasę', ' · select band');
       button.append(document.createTextNode(label), document.createElement('small'));
       button.onclick = () => {
         stop();
@@ -928,10 +951,10 @@ async function init() {
 init().catch(() => {
   const message = document.createElement('p');
   message.setAttribute('role', 'alert');
-  message.textContent = 'Nie udało się wczytać nagrania. ';
+  message.textContent = tr('Nie udało się wczytać nagrania. ', 'Could not load the recording. ');
   const retry = document.createElement('a');
   retry.href = location.href;
-  retry.textContent = 'Wczytaj ponownie';
+  retry.textContent = tr('Wczytaj ponownie', 'Reload');
   message.append(retry);
   document.querySelector('.controls').replaceChildren(message);
 });

@@ -1,6 +1,6 @@
 /**
- * Język interfejsu (PL/EN). Wybór zapisany w przeglądarce ma pierwszeństwo, inaczej decyduje
- * pierwszy polski lub angielski język z ustawień przeglądarki (każdy inny → EN).
+ * Język interfejsu (PL/EN). Jawny język adresu obowiązuje dla tej strony.
+ * Bez niego używamy zapisanego wyboru, a na pierwszej wizycie angielskiego.
  * Język jest stały przez cały czas życia strony: zmiana zapisuje wybór i przeładowuje stronę,
  * dzięki czemu teksty w stałych modułach i na canvasie nie wymagają subskrypcji.
  */
@@ -8,26 +8,21 @@ export type Lang = 'pl' | 'en';
 
 export const LANG_KEY = 'hq.lang';
 
-export function detectLang(saved: string | null, languages: readonly string[]): Lang {
-  if (saved === 'pl' || saved === 'en') return saved;
-  for (const l of languages) {
-    const code = l.toLowerCase();
-    if (code.startsWith('pl')) return 'pl';
-    if (code.startsWith('en')) return 'en';
-  }
-  return 'en';
+export function detectLang(saved: string | null, requested: string | null = null): Lang {
+  if (requested === 'pl' || requested === 'en') return requested;
+  return saved === 'pl' ? 'pl' : 'en';
 }
 
 function initialLang(): Lang {
   // Poza przeglądarką (testy, skrypty) zostaje polski — teksty źródłowe
-  if (typeof document === 'undefined') return 'pl';
+  if (typeof window === 'undefined') return 'pl';
   let saved: string | null = null;
   try {
-    saved = localStorage.getItem(LANG_KEY);
+    saved = window.localStorage.getItem(LANG_KEY);
   } catch {
-    // Zablokowany localStorage: tylko język przeglądarki
+    // Przy zablokowanej pamięci nadal działa jawny język adresu.
   }
-  return detectLang(saved, navigator.languages?.length ? navigator.languages : [navigator.language]);
+  return detectLang(saved, new URLSearchParams(window.location.search).get('lang'));
 }
 
 export const lang: Lang = initialLang();
@@ -41,12 +36,16 @@ export function tr<T>(pl: T, en: T): T {
 }
 
 export function setLang(next: Lang): void {
-  if (next === lang) return;
   try {
-    localStorage.setItem(LANG_KEY, next);
+    window.localStorage.setItem(LANG_KEY, next);
   } catch {
-    // Zablokowany zapis: po przeładowaniu zostaje język przeglądarki
     return;
   }
-  window.location.reload();
+  const url = new URL(window.location.href);
+  if (url.searchParams.has('lang')) {
+    url.searchParams.delete('lang');
+    window.location.replace(url.href);
+  } else if (next !== lang) {
+    window.location.reload();
+  }
 }
