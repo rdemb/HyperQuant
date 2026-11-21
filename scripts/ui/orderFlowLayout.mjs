@@ -70,6 +70,25 @@ async function checkPriceAxis(checkColumnGroups) {
   return anchoredAfter(toggle, 'false');
 }
 
+async function checkChronographTapeFilter() {
+  const paint = () => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  const panel = document.querySelector('[data-oc-source="live"]');
+  const select = panel?.querySelector('[data-oc-floor]');
+  const ladder = panel?.querySelector('.oc-prices tbody');
+  const totals = panel?.querySelector('[data-oc-totals]');
+  if (!select || !ladder || !totals) return false;
+  const before = [ladder.innerText, totals.innerText].join('\n');
+  const count = () => panel.querySelectorAll('[data-of-trade-price]').length;
+  select.value = '500000';
+  select.dispatchEvent(new Event('change', { bubbles: true }));
+  await paint();
+  const filtered = count() === 0 && [ladder.innerText, totals.innerText].join('\n') === before;
+  select.value = '0';
+  select.dispatchEvent(new Event('change', { bubbles: true }));
+  await paint();
+  return filtered && count() === 2 && [ladder.innerText, totals.innerText].join('\n') === before;
+}
+
 export async function checkOrderFlowLayout(page, base, fixtures, now) {
   const { result } = await page.send('Page.addScriptToEvaluateOnNewDocument', {
     source: fixtureInit(now, orderFlowTestStream(fixtures, now)),
@@ -79,6 +98,10 @@ export async function checkOrderFlowLayout(page, base, fixtures, now) {
   try {
     await page.go(base + 'robots.txt', 200);
     await page.go(base + '#orderflow?m=BTC', 300);
+    const tapeReady = await page.waitFor('document.querySelectorAll(\'[data-oc-source="live"] [data-of-trade-price]\').length === 2', 10000);
+    const tapeFilter = !!tapeReady && await page.ev('(' + checkChronographTapeFilter.toString() + ')()');
+    if (!tapeFilter) return { ok: false, reason: 'Expected independent Chronograph tape filtering' };
+    await page.ev('document.querySelector(\'[data-oc-workspace="memory"]\').click()');
     const ready = await page.waitFor('document.querySelector("[data-dom-best-bid]") && document.querySelectorAll("[data-ml-tid]").length >= 2', 10000);
     if (!ready) return { ok: false, reason: 'Expected a book snapshot and two tape entries' };
     await page.ev('document.fonts.ready.then(() => true)');
@@ -107,7 +130,7 @@ export async function checkOrderFlowLayout(page, base, fixtures, now) {
     const fits = Object.values(sizes).every(s => s.tested > 10 && s.broken.length === 0 && s.pageOverflow <= 1);
     const fullscreen = await checkOrderFlowFullscreen(page);
     const ok = fits && !sizes[600].sideBySide && sizes[1440].sideBySide && fixedAxis === true && tabletAxis === true && !!twoFills && fullscreen.ok;
-    return { sizes, fixedAxis, tabletAxis, twoFills: !!twoFills, fullscreen, ok };
+    return { sizes, tapeFilter, fixedAxis, tabletAxis, twoFills: !!twoFills, fullscreen, ok };
   } finally {
     const { error } = await page.send('Page.removeScriptToEvaluateOnNewDocument', { identifier });
     if (error) throw new Error('Could not remove the Order Flow layout fixture: ' + error.message);

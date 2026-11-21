@@ -406,16 +406,21 @@ const RAIL = {
   },
 };
 
+/** Linki do aplikacji przenoszą język strony statycznej, pozostałe zachowują ścieżkę. */
+export function siteHref(root, lang, href = '') {
+  return href && !href.startsWith('#') ? root + href : `${root}?lang=${lang}${href}`;
+}
+
 function rail(lang, root, current, url, extra) {
   const r = RAIL[lang];
   const item = ([key, label, href, icon]) => {
     const here = key === current;
     const doc = here && sameDocument(`${root}${href}`, url);
-    return `<li><a class="rail__item${here ? ' is-here' : ''}" href="${root}${href}"${doc ? ' aria-current="page"' : ''}><span class="rail__icon" title="${label}">${IKONY[icon]}</span><span class="rail__label">${label}</span></a></li>`;
+    return `<li><a class="rail__item${here ? ' is-here' : ''}" href="${siteHref(root, lang, href)}"${doc ? ' aria-current="page"' : ''}><span class="rail__icon" title="${label}">${IKONY[icon]}</span><span class="rail__label">${label}</span></a></li>`;
   };
   const group = ([title, items]) => `<div class="rail__group"><p class="rail__title">${title}</p><ul>${items.map(item).join('')}</ul></div>`;
   return `<aside class="rail" aria-label="${r.aria}">
-<a class="rail__brand" href="${root}">${LOGO}<span class="rail__name"><span>HyperQuant</span><small>${r.tag}</small></span></a>
+<a class="rail__brand" href="${siteHref(root, lang)}">${LOGO}<span class="rail__name"><span>HyperQuant</span><small>${r.tag}</small></span></a>
 <nav aria-label="${lang === 'en' ? 'Main' : 'Główna'}">${r.groups.map(group).join('')}</nav>
 <div class="rail__foot"><p class="rail__title">${r.pubTitle}</p><ul>${r.pubs.map(item).join('')}</ul>${extra}</div>
 </aside>`;
@@ -426,7 +431,7 @@ function bottomNav(lang, root, current, url) {
   const link = ([key, label, href, icon], cls) => {
     const here = key === current;
     const doc = here && sameDocument(`${root}${href}`, url);
-    return `<a class="${cls}${here ? ' is-here' : ''}" href="${root}${href}"${doc ? ' aria-current="page"' : ''}>${IKONY[icon]}<span>${label}</span></a>`;
+    return `<a class="${cls}${here ? ' is-here' : ''}" href="${siteHref(root, lang, href)}"${doc ? ' aria-current="page"' : ''}>${IKONY[icon]}<span>${label}</span></a>`;
   };
   const inMore = b.more.some(([key]) => key === current);
   return `<nav class="bottom-nav" aria-label="${b.aria}"><div class="bottom-nav__row">${b.bar.map((i) => link(i, 'bottom-nav__item')).join('')}<details class="bottom-nav__more"><summary class="bottom-nav__item${inMore ? ' is-here' : ''}">${IKONY.ellipsis}<span>${b.label}</span></summary><div class="bottom-nav__menu">${b.more.map((i) => link(i, 'bottom-nav__link')).join('')}</div></details></div></nav>`;
@@ -447,9 +452,9 @@ function sameDocument(href, url) {
 }
 const FOOTER = {
   pl: (root, site) =>
-    `<a href="${root}">Desk HyperQuant</a> · <a href="${root}wykresy/">Wykresy</a> · <a href="${root}wyniki/">Wyniki prognoz</a> · <a href="${root}co-nowego/">Co nowego</a> · <a href="${root}prywatnosc/">Prywatność</a> ·<a href="${site.repo}">Kod na GitHubie</a> · <a href="${root}blog/feed.xml">RSS</a>`,
+    `<a href="${siteHref(root, 'pl')}">Desk HyperQuant</a> · <a href="${root}wykresy/">Wykresy</a> · <a href="${root}wyniki/">Wyniki prognoz</a> · <a href="${root}co-nowego/">Co nowego</a> · <a href="${root}prywatnosc/">Prywatność</a> ·<a href="${site.repo}">Kod na GitHubie</a> · <a href="${root}blog/feed.xml">RSS</a>`,
   en: (root, site) =>
-    `<a href="${root}">HyperQuant Desk</a> · <a href="${root}en/charts/">Charts</a> · <a href="${root}en/results/">Forecast results</a> · <a href="${root}en/whats-new/">What's new</a> · <a href="${root}en/privacy/">Privacy</a> ·<a href="${site.repo}">Code on GitHub</a> · <a href="${root}blog/feed.xml">Blog RSS (PL)</a>`,
+    `<a href="${siteHref(root, 'en')}">HyperQuant Desk</a> · <a href="${root}en/charts/">Charts</a> · <a href="${root}en/results/">Forecast results</a> · <a href="${root}en/whats-new/">What's new</a> · <a href="${root}en/privacy/">Privacy</a> ·<a href="${site.repo}">Code on GitHub</a> · <a href="${root}blog/feed.xml">Blog RSS (PL)</a>`,
 };
 /**
  * Polityka treści stron z tego szablonu (druga linia obrony, gdyby treść wpisu coś przemyciła): skrypty tylko z plików
@@ -504,7 +509,7 @@ export function layout(
     .map(([key, label, href]) => {
       const here = key === current;
       const doc = here && sameDocument(`${root}${href}`, url);
-      return `<a class="nav-${key}${here && !doc ? ' is-section' : ''}" href="${root}${href}"${doc ? ' aria-current="page"' : ''}>${label}</a>`;
+      return `<a class="nav-${key}${here && !doc ? ' is-section' : ''}" href="${siteHref(root, lang, href)}"${doc ? ' aria-current="page"' : ''}>${label}</a>`;
     })
     .join('');
   const rss = current === 'blog' ? `<a class="nav-rss" href="${root}blog/feed.xml">RSS</a>` : '';
@@ -547,7 +552,7 @@ export function layout(
 ${rail(lang, root, current, url, `${rss}${langLink}`.replace(/class="nav-(rss|lang)"/g, 'class="rail__extra"'))}
 <div class="shell__main">
 <header class="site-header"><div class="wrap${wide ? ' wrap--wide' : ''}">
-<a class="brand" href="${root}">${LOGO}HyperQuant<span>${esc(deskLabels())} · Hyperliquid</span></a>
+<a class="brand" href="${siteHref(root, lang)}">${LOGO}HyperQuant<span>${esc(deskLabels())} · Hyperliquid</span></a>
 <nav aria-label="${lang === 'en' ? 'Main' : 'Główna'}">${nav}${rss}${langLink}</nav>
 </div></header>
 <main class="wrap${wide ? ' wrap--wide' : ''}">
@@ -660,8 +665,8 @@ export function replayHtml(post, root) {
     : `Nagrana taśma i arkusz HyperQuant na wykresie W sesji: footprint, delta, CVD i mapa ciepła, zatrzymane w chwili publikacji (${fmtTime(post.ms)}). Odtwórz dalszy ciąg w przyspieszeniu do 60×: powtórka obejmuje 10 godzin po wpisie, w miarę jak serwer je nagrywa.`;
   return `<section class="block replay" data-until="${post.ms + REPLAY_KEEP_MS}" aria-labelledby="replay-title">
 <h2 id="replay-title">Zobacz na wykresie</h2>
-<div class="replay-on"><p>${esc(text)}</p><p class="cta"><a class="btn btn--primary" href="${esc(root + r.hash)}">Otwórz powtórkę W sesji</a></p><p class="fig-note">Nagranie jest dostępne przez 7 dni od publikacji.</p></div>
-<div class="replay-off" hidden><p>Nagranie z chwili tego wpisu minęło już 7 dni, przez które serwer je przechowuje. Ekran W sesji pokazuje rynek na żywo i powtórkę ostatniej doby.</p><p class="cta"><a class="btn btn--primary" href="${root}#charts">Otwórz W sesji</a><a class="btn" href="${root}#charts?replay=history&amp;m=BTC">Powtórka ostatniej doby</a></p></div>
+<div class="replay-on"><p>${esc(text)}</p><p class="cta"><a class="btn btn--primary" href="${esc(siteHref(root, 'pl', r.hash))}">Otwórz powtórkę W sesji</a></p><p class="fig-note">Nagranie jest dostępne przez 7 dni od publikacji.</p></div>
+<div class="replay-off" hidden><p>Nagranie z chwili tego wpisu minęło już 7 dni, przez które serwer je przechowuje. Ekran W sesji pokazuje rynek na żywo i powtórkę ostatniej doby.</p><p class="cta"><a class="btn btn--primary" href="${siteHref(root, 'pl', '#charts')}">Otwórz W sesji</a><a class="btn" href="${esc(siteHref(root, 'pl', '#charts?replay=history&m=BTC'))}">Powtórka ostatniej doby</a></p></div>
 </section>`;
 }
 

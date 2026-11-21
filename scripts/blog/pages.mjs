@@ -4,7 +4,7 @@
 import { en } from '../../src/lessons/content/en.ts';
 import { pl } from '../../src/lessons/content/pl.ts';
 import { EXERCISES } from '../../src/lessons/exercises.ts';
-import { esc, layout } from './render.mjs';
+import { esc, layout, siteHref } from './render.mjs';
 import { RESULTS_PATHS, resultsPage } from './results.mjs';
 import { NEWS_PATHS, whatsNewPage } from './whatsnew.mjs';
 
@@ -50,11 +50,6 @@ const T = {
     figureNote: 'Rycina z prawdziwego wycinka rynku, ćwiczenia i przycisk otwierający układ wykresu są w zakładce Lekcje.',
     prev: 'Poprzednie hasło',
     next: 'Następne hasło',
-    desk: {
-      section: 'Desk',
-      title: 'Darmowy desk do day tradingu BTC na Hyperliquid',
-      subtitle: 'Wykresy orderflow na żywo, lekcje na prawdziwych dniach i analizy BTC',
-    },
     chartsPage: {
       title: 'Wykresy orderflow BTC na żywo: footprint, delta, CVD · HyperQuant',
       h1: 'Wykresy orderflow BTC na żywo',
@@ -244,11 +239,11 @@ function chartsPage(site, lang) {
 <p class="eyebrow"><span>${esc(t.charts)}</span></p>
 <h1>${esc(c.h1)}</h1>
 <p class="lead">${esc(c.lead)}</p>
-<p class="cta"><a class="btn btn--primary" href="${root}#charts">${esc(t.openCharts)}</a><a class="btn" href="${root}#charts?replay=history&amp;m=BTC&amp;station=cockpit">${esc(c.replay)}</a></p>
+<p class="cta"><a class="btn btn--primary" href="${siteHref(root, lang, '#charts')}">${esc(t.openCharts)}</a><a class="btn" href="${esc(siteHref(root, lang, '#charts?replay=history&m=BTC&station=cockpit'))}">${esc(c.replay)}</a></p>
 ${shotFigure(root, 'charts', lang, c.shotAlt, c.caption)}
 <section class="block"><h2>${esc(c.featuresTitle)}</h2><ul class="features">${c.features.map(([h, p]) => `<li><h3>${esc(h)}</h3><p>${esc(p)}</p></li>`).join('')}</ul></section>
 <section class="block"><h2>${esc(c.principlesTitle)}</h2><p>${esc(c.principles)}</p></section>
-<p class="cta"><a class="btn btn--primary" href="${root}#charts">${esc(t.openCharts)}</a></p>
+<p class="cta"><a class="btn btn--primary" href="${siteHref(root, lang, '#charts')}">${esc(t.openCharts)}</a></p>
 <ul class="more">${more}</ul>
 </article>`;
   return {
@@ -302,7 +297,7 @@ function lessonsPage(site, lang) {
   const alternates = alternatesOf(site, (l) => PATHS.lessons[l]);
   const exercises = EXERCISES.map((e) => {
     const x = L.exercises[e.id];
-    return `<li><a href="${root}#lessons?ex=${e.id}"><span class="card-meta">${esc(x.when)} · ${esc(L.ui.level(e.level))}</span><span class="card-title">${esc(x.title)}</span><span class="card-text">${esc(x.tagline)}</span></a></li>`;
+    return `<li><a href="${siteHref(root, lang, `#lessons?ex=${e.id}`)}"><span class="card-meta">${esc(x.when)} · ${esc(L.ui.level(e.level))}</span><span class="card-title">${esc(x.title)}</span><span class="card-text">${esc(x.tagline)}</span></a></li>`;
   }).join('');
   const groups = Object.entries(L.atlas.groups)
     .map(([g, name]) => {
@@ -313,19 +308,19 @@ function lessonsPage(site, lang) {
       return `<h3>${esc(name)}</h3><ul class="cards cards--atlas">${items}</ul>`;
     })
     .join('');
-  const tab = (id) => `<p class="tab-link"><a href="${root}#lessons?tab=${id}">${esc(c.openTab)}</a></p>`;
+  const tab = (id) => `<p class="tab-link"><a href="${siteHref(root, lang, `#lessons?tab=${id}`)}">${esc(c.openTab)}</a></p>`;
   const main = `<article class="page page--lessons">
 <p class="eyebrow"><span>${esc(t.lessons)}</span></p>
 <h1>${esc(c.h1)}</h1>
 <p class="lead">${esc(L.ui.lead)}</p>
-<p class="cta"><a class="btn btn--primary" href="${root}#lessons">${esc(c.start)}</a><a class="btn" href="#atlas">${esc(t.atlas)}</a></p>
+<p class="cta"><a class="btn btn--primary" href="${siteHref(root, lang, '#lessons')}">${esc(c.start)}</a><a class="btn" href="#atlas">${esc(t.atlas)}</a></p>
 ${shotFigure(root, 'lessons', lang, c.shotAlt, c.caption)}
 <section class="block"><h2>${esc(c.exercisesTitle)}</h2><p>${esc(L.ui.exercisesIntro)}</p><ol class="cards">${exercises}</ol></section>
 <section class="block" id="atlas"><h2>${esc(c.atlasTitle)}</h2><p>${esc(L.atlas.intro)}</p>${groups}</section>
 <section class="block"><h2>${esc(c.combineTitle)}</h2><p>${esc(L.combine.intro)}</p><ol class="questions">${L.combine.questions.map((q) => `<li><b>${esc(q.q)}</b> ${esc(q.tools)}</li>`).join('')}</ol>${tab('combine')}</section>
 <section class="block"><h2>${esc(c.mythsTitle)}</h2><p>${esc(L.myths.intro)}</p>${tab('myths')}</section>
 <section class="block"><h2>${esc(c.riskTitle)}</h2><p>${esc(L.risk.intro)}</p>${tab('risk')}</section>
-<p class="cta"><a class="btn btn--primary" href="${root}#lessons">${esc(c.start)}</a><a class="btn" href="${root}${PATHS.charts[lang]}">${esc(t.charts)}</a></p>
+<p class="cta"><a class="btn btn--primary" href="${siteHref(root, lang, '#lessons')}">${esc(c.start)}</a><a class="btn" href="${root}${PATHS.charts[lang]}">${esc(t.charts)}</a></p>
 </article>`;
   return {
     path,
@@ -385,7 +380,7 @@ function atlasPage(site, lang, entry, prev, next) {
 <h2>${esc(lb.where)}</h2><p>${esc(entry.where)}</p>
 </div>
 ${entry.figure ? `<p class="fig-note">${esc(t.figureNote)}</p>` : ''}
-<p class="cta"><a class="btn btn--primary" href="${root}#lessons?tab=atlas&amp;id=${entry.id}">${esc(t.openInLessons)}</a><a class="btn" href="${root}#charts">${esc(t.openCharts)}</a></p>
+<p class="cta"><a class="btn btn--primary" href="${esc(siteHref(root, lang, `#lessons?tab=atlas&id=${entry.id}`))}">${esc(t.openInLessons)}</a><a class="btn" href="${siteHref(root, lang, '#charts')}">${esc(t.openCharts)}</a></p>
 </article>
 <nav class="pager" aria-label="${esc(t.atlas)}">${pager}</nav>`;
   const description = clip(`${entry.what} ${entry.how}`);
@@ -481,7 +476,7 @@ export function sitePages(site, { results = {}, news = {} } = {}) {
     entries.forEach((e, i) => out.push(atlasPage(site, lang, e, entries[i - 1], entries[i + 1])));
   }
   out.push(notFoundPage(site));
-  out.push({ path: '', lang: 'pl', card: { ...T.pl.desk, shot: { kind: 'charts', lang: 'pl' }, foot: [site.url.replace(/^https?:\/\//, ''), T.pl.cardFoot] } });
+  out.push({ path: '', lang: 'en', card: { ...T.en.desk, shot: { kind: 'charts', lang: 'en' }, foot: [site.url.replace(/^https?:\/\//, ''), T.en.cardFoot] } });
   return out;
 }
 
