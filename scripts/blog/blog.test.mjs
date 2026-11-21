@@ -326,6 +326,36 @@ function writePost(dir, id, data, body) {
 }
 
 describe('blog: budowanie', () => {
+  it('publikuje tylko angielskie wpisy produktowe i zachowuje dane map', async () => {
+    const content = mkdtempSync(path.join(tmpdir(), 'hq-blog-'));
+    const out = mkdtempSync(path.join(tmpdir(), 'hq-dist-'));
+    const productId = '2026-10-24-order-flow-guide';
+    writePost(content, ID, BASE, BODY_ARTICLE);
+    writePost(content, productId, {
+      title: 'How to read the HyperQuant trade tape',
+      description: 'Use the HyperQuant trade tape to inspect executions and filter them by trade size.',
+      date: BASE.date,
+      type: 'note',
+      section: 'Guides',
+      language: 'en',
+      topic: 'hyperquant',
+    }, 'Open Order Flow and select the market. Use the trade tape filters to inspect executions by size and side.');
+
+    const count = await buildBlog({ contentDir: content, outDir: out, site: SITE, pages: false, now: Date.parse(BASE.date), productBlog: true });
+    const blog = path.join(out, 'blog');
+    expect(count).toBe(1);
+    expect(existsSync(path.join(blog, ID))).toBe(false);
+    expect(existsSync(path.join(blog, 'archiwum'))).toBe(false);
+    expect(readFileSync(path.join(blog, productId, 'index.html'), 'utf8')).toContain('<html lang="en">');
+    const feed = readFileSync(path.join(blog, 'feed.xml'), 'utf8');
+    expect(feed).toContain('<language>en</language>');
+    expect(feed).not.toContain(ID);
+    const sitemap = readFileSync(path.join(out, 'sitemap.xml'), 'utf8');
+    expect(sitemap).toContain(productId);
+    expect(sitemap).not.toContain(ID);
+    expect(JSON.parse(readFileSync(path.join(blog, 'maps.json'), 'utf8')).maps[0].id).toBe(ID);
+  });
+
   it('buduje strony, kanał, sitemap i obrazki; szkice pomija; media wpisu obok strony', async () => {
     const content = mkdtempSync(path.join(tmpdir(), 'hq-blog-'));
     const out = mkdtempSync(path.join(tmpdir(), 'hq-dist-'));
@@ -464,7 +494,7 @@ describe('strony serwisu: Wykresy, Lekcje, atlas, 404', () => {
     const en = byPath.get('en/lessons/atlas/cvd/').html;
     expect(en).toContain('<html lang="en">');
     expect(en).toContain('<a class="nav-lang" href="https://example.org/HQ/lekcje/atlas/cvd/" hreflang="pl" lang="pl">PL</a>');
-    expect(en).toContain('<a class="nav-blog" href="../../../../blog/">Blog (PL)</a>');
+    expect(en).toContain('<a class="nav-blog" href="../../../../blog/">Blog</a>');
     // Hasło atlasu: „Lessons” prowadzi do strony Lekcji, nie do tego hasła — dział bez aria-current
     expect(en).toContain('<a class="nav-before" href="../../../../?lang=en#before">Pre-session</a><a class="nav-charts" href="../../../../?lang=en#charts">In session</a><a class="nav-after" href="../../../../?lang=en#after">Post-session</a><a class="nav-markets" href="../../../../?lang=en#markets">Markets</a><a class="nav-lessons is-section" href="../../../../en/lessons/">Lessons</a>');
     // aria-current tylko na linku do bieżącego dokumentu (strona Lekcji, strona bloga)
@@ -519,7 +549,7 @@ describe('strony serwisu: Wykresy, Lekcje, atlas, 404', () => {
     const main = html.slice(html.indexOf('<article class="page page--404">'), html.indexOf('</article>'));
     expect(main).toMatch(/^<article class="page page--404">\n<h1>Page not found<\/h1>/);
     expect(main.indexOf('<p lang="pl">')).toBeGreaterThan(main.indexOf('<ul class="more">'));
-    expect(main).toContain('Blog (in Polish)');
+    expect(main).toContain('Blog');
   });
 
   it('mapa strony: strony z wersjami językowymi, bez 404', () => {

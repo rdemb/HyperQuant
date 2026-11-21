@@ -12,7 +12,7 @@ export const TYPES = ['article', 'note'];
 /** Nazwa pliku (bez .md) = adres wpisu: data publikacji (czas polski) + krótki opis. */
 const ID_RE = /^(\d{4}-\d{2}-\d{2})-[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?(?:Z|[+-]\d{2}:\d{2})$/;
-const KNOWN_KEYS = new Set(['title', 'description', 'date', 'type', 'section', 'price', 'summary', 'metrics', 'levels', 'liquidations', 'flows', 'scenarios', 'setups', 'draft']);
+const KNOWN_KEYS = new Set(['title', 'description', 'date', 'type', 'section', 'price', 'summary', 'metrics', 'levels', 'liquidations', 'flows', 'scenarios', 'setups', 'draft', 'language', 'topic']);
 const LEVEL_KEYS = new Set(['label', 'price', 'note']);
 const SCENARIO_KEYS = new Set(['label', 'probability', 'note']);
 const METRIC_KEYS = new Set(['label', 'value', 'note', 'bias']);
@@ -107,6 +107,12 @@ export function validatePost(id, data, body, charts = null) {
     ms = Date.parse(data.date);
     if (!Number.isFinite(ms)) err('date: niepoprawna data');
     else if (idMatch && localDate(ms) !== idMatch[1]) err(`date: dzień w czasie polskim (${localDate(ms)}) różni się od prefiksu nazwy pliku (${idMatch[1]})`);
+  }
+
+  if (data.language !== undefined || data.topic !== undefined) {
+    if (data.language !== 'en' || data.topic !== 'hyperquant') err('Wpis produktowy wymaga language: en i topic: hyperquant');
+    const marketFields = ['price', 'metrics', 'levels', 'liquidations', 'flows', 'scenarios', 'setups'];
+    if (marketFields.some((field) => data[field] !== undefined)) err('Wpis produktowy nie może zawierać bloków analizy rynku');
   }
 
   if (data.price !== undefined && !(isNum(data.price) && data.price > 0)) err('price: liczba dodatnia');
@@ -288,6 +294,7 @@ export function validatePost(id, data, body, charts = null) {
       ms,
       type: data.type,
       section: data.section.trim(),
+      product: data.language === 'en' && data.topic === 'hyperquant',
       price: data.price ?? null,
       summary: summary.map((t) => t.trim()),
       metrics: metrics.map((m) => ({ label: m.label.trim(), value: m.value.trim(), note: trimOrNull(m.note), bias: m.bias ?? null })),

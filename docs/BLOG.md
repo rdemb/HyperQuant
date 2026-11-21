@@ -1,10 +1,8 @@
-# Blog: post format and publishing
+# HyperQuant Blog
 
-The blog is a set of static pages built together with the desk (`npm run build`): a list of posts grouped by day, a page for every post,
-a monthly archive, an RSS feed (`blog/feed.xml`), `sitemap.xml`, a link-preview image (Open Graph / X, 1200×630) for every post
-and share buttons under the title and under the body of each post (X, Facebook, LinkedIn, Telegram, WhatsApp, copy link, the system share sheet on phones).
-A full analysis can have a „W skrócie” (In brief) box, a data panel, a liquidation map, flows and conditional scenarios, placed at chosen points in the body.
-Code: `scripts/blog/`, posts: `content/blog/`. Posts are written in Polish, so the examples below are in Polish too.
+The public blog covers HyperQuant product updates and guides in English. Add reviewed Markdown posts to `content/blog/` with `language: en` and `topic: hyperquant`. Use an English title, description, section and body. The build publishes qualifying posts and their media to `/blog/`, the English RSS feed and the sitemap. Market analysis fields are not allowed in product posts.
+
+The historical Polish files remain in source control for the chart map data and reference. They have no public blog pages and do not appear in the blog index, feed or sitemap. Material imported from the data repository is also excluded from the public blog. The legacy format below describes those historical inputs.
 
 ## File
 
