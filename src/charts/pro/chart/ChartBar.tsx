@@ -59,6 +59,7 @@ export const LayersMenu: React.FC<{
       width="w-72"
       // Telefon: przycisk przypięty przy prawej krawędzi — panel od jego prawej krawędzi
       align={compact ? 'right' : 'left'}
+      caret={!compact}
       label={
         <>
           <Layers aria-hidden="true" className="w-4 h-4 shrink-0" />

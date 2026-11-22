@@ -1,0 +1,166 @@
+/* Oprawa Przekroju poza płótnem, wspólna dla sesji, układów i powtórki. */
+:root {
+  --chart-chrome-bg: #19162a;
+  --chart-chrome-edge: #4c4268;
+  --chart-chrome-top: #29223f;
+  --chart-chrome-control: #211b33;
+  --chart-chrome-active: #382d52;
+  --chart-chrome-text: #f0edf7;
+  --chart-chrome-muted: #c1b9d3;
+  --chart-chrome-accent: #deff71;
+  --chart-chrome-scheme: dark;
+  --chart-chrome-buy: #82bcfc;
+  --chart-chrome-sell: #f68771;
+  --chart-chrome-warn: #fab219;
+}
+
+:root[data-theme='light'] {
+  --chart-chrome-bg: #f6f3fb;
+  --chart-chrome-edge: #b4aac7;
+  --chart-chrome-top: #fdfbff;
+  --chart-chrome-control: #ede7f6;
+  --chart-chrome-active: #e3daef;
+  --chart-chrome-text: #20192e;
+  --chart-chrome-muted: #534963;
+  --chart-chrome-accent: #4d5d04;
+  --chart-chrome-scheme: light;
+  --chart-chrome-buy: #1d5fb0;
+  --chart-chrome-sell: #a93225;
+  --chart-chrome-warn: #8a5a00;
+}
+
+[data-chart-card]:not([data-focus]) {
+  border-color: var(--chart-chrome-edge);
+  border-radius: 16px;
+}
+
+[data-chart-bar],
+[data-chart-replay],
+[data-chart-status],
+[data-chart-card] .hq-chart-draw-tools,
+[data-chart-flow-column] [data-chart-flow-head],
+[data-chart-flow-column] [data-hip3-flow] > header {
+  --color-page: var(--chart-chrome-bg);
+  --color-surface-1: var(--chart-chrome-bg);
+  --color-surface-2: var(--chart-chrome-control);
+  --color-surface-3: var(--chart-chrome-active);
+  --color-line: var(--chart-chrome-edge);
+  --color-line-strong: var(--chart-chrome-edge);
+  --color-ink-1: var(--chart-chrome-text);
+  --color-ink-2: var(--chart-chrome-muted);
+  --color-ink-3: var(--chart-chrome-muted);
+  --color-accent: var(--chart-chrome-accent);
+  --color-buy-ink: var(--chart-chrome-buy);
+  --color-sell-ink: var(--chart-chrome-sell);
+  --color-warn: var(--chart-chrome-warn);
+  color-scheme: var(--chart-chrome-scheme);
+  color: var(--chart-chrome-text);
+  background: var(--chart-chrome-bg);
+}
+
+[data-chart-bar] {
+  border-radius: 15px 15px 0 0;
+  background: linear-gradient(180deg, var(--chart-chrome-top), var(--chart-chrome-bg));
+  box-shadow: inset 0 1px 0 color-mix(in oklab, var(--chart-chrome-text) 12%, transparent);
+  border-bottom-color: var(--chart-chrome-edge);
+}
+
+[data-chart-bar] :is(button[aria-haspopup], button[aria-expanded]:not([aria-haspopup]), select),
+[data-chart-replay] :is(button, select) {
+  border-radius: 10px;
+}
+
+[data-chart-bar] :is(button[aria-haspopup], select) {
+  background-color: var(--chart-chrome-control);
+  border-color: var(--chart-chrome-edge);
+  color: var(--chart-chrome-text);
+}
+
+[data-chart-bar] button[aria-expanded='true'],
+[data-chart-bar] button[aria-pressed='true'],
+[data-chart-card] .hq-chart-draw-tools button[aria-pressed='true'] {
+  background-color: var(--chart-chrome-active);
+  box-shadow: inset 0 -2px var(--chart-chrome-accent);
+}
+
+[data-chart-bar] [role='menu'] {
+  border-radius: 14px;
+  background: var(--chart-chrome-bg);
+  border-color: var(--chart-chrome-edge);
+}
+
+[data-chart-bar] :is(button, select):focus-visible,
+[data-chart-replay] :is(button, select, input):focus-visible {
+  outline: 2px solid var(--chart-chrome-accent);
+  outline-offset: -2px;
+}
+
+[data-chart-tabs] {
+  border-top: 1px solid var(--chart-chrome-edge);
+}
+
+[data-chart-tabs] [role='tab'] {
+  border: 0;
+  border-radius: 0;
+  color: var(--chart-chrome-muted);
+}
+
+[data-chart-tabs] [aria-selected='true'] {
+  background: var(--chart-chrome-active);
+  color: var(--chart-chrome-text);
+  box-shadow: inset 0 -2px var(--chart-chrome-accent);
+}
+
+[data-chart-bar='phone'] .hq-chart-layout-select { max-width: 92px; }
+[data-chart-bar='phone'] [data-chart-market-select] { max-width: 76px; }
+
+[data-chart-bar='phone'] :is(.hq-chart-layout-select, .hq-chart-interval-select, [data-chart-market-select]) {
+  padding-inline: 8px 19px;
+}
+
+[data-chart-bar='phone'] .hq-chart-interval-select { max-width: 50px; }
+
+[data-chart-status] {
+  border-radius: 0 0 15px 15px;
+}
+
+[data-chart-flow-column] {
+  border-radius: 14px;
+  box-shadow: inset 0 0 0 1px var(--chart-chrome-edge);
+}
+
+[data-app-shell] [data-chart-navigation] {
+  background: var(--chart-chrome-bg);
+  border-top-color: var(--chart-chrome-edge);
+}
+
+[data-chart-navigation] > div > .grid {
+  margin-inline: 5px;
+}
+
+[data-chart-navigation] [aria-current='page'] {
+  border-radius: 12px 12px 0 0;
+  background: var(--chart-chrome-active);
+}
+
+[data-chart-navigation] [aria-current='page'] > span:first-child {
+  background: var(--chart-chrome-accent);
+}
+
+@media (min-width: 380px) {
+  body:has([data-shell-view='charts']) [data-dok-launcher] {
+    visibility: hidden;
+  }
+
+  body:has([data-shell-view='charts']) [data-dok]:not(:has([data-wyspa-flash])) {
+    pointer-events: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :is([data-chart-bar], [data-chart-replay], [data-chart-navigation]) :is(button, select, button svg) { transition: none; }
+}
+
+html[data-motion='reduced'] :is([data-chart-bar], [data-chart-replay], [data-chart-navigation]) :is(button, select, button svg) {
+  transition: none;
+}

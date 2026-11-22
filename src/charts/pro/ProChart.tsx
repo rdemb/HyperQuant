@@ -1016,8 +1016,9 @@ export const ProChart: React.FC<{
 
   const chartCard = (
     <div
-      // Karta wykresu jest zawsze ciemna (paleta „Głębia”), także w motywie jasnym strony
+      // Pole rysowania ma zakres ciemnego motywu. Kontrolki korzystają z oprawy Przekroju.
       data-theme="dark"
+      data-chart-card
       data-focus={chartOnly ? (landscape ? 'landscape' : 'focus') : undefined}
       // Bez overflow-hidden na karcie: listy paska wychodzą poza kartę (niski wykres w układzie 2 i 4, telefon); przycina
       // samo pole wykresu
@@ -1039,7 +1040,7 @@ export const ProChart: React.FC<{
       {/* Pasek wykresu (komputer): jeden rząd list rozwijanych — układ, rynek, interwał, rodzaj, warstwy; z prawej liczby
           układu, „Stan”, przełączniki miejsca pracy, alarmy i „⋯” z resztą narzędzi */}
       {!narrow && (
-        <div data-chart-bar className="@container flex flex-wrap min-[900px]:flex-nowrap items-center gap-1.5 px-2 py-1 border-b border-line min-h-11">
+        <div data-chart-bar="desk" aria-label={tr('Narzędzia wykresu', 'Chart tools')} role="group" className="@container flex flex-wrap min-[900px]:flex-nowrap items-center gap-1.5 px-2 py-1 border-b border-line min-h-11">
           {barLead}
           <MarketPicker value={settings.coin} markets={appMarkets(markets.markets)} onChange={setCoin} />
           {/* Ulubione interwały jako przyciski tylko w bardzo szerokim pasku (szerokość karty wykresu, nie okna: dwa wykresy
@@ -1119,60 +1120,60 @@ export const ProChart: React.FC<{
         </div>
       )}
 
-      {/* Telefon: jeden rząd przewijany w bok — karta układu, rynek, interwał, rodzaj, karty Wykres / Taśma / DOM / Liczby
-          i „Stan”; przypięte z prawej „Warstwy” i „⋯” (wskaźniki, alarmy, ustawienia, liczby układu i reszta narzędzi).
-          W trybie skupienia i poziomo pasek znika (zostaje sam wykres). */}
+      {/* Telefon: przewijane parametry i przypięte menu, pod nimi stale dostępne karty widoku. */}
       {narrow && !chartOnly && (
-        <div data-chart-bar className="flex items-center gap-1 px-1.5 py-1 border-b border-line shrink-0">
-          {/* Przewijany w bok: krawędź, za którą są jeszcze listy, wygasa (scrollFadeRef) */}
-          <div ref={scrollFadeRef} className="hq-fade-x flex flex-1 items-center gap-1 min-w-0 overflow-x-auto [scrollbar-width:none]">
-            {phoneTabs && (
-              <PhoneSelect<string> ariaLabel={tr('Karta układu', 'Layout tab')} value={phoneTabs.value} options={phoneTabs.options} onChange={phoneTabs.onChange} className="max-w-[7.5rem] truncate" />
-            )}
-            <PhoneMarketSelect value={settings.coin} markets={appMarkets(markets.markets)} onChange={setCoin} />
-            <PhoneSelect<string> ariaLabel={tr('Interwał wykresu', 'Chart timeframe')} value={settings.interval} options={INTERVAL_OPTIONS} onChange={(v) => update({ interval: v })} />
-            <PhoneSelect<string>
-              ariaLabel={tr('Rodzaj wykresu', 'Chart type')}
-              value={kindOf(settings.view, settings.fpStyle)}
-              options={KIND_OPTIONS.map((k) => ({ value: k.value, label: k.short }))}
-              onChange={(v) => update(kindPatch(v as ChartKind))}
-            />
-            <div role="tablist" aria-label={tr('Widok wykresu', 'Chart view')} className="shrink-0 flex items-center gap-0.5">
-              {PHONE_TABS.map((t) => (
+        <div data-chart-bar="phone" className="shrink-0 border-b border-line">
+          <div className="flex items-center gap-1 px-1.5 py-1">
+            {/* Przewijany w bok: krawędź, za którą są jeszcze listy, wygasa (scrollFadeRef) */}
+            <div ref={scrollFadeRef} className="hq-fade-x flex flex-1 items-center gap-1 min-w-0 overflow-x-auto [scrollbar-width:none]">
+              {phoneTabs && (
+                <PhoneSelect<string> ariaLabel={tr('Karta układu', 'Layout tab')} value={phoneTabs.value} options={phoneTabs.options} onChange={phoneTabs.onChange} className="hq-chart-layout-select max-w-[7.5rem] truncate" />
+              )}
+              <PhoneMarketSelect value={settings.coin} markets={appMarkets(markets.markets)} onChange={setCoin} />
+              <PhoneSelect<string>
+                ariaLabel={tr('Rodzaj wykresu', 'Chart type')}
+                value={kindOf(settings.view, settings.fpStyle)}
+                options={KIND_OPTIONS.map((k) => ({ value: k.value, label: k.short }))}
+                onChange={(v) => update(kindPatch(v as ChartKind))}
+              />
+              {stateShown && (
                 <button
-                  key={t.id}
                   type="button"
-                  role="tab"
-                  aria-selected={tab === t.id}
-                  onClick={() => openPhoneTab(t.id)}
-                  className={`h-11 px-2.5 rounded-lg border text-xs font-medium whitespace-nowrap transition-colors duration-150 ${
-                    tab === t.id ? 'bg-surface-3 text-ink-1 border-line-strong' : 'text-ink-3 border-transparent hover:text-ink-1'
-                  }`}
+                  aria-expanded={!!settings.stateOpen}
+                  aria-controls={settings.stateOpen ? stateId : undefined}
+                  title={tr('Stan rynku: zdanie z faktów pod paskiem', 'Market state: a sentence of facts below the bar')}
+                  onClick={() => update({ stateOpen: !settings.stateOpen })}
+                  className={`${BAR_BTN} ${barBtnTone(!!settings.stateOpen)} shrink-0`}
                 >
-                  {t.label}
+                  {tr('Stan', 'State')}
                 </button>
-              ))}
+              )}
             </div>
-            {stateShown && (
-              <button
-                type="button"
-                aria-expanded={!!settings.stateOpen}
-                aria-controls={settings.stateOpen ? stateId : undefined}
-                title={tr('Stan rynku: zdanie z faktów pod paskiem', 'Market state: a sentence of facts below the bar')}
-                onClick={() => update({ stateOpen: !settings.stateOpen })}
-                className={`${BAR_BTN} ${barBtnTone(!!settings.stateOpen)} shrink-0`}
-              >
-                {tr('Stan', 'State')}
-              </button>
-            )}
+            <PhoneSelect<string> ariaLabel={tr('Interwał wykresu', 'Chart timeframe')} value={settings.interval} options={INTERVAL_OPTIONS} onChange={(v) => update({ interval: v })} className="hq-chart-interval-select" />
+            {layersMenu(true)}
+            <BarMore
+              entries={phoneEntries}
+              btnRef={moreBtnRef}
+              badge={freshAlert}
+              ariaLabel={tr('Więcej: wskaźniki, alarmy, ustawienia, liczby układu, rysowanie, skala, zrzut, link, pełny ekran', 'More: indicators, alerts, settings, layout numbers, drawing, scale, screenshot, link, full screen')}
+            />
           </div>
-          {layersMenu(true)}
-          <BarMore
-            entries={phoneEntries}
-            btnRef={moreBtnRef}
-            badge={freshAlert}
-            ariaLabel={tr('Więcej: wskaźniki, alarmy, ustawienia, liczby układu, rysowanie, skala, zrzut, link, pełny ekran', 'More: indicators, alerts, settings, layout numbers, drawing, scale, screenshot, link, full screen')}
-          />
+          <div role="tablist" aria-label={tr('Widok wykresu', 'Chart view')} data-chart-tabs className="grid grid-cols-4 px-1.5">
+            {PHONE_TABS.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                role="tab"
+                aria-selected={tab === t.id}
+                onClick={() => openPhoneTab(t.id)}
+                className={`h-11 min-w-0 px-1 rounded-lg border text-xs font-medium whitespace-nowrap transition-colors duration-150 ${
+                  tab === t.id ? 'bg-surface-3 text-ink-1 border-line-strong' : 'text-ink-3 border-transparent hover:text-ink-1'
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
@@ -1207,7 +1208,7 @@ export const ProChart: React.FC<{
 
       {/* Wykres z paskiem rysowania po lewej i taśmą zleceń po prawej (na telefonie taśma, DOM i liczby to karty) */}
       <div className="relative flex flex-1 min-h-0 overflow-hidden">
-        <DrawToolbar tools={tools} className={drawOpen && !chartOnly ? 'flex' : 'hidden'} />
+        <DrawToolbar tools={tools} className={`hq-chart-draw-tools ${drawOpen && !chartOnly ? 'flex' : 'hidden'}`} />
         <div className="relative flex-1 min-h-0 min-w-0" onContextMenu={onContextMenu}>
           {/* Własny kontekst warstw: uchwyt zmiany wysokości paneli wykresu (z-index 50) nie przykrywa pasków i okien rysunków */}
           <div ref={hostRef} className="absolute inset-0 isolate" />
@@ -2424,7 +2425,7 @@ const StatusBar: React.FC<{ store: ProStore; series: CandleSeries; needs: readon
   ].join('\n');
   return (
     // Kot poza przewijaną częścią: zawsze widoczny, a jego dymek nie jest przycinany
-    <div className={`relative flex items-center shrink-0 border-t border-line ${cat ? 'h-8' : 'h-7'}`}>
+    <div data-chart-status className={`relative flex items-center shrink-0 border-t border-line ${cat ? 'h-8' : 'h-7'}`}>
       {cat}
       {/* Legenda pokrycia poza przewijaną częścią, żeby jej okienko nie było przycinane */}
       <CoverageLegend store={store} needs={needs} narrow={narrow} />
