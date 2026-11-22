@@ -1,3 +1,4 @@
+import { mountPortal } from './shell/mountPortal';
 import { moveOut } from './shell/originMove';
 import { sluchajBledowLadowania } from './shell/preloadError';
 import { registerServiceWorker } from './shell/usePwa';
@@ -9,9 +10,9 @@ function isPortal(hash: string) {
 }
 
 const portal = isPortal(location.hash);
-window.addEventListener('hashchange', () => {
+window.addEventListener('hashchange', (event) => {
   // Zachowaj adres i historię. Zmiana dokumentu usuwa subskrypcje i arkusze poprzedniej powierzchni.
-  if (isPortal(location.hash) !== portal) location.reload();
+  if (event.newURL === location.href && isPortal(location.hash) !== portal) location.reload();
 });
 
 sluchajBledowLadowania();
@@ -19,7 +20,7 @@ if (import.meta.env.PROD) registerServiceWorker();
 void moveOut(window);
 
 if (portal) {
-  import('./shell/mountPortal').then(({ mountPortal }) => mountPortal()).catch((error: unknown) => {
+  mountPortal().catch((error: unknown) => {
     console.error('[HyperQuant] Przekrój niedostępny', error);
     import('./main');
   });
