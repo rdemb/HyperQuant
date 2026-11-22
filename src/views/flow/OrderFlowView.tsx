@@ -10,8 +10,11 @@ import { SectionHeading } from '../../ui';
 import { DASH, fmtCompact, fmtFixed } from '../../ui/format';
 import { Chronograph, type TapeExcerpt } from './Chronograph';
 import type { ChronographDemo } from './chronographHistory';
+import { conflictRepairHash, linkConflictText, questionLinkConflict, type QuestionLinkConflict } from './questionLink';
 import { CHRONOGRAPH_REPLAY_MARKET } from './chronographModel';
 import { DeltaMomentCard } from './DeltaMomentCard';
+import { LevelReading } from './LevelReading';
+import { savedLadderSettings, WorkspaceSave } from './WorkspaceSave';
 import type { DomMode } from './DomWorkspace';
 import { MomentLens } from './MomentLens';
 import { readDeltaMoment, type DeltaMoment } from './deltaMoment';
@@ -23,17 +26,26 @@ import {
 } from './orderFlowDesk';
 import './orderFlowView.css';
 
-type Workspace = 'live' | 'memory' | ChronographDemo;
+type Workspace = 'live' | 'memory' | ChronographDemo | 'archive';
 
 const ChronographReplay = lazy(() => import('./ChronographReplay'));
+const ArchiveHourView = lazy(() => import('./ArchiveHourView'));
+const VenueBasket = lazy(() => import('./VenueBasket'));
+const DeltaBoundsExample = lazy(() => import('./DeltaBoundsExample'));
 const readHash = () => deskMarketFromHash(window.location.hash);
+
+function workspaceFromHash(hash: string, coin: string): Workspace {
+  if (coin !== CHRONOGRAPH_REPLAY_MARKET || questionLinkConflict(hash)) return 'live';
+  const w = new URLSearchParams(hash.split('?', 2)[1]).get('w');
+  return w === 'level' || w === 'flip' || w === 'archive' ? w : 'live';
+}
 const dollars = (v: number | null | undefined) => v == null ? DASH : `${fmtCompact(v)} USD`;
 
 const clock = new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 const timeLabel = (time: number) => Number.isFinite(time) ? clock.format(time) : DASH;
 const exactTime = (time: number | null) => time === null ? DASH : `${timeLabel(time)}${tr(',', '.')}${String(time % 1000).padStart(3, '0')}`;
-function PinnedRead({ focus, store, clearFocus, refresh, actions }: {
-  focus: PinnedLevel; store: ProStore; clearFocus: () => void; refresh: () => void; actions: ReactNode;
+function PinnedRead({ focus, store, clearFocus, refresh, actions, reading }: {
+  focus: PinnedLevel; store: ProStore; clearFocus: () => void; refresh: () => void; actions: ReactNode; reading?: ReactNode;
 }) {
   const max = Math.max(1, focus.before ?? 0, focus.after ?? 0);
   const depth = (usd: number | null, time: number | null) => usd !== null ? dollars(usd)
@@ -52,6 +64,7 @@ function PinnedRead({ focus, store, clearFocus, refresh, actions }: {
         <div><dt>{executionLabel}</dt><dd>{focus.executions ? dollars(focus.executions.usd) : DASH}</dd></div>
         <div><dt>{tr('Na końcu', 'After')}</dt><dd>{depth(focus.after, focus.through)}</dd></div>
       </dl>
+      {reading}
       {focus.before !== null && focus.after !== null && (
         <div className="of-depth-compare" aria-hidden="true">
           <span style={{ width: `${100 * focus.after / max}%` }} />
@@ -82,9 +95,27 @@ function FlowMarket({ coin, pro, momentOpen, closeMoment, mode, setMode }: {
   const through = Math.floor(now / 1_000) * 1_000 + 1;
   const market = deskMarketOf(coin);
   const sizeDecimals = store.szDecimals ?? market?.szDecimals ?? 0;
-  const [workspace, setWorkspace] = useState<Workspace>('live');
+  // Link do powtórki (#orderflow?m=BTC&w=level…): otwiera ten sam widok po przeładowaniu; bez parametru jak dotąd „live”
+  // Adres z kotwicą pytania: rynek i widok porównane z kotwicą przed normalizacją rynku i przed wyborem danych.
+  // Przy konflikcie: jawny powód, żadnego wyniku i żadnej cichej naprawy adresu (bez replaceState).
+  const [conflict, setConflict] = useState<QuestionLinkConflict | null>(() => questionLinkConflict(window.location.hash));
+  const [workspace, setWorkspace] = useState(() => workspaceFromHash(window.location.hash, coin));
+  // Zmiana adresu bez przeładowania (wpisany albo wklejony odsyłacz): przełącz widok i otwórz pytanie z nowej kotwicy.
+  // Własne zapisy stanu robimy przez replaceState, które nie wywołuje hashchange — brak pętli.
+  const [linkKey, setLinkKey] = useState(() => new URLSearchParams(window.location.hash.split('?')[1] ?? '').get('a') ?? '');
+  useEffect(() => {
+    const onHash = () => {
+      const q = new URLSearchParams(window.location.hash.split('?')[1] ?? '');
+      setConflict(questionLinkConflict(window.location.hash));
+      setWorkspace(workspaceFromHash(window.location.hash, coin));
+      setLinkKey(q.get('a') ?? '');
+    };
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, [coin]);
   const [mountedMemory, setMountedMemory] = useState(false);
-  const [focus, setFocus] = useState<PinnedLevel | null>(null);
+  const [ladder, setLadder] = useState(() => savedLadderSettings(coin));
+  const [focus, setFocus] = useState<(PinnedLevel & { frame: typeof frame; fresh: boolean }) | null>(null);
   const [showPinnedTrades, setShowPinnedTrades] = useState(false);
   const pinnedTradesButton = useRef<HTMLButtonElement>(null);
   const [pin, setPin] = useState<{ to: number; sizeDecimals: number } | null>(null);
@@ -115,7 +146,10 @@ function FlowMarket({ coin, pro, momentOpen, closeMoment, mode, setMode }: {
   const readLevel = (price: number, side: BookSide) => {
     const anchor = frame && bookFresh ? frame.t - PIN_MIN_MS : null;
     const earlier = anchor === null ? null : history?.range(anchor, anchor + 1).at(-1) ?? null;
-    return captureLevel({ price, side, current: frame, previous: earlier, bookCoverage: store.bookCoverage, tape: store.tape, tapeCoverage: store.coverage });
+    return {
+      ...captureLevel({ price, side, current: frame, previous: earlier, bookCoverage: store.bookCoverage, tape: store.tape, tapeCoverage: store.coverage }),
+      frame, fresh: bookFresh,
+    };
   };
   const excerpt: TapeExcerpt | undefined = useMemo(() => pro && showPinnedTrades && focus?.executions ? {
     rows: focus.executions.rows,
@@ -151,7 +185,21 @@ function FlowMarket({ coin, pro, momentOpen, closeMoment, mode, setMode }: {
   if (coin === CHRONOGRAPH_REPLAY_MARKET) choices.push(
     ['flip', tr('Powtórka zmiany delty', 'Delta flip replay')],
     ['level', tr('Próba poziomu', 'Level test')],
+    ['archive', tr('Nagranie 08 UTC', '08 UTC recording')],
   );
+  if (conflict) {
+    const repair = conflictRepairHash(window.location.hash, conflict);
+    return <div data-of-market={coin}>
+      <section className="oc-link-conflict" role="alert" aria-labelledby="oc-link-conflict-h" data-oc-link-conflict={conflict.reason}>
+        <h3 id="oc-link-conflict-h">{tr('Link do pytania nie pasuje do adresu', 'The question link does not match the address')}</h3>
+        <p>{linkConflictText(conflict)}</p>
+        <div className="oc-link-conflict-actions">
+          {repair && <a className="oc-question-trade" href={repair}>{tr('Otwórz pytanie na rynku z linku (BTC)', 'Open the question on the linked market (BTC)')}</a>}
+          <a href={`#orderflow?m=${encodeURIComponent(coin)}`}>{tr(`Order Flow ${market?.label ?? coin} na żywo, bez pytania`, `Live Order Flow ${market?.label ?? coin}, without the question`)}</a>
+        </div>
+      </section>
+    </div>;
+  }
   return (
     <div data-of-market={coin}>
       <div className="oc-switch" role="group" aria-label={tr('Widok Order Flow', 'Order Flow workspace')}>
@@ -159,11 +207,17 @@ function FlowMarket({ coin, pro, momentOpen, closeMoment, mode, setMode }: {
           aria-pressed={workspace === value} onClick={() => {
             if (value === 'memory') setMountedMemory(true);
             setWorkspace(value);
+            const next = `#orderflow?m=${encodeURIComponent(coin)}` + (value === 'flip' || value === 'level' || value === 'archive' ? `&w=${value}` : '');
+            if (window.location.hash !== next) window.history.replaceState(window.history.state, '', next);
           }}>{label}</button>)}
       </div>
       <div hidden={workspace !== 'live'}>
         {status}
-        <Chronograph source={{ tape: store.tape, coverage: store.coverage, through, book: frame, previous, bookCoverage: store.bookCoverage,
+        <WorkspaceSave coin={coin} settings={ladder} apply={setLadder} />
+        <Chronograph ladderSettings={ladder}
+          onMinimumChange={value => setLadder(prev => ({ ...prev, tapeMinimumUsd: value }))}
+          onDepthChange={value => setLadder(prev => ({ ...prev, bookDepth: value }))}
+          source={{ tape: store.tape, coverage: store.coverage, through, book: frame, previous, bookCoverage: store.bookCoverage,
           bookAge, bookFresh, unit: coin.split(':').at(-1) ?? coin, fmtPx: px => store.fmtPx(px), sizeDecimals }}
           onPickBook={(px, side) => {
             if (pro) {
@@ -178,6 +232,8 @@ function FlowMarket({ coin, pro, momentOpen, closeMoment, mode, setMode }: {
           </button>}
           trial={pro && focus && <PinnedRead focus={focus} store={store} clearFocus={() => { setFocus(null); setShowPinnedTrades(false); }}
             refresh={() => setFocus(readLevel(focus.price, focus.side))}
+            reading={<LevelReading frame={focus.frame} side={focus.side} price={focus.price} unit={coin.split(':').at(-1) ?? coin}
+              sizeDecimals={sizeDecimals} fresh={focus.fresh} fmtPx={px => store.fmtPx(px)} />}
             actions={focus.executions && <button ref={pinnedTradesButton} type="button" aria-pressed={!!excerpt}
               onClick={() => setShowPinnedTrades(value => !value)}>{tr('Zobacz przypięte wykonania', 'View pinned trades')}</button>} />} />
         {pinned && <DeltaMomentCard to={pinned.to} readout={capture?.pin === pinned ? capture.result : null} store={store}
@@ -187,7 +243,12 @@ function FlowMarket({ coin, pro, momentOpen, closeMoment, mode, setMode }: {
         <MomentLens store={store} close={closeMoment} expanded={false} status={status} mode={mode} setMode={setMode} />
       </div>}
       {(workspace === 'flip' || workspace === 'level') && <Suspense fallback={<p className="of-empty">{tr('Wczytuję nagranie…', 'Loading recording…')}</p>}>
-        <ChronographReplay key={workspace} kind={workspace} />
+        <ChronographReplay key={`${workspace}:${linkKey}`} kind={workspace} />
+      </Suspense>}
+      {workspace === 'archive' && <Suspense fallback={<p className="of-empty">{tr('Wczytuję nagranie…', 'Loading recording…')}</p>}>
+        <ArchiveHourView />
+        <VenueBasket />
+        <DeltaBoundsExample />
       </Suspense>}
       {momentOpen && <MomentLens store={store} close={closeMoment} expanded status={status} mode={mode} setMode={setMode} />}
     </div>

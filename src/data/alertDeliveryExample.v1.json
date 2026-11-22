@@ -1,0 +1,74 @@
+{
+  "v": 1,
+  "source": "simulated-journal",
+  "cases": [
+    {
+      "kind": "observed",
+      "detection": {
+        "id": "sim-accepted",
+        "ruleRevision": "sim-rule-v1",
+        "geometryRevision": "sim-geometry-v1",
+        "observationRevision": "sim-observation-v1",
+        "at": 1795332060000
+      },
+      "attempts": [
+        {
+          "attempt": 1,
+          "at": 1795332061000,
+          "status": 429,
+          "outcome": "retry"
+        },
+        {
+          "attempt": 2,
+          "at": 1795332062000,
+          "status": 202,
+          "outcome": "accepted-by-service"
+        }
+      ],
+      "acknowledgedAt": null,
+      "pending": null
+    },
+    {
+      "kind": "observed",
+      "detection": {
+        "id": "sim-acknowledged",
+        "ruleRevision": "sim-rule-v1",
+        "geometryRevision": "sim-geometry-v1",
+        "observationRevision": "sim-observation-v1",
+        "at": 1795332060000
+      },
+      "attempts": [
+        {
+          "attempt": 1,
+          "at": 1795332061000,
+          "status": 429,
+          "outcome": "retry"
+        },
+        {
+          "attempt": 2,
+          "at": 1795332062000,
+          "status": 202,
+          "outcome": "accepted-by-service"
+        }
+      ],
+      "acknowledgedAt": 1795332063000,
+      "pending": null
+    },
+    {
+      "kind": "observed",
+      "detection": {
+        "id": "sim-interrupted",
+        "ruleRevision": "sim-rule-v1",
+        "geometryRevision": "sim-geometry-v1",
+        "observationRevision": "sim-observation-v1",
+        "at": 1795332060000
+      },
+      "attempts": [],
+      "acknowledgedAt": null,
+      "pending": {
+        "attempt": 1,
+        "at": 1795332061000
+      }
+    }
+  ]
+}

@@ -7,6 +7,7 @@ interface Props {
   what: string;
   /** Jedna linia (nagłówek układu nad wykresem) zamiast karty. */
   inline?: boolean;
+  fallback?: React.ReactNode;
   children: React.ReactNode;
 }
 
@@ -32,6 +33,7 @@ export class LocalBoundary extends React.Component<Props, { error: Error | null 
 
   render() {
     if (!this.state.error) return this.props.children;
+    if (this.props.fallback !== undefined) return this.props.fallback;
     const { what, inline } = this.props;
     const why = tr('nie udało się pokazać tej części z bieżących danych; reszta strony działa', 'this part could not be shown from the current data; the rest of the page works');
     const button = (
