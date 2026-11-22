@@ -1,9 +1,9 @@
 {
   "v": 1,
   "ok": true,
-  "at": 1795289364496,
-  "run": "https://github.com/rdemb/HyperQuant/actions/runs/44941137891",
-  "commit": "f2715504eae3a9e7f9f1fb6d7e56e470f733c9ce",
+  "at": 1795331165190,
+  "run": "https://github.com/rdemb/HyperQuant/actions/runs/44996621700",
+  "commit": "204b6cc05ce79c8d48e3f259d1e48759d209cce9",
   "lines": [
     "✓ 2026-10-22.jsonl: 398 linii",
     "✓ 2026-10-23.jsonl: 960 linii",
@@ -35,15 +35,15 @@
     "✓ 2026-11-18.jsonl: 1488 linii",
     "✓ 2026-11-19.jsonl: 1488 linii",
     "✓ 2026-11-20.jsonl: 1488 linii",
-    "✓ 2026-11-21.jsonl: 1196 linii",
+    "✓ 2026-11-21.jsonl: 1471 linii",
+    "✓ 2026-11-22.jsonl: 451 linii",
     "✓ kolejność i spójność rekordów",
     "✓ wyniki zgodne z przeliczonymi z kwantyli",
-    "✓ ensemble: 2889 wydań — p_e i p_r zgodne z zapisanymi wagami; wagi ostatnich wydań (2877) odtworzone ponownym dopasowaniem na pytaniach rozstrzygniętych przed wydaniem",
-    "✓ A/B: wariant B = wersja A × skala ze wzoru, te same chwile (2879 prognoz)",
+    "✓ ensemble: 2935 wydań — p_e i p_r zgodne z zapisanymi wagami; wagi ostatnich wydań (2877) odtworzone ponownym dopasowaniem na pytaniach rozstrzygniętych przed wydaniem",
+    "✓ A/B: wariant B = wersja A × skala ze wzoru, te same chwile (2926 prognoz)",
     "✓ plan A/B ab-v1 prerejestrowany 2026-10-22T17:51Z, zgodny z kodem; wariant B wydawany po rejestracji",
-    "✓ A/B: wariant C = przekształcenie kwantyli A (świeży poziom zmienności, mieszanina skali) przeliczone niezależnie, te same chwile (900 prognoz)",
+    "✓ A/B: wariant C = przekształcenie kwantyli A (świeży poziom zmienności, mieszanina skali) przeliczone niezależnie, te same chwile (947 prognoz)",
     "✓ plan A/B ab-v2 prerejestrowany 2026-11-12T10:16Z, zgodny z kodem; wariant C wydawany po rejestracji",
-    "✓ Schrödi: 2333 prognozy — p, szanse dotknięcia i stożek przeliczone z zapisanych cech publicznymi modelami, hashe modeli zgodne",
-    "✓ plan zaufania kota schrodi-trust-v1 prerejestrowany 2026-10-28T11:48Z, zgodny z kodem; przeliczone z rekordów — duży ruch E = 6.15e+10 (580 godzin, dowód od 2026-10-30T14Z), kierunek E = 0.598 (580 godzin), dotknięcia E = 10.3 (515 godzin, dowód od 2026-10-31T16Z); dowód przy E ≥ 20; alarm dryfu: brak"
+    "✓ Schrödi: 2379 prognoz — p, szanse dotknięcia i stożek przeliczone z zapisanych cech publicznymi modelami, hashe modeli zgodne"
   ]
 }
