@@ -58,6 +58,10 @@ describe('manifest po angielsku', () => {
       ['In session', './#charts'],
       ['Post-session', './#after'],
     ]);
-    expect(m.start_url).toBe('./#charts');
+    expect(m.start_url).toBe('./');
+    const manifest = 'https://hyperquant.tech/manifest.webmanifest';
+    const oldId = new URL('./#charts', manifest);
+    oldId.hash = '';
+    expect(new URL(m.id, new URL(m.start_url, manifest)).href).toBe(oldId.href);
   });
 });
