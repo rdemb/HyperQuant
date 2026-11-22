@@ -1033,8 +1033,8 @@ export const ProChart: React.FC<{
             : layout === 4
             ? 'rounded-xl h-[calc((100dvh-5.5rem)/2)] min-h-[380px]'
             : // Nad kartą tylko nagłówek strony (na komputerze jeden rząd z liczbami rynku) i odstęp
-              // Telefon: nagłówek w jednym rzędzie nad kartą, dolne menu pod nią
-              'rounded-xl h-[calc(100dvh-8.75rem)] sm:h-[calc(100dvh-11rem)] lg:h-[calc(100dvh-5rem)] min-h-[440px]'
+              // Na telefonie karta uwzględnia dodatkowy rząd zakładek nad panelem ceny.
+              'rounded-xl h-[calc(100dvh-5.75rem)] sm:h-[calc(100dvh-11rem)] lg:h-[calc(100dvh-5rem)] min-h-[440px]'
       }`}
     >
       {/* Pasek wykresu (komputer): jeden rząd list rozwijanych — układ, rynek, interwał, rodzaj, warstwy; z prawej liczby
