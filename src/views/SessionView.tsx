@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useState, useSyncExternalStore } from 'react';
+import React, { Suspense, lazy, useCallback, useState, useSyncExternalStore } from 'react';
 import type { PhaseId } from '../charts/pro/chart/stations';
 import { capsOf, subscribeMarkets } from '../state/markets';
 import { type PublishedHistory, usePublishedHistory } from '../state/historyAvailability';
@@ -35,17 +35,21 @@ const inReplay = () => {
  * W powtórce (link #charts?replay=…) sama powtórka: panele na żywo nie mieszają się z przeszłością.
  * `onPhase` — karta układu innej fazy (Alt+1…6, nowa karta) przenosi do ekranu tej fazy.
  */
-const SessionView: React.FC<{ onPhase?: (phase: PhaseId) => void }> = ({ onPhase }) => {
+const SessionView: React.FC<{ onPhase?: (phase: PhaseId) => void; onMarket?: (coin: string) => void }> = ({ onPhase, onMarket }) => {
   const replay = useSyncExternalStore(subscribeHash, inReplay);
   // Rynek pierwszego wykresu aktywnej karty (Pulse liczy drabinę i taśmę tego rynku)
   const [coin, setCoin] = useState<Market>(HOME_MARKET);
+  const selectMarket = useCallback((coin: Market) => {
+    setCoin(coin);
+    onMarket?.(coin);
+  }, [onMarket]);
   const scanner = useSyncExternalStore(subscribeMarkets, () => capsOf(coin).scanner);
   const archive = usePublishedHistory(coin);
   return (
     <div className="flex flex-col gap-4">
       {!replay && <FirstContact coin={coin} />}
       <Suspense fallback={<div data-wykres-czeka className="min-h-[70dvh] rounded-xl border border-line bg-surface-1" />}>
-        <ChartsView phase="session" onPhase={onPhase} onMarket={setCoin} />
+        <ChartsView phase="session" onPhase={onPhase} onMarket={selectMarket} />
       </Suspense>
       {/* Najbliższe poziomy na każdym rynku: na rynku bez skanera klastry, Uwięzieni i paliwo z „—” i powodem */}
       {!replay && (

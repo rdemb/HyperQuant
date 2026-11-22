@@ -15,6 +15,7 @@ interface PanelProps {
 /** Bazowy panel: nagłówek (eyebrow + tytuł + akcje) i treść. Zastępuje ręczne karty. */
 export const Panel: React.FC<PanelProps> = ({ title, eyebrow, actions, children, className = '', bodyClassName = '', hero, id }) => (
   <section
+    data-przekroj-panel
     id={id}
     className={`bg-surface-1 border ${hero ? 'border-line-strong' : 'border-line'} rounded-xl min-w-0 flex flex-col ${className}`}
   >

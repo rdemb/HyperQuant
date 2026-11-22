@@ -1,4 +1,4 @@
-import { History, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, History, X } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
 import { FOCUSABLE } from '../../charts/pro/chart/dialogFocus';
 // Nagranie i powtórka (moduły wykresu) ładowane dopiero po kliknięciu: karta pierwszego kontaktu to element LCP W sesji
@@ -55,6 +55,8 @@ export const FirstContact: React.FC<{ coin: Market }> = ({ coin }) => {
   const cardRef = useRef<HTMLElement>(null);
   const [busy, setBusy] = useState(false);
   const [why, setWhy] = useState<string | null>(null);
+  // Przewodnik w jednym wierszu: jedna wskazówka naraz, strzałki i postęp linią wody
+  const [krok, setKrok] = useState(0);
 
   // Zamknięcie z fokusem w karcie (Esc, „Rozumiem”, krzyżyk): fokus na następny element za kartą
   const next = useRef<HTMLElement | null>(null);
@@ -101,26 +103,53 @@ export const FirstContact: React.FC<{ coin: Market }> = ({ coin }) => {
   return (
     <div className="flex flex-col gap-2">
       {tips && (
-        <section ref={cardRef} onKeyDown={(e) => dismissOnEscape(e, cardRef.current, close)} aria-label={tr('Jak czytać ten ekran', 'How to read this screen')} className="rounded-xl border border-line-strong bg-surface-2 p-3 text-xs">
-          <div className="flex items-start gap-2">
-            <h2 className="flex-1 font-semibold text-ink-1">{tr('Jak czytać ten ekran', 'How to read this screen')}</h2>
-            <button type="button" onClick={close} aria-label={tr('Zamknij', 'Close')} className="shrink-0 grid place-items-center w-11 h-11 sm:w-8 sm:h-8 -m-2 rounded-lg text-ink-3 hover:text-ink-1 hover:bg-surface-3">
+        <section
+          ref={cardRef}
+          onKeyDown={(e) => {
+            dismissOnEscape(e, cardRef.current, close);
+            if (e.key === 'ArrowRight' && krok < TIPS.length - 1) setKrok(krok + 1);
+            if (e.key === 'ArrowLeft' && krok > 0) setKrok(krok - 1);
+          }}
+          aria-label={tr('Jak czytać ten ekran', 'How to read this screen')}
+          className="hq-przewodnik hq-spot relative overflow-hidden flex flex-wrap sm:flex-nowrap items-center gap-x-3 gap-y-1 rounded-2xl pl-3 pr-1.5 py-1.5 text-xs"
+        >
+          <h2 className="sr-only">{tr('Jak czytać ten ekran', 'How to read this screen')}</h2>
+          <span className="shrink-0 font-mono text-[10px] font-semibold tracking-wider text-ink-3" aria-hidden="true">
+            {krok + 1}/{TIPS.length}
+          </span>
+          <p key={krok} aria-live="polite" className="hq-przewodnik-krok order-last sm:order-none basis-full sm:basis-auto flex-1 min-w-0 m-0 text-ink-2 leading-snug">
+            <span className="sr-only">{tr(`Wskazówka ${krok + 1} z ${TIPS.length}: `, `Tip ${krok + 1} of ${TIPS.length}: `)}</span>
+            {tr(TIPS[krok].pl, TIPS[krok].en)}
+          </p>
+          <div className="ml-auto flex items-center gap-1 shrink-0">
+            <button
+              type="button"
+              onClick={() => setKrok(krok - 1)}
+              disabled={krok === 0}
+              aria-label={tr('Poprzednia wskazówka', 'Previous tip')}
+              className="grid place-items-center w-11 h-11 sm:w-8 sm:h-8 rounded-lg text-ink-2 hover:text-ink-1 hover:bg-surface-3 disabled:opacity-35 disabled:hover:bg-transparent"
+            >
+              <ChevronLeft className="w-4 h-4" aria-hidden="true" />
+            </button>
+            {krok < TIPS.length - 1 ? (
+              <button
+                type="button"
+                onClick={() => setKrok(krok + 1)}
+                className="min-h-11 sm:min-h-8 px-3 inline-flex items-center gap-1 rounded-lg bg-surface-3 border border-line-strong font-medium text-ink-1 hover:bg-surface-1"
+              >
+                {tr('Dalej', 'Next')}
+                <ChevronRight className="w-3.5 h-3.5" aria-hidden="true" />
+              </button>
+            ) : (
+              <button type="button" onClick={close} className="min-h-11 sm:min-h-8 px-3 rounded-lg bg-lume text-[#0c0d0f] font-semibold hover:brightness-105">
+                {tr('Rozumiem', 'Got it')}
+              </button>
+            )}
+            <button type="button" onClick={close} aria-label={tr('Zamknij', 'Close')} className="grid place-items-center w-11 h-11 sm:w-8 sm:h-8 rounded-lg text-ink-3 hover:text-ink-1 hover:bg-surface-3">
               <X className="w-4 h-4" />
             </button>
           </div>
-          <ol className="mt-1 grid gap-2 sm:grid-cols-3 list-none p-0">
-            {TIPS.map((t, i) => (
-              <li key={i} className="flex gap-2 text-ink-2 leading-snug">
-                <span aria-hidden className="shrink-0 grid place-items-center w-5 h-5 rounded-full bg-surface-3 text-ink-1 font-semibold">
-                  {i + 1}
-                </span>
-                <span>{tr(t.pl, t.en)}</span>
-              </li>
-            ))}
-          </ol>
-          <button type="button" onClick={close} className="mt-2 min-h-11 sm:min-h-8 px-3 rounded-lg bg-surface-3 border border-line-strong font-medium text-ink-1 hover:bg-surface-1">
-            {tr('Rozumiem', 'Got it')}
-          </button>
+          <span aria-hidden="true" className="hq-przewodnik-postep absolute left-0 bottom-0 h-0.5 rounded-full bg-lume" style={{ width: `${((krok + 1) / TIPS.length) * 100}%` }} />
         </section>
       )}
       {showReplay && (

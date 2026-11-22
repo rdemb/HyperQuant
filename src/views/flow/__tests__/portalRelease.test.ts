@@ -16,19 +16,21 @@ function destination(url: URL) {
 
 describe('Cross-section portal release entry points', () => {
   it('registers page initialization with the default sound threshold when storage is blocked', () => {
-    const HQ: { sound?: { min: number; on: boolean; setMin: (amount: number) => void } } = {};
-    const listeners = new Map<string, () => void>();
+    const ready: Array<() => void> = [];
+    const HQ: { ready: (callback: () => void) => void; sound?: { min: number; on: boolean; setMin: (amount: number) => void } } = {
+      ready: (callback) => { ready.push(callback); },
+    };
     const page = {
       window: { HQ },
       document: {
         documentElement: {},
-        addEventListener: (event: string, handler: () => void) => listeners.set(event, handler),
+        addEventListener: () => {},
       },
       matchMedia: () => ({ matches: false }),
       get localStorage() { throw new DOMException('Storage blocked', 'SecurityError'); },
     };
     runInNewContext(readFileSync('public/nowy/assets/portal.js', 'utf8'), page);
-    expect(listeners.get('DOMContentLoaded')).toBeTypeOf('function');
+    expect(ready).toEqual([expect.any(Function)]);
     expect(HQ.sound).toMatchObject({ min: 50_000, on: false });
     HQ.sound?.setMin(10_000);
     expect(HQ.sound?.min).toBe(10_000);

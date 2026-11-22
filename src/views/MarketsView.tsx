@@ -18,6 +18,7 @@ const MarketsView: React.FC = () => {
     <div className="flex flex-col gap-4" data-markets-view>
       <SectionHeading
         id="rynki-tytul"
+        level={1}
         eyebrow={`Hyperliquid · ${deskLabels()}`}
         title={tr('Rynki', 'Markets')}
         note={tr(

@@ -4,6 +4,11 @@
 (function () {
   'use strict';
   const HQ = (window.HQ = window.HQ || {});
+  HQ.ready = (run) => {
+    if (HQ.readyQueue) HQ.readyQueue.push(run);
+    else document.addEventListener('DOMContentLoaded', run, { once: true });
+  };
+  HQ.url = (url) => new URL(url, HQ.portalBase || document.baseURI).href;
   const LS = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } };
 
   /* ---------- Język ---------- */
@@ -27,12 +32,13 @@
   // Motyw: wybór zapisany na urządzeniu (Głębia, Papier albo „jak w systemie”); bez wyboru — system
   const sysQ = matchMedia('(prefers-color-scheme: light)');
   const sysTheme = () => (sysQ.matches ? 'paper' : 'deep');
-  HQ.themePref = LS('hqp.theme') || 'system';
+  const appTheme = LS('hq.theme');
+  HQ.themePref = LS('hqp.theme') || (appTheme === 'light' ? 'paper' : appTheme === 'dark' ? 'deep' : 'system');
   const resolve = (p) => (p === 'deep' || p === 'paper' ? p : sysTheme());
   HQ.theme = resolve(HQ.themePref);
   document.documentElement.dataset.theme = HQ.theme;
   const markTheme = () => document.querySelectorAll('[data-set-theme]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.setTheme === HQ.themePref || (b.dataset.setTheme === HQ.theme && !document.querySelector('[data-set-theme="system"]') && HQ.themePref === 'system'))));
-  HQ.setTheme = (t) => { HQ.themePref = t; LS('hqp.theme', t); HQ.theme = resolve(t); document.documentElement.dataset.theme = HQ.theme; markTheme(); document.dispatchEvent(new CustomEvent('hq:theme')); };
+  HQ.setTheme = (t) => { HQ.themePref = t; LS('hqp.theme', t); HQ.theme = resolve(t); LS('hq.theme', t === 'system' ? 'system' : HQ.theme === 'paper' ? 'light' : 'dark'); document.documentElement.dataset.theme = HQ.theme; markTheme(); document.dispatchEvent(new CustomEvent('hq:theme')); };
   sysQ.addEventListener && sysQ.addEventListener('change', () => { if (HQ.themePref === 'system') HQ.setTheme('system'); });
 
   /* ---------- Ruch ---------- */
@@ -260,7 +266,7 @@
 
   /* ---------- Co nowego: raz na wersję, ponownie z menu; natywny <dialog>, powrót fokusu ---------- */
   HQ.VERSION = '2.0';
-  const whatsNewArt = () => `assets/grok-a-${HQ.theme === 'paper' ? 'opal' : 'zorza'}-v2`;
+  const whatsNewArt = () => HQ.url(`assets/grok-a-${HQ.theme === 'paper' ? 'opal' : 'zorza'}-v2`);
   document.addEventListener('hq:theme', () => {
     const picture = document.querySelector('#wn[open] .wn-art');
     if (!picture) return;
@@ -288,7 +294,7 @@
       <img src="${art}.webp" width="1120" height="320" alt="">
       </picture><div class="wn-in"><p class="eyebrow">${HQ.fill(HQ.t('wn.eyebrow'), { v: HQ.VERSION })}</p><h2 id="wn-h" tabindex="-1">${HQ.t('wn.h')}</h2><i class="wn-line" aria-hidden="true"></i><ol>${items}</ol>
       <p class="muted wn-foot">${HQ.t('wn.again')}</p>
-      <div class="wn-act"><a class="btn btn-lume btn-s" href="${location.pathname.endsWith('desk.html') ? '#sesja' : 'desk.html#sesja'}" data-wn-go>${HQ.t('wn.try')}</a><button type="button" class="btn btn-line btn-s" value="close" formmethod="dialog" data-wn-close>${HQ.t('wn.close')}</button></div></div>`;
+      <div class="wn-act"><a class="btn btn-lume btn-s" href="${location.pathname.endsWith('desk.html') ? '#sesja' : HQ.url('desk.html#sesja')}" data-wn-go>${HQ.t('wn.try')}</a><button type="button" class="btn btn-line btn-s" value="close" formmethod="dialog" data-wn-close>${HQ.t('wn.close')}</button></div></div>`;
     dlg.querySelector('[data-wn-close]').addEventListener('click', () => dlg.close('button'));
     dlg._opener = opener || document.activeElement;
     if (!dlg.open) dlg.showModal();
@@ -313,7 +319,7 @@
   // Parametry po znaku ? w kotwicy: #sesja?m=BTC&px=59140&b=1&w=120&t=1795…
   HQ.hashRoute = () => location.hash.replace('#', '').split('?')[0];
   HQ.hashParams = () => { const q = location.hash.split('?')[1] || ''; const o = {}; new URLSearchParams(q).forEach((v, k) => (o[k] = v)); return o; };
-  HQ.momentUrl = (c) => { const u = new URL('desk.html', location.href); const q = new URLSearchParams(); q.set('m', c.coin); if (c.px != null) q.set('px', c.px); if (c.bucket && c.bucket !== 1) q.set('b', c.bucket); if (c.win) q.set('w', Math.round(c.win / 1000)); if (c.t) q.set('t', c.t); u.hash = 'sesja?' + q.toString(); return u.toString(); };
+  HQ.momentUrl = (c) => { const u = new URL(HQ.url('desk.html')); const q = new URLSearchParams(); q.set('m', c.coin); if (c.px != null) q.set('px', c.px); if (c.bucket && c.bucket !== 1) q.set('b', c.bucket); if (c.win) q.set('w', Math.round(c.win / 1000)); if (c.t) q.set('t', c.t); u.hash = 'sesja?' + q.toString(); return u.toString(); };
   HQ.marketName = (coin) => ({ BTC: 'BTC', 'xyz:GOLD': 'GOLD', 'xyz:SP500': 'S&P 500' }[coin] || coin);
 
   /* ---------- Logo „Chronograf H”: pierścień doby, H z dwóch świec, punkt „teraz” ---------- */
@@ -332,7 +338,7 @@
   });
   window.addEventListener('offline', () => document.dispatchEvent(new CustomEvent('hq:net', { detail: false })));
   window.addEventListener('online', () => document.dispatchEvent(new CustomEvent('hq:net', { detail: true })));
-  document.addEventListener('DOMContentLoaded', () => {
+  HQ.ready(() => {
     HQ.ensureDefs();
     if (HQ.simState) {
       const r = document.createElement('div'); r.className = 'simribbon'; r.setAttribute('role', 'note');
