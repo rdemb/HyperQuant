@@ -1,0 +1,166 @@
+{
+  "v": 1,
+  "source": "hyperliquid/BTC-perp",
+  "scale": 5,
+  "unit": "BTC",
+  "mode": "retrospective",
+  "subsetProof": "deliberate-removal-from-pinned-recording",
+  "gaps": "synthetic",
+  "receiptTime": "unknown",
+  "sources": {
+    "trades": {
+      "url": "https://raw.githubusercontent.com/rdemb/hyperquant-data/d5441197494010261f41c22accaf8c10f6d7949e/BTC/2026-11-20/07.trades.json.gz",
+      "sha256": "05863db150305b9231887eb4fdab9ad9a913425ac0962e4c509934d2d06ab083"
+    },
+    "candles": {
+      "url": "https://raw.githubusercontent.com/rdemb/hyperquant-data/24574bd0b96abf324c16f923df1dbc88757e9ea9/BTC/1m/2026/11-20.csv",
+      "sha256": "15478538e6ad81394d42207a6a8c19112a773bab0c83fc9dd17c3956113a6d2b"
+    }
+  },
+  "masks": [
+    {
+      "from": 1795159200000,
+      "gap": [
+        1795159200000,
+        1795159210000
+      ],
+      "kept": 193,
+      "buy": "272345",
+      "sell": "2368069",
+      "volume": "2850277",
+      "fullTapeDelta": "-2295023"
+    },
+    {
+      "from": 1795159200000,
+      "gap": [
+        1795159210000,
+        1795159220000
+      ],
+      "kept": 201,
+      "buy": "259937",
+      "sell": "2571192",
+      "volume": "2850277",
+      "fullTapeDelta": "-2295023"
+    },
+    {
+      "from": 1795159200000,
+      "gap": [
+        1795159220000,
+        1795159230000
+      ],
+      "kept": 152,
+      "buy": "269492",
+      "sell": "1971520",
+      "volume": "2850277",
+      "fullTapeDelta": "-2295023"
+    },
+    {
+      "from": 1795159200000,
+      "gap": [
+        1795159230000,
+        1795159240000
+      ],
+      "kept": 147,
+      "buy": "277590",
+      "sell": "1426518",
+      "volume": "2850277",
+      "fullTapeDelta": "-2295023"
+    },
+    {
+      "from": 1795159200000,
+      "gap": [
+        1795159240000,
+        1795159250000
+      ],
+      "kept": 181,
+      "buy": "42506",
+      "sell": "2371170",
+      "volume": "2850277",
+      "fullTapeDelta": "-2295023"
+    },
+    {
+      "from": 1795159200000,
+      "gap": [
+        1795159250000,
+        1795159260000
+      ],
+      "kept": 186,
+      "buy": "266265",
+      "sell": "2154781",
+      "volume": "2850277",
+      "fullTapeDelta": "-2295023"
+    },
+    {
+      "from": 1795159260000,
+      "gap": [
+        1795159260000,
+        1795159270000
+      ],
+      "kept": 133,
+      "buy": "53668",
+      "sell": "1134407",
+      "volume": "1944282",
+      "fullTapeDelta": "-1133462"
+    },
+    {
+      "from": 1795159260000,
+      "gap": [
+        1795159270000,
+        1795159280000
+      ],
+      "kept": 154,
+      "buy": "398893",
+      "sell": "1301468",
+      "volume": "1944282",
+      "fullTapeDelta": "-1133462"
+    },
+    {
+      "from": 1795159260000,
+      "gap": [
+        1795159280000,
+        1795159290000
+      ],
+      "kept": 141,
+      "buy": "405151",
+      "sell": "1482967",
+      "volume": "1944282",
+      "fullTapeDelta": "-1133462"
+    },
+    {
+      "from": 1795159260000,
+      "gap": [
+        1795159290000,
+        1795159300000
+      ],
+      "kept": 171,
+      "buy": "403953",
+      "sell": "1515026",
+      "volume": "1944282",
+      "fullTapeDelta": "-1133462"
+    },
+    {
+      "from": 1795159260000,
+      "gap": [
+        1795159300000,
+        1795159310000
+      ],
+      "kept": 160,
+      "buy": "360065",
+      "sell": "1486231",
+      "volume": "1944282",
+      "fullTapeDelta": "-1133462"
+    },
+    {
+      "from": 1795159260000,
+      "gap": [
+        1795159310000,
+        1795159320000
+      ],
+      "kept": 141,
+      "buy": "405320",
+      "sell": "774261",
+      "volume": "1944282",
+      "fullTapeDelta": "-1133462"
+    }
+  ]
+}

@@ -411,6 +411,7 @@ export type PageLink = { href: string; label: string; icon: React.ReactNode };
 export const NAV_DZIEN: NavItem[] = PHASES;
 export const NAV_WIEDZA: NavItem[] = [MARKETS, ORDER_FLOW, ...MORE, AGENTS];
 export const NAV_STRONY: PageLink[] = [
+  { href: `./nowy/?lang=${lang}`, label: tr('Przekrój', 'Cross-section'), icon: <Radar className="w-4 h-4" aria-hidden="true" /> },
   { href: './blog/', label: BLOG_LABEL, icon: <Newspaper className="w-4 h-4" /> },
   { href: tr('./wyniki/', './en/results/'), label: RESULTS_LABEL, icon: <ListChecks className="w-4 h-4" /> },
   { href: tr('./co-nowego/', './en/whats-new/'), label: NEWS_LABEL, icon: <History className="w-4 h-4" /> },

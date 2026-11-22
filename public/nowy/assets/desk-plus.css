@@ -1,0 +1,246 @@
+/* HyperQuant · terminal „Przekrój”: chowany pasek boczny, wysuwane skróty w szkle, płynne znaczniki zakładek,
+   przejścia stron od linii wody. Strefa wykresu bez zmian. */
+.app {
+  --glass-line: color-mix(in oklab, var(--ink-1) 14%, transparent);
+  --glass-bg: color-mix(in oklab, var(--s1) 70%, transparent);
+  --spring: cubic-bezier(.34, 1.36, .64, 1);
+}
+
+/* ---------- Płynny znacznik (pigułka + linia wody) ---------- */
+.app [data-fluid]:not(.bnav) { position: relative; }
+.app .fluid-ind {
+  position: absolute; left: 0; top: 0;
+  width: var(--fw, 0); height: var(--fh, 0);
+  transform: translate(var(--fx, 0), var(--fy, 0));
+  border-radius: 10px;
+  background: var(--s3);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+  opacity: var(--fo, 0);
+  pointer-events: none; z-index: 0;
+}
+.app .fluid-ind::after { content: ''; position: absolute; left: 28%; right: 28%; bottom: 3px; height: 2px; border-radius: 2px; background: var(--notch); box-shadow: 0 0 10px color-mix(in oklab, var(--lume) 70%, transparent); }
+.app [data-fluid-hover='true'] .fluid-ind::after { opacity: .45; }
+.app .fluid-ready .fluid-ind { transition: transform .42s var(--spring), width .42s var(--spring), height .3s var(--ease-out), opacity .2s linear; }
+.app [data-fluid] > a, .app [data-fluid] > button { position: relative; z-index: 1; }
+.app .tabs[data-fluid] button[aria-selected='true'] { background: transparent; }
+.app .tabs[data-fluid] button[aria-selected='true']::after { display: none; }
+/* pasek boczny: pionowy znacznik z linią po lewej */
+.app .rail[data-fluid] .fluid-ind { border-radius: 12px; }
+.app .rail[data-fluid] .fluid-ind::after { left: -8px; right: auto; top: 26%; bottom: 26%; width: 3px; height: auto; border-radius: 0 3px 3px 0; }
+.app .rail[data-fluid] a[aria-current='page'] { background: transparent; }
+.app .rail[data-fluid] a[aria-current='page']::before { display: none; }
+
+/* ---------- Szklany pasek boczny: unosi się nad poświatą strony ---------- */
+@media (min-width: 761px) {
+  .desk {
+    grid-template-columns: 96px minmax(0, 1fr);
+    background:
+      radial-gradient(300px 380px at 0 8%, color-mix(in oklab, #a490d3 24%, transparent), transparent 70%),
+      radial-gradient(260px 300px at 0 96%, color-mix(in oklab, var(--lume) 10%, transparent), transparent 70%),
+      var(--page);
+  }
+  .rail {
+    margin: 10px 0 10px 10px;
+    padding: 10px 7px;
+    border: 1px solid var(--glass-line);
+    border-radius: 22px;
+    background:
+      linear-gradient(180deg, color-mix(in oklab, var(--ink-1) 7%, transparent), transparent 42%),
+      color-mix(in oklab, var(--s1) 56%, transparent);
+    -webkit-backdrop-filter: blur(22px) saturate(1.6);
+    backdrop-filter: blur(22px) saturate(1.6);
+    box-shadow: inset 0 1px 0 color-mix(in oklab, white 9%, transparent), 0 30px 80px -34px rgba(0, 0, 0, .8);
+    overflow-y: auto; scrollbar-width: none;
+  }
+  .rail::-webkit-scrollbar { display: none; }
+  .rail a:hover { background: color-mix(in oklab, var(--ink-1) 5%, transparent); }
+  .app .rail[data-fluid] .fluid-ind { background: color-mix(in oklab, var(--ink-1) 8%, transparent); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--ink-1) 13%, transparent), 0 8px 22px -12px rgba(0, 0, 0, .7); }
+  .app .rail[data-fluid] .fluid-ind::after { left: -7px; }
+}
+
+/* ---------- Chowany pasek boczny (tryb skupienia) ---------- */
+.desk { transition: grid-template-columns .45s var(--ease-out); }
+.rail { transition: transform .45s var(--ease-out), opacity .3s linear; }
+.rail-toggle {
+  display: flex; align-items: center; justify-content: center;
+  min-height: 44px; margin: 4px 0 0;
+  border: 1px dashed var(--line-strong); border-radius: 12px;
+  background: transparent; color: var(--ink-3); cursor: pointer;
+}
+.rail-toggle:hover { color: var(--ink-1); border-style: solid; }
+.rail-toggle svg { width: 18px; height: 18px; }
+@media (min-width: 761px) {
+.desk[data-rail='hidden'] { grid-template-columns: 0 minmax(0, 1fr); }
+.desk[data-rail='hidden'] .rail { margin: 0; }
+}
+.desk[data-rail='hidden'] .rail { transform: translateX(-100%); opacity: 0; visibility: hidden; transition: transform .45s var(--ease-out), opacity .3s linear, visibility 0s .45s; }
+.rail-handle {
+  position: fixed; left: 0; top: 50%; z-index: 45;
+  display: grid; place-items: center;
+  width: 22px; height: 88px; padding: 0;
+  transform: translate(-100%, -50%);
+  border: 1px solid var(--glass-line); border-left: 0; border-radius: 0 14px 14px 0;
+  background: var(--glass-bg); color: var(--ink-1);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4); backdrop-filter: blur(14px) saturate(1.4);
+  box-shadow: 0 10px 30px -14px rgba(0, 0, 0, .7);
+  cursor: pointer;
+  transition: transform .45s var(--spring), width .25s var(--ease-out);
+}
+.rail-handle::before { content: ''; position: absolute; left: 6px; top: 22px; bottom: 22px; width: 2px; border-radius: 2px; background: var(--notch); box-shadow: 0 0 10px var(--lume); }
+.rail-handle svg { width: 14px; height: 14px; margin-left: 6px; }
+.rail-handle:hover, .rail-handle:focus-visible { width: 30px; }
+.desk[data-rail='hidden'] ~ .rail-handle { transform: translate(0, -50%); }
+/* podgląd: najechanie na lewą krawędź wysuwa pasek nad treść */
+.desk[data-rail='hidden'][data-peek='true'] .rail {
+  position: fixed; top: 10px; bottom: 10px; left: 10px; z-index: 46; width: 84px;
+  transform: none; opacity: 1; visibility: visible;
+  border: 1px solid var(--glass-line); border-radius: 22px;
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: blur(18px) saturate(1.5); backdrop-filter: blur(18px) saturate(1.5);
+  box-shadow: 0 30px 80px -30px rgba(0, 0, 0, .85);
+  transition: transform .4s var(--spring), opacity .2s linear, visibility 0s;
+}
+
+/* ---------- Wysuwane skróty nad wykresem (szkło) ---------- */
+.stage > .react-links { flex-wrap: nowrap; align-items: center; overflow-x: auto; scrollbar-width: none; padding: 4px; border-radius: 999px; border: 1px solid var(--glass-line); background: var(--glass-bg); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); }
+.stage > .react-links::-webkit-scrollbar { display: none; }
+.stage > .react-links .btn { flex: none; min-height: 36px; }
+.stage > .react-links .btn-line { border-color: transparent; }
+.stage > .react-links .btn-line:hover { border-color: var(--line-strong); }
+.quick-toggle {
+  flex: none; display: inline-flex; align-items: center; gap: 8px;
+  min-height: 36px; padding: 0 12px 0 10px;
+  border: 0; border-radius: 999px;
+  background: var(--s3); color: var(--ink-1);
+  font: 700 12.5px/1 var(--f-ui); cursor: pointer;
+}
+.quick-toggle svg { width: 14px; height: 14px; transition: transform .35s var(--ease-out); }
+.quick-toggle .n { color: var(--ink-3); font: 600 11px/1 var(--f-mono); }
+.react-links[data-collapsed='true'] .quick-toggle svg { transform: rotate(-90deg); }
+.react-links > .btn { transition: opacity .3s var(--ease-out), transform .45s var(--ease-out), visibility 0s; }
+.react-links[data-collapsed='true'] { align-self: flex-start; }
+.react-links[data-collapsed='true'] > .btn { opacity: 0; transform: translateX(-16px) scale(.96); visibility: hidden; position: absolute; pointer-events: none; transition: opacity .2s linear, transform .3s var(--ease-in), visibility 0s .3s; }
+.js-motion .react-links[data-collapsed='false'] > .btn { animation: quick-in .5s var(--ease-out) both; animation-delay: calc(var(--k, 0) * 40ms); }
+@keyframes quick-in { from { opacity: 0; transform: translateX(-12px); } }
+
+/* ---------- Telefon: pływający dok ze szkła ---------- */
+@media (max-width: 760px) {
+  .bnav { left: 10px; right: 10px; bottom: calc(10px + env(safe-area-inset-bottom, 0px)); border: 1px solid var(--glass-line); border-radius: 22px; padding: 4px; padding-bottom: 4px; background: var(--glass-bg); -webkit-backdrop-filter: blur(18px) saturate(1.5); backdrop-filter: blur(18px) saturate(1.5); box-shadow: 0 18px 50px -20px rgba(0, 0, 0, .8); }
+  .bnav[data-fluid] .fluid-ind { border-radius: 16px; }
+  .bnav[data-fluid] a[aria-current='page']::before { display: none; }
+  .bnav a { min-height: 54px; }
+  .rail-handle { display: none; }
+}
+
+/* ---------- Przejścia stron ---------- */
+@view-transition { navigation: auto; }
+::view-transition-old(root) { animation: vt-out .38s cubic-bezier(.64, 0, .78, 0) both; }
+::view-transition-new(root) { animation: vt-in .7s cubic-bezier(.83, 0, .17, 1) both; }
+@keyframes vt-out { to { opacity: 0; transform: scale(.985); } }
+@keyframes vt-in { from { clip-path: inset(49.6% 0 49.6% 0); } to { clip-path: inset(0 0 0 0); } }
+html[data-motion='reduced']::view-transition-old(root), html[data-motion='reduced']::view-transition-new(root) { animation: none; }
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
+  .desk, .rail, .rail-handle, .app .fluid-ind, .react-links > .btn { transition: none !important; animation: none !important; }
+}
+html[data-motion='reduced'] .desk, html[data-motion='reduced'] .rail, html[data-motion='reduced'] .rail-handle, html[data-motion='reduced'] .app .fluid-ind { transition: none !important; }
+
+/* Węższy nagłówek przy szklanym pasku: wyszukiwarka nie ściska etykiety, przy braku miejsca zostaje ikona i skrót */
+.dhead .search { flex: none; }
+@media (max-width: 1520px) { .dhead .search .lbl { display: none; } }
+
+/* ---------- Zmiana motywu: koło od przełącznika ---------- */
+html.vt-motyw::view-transition-old(root) { animation: none; }
+html.vt-motyw::view-transition-new(root) { animation: vt-kolo .75s cubic-bezier(.83, 0, .17, 1) both; }
+@keyframes vt-kolo { from { clip-path: circle(0 at var(--vt-x, 50%) var(--vt-y, 0)); } to { clip-path: circle(150vmax at var(--vt-x, 50%) var(--vt-y, 0)); } }
+
+/* ---------- Paleta ⌘K w szkle: zaznaczenie z linią wody, podgląd poziomu ---------- */
+.pal-back { background: rgba(4, 3, 10, .45); -webkit-backdrop-filter: blur(5px); backdrop-filter: blur(5px); }
+.pal { background: linear-gradient(180deg, color-mix(in oklab, var(--ink-1) 6%, transparent), transparent 40%), color-mix(in oklab, var(--s2) 72%, transparent); -webkit-backdrop-filter: blur(24px) saturate(1.6); backdrop-filter: blur(24px) saturate(1.6); border: 1px solid var(--glass-line); border-radius: 22px; box-shadow: inset 0 1px 0 color-mix(in oklab, white 9%, transparent), 0 40px 120px -30px rgba(0, 0, 0, .85); }
+.pal input { height: 60px; font-size: 17px; background: transparent; border-bottom: 1px solid var(--glass-line); }
+.pal::after { content: ''; position: absolute; left: 18px; right: 18px; top: 59px; height: 2px; border-radius: 2px; background: var(--notch); box-shadow: 0 0 12px var(--lume); transform: scaleX(0); transform-origin: left; transition: transform .5s var(--ease-out); }
+.pal:focus-within::after { transform: scaleX(1); }
+.pal li { position: relative; transition: background-color .15s linear; }
+.pal li[aria-selected='true'] { background: color-mix(in oklab, var(--ink-1) 8%, transparent); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--ink-1) 12%, transparent); }
+.pal li[aria-selected='true']::before { content: ''; position: absolute; left: 0; top: 10px; bottom: 10px; width: 3px; border-radius: 0 3px 3px 0; background: var(--notch); box-shadow: 0 0 10px var(--lume); }
+.pal li .pl { display: grid; gap: 3px; min-width: 0; padding: 8px 0; }
+.pal li .pl b { font-weight: 700; color: var(--ink-1); }
+.pal li .pl small { color: var(--ink-2); font: 500 12px/1.35 var(--f-mono); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.pal li[data-level='true'] .pl b { font: 700 18px/1.1 var(--f-mono); }
+.pal li[data-level='true'] .g { color: var(--notch); }
+
+/* ---------- Żywe liczby: odometr ceny ---------- */
+.odo-src { position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.odo { display: inline-flex; align-items: flex-start; line-height: 1; font-variant-numeric: tabular-nums; }
+.odo-d { display: inline-block; height: 1em; overflow: hidden; vertical-align: top; }
+.odo-s { display: block; transition: transform .55s cubic-bezier(.22, 1, .36, 1); }
+.odo-s i { display: block; height: 1em; font-style: normal; text-align: center; }
+html[data-motion='reduced'] .odo-s { transition: none; }
+@media (prefers-reduced-motion: reduce) { .odo-s { transition: none; } }
+
+/* ---------- Duża transakcja: przebiegająca linia wody i szklana etykieta ---------- */
+.stage { position: relative; }
+.bigflash { position: absolute; left: 12px; right: 12px; top: 54px; height: 0; pointer-events: none; z-index: 6; }
+.bigflash i { position: absolute; left: 0; right: 0; top: 0; height: 2px; border-radius: 2px; background: linear-gradient(90deg, transparent, var(--lume) 40%, var(--lume) 60%, transparent); box-shadow: 0 0 18px var(--lume); opacity: 0; transform: scaleX(0); }
+.bigflash span { position: absolute; right: 0; top: 10px; display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px; border: 1px solid var(--glass-line); background: color-mix(in oklab, var(--s1) 72%, transparent); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); color: var(--ink-1); font: 600 11.5px/1 var(--f-mono); opacity: 0; white-space: nowrap; }
+.bigflash .bf-live { color: var(--notch); font-weight: 700; }
+.bigflash.on i { animation: bf-line 1.1s cubic-bezier(.22, 1, .36, 1) both; }
+.bigflash.on span { animation: bf-chip 2.8s cubic-bezier(.22, 1, .36, 1) both; }
+@keyframes bf-line { 0% { transform: scaleX(0); opacity: 1; } 55% { transform: scaleX(1); opacity: 1; } 100% { transform: scaleX(1); opacity: 0; } }
+@keyframes bf-chip { 0% { opacity: 0; transform: translateY(-6px); } 12%, 80% { opacity: 1; transform: none; } 100% { opacity: 0; } }
+.pal li .pl .prov b, .pal li[data-level='true'] .pl .prov b { font: 600 10.5px/1 var(--f-mono); color: inherit; }
+
+/* ---------- Szkło łapie światło: krawędź rozjaśnia się pod kursorem ---------- */
+.stage > .react-links { position: relative; }
+.app [data-spot]::before {
+  content: ''; position: absolute; inset: 0; border-radius: inherit; padding: 1px; pointer-events: none; z-index: 3;
+  background: radial-gradient(240px circle at var(--sx, 50%) var(--sy, 50%), color-mix(in oklab, var(--lume) 75%, transparent), transparent 62%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude;
+  opacity: 0; transition: opacity .35s linear;
+}
+.app [data-spot]:hover::before { opacity: .9; }
+
+/* ---------- Poświata oddycha z rynkiem: im więcej obrotu na sekundę, tym jaśniej za szklanym paskiem ---------- */
+@property --act { syntax: '<number>'; inherits: true; initial-value: 0; }
+@media (min-width: 761px) {
+  .desk {
+    transition: --act 1.2s linear, grid-template-columns .45s var(--ease-out);
+    background:
+      radial-gradient(300px 380px at 0 8%, color-mix(in oklab, #a490d3 calc(16% + var(--act) * 26%), transparent), transparent 70%),
+      radial-gradient(260px 300px at 0 96%, color-mix(in oklab, var(--lume) calc(7% + var(--act) * 12%), transparent), transparent 70%),
+      var(--page);
+  }
+}
+
+/* ---------- Dotyk: przyciski wciskają się sprężyście, ikony paska unoszą się pod kursorem ---------- */
+.app :is(.rail a, .rail-toggle, .rail-handle, .quick-toggle, .tabs button, .bnav a, .stage > .react-links .btn, .pal li) { transition: transform .38s cubic-bezier(.34, 1.56, .64, 1), background-color .15s linear, color .15s linear; }
+.app :is(.rail a, .rail-toggle, .quick-toggle, .tabs button, .bnav a, .stage > .react-links .btn, .pal li):active { transform: scale(.95); transition-duration: .08s; }
+.app .rail a svg { transition: transform .38s cubic-bezier(.34, 1.56, .64, 1); }
+.app .rail a:hover svg { transform: translateY(-2px) scale(1.08); }
+html[data-motion='reduced'] .app :is(.rail a, .rail a svg, .quick-toggle, .tabs button, .bnav a, .pal li) { transition: none; transform: none !important; }
+@media (prefers-reduced-motion: reduce) { .app :is(.rail a, .rail a svg, .quick-toggle, .tabs button, .bnav a, .pal li) { transition: none; transform: none !important; } .app [data-spot]::before { display: none; } }
+
+/* ---------- Znacznik rozciąga się przy skoku (squash & stretch): poziomo w zakładkach, pionowo w pasku ---------- */
+.app .fluid-jump .fluid-ind { animation: fluid-x .46s cubic-bezier(.34, 1.56, .64, 1); }
+.app .rail.fluid-jump .fluid-ind { animation: fluid-y .46s cubic-bezier(.34, 1.56, .64, 1); }
+@keyframes fluid-x { 35% { scale: 1.16 .9; } }
+@keyframes fluid-y { 35% { scale: .92 1.2; } }
+
+/* ---------- Kropla w księdze: fala na poziomie transakcji ---------- */
+#ladder tr[data-drop] .price { position: relative; }
+#ladder tr[data-drop] .price::after { content: ''; position: absolute; left: 50%; top: 50%; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%; border: 1.5px solid var(--lume); box-shadow: 0 0 10px var(--lume); animation: hq-ring .8s cubic-bezier(.22, 1, .36, 1) both; pointer-events: none; }
+#ladder tr[data-drop] td, #ladder tr[data-drop] th { animation: hq-row .8s linear both; }
+@keyframes hq-ring { from { transform: scale(.4); opacity: 1; } to { transform: scale(5.5, 2.2); opacity: 0; } }
+@keyframes hq-row { 0% { background-color: color-mix(in oklab, var(--lume) 16%, transparent); } 100% { background-color: transparent; } }
+
+/* ---------- Znak marki: puls kropki „teraz” ---------- */
+.rail .logo.hq-tick .lg-now { transform-box: fill-box; transform-origin: center; animation: hq-tick .5s cubic-bezier(.34, 1.56, .64, 1); }
+@keyframes hq-tick { 40% { transform: scale(1.6); filter: drop-shadow(0 0 4px var(--lume)); } }
+
+/* ---------- Połysk na szkle palety przy otwarciu ---------- */
+.pal { background: linear-gradient(115deg, transparent 38%, color-mix(in oklab, white 11%, transparent) 50%, transparent 62%) 150% 0 / 250% 100% no-repeat, linear-gradient(180deg, color-mix(in oklab, var(--ink-1) 6%, transparent), transparent 40%), color-mix(in oklab, var(--s2) 72%, transparent); }
+.pal[data-open='true'] { animation: hq-pal 160ms var(--ease-out) both, hq-sheen 1.15s cubic-bezier(.22, 1, .36, 1) .12s both; }
+@keyframes hq-sheen { from { background-position: 150% 0, 0 0; } to { background-position: -150% 0, 0 0; } }
+
+html[data-motion='reduced'] :is(.fluid-ind, #ladder tr td, #ladder tr th, .rail .logo .lg-now, .pal), html[data-motion='reduced'] #ladder tr[data-drop] .price::after { animation: none !important; }
+@media (prefers-reduced-motion: reduce) { :is(.fluid-ind, #ladder tr td, #ladder tr th, .rail .logo .lg-now) { animation: none !important; } #ladder tr[data-drop] .price::after { display: none; } .pal[data-open='true'] { animation: none; } }

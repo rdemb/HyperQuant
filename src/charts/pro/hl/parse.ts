@@ -45,10 +45,17 @@ export interface BookLevel {
   n: number;
 }
 
+export type BookSideQuality =
+  | { kind: 'missing' }
+  | { kind: 'present'; rejectedRows: number; strictlyOrdered: boolean };
+
+export type BookQuality = Readonly<Record<'bid' | 'ask', BookSideQuality>>;
+
 export interface BookSnapshot {
   time: number;
   bids: BookLevel[];
   asks: BookLevel[];
+  quality?: BookQuality;
 }
 
 export interface AssetCtx {
@@ -163,17 +170,29 @@ export function parseCandles(raw: unknown): Candle[] {
   return [...byT.values()].sort((a, b) => a.t - b.t);
 }
 
-function parseLevels(raw: unknown): BookLevel[] {
-  if (!Array.isArray(raw)) return [];
-  const out: BookLevel[] = [];
-  for (const r of raw) {
-    if (!isRecord(r)) continue;
-    const px = num(r.px);
-    const sz = num(r.sz);
-    const n = num(r.n);
-    if (px > 0 && sz >= 0) out.push({ px, sz, n: Number.isFinite(n) ? n : Number.NaN });
+function parseLevel(raw: unknown): BookLevel | null {
+  if (!isRecord(raw)) return null;
+  const px = num(raw.px);
+  const sz = num(raw.sz);
+  return px > 0 && sz >= 0 ? { px, sz, n: num(raw.n) } : null;
+}
+
+function parseBookSide(raw: unknown, decreasing: boolean): { levels: BookLevel[]; quality: BookSideQuality } {
+  if (!Array.isArray(raw)) return { levels: [], quality: { kind: 'missing' } };
+  const levels: BookLevel[] = [];
+  let rejectedRows = 0;
+  let strictlyOrdered = true;
+  for (const row of raw) {
+    const level = parseLevel(row);
+    if (!level) {
+      rejectedRows++;
+      continue;
+    }
+    const previous = levels.at(-1);
+    if (previous && !(decreasing ? previous.px > level.px : previous.px < level.px)) strictlyOrdered = false;
+    levels.push(level);
   }
-  return out;
+  return { levels, quality: { kind: 'present', rejectedRows, strictlyOrdered } };
 }
 
 /** Migawka arkusza (`l2Book`): bidy malejąco, aski rosnąco — tak jak w API. */
@@ -181,10 +200,10 @@ export function parseBook(raw: unknown, coin: string): BookSnapshot | null {
   if (!isRecord(raw) || !Array.isArray(raw.levels)) return null;
   if (raw.coin !== undefined && raw.coin !== coin) return null;
   const time = num(raw.time);
-  const bids = parseLevels(raw.levels[0]);
-  const asks = parseLevels(raw.levels[1]);
-  if (!(time > 0) || (bids.length === 0 && asks.length === 0)) return null;
-  return { time, bids, asks };
+  const bid = parseBookSide(raw.levels[0], true);
+  const ask = parseBookSide(raw.levels[1], false);
+  if (!(time > 0) || (bid.levels.length === 0 && ask.levels.length === 0)) return null;
+  return { time, bids: bid.levels, asks: ask.levels, quality: { bid: bid.quality, ask: ask.quality } };
 }
 
 /** Najlepszy bid i ask z kanału `bbo` (`bbo: [bid, ask]`, strona bez zleceń = null). */
@@ -192,8 +211,7 @@ export function parseBbo(raw: unknown, coin: string): { time: number; bid: BookL
   if (!isRecord(raw) || raw.coin !== coin || !Array.isArray(raw.bbo) || raw.bbo.length !== 2) return null;
   const time = num(raw.time);
   if (!(time > 0)) return null;
-  const side = (x: unknown): BookLevel | null => parseLevels([x])[0] ?? null;
-  return { time, bid: side(raw.bbo[0]), ask: side(raw.bbo[1]) };
+  return { time, bid: parseLevel(raw.bbo[0]), ask: parseLevel(raw.bbo[1]) };
 }
 
 /** Kontekst rynku z kanału `activeAssetCtx` (`data.ctx`) lub z `metaAndAssetCtxs`. */

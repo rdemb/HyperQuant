@@ -26,9 +26,9 @@ describe('nawigacja aplikacji (jedno źródło: szyna, dolny pasek, menu „Wię
     expect(ids(NAV_TELEFON)).toEqual(['before', 'charts', 'after', 'markets']);
   });
 
-  it('strony serwisu: Blog, Wyniki, Co nowego (w tej kolejności, adresy PL)', () => {
-    expect(NAV_STRONY.map((l) => l.href)).toEqual(['./blog/', './wyniki/', './co-nowego/']);
-    expect(NAV_STRONY.map((l) => l.label)).toEqual(['Blog', RESULTS_LABEL, NEWS_LABEL]);
+  it('strony serwisu: Przekrój, Blog, Wyniki, Co nowego (w tej kolejności, adresy PL)', () => {
+    expect(NAV_STRONY.map((l) => l.href)).toEqual(['./nowy/?lang=pl', './blog/', './wyniki/', './co-nowego/']);
+    expect(NAV_STRONY.map((l) => l.label)).toEqual(['Przekrój', 'Blog', RESULTS_LABEL, NEWS_LABEL]);
     expect(RESULTS_LABEL).toBe('Wyniki');
     expect(NEWS_LABEL).toBe('Co nowego');
   });

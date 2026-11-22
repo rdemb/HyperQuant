@@ -29,7 +29,7 @@ type Trade = TradeRow & { usd: number };
 export type TapeExcerpt = { rows: readonly Trade[]; firstBelow: Trade | null; label: string; close: () => void };
 
 const WINDOWS = [30_000, 120_000, 300_000];
-const DEPTHS = [5, 10, 20];
+const DEPTHS = [5, 10, 20] as const;
 const TAPE_LIMIT = 180;
 const timestamp = new Intl.DateTimeFormat(locale, {
   timeZone: 'UTC', hourCycle: 'h23', hour: '2-digit', minute: '2-digit', second: '2-digit',
@@ -56,7 +56,7 @@ function Amount({ value, max, text, detail, side }: {
 }
 
 export function Chronograph({
-  source, compare, demoControls, trial, excerpt, initialMinimum = 0, initialPrice = null, fixedWindow, showSideFilter = true, onPickBook,
+  source, compare, demoControls, trial, excerpt, initialMinimum = 0, initialPrice = null, fixedWindow, showSideFilter = true, onPickBook, tapeQuestion, ladderSettings, onMinimumChange, onDepthChange,
 }: {
   source: ChronographSource;
   compare?: ReactNode;
@@ -68,14 +68,22 @@ export function Chronograph({
   fixedWindow?: number;
   showSideFilter?: boolean;
   onPickBook?: (price: number, side: BookSide | null) => void;
+  tapeQuestion?: { control: ReactNode; price: number | null; open: (trade: TradeRow, trigger: HTMLButtonElement) => void };
+  ladderSettings?: { tapeMinimumUsd: number; bookDepth: (typeof DEPTHS)[number] };
+  onMinimumChange?: (minimum: number) => void;
+  onDepthChange?: (depth: (typeof DEPTHS)[number]) => void;
 }) {
   const { tape, coverage, through, book, previous, bookCoverage, fmtPx, unit, sizeDecimals } = source;
   const [windowMs, setWindowMs] = useState(120_000);
-  const [depth, setDepth] = useState(10);
+  const [internalDepth, setInternalDepth] = useState<(typeof DEPTHS)[number]>(10);
+  const depth = ladderSettings?.bookDepth ?? internalDepth;
   const [showChange, setShowChange] = useState(true);
   const [aggressors, setAggressors] = useState(false);
   const [side, setSide] = useState<'all' | 'buy' | 'sell'>('all');
-  const [minimum, setMinimum] = useState(initialMinimum);
+  const [internalMinimum, setInternalMinimum] = useState(initialMinimum);
+  const minimum = ladderSettings?.tapeMinimumUsd ?? internalMinimum;
+  const setMinimum = onMinimumChange ?? setInternalMinimum;
+  const setDepth = onDepthChange ?? setInternalDepth;
   const [crossed, setCrossed] = useState(false);
   const [selected, setSelected] = useState<number | null>(initialPrice);
   const [print, setPrint] = useState<{ row: Trade } | null>(null);
@@ -99,9 +107,12 @@ export function Chronograph({
   const compactQty = (value: number | null) => value === null ? DASH : shortNumber.format(value);
   const floor = Math.max(0, minimum - .0000005);
   const aggressor = side === 'all' ? undefined : side === 'buy' ? 1 : -1;
-  const recentTrades = useMemo(() => excerpt?.rows ?? visibleExecutions(tape, through - 1, floor, TAPE_LIMIT, from, aggressor),
-    [excerpt, tape, through, from, floor, aggressor, signature]);
+  const questionPrice = tapeQuestion?.price ?? null;
+  const recentTrades = useMemo(() => excerpt?.rows
+    ?? visibleExecutions(tape, through - 1, floor, TAPE_LIMIT, from, aggressor, questionPrice ?? undefined),
+    [excerpt, tape, through, from, floor, aggressor, signature, questionPrice]);
   const keptPrint = !excerpt && print && print.row.t >= from && print.row.t < through
+    && (questionPrice === null || print.row.px === questionPrice)
     && coverage.covers(print.row.t, print.row.t + 1)
     && print.row.usd >= floor && (aggressor === undefined || print.row.side === aggressor)
     && !recentTrades.some(row => keyOf(row) === keyOf(print.row)) ? print.row : null;
@@ -202,7 +213,10 @@ export function Chronograph({
           {WINDOWS.map(value => <option key={value} value={value}>{windowName(value)}</option>)}
         </select></label>
         <label><input type="checkbox" checked={showChange} onChange={e => setShowChange(e.currentTarget.checked)} /> Δ L2 · ~30 s</label>
-        <label>{tr('Głębokość', 'Depth')} <select value={depth} onChange={e => setDepth(Number(e.currentTarget.value))}>
+        <label>{tr('Głębokość', 'Depth')} <select value={depth} onChange={e => {
+          const value = DEPTHS.find(d => String(d) === e.currentTarget.value);
+          if (value !== undefined) setDepth(value);
+        }}>
           {DEPTHS.map(value => <option key={value} value={value}>{value}</option>)}
         </select></label>
         {compare}
@@ -300,6 +314,7 @@ export function Chronograph({
           {excerpt && <button type="button" ref={back} onClick={excerpt.close}>{tr('Wróć do taśmy', 'Back to tape')}</button>}
         </header>
         {!excerpt && <div className="oc-filters">
+          {tapeQuestion?.control}
           <label>{tr('Min. nominał', 'Min. trade size')} <select value={minimum} data-oc-floor onChange={e => setFloor(Number(e.currentTarget.value))}>
             {TAPE_MINIMUMS.map(value => <option value={value} key={value}>{value ? `≥ $${usdCompact(value)}` : tr('Wszystkie', 'All sizes')}</option>)}
             {!TAPE_MINIMUMS.includes(minimum) && <option value={minimum}>≥ ${fmtFixed(minimum, 6)} USD</option>}
@@ -345,7 +360,11 @@ export function Chronograph({
               data-oc-highlight={keyOf(row) === highlight || undefined} data-oc-at-price={row.px === price || undefined}
               className={row.side === 1 ? 'of-buy' : 'of-sell'}>
               <td><span aria-label={row.side === 1 ? tr('Agresywne kupno', 'Aggressive buy') : tr('Agresywna sprzedaż', 'Aggressive sell')}>{row.side === 1 ? '↑' : '↓'}</span></td>
-              <td title={chronoTime(row.t) + ' UTC'}>{timestamp.format(row.t)}</td>
+              <td title={chronoTime(row.t) + ' UTC'}>{tapeQuestion && questionPrice !== null && !excerpt
+                ? <button type="button" className="oc-question-trade" data-oc-question-trade={row.tid}
+                    aria-label={tr('Porównaj wykonanie', 'Compare trade') + ` · ${chronoTime(row.t)} UTC · ${quantity(row.sz, sizes)} ${unit}`}
+                    onClick={e => tapeQuestion.open(row, e.currentTarget)}>{chronoTime(row.t)}</button>
+                : timestamp.format(row.t)}</td>
               <td>{fmtPx(row.px)}</td><td title={quantity(row.sz, sizes)}>{compactQty(row.sz)}</td>
               <td title={fmtFixed(row.usd, 6)}>{usdCompact(row.usd)}</td>
             </tr>)}</tbody>

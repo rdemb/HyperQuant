@@ -54,7 +54,8 @@ function inlineFontsPlugin(): Plugin {
   return {
     name: 'hq-inline-fonts',
     apply: 'build',
-    transformIndexHtml(html) {
+    transformIndexHtml(html, context) {
+      if (context.filename !== path.join(ROOT, 'index.html')) return html;
       if (!FONTS_LINK.test(html)) throw new Error('index.html: brak linku do fonts/fonts.css (zmieniony sposób ładowania fontów)');
       const css = readRepo('public/fonts/fonts.css')
         .toString('utf8')
@@ -77,6 +78,7 @@ export default defineConfig(() => {
       },
     },
     build: {
+      rollupOptions: { input: { app: path.join(ROOT, 'index.html'), workbench: path.join(ROOT, 'stanowisko/index.html') } },
       chunkSizeWarningLimit: 1500,
       // Manifest pakietu (dist/.vite/manifest.json) dla kontroli granic: scripts/ui/granice-pakietu.mjs
       manifest: true,

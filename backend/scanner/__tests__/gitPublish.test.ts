@@ -31,9 +31,14 @@ describe('publishToGit — publikacja agregatów do publicznego repo danych', ()
     const remote = bareRemote();
     const work = join(mkdtempSync(join(tmpdir(), 'hq-work-')), 'repo');
     await publishToGit({ remote, workDir: work }, [['status.json', '{}']], Date.UTC(2026, 9, 22, 8, 2, 0));
-    expect(git(remote, 'log', '-1', '--format=%an <%ae> | %cn <%ce> | %ad | %s', '--date=iso-strict', 'main')).toBe(
-      'HyperQuant scanner <hyperquant-scanner@users.noreply.github.com> | HyperQuant scanner <hyperquant-scanner@users.noreply.github.com> | 2026-10-22T08:02:00Z | dane: 2026-10-22T08:02:00.000Z'
-    );
+    const metadata = git(remote, 'log', '-1', '--format=%an <%ae> | %cn <%ce> | %ad | %s', '--date=iso-strict', 'main').split(' | ');
+    metadata[2] = metadata[2]?.replace(/\+00:00$/, 'Z');
+    expect(metadata).toEqual([
+      'HyperQuant scanner <hyperquant-scanner@users.noreply.github.com>',
+      'HyperQuant scanner <hyperquant-scanner@users.noreply.github.com>',
+      '2026-10-22T08:02:00Z',
+      'dane: 2026-10-22T08:02:00.000Z',
+    ]);
   });
 
   it('niedostępne zdalne repo → false, bez wyjątku', async () => {
