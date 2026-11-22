@@ -241,7 +241,8 @@
   HQ.sound = (() => {
     let ctx = null;
     let on = false;
-    let minUsd = +(localStorage.getItem('hqp.soundMin') || 50000) || 50000;
+    let minUsd = 50000;
+    try { minUsd = +localStorage.getItem('hqp.soundMin') || minUsd; } catch (e) { /* pamięć niedostępna */ }
     let budget = 0;
     let budgetAt = 0;
     const listeners = new Set();

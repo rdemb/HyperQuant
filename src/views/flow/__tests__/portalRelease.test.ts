@@ -1,5 +1,6 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { resolveChronographAnchor } from '../chronographAnchor';
 
@@ -14,6 +15,25 @@ function destination(url: URL) {
 }
 
 describe('Cross-section portal release entry points', () => {
+  it('registers page initialization with the default sound threshold when storage is blocked', () => {
+    const HQ: { sound?: { min: number; on: boolean; setMin: (amount: number) => void } } = {};
+    const listeners = new Map<string, () => void>();
+    const page = {
+      window: { HQ },
+      document: {
+        documentElement: {},
+        addEventListener: (event: string, handler: () => void) => listeners.set(event, handler),
+      },
+      matchMedia: () => ({ matches: false }),
+      get localStorage() { throw new DOMException('Storage blocked', 'SecurityError'); },
+    };
+    runInNewContext(readFileSync('public/nowy/assets/portal.js', 'utf8'), page);
+    expect(listeners.get('DOMContentLoaded')).toBeTypeOf('function');
+    expect(HQ.sound).toMatchObject({ min: 50_000, on: false });
+    HQ.sound?.setMin(10_000);
+    expect(HQ.sound?.min).toBe(10_000);
+  });
+
   it('offers a language-aware link from the app and builds the direct Workbench entry', () => {
     const shell = readFileSync('src/shell/AppShell.tsx', 'utf8');
     const workbench = readFileSync('stanowisko/index.html', 'utf8');
