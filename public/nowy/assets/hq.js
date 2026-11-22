@@ -123,7 +123,7 @@
     document.querySelectorAll('.prov[data-kind="live"]').forEach((p) => {
       const at = +p.dataset.at; const lim = +p.dataset.limit;
       if (!at) return;
-      if (Date.now() - at > lim) HQ.setProv(p, 'live', at, lim);
+      if (Date.now() - at > lim) { if (!p.hasAttribute('data-desk-book')) HQ.setProv(p, 'live', at, lim); }
       else if (HQ.reduced()) { const a = p.querySelector('.age'); if (a) a.style.strokeDashoffset = (31.4 * Math.min(1, (Date.now() - at) / lim)).toFixed(2); }
     });
   }, 1000);
@@ -200,6 +200,11 @@
     on(ev, fn) { (this.handlers[ev] = this.handlers[ev] || []).push(fn); return this; }
     emit(ev, d) { (this.handlers[ev] || []).forEach((f) => f(d)); }
     connect() {
+      const previous = this.ws;
+      this.ws = null;
+      clearInterval(this.ping);
+      clearTimeout(this.dropT);
+      if (previous) { try { previous.close(); } catch (e) { /* nic */ } }
       this.emit('status', 'connecting');
       clearTimeout(this.simT);
       if (HQ.simState === 'offline' || navigator.onLine === false) { this.simT = setTimeout(() => { if (!this.closed) { this.emit('status', 'reconnecting'); this.connect(); } }, 4000); return; }
@@ -207,7 +212,9 @@
       let ws;
       try { ws = new WebSocket('wss://api.hyperliquid.xyz/ws'); } catch (e) { this.schedule(); return; }
       this.ws = ws;
+      const current = () => !this.closed && this.ws === ws;
       ws.onopen = () => {
+        if (!current()) return;
         this.retry = 0; this.emit('status', 'live');
         ws.send(JSON.stringify({ method: 'subscribe', subscription: { type: 'trades', coin: this.coin } }));
         const l2 = { type: 'l2Book', coin: this.coin }; if (this.opts.nSigFigs) l2.nSigFigs = this.opts.nSigFigs;
@@ -217,11 +224,18 @@
         if (HQ.simState === 'zerwanie') { clearTimeout(this.dropT); this.dropT = setTimeout(() => { this.simDropUntil = Date.now() + 8000; try { ws.close(); } catch (e) { /* nic */ } }, 25000); }
       };
       ws.onmessage = (m) => {
+        if (!current()) return;
         let d; try { d = JSON.parse(m.data); } catch (e) { return; }
         if (d.channel === 'trades') this.emit('trades', d.data.map((t) => ({ t: t.time, px: +t.px, sz: +t.sz, side: t.side === 'B' ? 'buy' : 'sell', id: t.tid })));
         else if (d.channel === 'l2Book') { const [b, a] = d.data.levels; this.emit('book', { t: d.data.time, bids: b.map((x) => ({ px: +x.px, sz: +x.sz, n: x.n })), asks: a.map((x) => ({ px: +x.px, sz: +x.sz, n: x.n })) }); }
       };
-      ws.onclose = () => { clearInterval(this.ping); if (!this.closed) { this.emit('status', 'reconnecting'); this.schedule(); } };
+      ws.onclose = () => {
+        if (!current()) return;
+        this.ws = null;
+        clearInterval(this.ping);
+        this.emit('status', 'reconnecting');
+        this.schedule();
+      };
       ws.onerror = () => { try { ws.close(); } catch (e) { /* nic */ } };
     }
     schedule() { const w = this.simDropUntil && Date.now() < this.simDropUntil ? this.simDropUntil - Date.now() : Math.min(15000, 800 * 2 ** this.retry++); this.retryAt = Date.now() + w; this.emit('retry', this.retryAt); clearTimeout(this.reT); this.reT = setTimeout(() => !this.closed && this.connect(), w); }

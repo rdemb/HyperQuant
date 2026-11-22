@@ -7,7 +7,7 @@
   const $ = (s, r = document) => r.querySelector(s);
   const D = {
     coin: 'BTC', feed: null, ctx: null, ctxAt: 0, frames: [], raw: [], m4pick: null, tapeFrozen: false, tapeFrozenN: 0, tapePicked: null, trades: [], start: null, live: true, cursor: null,
-    status: 'connecting', dec: 0, lastTradeAt: 0, bookAt: 0, paused: false, gaps: [], gapFrom: null, connSince: Date.now(),
+    status: 'connecting', dec: 0, lastTradeAt: 0, bookAt: 0, bookEpoch: 0, bookSampleEpoch: -1, paused: false, gaps: [], gapFrom: null, connSince: Date.now(),
     sel: null, // { px, bucket, pinned, pinAt, snap }
     win: (HQ.pref('win') || 120) * 1000, focusTrade: null, retryAt: null, focusPx: null, restoredMsg: null,
   };
@@ -38,7 +38,11 @@
     renderDay(); setInterval(renderDay, 30000);
     document.addEventListener('hq:lang', () => { buildLadder(true); renderAll(); renderDay(); });
     document.addEventListener('hq:density', () => { buildLadder(true); renderAll(); });
-    document.addEventListener('hq:net', (e) => { if (e.detail && D.feed && !D.paused) D.feed.now(); renderAll(); });
+    document.addEventListener('hq:net', (e) => {
+      if (D.paused || !D.feed) return;
+      if (e.detail) reconnect();
+      else setStatus('reconnecting');
+    });
     window.addEventListener('resize', () => buildLadder());
   });
 
@@ -90,25 +94,26 @@
     // Przerwa w nagraniu: od utraty stanu „live” do jego powrotu (tylko po rozpoczęciu nagrania)
     if (D.status === 'live' && s !== 'live' && D.start) D.gapFrom = now;
     if (s === 'live' && D.gapFrom) { D.gaps.push({ from: D.gapFrom, to: now }); D.gapFrom = null; HQ.sweep($('.dtime'), 'surface'); }
-    if (s !== 'live') D.connSince = now;
-    D.status = s; say(HQ.t('d.st.' + s)); schedule(); renderMarks();
+    if (s !== 'live') { D.connSince = now; D.bookEpoch++; }
+    D.status = s; say(HQ.t('d.st.' + s)); renderAll(); renderMarks();
   }
   function pause() { if (D.paused) return; if (D.feed) D.feed.close(); clearInterval(D.fallback); D.paused = true; setStatus('paused'); renderAll(); document.dispatchEvent(new CustomEvent('hq:stream')); }
   function resume() { if (!D.paused) return; D.paused = false; connect(D.coin); renderAll(); document.dispatchEvent(new CustomEvent('hq:stream')); }
   function reconnect() { if (D.feed) D.feed.close(); D.paused = false; connect(D.coin); loadCtx(); document.dispatchEvent(new CustomEvent('hq:stream')); }
   function connect(coin) {
+    setStatus('connecting');
     const f = (D.feed = new HQ.Feed(coin));
     HQ.liveFeed = f; document.dispatchEvent(new CustomEvent('hq:feed', { detail: f }));
     f.on('status', (s) => { if (f !== D.feed || D.paused) return; setStatus(s); });
     f.on('retry', (t) => { if (f === D.feed) { D.retryAt = t; renderBanner(); } });
     const onBook = (b) => {
-      if (f !== D.feed) return;
+      if (f !== D.feed || D.paused || D.status !== 'live' || navigator.onLine === false) return;
       const now = Date.now();
       // Migawki grupowane po stałym numerze sekundy czasu giełdy (b.t): w tej samej sekundzie zostaje ostatnia, nowa sekunda = nowa migawka.
       // (Wcześniej zastępowanie „gdy < 1 s od ostatniej” przesuwało punkt odniesienia i przy aktualizacjach co 200 ms zostawała jedna migawka; uwaga Astry.)
       const tx = isFinite(b.t) ? b.t : now; const secN = Math.floor(tx / 1000);
       const last = D.frames[D.frames.length - 1];
-      if (last && (secN < last.sec || tx < last.tx)) return; // spóźniona migawka (np. zapasowy REST) nie cofa nagrania ani miniatury
+      if (last && (secN < last.sec || tx < last.tx || (tx === last.tx && D.bookSampleEpoch !== D.bookEpoch))) return; // spóźniona migawka (np. zapasowy REST) nie cofa nagrania ani miniatury
       if (b.bids[0]) D.dec = Math.max(D.dec, decimalsOf(b.bids[0].px));
       // Kompletność strony: każdy wiersz z poprawną ceną i ilością, ceny ściśle monotoniczne. Tylko kompletna strona pozwala czytać brak wiersza jako zero.
       const okSide = (arr, dir) => arr.every((l, i) => isFinite(l.px) && l.px > 0 && isFinite(l.sz) && l.sz > 0 && (i === 0 || (dir < 0 ? l.px < arr[i - 1].px : l.px > arr[i - 1].px)));
@@ -118,6 +123,7 @@
       if (Number.isInteger(b.t)) HQ.m4.pushRaw(D.raw, { t: b.t, exact: !(f.opts && f.opts.nSigFigs), complete, bids: fr.bids, asks: fr.asks }, 3000);
       HQ.m4.pushThumb(D.frames, fr, MAX_FRAMES);
       D.bookAt = now;
+      D.bookSampleEpoch = D.bookEpoch;
       if (!D.start) D.start = now;
       schedule();
     };
@@ -126,7 +132,12 @@
     clearInterval(D.fallback);
     D.fallback = setInterval(() => {
       if (f !== D.feed || D.paused || D.status !== 'live' || document.hidden || Date.now() - D.bookAt < 6000) return;
-      HQ.info({ type: 'l2Book', coin }).then((r) => { const [b, a] = r.levels; onBook({ t: r.time, bids: b.map((x) => ({ px: +x.px, sz: +x.sz, n: x.n })), asks: a.map((x) => ({ px: +x.px, sz: +x.sz, n: x.n })) }); }).catch(() => {});
+      const epoch = D.bookEpoch;
+      HQ.info({ type: 'l2Book', coin }).then((r) => {
+        if (epoch !== D.bookEpoch || f !== D.feed) return;
+        const [b, a] = r.levels;
+        onBook({ t: r.time, bids: b.map((x) => ({ px: +x.px, sz: +x.sz, n: x.n })), asks: a.map((x) => ({ px: +x.px, sz: +x.sz, n: x.n })) });
+      }).catch(() => {});
     }, 3000);
     f.on('trades', (ts) => {
       if (f !== D.feed) return;
@@ -144,7 +155,14 @@
   function tradesUpTo(t) { const T = D.trades; if (D.live) return T.length; let lo = 0, hi = T.length - 1, ans = -1; while (lo <= hi) { const m = (lo + hi) >> 1; if (T[m].t <= t) { ans = m; lo = m + 1; } else hi = m - 1; } return ans + 1; }
   const allGaps = () => (D.gapFrom ? D.gaps.concat([{ from: D.gapFrom, to: Date.now(), open: true }]) : D.gaps);
   const gapAt = (t) => allGaps().find((g) => t >= g.from && t <= g.to);
-  const bookStale = () => D.live && D.bookAt && Date.now() - D.bookAt > BOOK_LIMIT;
+  function bookKind(frame) {
+    if (!frame) return 'none';
+    if (!D.live) return 'rec';
+    return D.status === 'live' && !D.paused && navigator.onLine !== false && D.bookSampleEpoch === D.bookEpoch
+      && Date.now() - frame.t <= BOOK_LIMIT ? 'live' : 'stale';
+  }
+
+  let refreshLevel = () => {};
 
   let pending = false;
   function schedule() { if (pending) return; pending = true; setTimeout(() => { pending = false; renderAll(); }, 220); }
@@ -153,7 +171,7 @@
     sc.min = String(st); sc.max = String(st + Math.max(1, Math.ceil((Date.now() - st) / 1000)) * 1000);
     if (D.live) sc.value = sc.max;
     renderTime(); renderBanner();
-    if (bookStale()) renderAll();
+    if (D.live && bookKind(frameAt(Date.now())) === 'stale') renderAll();
   }
 
   function renderAll() {
@@ -184,7 +202,7 @@
       conn.dataset.state = shown; conn.hidden = false;
       conn.querySelectorAll('span').forEach((x) => x.classList.toggle('on', x.dataset.s === shown));
     }
-    renderBanner();
+    renderBanner(); refreshLevel();
     const sv = $('#v-sesja'); if (sv && sv.dataset.on !== 'true') return;
     renderLadder(fr, dec); renderTape(n, dec); renderNums(D.frames[D.frames.length - 1] || null, dec); renderTime(); renderRead();
   }
@@ -209,8 +227,12 @@
   }
   const inSel = (px) => D.sel && px >= D.sel.px && px < D.sel.px + D.sel.bucket;
   function renderLadder(fr, dec) {
-    provFor($('#book-prov'), D.bookAt, BOOK_LIMIT, fr ? fr.t : null);
-    const tb = $('#ladder tbody'); const N = slotsN; const stale = bookStale();
+    const kind = bookKind(fr);
+    const badge = HQ.prov(kind, fr ? fr.t : null, BOOK_LIMIT, fr ? '' : HQ.t(!D.live ? 'prov.noSample' :
+      'd.st.short.' + (D.status === 'live' ? 'connecting' : D.status)));
+    badge.dataset.deskBook = '';
+    $('#book-prov').replaceChildren(badge);
+    const tb = $('#ladder tbody'); const N = slotsN; const stale = kind === 'stale';
     const rows = tb.querySelectorAll('tr[data-slot]'); const mid = tb.querySelector('tr.mid td');
     if (!D.live || D.status !== 'live' || !fr) {
       tb.querySelectorAll('tr[data-drop]').forEach((row) => { delete row.dataset.drop; });
@@ -561,7 +583,7 @@
     else if (offline) { kind = 'warn'; msg = HQ.t('ban.offline'); act = `<button type="button" class="btn btn-line btn-s" data-act="now">${HQ.t('ban.retry')}</button>`; }
     else if (D.status === 'reconnecting') { const s = D.retryAt ? Math.max(0, Math.ceil((D.retryAt - now) / 1000)) : null; kind = 'warn'; msg = HQ.fill(HQ.t('ban.lost'), { t: HQ.time(D.gapFrom || D.connSince), s: s == null ? '…' : s }); act = `<button type="button" class="btn btn-line btn-s" data-act="now">${HQ.t('ban.now')}</button>`; }
     else if (D.status === 'connecting' && now - D.connSince > 5000) { kind = 'info'; msg = HQ.fill(HQ.t('ban.slow'), { s: Math.round((now - D.connSince) / 1000) }); act = `<button type="button" class="btn btn-line btn-s" data-act="now">${HQ.t('ban.now')}</button>`; }
-    else if (bookStale()) { kind = 'warn'; msg = HQ.fill(HQ.t('ban.stale'), { s: Math.round((now - D.bookAt) / 1000) }); act = `<button type="button" class="btn btn-line btn-s" data-act="now">${HQ.t('ban.now')}</button>`; }
+    else if (D.live && bookKind(frameAt(now)) === 'stale') { kind = 'warn'; msg = HQ.fill(HQ.t('ban.stale'), { s: Math.round((now - D.bookAt) / 1000) }); act = `<button type="button" class="btn btn-line btn-s" data-act="now">${HQ.t('ban.now')}</button>`; }
     else if (!D.live && gapAt(D.cursor)) { const g = gapAt(D.cursor); kind = 'info'; msg = HQ.fill(HQ.t('ban.inGap'), { a: HQ.time(g.from), b: HQ.time(g.to) }); act = `<button type="button" class="btn btn-line btn-s" data-act="live">${HQ.t('d.back')}</button>`; }
     else if (D.restoredMsg) { kind = 'info'; msg = D.restoredMsg; }
     const key = kind ? kind + msg.replace(/\d+ s/g, '') : '';
@@ -721,10 +743,13 @@
       const side = v <= bidHi && v >= bidLo ? 'BID' : v >= askLo && v <= askHi ? 'ASK' : '';
       const inSpread = v > bidHi && v < askLo;
       const key = exact || (side && full) ? 'd.pal.levelIn' : inSpread && full ? 'd.pal.levelSpread' : 'd.pal.levelOut';
-      const live = HQ.desk.live();
-      const sub = HQ.fill(HQ.t(key), { pct: HQ.fmtPct(pct, 2), sz: HQ.fmt(exact ? exact.sz : 0, 4), side: exact ? (fr.bids.includes(exact) ? 'BID' : 'ASK') : side, unit: unit(), t: HQ.time(D.live ? HQ.desk.bookAt() || fr.t : fr.t) });
+      const kind = bookKind(fr);
+      const sub = kind === 'stale' ? `${HQ.DASH} · ${HQ.time(fr.t)}` : HQ.fill(HQ.t(key), {
+        pct: HQ.fmtPct(pct, 2), sz: HQ.fmt(exact ? exact.sz : 0, 4),
+        side: exact ? (fr.bids.includes(exact) ? 'BID' : 'ASK') : side, unit: unit(), t: HQ.time(fr.t),
+      });
       // Świeżość jak w drabince: na żywo po limicie księgi STALE, w powtórce REC
-      return { g: 'level', l: `${HQ.fmt(v, D.dec)} USD`, sub, kind: !D.live ? 'rec' : live && !bookStale() ? 'live' : 'stale', run: () => HQ.desk.select(v) };
+      return { g: 'level', l: `${HQ.fmt(v, D.dec)} USD`, sub, kind, run: () => HQ.desk.select(v) };
     };
     const draw = () => {
       const q = norm(input.value.trim()); items = all().filter((x) => !q || norm(x.l).includes(q));
@@ -735,20 +760,15 @@
       input.setAttribute('aria-activedescendant', items.length ? 'po-' + act : '');
       const a = $('#po-' + act); if (a) a.scrollIntoView({ block: 'nearest' });
     };
-    // Otwarta paleta pilnuje świeżości podglądu poziomu: zmiana LIVE → STALE (albo godziny) przerysowuje listę
-    let palTimer = 0;
-    const watchLevel = () => {
-      clearInterval(palTimer);
-      palTimer = setInterval(() => {
-        if (pal.dataset.open !== 'true') { clearInterval(palTimer); return; }
-        const cur = items[0] && items[0].g === 'level' ? items[0] : null;
-        const next = levelItem(input.value.trim());
-        if ((cur || next) && (!cur || !next || cur.kind !== next.kind || cur.sub !== next.sub)) draw();
-      }, 1000);
+    refreshLevel = () => {
+      if (pal.dataset.open !== 'true') return;
+      const cur = items[0] && items[0].g === 'level' ? items[0] : null;
+      const next = levelItem(input.value.trim());
+      if ((cur || next) && (!cur || !next || cur.kind !== next.kind || cur.sub !== next.sub)) draw();
     };
-    const open = (from) => { opener = from || document.activeElement; act = 0; input.value = ''; pal.dataset.open = back.dataset.open = 'true'; draw(); input.focus(); watchLevel(); };
+    const open = (from) => { opener = from || document.activeElement; act = 0; input.value = ''; pal.dataset.open = back.dataset.open = 'true'; draw(); input.focus(); };
     // Powrót fokusu: element, z którego otwarto paletę; gdy to było body (skrót / lub ⌘K), widoczny przycisk wyszukiwania
-    const close = (refocus = true) => { pal.dataset.open = back.dataset.open = 'false'; clearInterval(palTimer); if (!refocus) return;
+    const close = (refocus = true) => { pal.dataset.open = back.dataset.open = 'false'; if (!refocus) return;
       const ok = (el) => el && el !== document.body && el.focus && document.contains(el) && el.offsetParent !== null;
       const target = ok(opener) ? opener : [...document.querySelectorAll('[data-open-pal]')].find(ok);
       if (target) target.focus(); };
