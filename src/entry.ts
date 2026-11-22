@@ -3,7 +3,7 @@ import { moveOut } from './shell/originMove';
 import { sluchajBledowLadowania } from './shell/preloadError';
 import { registerServiceWorker } from './shell/usePwa';
 
-const PORTAL_HASH = /^(?:#(?:start|top|main|linia|poznaj|przekroj|obserwacja|terminal|dzien|onchain|dowod|pochodzenie|wszedzie|final|tour-[a-z]+))?$/;
+const PORTAL_HASH = /^(?:#(?:top|main|linia|poznaj|przekroj|obserwacja|terminal|dzien|onchain|dowod|pochodzenie|wszedzie|final|tour-[a-z]+))?$/;
 
 function isPortal(hash: string) {
   return hash === '#' || PORTAL_HASH.test(hash);

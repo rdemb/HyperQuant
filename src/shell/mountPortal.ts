@@ -33,7 +33,10 @@ export async function mountPortal() {
     }
   }
   const originalBody = document.body;
-  const originalTheme = document.documentElement.dataset.theme;
+  const preferences = document.documentElement.dataset;
+  const originalTheme = preferences.theme;
+  const originalPalette = preferences.palette;
+  const originalGrain = preferences.grain;
   const styles = [...portal.querySelectorAll('link[rel="stylesheet"]')].map((source) => {
     const link = document.createElement('link');
     link.rel = 'stylesheet';
@@ -45,7 +48,12 @@ export async function mountPortal() {
   try {
     await Promise.all(styles.map(loadStyle));
     if (new URLSearchParams(location.search).get('ziarno') === '1') document.documentElement.dataset.grain = '1';
-    document.documentElement.dataset.palette = 'zorza';
+    preferences.palette = 'zorza';
+    try {
+      if (localStorage.getItem('hqp.palette') === 'ton') preferences.palette = 'ton';
+    } catch {
+      // The default palette also works without browser storage.
+    }
     document.body.replaceWith(portal.body);
     for (const script of portal.querySelectorAll('script[src]')) {
       await loadScript(resolve(script.getAttribute('src')!));
@@ -55,7 +63,12 @@ export async function mountPortal() {
     if (anchor && anchor !== 'start') document.getElementById(anchor)?.scrollIntoView();
   } catch (error) {
     document.body.replaceWith(originalBody);
-    document.documentElement.dataset.theme = originalTheme;
+    if (originalTheme !== undefined) preferences.theme = originalTheme;
+    else delete preferences.theme;
+    if (originalPalette !== undefined) preferences.palette = originalPalette;
+    else delete preferences.palette;
+    if (originalGrain !== undefined) preferences.grain = originalGrain;
+    else delete preferences.grain;
     styles.forEach((link) => link.remove());
     throw error;
   }
