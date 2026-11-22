@@ -10,6 +10,8 @@ export const LEVEL_TEST_PRICE = 61_611;
 export const ARCHIVE_WINDOW_MS = 120_000;
 export const demoSource = archive.source;
 export const demoWindows = (kind: ChronographDemo) => archive[kind].windows;
+export const nextDemoSnapshot = (kind: ChronographDemo, through: number) =>
+  archive[kind].books.find(frame => frame.t >= through)?.t;
 
 /** Wyłącznie publiczna taśma i dokładne migawki z archiwum, bez danych o uczestnikach. */
 export function openChronographClip(kind: ChronographDemo, through: number, gap: boolean) {
@@ -26,9 +28,9 @@ export function openChronographClip(kind: ChronographDemo, through: number, gap:
   const history = new BookHistory(1);
   for (const frame of clip.books) {
     if (frame.t >= through) break;
-    history.add(toBookFrame({ ...frame, exact: true }));
+    history.add(toBookFrame({ ...frame, exact: frame.exact === true ? true : undefined }));
   }
   const book = history.latest();
   const previous = book ? referenceBook(history, book.t, FLOW_WINDOW_MS, bookCoverage) : null;
-  return { tape, coverage, book, previous, bookCoverage, bookAge: book ? through - book.t : null };
+  return { tape, coverage, book, previous, bookCoverage, bookAge: book ? through - book.t : null, history };
 }

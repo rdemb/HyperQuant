@@ -100,7 +100,13 @@ describe('parseBook', () => {
       },
       'BTC'
     );
-    expect(b).toEqual({ time: 5, bids: [{ px: 81000, sz: 1.5, n: 3 }], asks: [{ px: 81001, sz: 0.2, n: 1 }] });
+    expect(b).toEqual({
+      time: 5, bids: [{ px: 81000, sz: 1.5, n: 3 }], asks: [{ px: 81001, sz: 0.2, n: 1 }],
+      quality: {
+        bid: { kind: 'present', rejectedRows: 0, strictlyOrdered: true },
+        ask: { kind: 'present', rejectedRows: 0, strictlyOrdered: true },
+      },
+    });
   });
 
   it('pusty arkusz albo inna moneta → null', () => {

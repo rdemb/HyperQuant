@@ -1,4 +1,4 @@
-import type { BookSnapshot } from '../hl/parse';
+import type { BookQuality, BookSnapshot } from '../hl/parse';
 
 /**
  * Historia arkusza zleceń z kanału `l2Book`: migawki 20 poziomów na stronę w jednej agregacji ceny
@@ -20,6 +20,8 @@ export interface BookFrame {
   nBids: number;
   /** Migawka arkusza bez agregacji ceny z historii serwera (na żywo osobny kanał rozpoznaje sklep). */
   exact?: true;
+  /** Brak w starszym archiwum oznacza nieustaloną kompletność stron. */
+  quality?: BookQuality;
 }
 
 /** Krok agregacji migawki: najmniejsza różnica sąsiednich cen po jednej stronie, zaokrąglona do potęgi 10. */
@@ -46,7 +48,37 @@ export function toFrame(snap: BookSnapshot, step: number): BookFrame {
     sz[k] = l.sz;
     cnt[k++] = l.n;
   }
-  return { t: snap.time, step, px, sz, n: cnt, nBids: snap.bids.length };
+  return { t: snap.time, step, px, sz, n: cnt, nBids: snap.bids.length, ...(snap.quality && { quality: snap.quality }) };
+}
+
+export type BookLevelReading =
+  | { kind: 'observed'; size: number }
+  | { kind: 'empty'; size: 0 }
+  | { kind: 'missing'; reason: 'side' | 'invalid' | 'outside-range' | 'incomplete' };
+
+/** Odczyt jednej strony w jej faktycznej głębokości. Brak wiersza to zero tylko z potwierdzeniem kompletności. */
+export function readBookLevel(frame: BookFrame, side: 'bid' | 'ask', price: number): BookLevelReading {
+  const from = side === 'bid' ? 0 : frame.nBids;
+  const to = side === 'bid' ? frame.nBids : frame.px.length;
+  const quality = frame.quality?.[side];
+  if (quality?.kind === 'missing') return { kind: 'missing', reason: 'side' };
+  if (from >= to) return { kind: 'missing', reason: quality?.rejectedRows ? 'incomplete' : 'side' };
+  if (quality?.strictlyOrdered === false || !Number.isFinite(price) || price <= 0) return { kind: 'missing', reason: 'invalid' };
+  let size: number | null = null;
+  for (let i = from; i < to; i++) {
+    const px = frame.px[i];
+    const qty = frame.sz[i];
+    if (!Number.isFinite(px) || px <= 0 || !Number.isFinite(qty) || qty < 0
+      || (i > from && (side === 'bid' ? px >= frame.px[i - 1] : px <= frame.px[i - 1]))) {
+      return { kind: 'missing', reason: 'invalid' };
+    }
+    if (px === price) size = qty;
+  }
+  if (size !== null) return { kind: 'observed', size };
+  const low = side === 'bid' ? frame.px[to - 1] : frame.px[from];
+  const high = side === 'bid' ? frame.px[from] : frame.px[to - 1];
+  if (price < low || price > high) return { kind: 'missing', reason: 'outside-range' };
+  return quality?.rejectedRows === 0 ? { kind: 'empty', size: 0 } : { kind: 'missing', reason: 'incomplete' };
 }
 
 /**

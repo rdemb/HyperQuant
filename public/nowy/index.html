@@ -1,0 +1,546 @@
+<!doctype html>
+<html lang="pl" data-theme="deep" data-palette="zorza">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>HyperQuant · Zobacz rynek głębiej</title>
+<meta name="description" content="Darmowy terminal order flow dla BTC, złota i S&P 500 na Hyperliquid. Interaktywny pokaz księgi, transakcji i pozycji on-chain.">
+<meta name="theme-color" content="#040b15">
+<link rel="preload" href="fonts/bricolage-grotesque-latin-wdth-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/plus-jakarta-sans-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="assets/hq.css?v=20261123e">
+<link rel="stylesheet" href="assets/cinema.css?v=3">
+<link rel="stylesheet" href="assets/portal.css?v=1">
+<script>try{if(/[?&]ziarno=1/.test(location.search))document.documentElement.dataset.grain='1'}catch(e){}</script>
+<script>try{var d=document.documentElement,t=localStorage.getItem('hqp.theme');if(!t||t==='system')t=matchMedia('(prefers-color-scheme: light)').matches?'paper':'deep';d.dataset.theme=t;var m=localStorage.getItem('hqp.motion');if(m)d.dataset.motion=m;var p=localStorage.getItem('hqp.palette');d.dataset.palette=p==='ton'?'ton':'zorza'}catch(e){}</script>
+<script src="assets/i18n.js?v=20261122-live1" defer></script>
+<script src="assets/hq.js?v=20261122-live1" defer></script>
+<script src="assets/landing.js?v=20261123e" defer></script>
+<script src="assets/portal-i18n.js?v=1" defer></script>
+<script src="assets/stage.js?v=1" defer></script>
+<script src="assets/tour.js?v=1" defer></script>
+<script src="assets/waterline.js?v=1" defer></script>
+<script src="assets/portal.js?v=20261122-live2" defer></script>
+</head>
+<body class="cinema portal">
+<a class="skip" href="#main" data-i18n="skip">Przejdź do treści</a>
+
+<header class="dock" data-compact="false" data-hidden="false">
+  <div class="dock-in">
+    <a class="logo" href="#top" data-logo aria-label="HyperQuant">HyperQuant</a>
+    <nav class="dock-nav" aria-label="Sekcje strony" data-i18n-attr="aria-label:p.dockNav" data-fluid>
+      <a href="#poznaj" data-i18n="p.nav.tour">Pokaz</a>
+      <a href="#przekroj" data-i18n="p.nav.live">Na żywo</a>
+      <a href="#obserwacja" data-i18n="p.nav.event">Nagranie</a>
+      <a href="#dowod" data-i18n="p.nav.proof">Dowód</a>
+    </nav>
+    <div class="dock-right">
+      <a class="dock-cta" href="desk.html?lang=pl#dzis" data-cinema-link data-magnetic><span data-i18n="p.openTerminal">Otwórz terminal</span><span aria-hidden="true">↗</span></a>
+      <button type="button" class="dock-menu" data-open-menu aria-expanded="false" aria-controls="pmenu" aria-label="Otwórz menu" data-i18n-attr="aria-label:p.menuOpen"><span class="burger" aria-hidden="true"><i></i><i></i></span><span class="dock-menu-t" data-i18n="p.menu">Menu</span></button>
+    </div>
+  </div>
+  <i class="dock-progress" aria-hidden="true"></i>
+</header>
+
+<dialog class="pmenu" id="pmenu" aria-labelledby="pmenu-h">
+  <div class="pmenu-in">
+    <header class="pmenu-head">
+      <h2 id="pmenu-h" data-i18n="p.menu.title">Spis</h2>
+      <p class="pmenu-status" aria-live="polite"><i aria-hidden="true"></i><span data-menu-status></span></p>
+      <button type="button" class="dock-menu" data-close-menu><span class="burger x" aria-hidden="true"><i></i><i></i></span><span class="dock-menu-t" data-i18n="p.close">Zamknij</span></button>
+    </header>
+    <div class="pmenu-cols">
+      <nav class="pmenu-list" aria-labelledby="pm-portal">
+        <p class="pmenu-k" id="pm-portal" data-i18n="p.menu.portal"></p>
+        <ol>
+            <li><a href="#top"><span aria-hidden="true">01</span><b data-i18n="p.sec.hero"></b></a></li>
+            <li><a href="#poznaj"><span aria-hidden="true">02</span><b data-i18n="p.sec.tour"></b></a></li>
+            <li><a href="#przekroj"><span aria-hidden="true">03</span><b data-i18n="p.sec.live"></b></a></li>
+            <li><a href="#obserwacja"><span aria-hidden="true">04</span><b data-i18n="p.sec.event"></b></a></li>
+            <li><a href="#dzien"><span aria-hidden="true">05</span><b data-i18n="p.sec.day"></b></a></li>
+            <li><a href="#onchain"><span aria-hidden="true">06</span><b data-i18n="p.sec.onchain"></b></a></li>
+            <li><a href="#dowod"><span aria-hidden="true">07</span><b data-i18n="p.sec.proof"></b></a></li>
+            <li><a href="#pochodzenie"><span aria-hidden="true">08</span><b data-i18n="p.sec.origin"></b></a></li>
+        </ol>
+      </nav>
+      <nav class="pmenu-list pmenu-app" aria-labelledby="pm-app">
+        <p class="pmenu-k" id="pm-app" data-i18n="p.menu.app"></p>
+        <ol>
+            <li><a href="desk.html?lang=pl#dzis" data-cinema-link><b data-i18n="p.app.desk"></b><span aria-hidden="true">↗</span></a></li>
+            <li><a href="../?lang=pl#charts" data-cinema-link><b data-i18n="p.app.charts"></b><span aria-hidden="true">↗</span></a></li>
+            <li><a href="../?lang=pl#orderflow?m=BTC" data-cinema-link><b data-i18n="p.app.flow"></b><span aria-hidden="true">↗</span></a></li>
+            <li><a href="../?lang=pl#orderflow?m=BTC&amp;w=archive" data-cinema-link><b data-i18n="p.app.replay"></b><span aria-hidden="true">↗</span></a></li>
+            <li><a href="../?lang=pl#markets" data-cinema-link><b data-i18n="p.app.markets"></b><span aria-hidden="true">↗</span></a></li>
+            <li><a href="../?lang=pl#after" data-cinema-link><b data-i18n="p.app.after"></b><span aria-hidden="true">↗</span></a></li>
+            <li><a href="../?lang=pl#sources" data-cinema-link><b data-i18n="p.app.sources"></b><span aria-hidden="true">↗</span></a></li>
+            <li><a href="../stanowisko/?lang=pl" data-cinema-link><b data-i18n="p.app.workbench"></b><span aria-hidden="true">↗</span></a></li>
+        </ol>
+      </nav>
+      <section class="pmenu-prefs" aria-labelledby="pm-prefs">
+        <p class="pmenu-k" id="pm-prefs" data-i18n="p.menu.prefs"></p>
+        <div class="prow"><span data-i18n="p.pref.lang"></span><div class="gseg" role="group" aria-label="Język" data-i18n-attr="aria-label:p.pref.lang" data-fluid><button type="button" data-set-lang="pl" aria-pressed="true">PL</button><button type="button" data-set-lang="en" aria-pressed="false">EN</button></div></div>
+        <div class="prow"><span data-i18n="p.pref.theme"></span><div class="gseg" role="group" aria-label="Motyw" data-i18n-attr="aria-label:p.pref.theme" data-fluid><button type="button" data-set-theme="deep" data-i18n="theme.deep">Głębia</button><button type="button" data-set-theme="paper" data-i18n="theme.paper">Papier</button></div></div>
+        <div class="prow"><span data-i18n="p.pref.motion"></span><div class="gseg" role="group" aria-label="Ruch" data-i18n-attr="aria-label:p.pref.motion" data-fluid><button type="button" data-set-motion="system" data-i18n="p.pref.motionSystem"></button><button type="button" data-set-motion="reduced" data-i18n="p.pref.motionReduced"></button></div></div>
+        <div class="prow"><span data-i18n="p.sound"></span><button type="button" class="gswitch" data-sound-toggle aria-pressed="false" aria-label="Dźwięk taśmy BTC" data-i18n-attr="aria-label:p.soundAria"><i aria-hidden="true"></i><span data-sound-state></span></button></div>
+        <div class="prow"><span data-i18n="p.soundMin"></span><div class="gseg" role="group" aria-label="Próg transakcji" data-i18n-attr="aria-label:p.soundMin" data-fluid><button type="button" data-sound-min="10000">10k $</button><button type="button" data-sound-min="50000">50k $</button><button type="button" data-sound-min="250000">250k $</button></div></div>
+        <p class="pmenu-hint" data-i18n="p.soundHint"></p>
+      </section>
+    </div>
+  </div>
+</dialog>
+
+<main id="main">
+  <section class="cinema-hero hero2" id="top" aria-labelledby="cinema-title">
+    <div class="hero2-media" aria-hidden="true">
+      <img class="hero2-poster" src="assets/hyperquant-przekroj.webp" alt="" width="1440" height="810" fetchpriority="high">
+      <canvas id="waterline"></canvas>
+    </div>
+    <div class="hero2-in">
+      <div class="hero2-copy">
+        <p class="cinema-kicker"><span aria-hidden="true"></span><b data-i18n="cinema.kicker">Mikrostruktura rynku</b></p>
+        <h1 id="cinema-title" data-words><span data-i18n="cinema.titleStart">Zobacz rynek</span> <em data-i18n="cinema.titleEnd">głębiej.</em></h1>
+        <p class="cinema-lead" data-i18n="cinema.lead"></p>
+        <div class="cinema-hero-actions">
+          <a href="#poznaj" class="cinema-button cinema-button-main" data-magnetic><span data-i18n="cinema.takeTour">Zobacz, jak działa</span><span aria-hidden="true">↓</span></a>
+          <a href="desk.html?lang=pl#dzis" data-cinema-link class="cinema-button cinema-button-alt" data-magnetic><span data-i18n="cinema.openTerminal">Otwórz terminal</span><span aria-hidden="true">↗</span></a>
+        </div>
+      </div>
+      <div class="hero2-foot">
+        <dl class="hero2-live">
+          <div class="hl"><dt data-i18n="p.live.last"></dt><dd><b class="num" id="live-px">—</b><span class="num hl-sub" id="live-sz">—</span><span class="prov" id="live-prov-last"></span></dd></div>
+          <div class="hl"><dt data-i18n="p.live.rate"></dt><dd><b class="num" id="live-rate">—</b><span class="num hl-sub" id="live-rate-sub"></span><span class="prov" id="live-prov-rate"></span></dd></div>
+        </dl>
+        <p class="hero2-note"><i aria-hidden="true"></i><span data-i18n="p.live.canvas"></span></p>
+        <div class="hero2-ctrl">
+        <button type="button" class="film-control" id="hero-pause" aria-pressed="false" hidden><span aria-hidden="true" data-hp-icon>Ⅱ</span><span data-hp-label></span></button>
+        <button type="button" class="gswitch hero2-sound" data-sound-toggle aria-pressed="false" aria-label="Dźwięk taśmy BTC" data-i18n-attr="aria-label:p.soundAria"><i aria-hidden="true"></i><span data-i18n="p.sound"></span><span class="gswitch-state" data-sound-state></span></button>
+        </div>
+      </div>
+      <a class="hero2-scroll" href="#linia" aria-hidden="true" tabindex="-1"><span data-i18n="p.scroll"></span><i></i></a>
+    </div>
+  </section>
+
+  <section class="interlude" id="linia" data-scrollvar data-film-box aria-labelledby="interlude-h">
+    <div class="interlude-pin">
+      <div class="interlude-film" aria-hidden="true">
+        <picture><source media="(max-width: 760px) and (orientation: portrait)" srcset="assets/media/H2-plakat.webp"><img src="assets/media/H1-plakat.webp" alt="" width="1920" height="1080" loading="lazy"></picture>
+        <video data-film loop muted playsinline preload="none" width="1920" height="1080" data-webm="assets/media/H1.webm" data-mp4="assets/media/H1.mp4" data-webm-portrait="assets/media/H2.webm" data-mp4-portrait="assets/media/H2.mp4"></video>
+      </div>
+      <div class="interlude-marquee" aria-hidden="true"><span data-i18n="p.interlude.words"></span><span data-i18n="p.interlude.words"></span><span data-i18n="p.interlude.words"></span></div>
+      <div class="interlude-copy">
+        <p class="cinema-kicker"><span aria-hidden="true"></span><b data-i18n="p.interlude.kicker"></b></p>
+        <h2 id="interlude-h" data-words><span data-i18n="p.interlude.title"></span></h2>
+        <p data-i18n="p.interlude.body"></p>
+        <div class="interlude-meta">
+          <button class="film-control" type="button" data-film-control hidden aria-pressed="false"><span aria-hidden="true" data-film-icon>▷</span><span data-film-label></span></button>
+          <small data-i18n="p.film"></small>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="tour" id="poznaj" aria-labelledby="tour-h">
+    <div class="dive" data-dive>
+      <div class="dive-pin">
+        <img class="dive-poster" src="assets/media/T1-plakat.webp" alt="" aria-hidden="true" width="1920" height="1080" loading="lazy">
+        <canvas class="dive-canvas" aria-hidden="true"></canvas>
+        <i class="dive-shade" aria-hidden="true"></i>
+        <header class="tour-intro dive-copy">
+          <h2 id="tour-h" data-words><span data-i18n="cinema.tourTitleStart">Od kontekstu</span> <em data-i18n="cinema.tourTitleEnd">do dowodu.</em></h2>
+          <p data-i18n="cinema.tourInstructions"></p>
+        </header>
+      </div>
+    </div>
+    <div class="tour-story">
+      <div class="tour-backdrop" aria-hidden="true">
+        <div data-bg="przed"></div>
+        <div data-bg="wykresy"></div>
+        <div data-bg="flow"></div>
+        <div data-bg="powtorka"></div>
+        <div data-bg="rynki"></div>
+        <div data-bg="po"></div>
+        <div data-bg="zrodla"></div>
+        <div data-bg="stanowisko"></div>
+      </div>
+      <div class="tour-stage" aria-hidden="true">
+        <canvas id="tour-canvas"></canvas>
+        <canvas class="tour-prev" hidden></canvas>
+        <i class="tour-wipe"></i>
+        <div class="tour-stage-label"><span class="tour-stage-code">ON-CHAIN</span><strong class="tour-stage-name"></strong></div>
+        <div class="tour-count"><b class="tour-count-now">01</b><span>/ 08</span></div>
+        <div class="tour-stage-meta"><span class="prov tour-sim-prov"></span><span data-i18n="p.tour.sim"></span></div>
+        <div class="tour-stage-progress"></div>
+      </div>
+      <div class="tour-chapters">
+        <article class="tour-chapter" tabindex="-1" id="tour-przed" data-scene="przed" data-scene-label="cinema.scene.przed" data-code="ON-CHAIN" aria-labelledby="heading-przed">
+          <div class="tour-card">
+            <p class="cinema-kicker"><span aria-hidden="true">01</span><b data-i18n="cinema.before.kicker"></b></p>
+            <h3 id="heading-przed" data-words><span data-i18n="cinema.before.title"></span></h3>
+            <p data-i18n="cinema.before.body"></p>
+            <a class="tour-link" href="../?lang=pl#before" data-cinema-link><span data-i18n="cinema.before.open"></span><span aria-hidden="true">↗</span></a>
+          </div>
+        </article>
+        <article class="tour-chapter" tabindex="-1" id="tour-wykresy" data-scene="wykresy" data-scene-label="cinema.scene.wykresy" data-code="PRICE" aria-labelledby="heading-wykresy">
+          <div class="tour-card">
+            <p class="cinema-kicker"><span aria-hidden="true">02</span><b data-i18n="cinema.charts.kicker"></b></p>
+            <h3 id="heading-wykresy" data-words><span data-i18n="cinema.charts.title"></span></h3>
+            <p data-i18n="cinema.charts.body"></p>
+            <a class="tour-link" href="../?lang=pl#charts" data-cinema-link><span data-i18n="cinema.charts.open"></span><span aria-hidden="true">↗</span></a>
+          </div>
+        </article>
+        <article class="tour-chapter" tabindex="-1" id="tour-flow" data-scene="flow" data-scene-label="cinema.scene.flow" data-code="TIME & SALES" aria-labelledby="heading-flow">
+          <div class="tour-card">
+            <p class="cinema-kicker"><span aria-hidden="true">03</span><b data-i18n="cinema.flow.kicker"></b></p>
+            <h3 id="heading-flow" data-words><span data-i18n="cinema.flow.title"></span></h3>
+            <p data-i18n="cinema.flow.body"></p>
+            <a class="tour-link" href="#obserwacja" data-cinema-link><span data-i18n="cinema.flow.open"></span><span aria-hidden="true">↗</span></a>
+          </div>
+        </article>
+        <article class="tour-chapter" tabindex="-1" id="tour-powtorka" data-scene="powtorka" data-scene-label="cinema.scene.powtorka" data-code="REPLAY" aria-labelledby="heading-powtorka">
+          <div class="tour-card">
+            <p class="cinema-kicker"><span aria-hidden="true">04</span><b data-i18n="cinema.replay.kicker"></b></p>
+            <h3 id="heading-powtorka" data-words><span data-i18n="cinema.replay.title"></span></h3>
+            <p data-i18n="cinema.replay.body"></p>
+            <a class="tour-link" href="../?lang=pl#orderflow?m=BTC&amp;w=archive" data-cinema-link><span data-i18n="cinema.replay.open"></span><span aria-hidden="true">↗</span></a>
+          </div>
+        </article>
+        <article class="tour-chapter" tabindex="-1" id="tour-rynki" data-scene="rynki" data-scene-label="cinema.scene.rynki" data-code="MARKETS" aria-labelledby="heading-rynki">
+          <div class="tour-card">
+            <p class="cinema-kicker"><span aria-hidden="true">05</span><b data-i18n="cinema.markets.kicker"></b></p>
+            <h3 id="heading-rynki" data-words><span data-i18n="cinema.markets.title"></span></h3>
+            <p data-i18n="cinema.markets.body"></p>
+            <a class="tour-link" href="../?lang=pl#markets" data-cinema-link><span data-i18n="cinema.markets.open"></span><span aria-hidden="true">↗</span></a>
+          </div>
+        </article>
+        <article class="tour-chapter" tabindex="-1" id="tour-po" data-scene="po" data-scene-label="cinema.scene.po" data-code="REVIEW" aria-labelledby="heading-po">
+          <div class="tour-card">
+            <p class="cinema-kicker"><span aria-hidden="true">06</span><b data-i18n="cinema.after.kicker"></b></p>
+            <h3 id="heading-po" data-words><span data-i18n="cinema.after.title"></span></h3>
+            <p data-i18n="cinema.after.body"></p>
+            <a class="tour-link" href="../?lang=pl#after" data-cinema-link><span data-i18n="cinema.after.open"></span><span aria-hidden="true">↗</span></a>
+          </div>
+        </article>
+        <article class="tour-chapter" tabindex="-1" id="tour-zrodla" data-scene="zrodla" data-scene-label="cinema.scene.zrodla" data-code="PROVENANCE" aria-labelledby="heading-zrodla">
+          <div class="tour-card">
+            <p class="cinema-kicker"><span aria-hidden="true">07</span><b data-i18n="cinema.sources.kicker"></b></p>
+            <h3 id="heading-zrodla" data-words><span data-i18n="cinema.sources.title"></span></h3>
+            <p data-i18n="cinema.sources.body"></p>
+            <a class="tour-link" href="../?lang=pl#sources" data-cinema-link><span data-i18n="cinema.sources.open"></span><span aria-hidden="true">↗</span></a>
+          </div>
+        </article>
+        <article class="tour-chapter" tabindex="-1" id="tour-stanowisko" data-scene="stanowisko" data-scene-label="cinema.scene.stanowisko" data-code="WORKBENCH" aria-labelledby="heading-stanowisko">
+          <div class="tour-card">
+            <p class="cinema-kicker"><span aria-hidden="true">08</span><b data-i18n="cinema.workbench.kicker"></b></p>
+            <h3 id="heading-stanowisko" data-words><span data-i18n="cinema.workbench.title"></span></h3>
+            <p data-i18n="cinema.workbench.body"></p>
+            <a class="tour-link" href="../stanowisko/?lang=pl" data-cinema-link><span data-i18n="cinema.workbench.open"></span><span aria-hidden="true">↗</span></a>
+          </div>
+        </article>
+      </div>
+      <nav class="tour-tabs" aria-label="Rozdziały pokazu" data-i18n-attr="aria-label:p.tour.chapters">
+        <div class="tour-tabs-in" data-fluid>
+          <a href="#tour-przed" data-scene-link="0"><span aria-hidden="true">01</span><b data-i18n="cinema.before.nav"></b></a>
+          <a href="#tour-wykresy" data-scene-link="1"><span aria-hidden="true">02</span><b data-i18n="cinema.charts.nav"></b></a>
+          <a href="#tour-flow" data-scene-link="2"><span aria-hidden="true">03</span><b data-i18n="cinema.flow.nav"></b></a>
+          <a href="#tour-powtorka" data-scene-link="3"><span aria-hidden="true">04</span><b data-i18n="cinema.replay.nav"></b></a>
+          <a href="#tour-rynki" data-scene-link="4"><span aria-hidden="true">05</span><b data-i18n="cinema.markets.nav"></b></a>
+          <a href="#tour-po" data-scene-link="5"><span aria-hidden="true">06</span><b data-i18n="cinema.after.nav"></b></a>
+          <a href="#tour-zrodla" data-scene-link="6"><span aria-hidden="true">07</span><b data-i18n="cinema.sources.nav"></b></a>
+          <a href="#tour-stanowisko" data-scene-link="7"><span aria-hidden="true">08</span><b data-i18n="cinema.workbench.nav"></b></a>
+        </div>
+      </nav>
+    </div>
+  </section>
+
+  <section class="hero cinema-live" id="przekroj" aria-labelledby="cinema-live-heading">
+    <div class="wrap">
+      <div class="grid">
+        <div>
+          <p class="eyebrow">BTC-PERP · Hyperliquid</p>
+          <h2 class="h2" id="cinema-live-heading" data-i18n="cinema.liveTitle">Przekrój na żywo</h2>
+          <p class="lead" data-i18n="cinema.liveInstructions">Wybierz poziom ceny, aby sprawdzić zlecenia w księdze i mapę likwidacji on-chain.</p>
+          <ul class="facts">
+            <li data-i18n="fact.1">Za darmo, bez konta</li>
+            <li data-i18n="fact.2">Tylko dane publiczne</li>
+            <li data-i18n="fact.3">Opis rynku, nie porada</li>
+            <li data-i18n="fact.4">PL · EN · telefon i komputer</li>
+          </ul>
+          <p class="howto-h" id="przekroj-opis" data-i18n="read.h">Jak czytać przekrój</p>
+          <ol class="howto" aria-labelledby="przekroj-opis">
+            <li><i class="g-water" aria-hidden="true"></i><span data-i18n-html="read.1"></span></li>
+            <li><i class="g-book" aria-hidden="true"></i><span data-i18n-html="read.2"></span></li>
+            <li><i class="g-liq" aria-hidden="true"></i><span data-i18n-html="read.3"></span></li>
+            <li><i class="g-flow" aria-hidden="true"></i><span data-i18n-html="read.4"></span></li>
+          </ol>
+        </div>
+
+        <figure class="xsec deep" style="margin:0" aria-labelledby="xsec-ttl">
+          <header>
+            <span class="ttl" id="xsec-ttl" data-i18n="xsec.title">Przekrój · BTC-PERP</span>
+            <span class="sp" id="xsec-provs"></span>
+          </header>
+          <div class="cols" aria-hidden="true">
+            <span><i style="border:1.5px solid var(--liq-long)"></i><span data-i18n="xsec.left">Pozycje do likwidacji · on-chain</span></span>
+            <span><span data-i18n="xsec.right">Zlecenia w księdze · L2</span><i style="background:var(--buy)"></i></span>
+          </div>
+          <canvas id="xsec" role="img" aria-label="" height="480"></canvas>
+          <div class="xexplore">
+            <div class="tour" role="group" aria-label="Pokaż warstwę" data-i18n-attr="aria-label:demo.tour">
+              <button type="button" data-layer="all" aria-pressed="true" data-i18n="demo.all">Wszystko</button>
+              <button type="button" data-layer="water" aria-pressed="false" data-i18n="demo.water">1 · Linia wody</button>
+              <button type="button" data-layer="book" aria-pressed="false" data-i18n="demo.book">2 · Księga</button>
+              <button type="button" data-layer="liq" aria-pressed="false" data-i18n="demo.liq">3 · Likwidacje</button>
+            </div>
+            <label class="lvl" for="xs-lvl"><span data-i18n="demo.level">Wybierz poziom</span><input type="range" id="xs-lvl" min="0" max="1" step="100" value="0" aria-describedby="xs-card" disabled></label>
+            <div class="xcard" id="xs-card"><p class="muted" data-i18n="demo.hint">Przesuń suwak albo wskaż poziom na przekroju.</p></div>
+            <a class="btn btn-lume btn-s" id="xs-open" href="desk.html#sesja" aria-disabled="true" data-i18n="demo.open">Otwórz ten poziom w terminalu →</a>
+          </div>
+          <div class="flow">
+            <div class="lab"><span data-i18n="xsec.flow">Transakcje co 5 s</span><span data-i18n="xsec.flowspan">ostatnie 3 min</span></div>
+            <canvas id="flow" aria-hidden="true" height="64"></canvas>
+          </div>
+          <div class="tablealt" id="xsec-table" data-open="false"></div>
+          <footer>
+            <span id="xsec-src" data-i18n="xsec.src"></span>
+            <button type="button" class="btn btn-line btn-s" id="xsec-tbtn" aria-expanded="false" aria-controls="xsec-table" data-i18n="xsec.table">Pokaż jako tabelę</button>
+          </footer>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec event-tour" id="obserwacja" data-reveal aria-labelledby="event-h">
+    <div class="wrap event-layout">
+      <div class="event-intro">
+        <h2 class="h2" id="event-h" data-i18n="event.title"></h2>
+        <p class="event-origin"><span data-i18n="event.recording"></span> · Hyperliquid BTC-PERP · <time datetime="2026-11-20">2026-11-20</time></p>
+        <a class="btn btn-line" id="event-open" href="../?lang=pl#orderflow?m=BTC&amp;w=level&amp;a=eyJ2IjoxLCJzb3VyY2UiOiJoeXBlcmxpcXVpZC9CVEMtcGVycCIsImNsaXAiOiJsZXZlbCIsInJldmlzaW9uIjoic2hhMjU2OjUxNGNhMzljNzBiNmYxMTVhNWZkYzFmMWUyMTEwMjUyN2E4ZjIxYjFmZjZhZWM1MmYwZWQzYWY1OWI5NmIxM2MiLCJ0aHJvdWdoIjoxNzk1MTU5Nzk0MDEwLCJ0cmFkZSI6eyJ0IjoxNzk1MTU5NzgyMDU4LCJ0aWQiOiI5NzgiLCJweCI6NjE2MTEsInN6IjowLjAwNjgxLCJzaWRlIjotMX0sImJvb2siOnsic2lkZSI6ImJpZCIsImEiOjE3OTUxNTk3ODE1MjgsImIiOjE3OTUxNTk3OTQwMDl9fQ" data-i18n="event.open"></a>
+        <div class="event-art" aria-hidden="true">
+          <div class="event-slab event-slab-top"></div>
+          <div class="event-slab event-slab-bottom"></div>
+          <div class="event-art-line"></div>
+        </div>
+      </div>
+      <div class="event-board">
+        <ol class="event-steps">
+          <li><button type="button" data-event-step="0" id="event-step-0" aria-pressed="true" aria-controls="event-read-0"><span data-i18n="event.book"></span><time datetime="2026-11-20T07:29:41.528Z">07:29:41.528 UTC</time></button></li>
+          <li><button type="button" data-event-step="1" id="event-step-1" aria-pressed="false" aria-controls="event-read-1"><span data-i18n="event.trade"></span><time datetime="2026-11-20T07:29:42.058Z">07:29:42.058 UTC</time></button></li>
+          <li><button type="button" data-event-step="2" id="event-step-2" aria-pressed="false" aria-controls="event-read-2"><span data-i18n="event.verdict"></span><time datetime="2026-11-20T07:29:54.009Z">07:29:54.009 UTC</time></button></li>
+        </ol>
+        <div class="event-readouts" aria-live="polite">
+          <section id="event-read-0" aria-labelledby="event-step-0"><h3 data-i18n="event.bookTitle"></h3><p data-i18n="event.bookText"></p></section>
+          <section id="event-read-1" aria-labelledby="event-step-1" hidden><h3 data-i18n="event.tradeTitle"></h3><p data-i18n="event.tradeText"></p></section>
+          <section id="event-read-2" aria-labelledby="event-step-2" hidden><h3 data-i18n="event.verdictTitle"></h3><p data-i18n="event.verdictText"></p>
+            <dl class="event-pair">
+              <dt>A · BID</dt><dd><span class="event-qty" style="--amount:100%" aria-hidden="true"></span><span data-i18n="event.amountA"></span></dd>
+              <dt>B · BID</dt><dd><span class="event-qty" style="--amount:18.6645%" aria-hidden="true"></span><span data-i18n="event.amountB"></span></dd>
+            </dl>
+          </section>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec bento" id="terminal" aria-labelledby="bento-h">
+    <div class="wrap">
+      <header class="bento-head" data-reveal>
+        <p class="cinema-kicker"><span aria-hidden="true"></span><b data-i18n="p.bento.kicker"></b></p>
+        <h2 class="h2" id="bento-h" data-words><span data-i18n="p.bento.title"></span></h2>
+      </header>
+      <div class="bento-grid">
+        <a class="bento-card b-wide" href="../?lang=pl#orderflow?m=BTC" data-cinema-link data-spot data-reveal style="--d:60ms">
+          <div class="bento-glyph g-flow"><svg viewBox="0 0 240 90" aria-hidden="true"><line class="g-water" x1="0" y1="45" x2="240" y2="45"/><g class="g-bubbles"><circle cx="30" cy="30" r="6"/><circle cx="70" cy="58" r="10"/><circle cx="112" cy="36" r="4"/><circle cx="150" cy="60" r="7"/><circle cx="196" cy="26" r="12"/><circle cx="226" cy="54" r="5"/></g></svg></div>
+          <h3 data-i18n="p.bento.1t"></h3>
+          <p data-i18n="p.bento.1d"></p>
+          <span class="bento-open"><span data-i18n="p.bento.open"></span><span aria-hidden="true">↗</span></span>
+        </a>
+        <a class="bento-card " href="desk.html?lang=pl#przed" data-cinema-link data-spot data-reveal style="--d:120ms">
+          <div class="bento-glyph g-liq"><svg viewBox="0 0 240 90" aria-hidden="true"><g class="g-bars"><rect x="8" y="78" width="7" height="10" rx="2"/><rect x="20" y="74" width="7" height="14" rx="2"/><rect x="32" y="66" width="7" height="22" rx="2"/><rect x="44" y="54" width="7" height="34" rx="2"/><rect x="56" y="40" width="7" height="48" rx="2"/><rect x="68" y="26" width="7" height="62" rx="2"/><rect x="80" y="18" width="7" height="70" rx="2"/><rect x="92" y="30" width="7" height="58" rx="2"/><rect x="104" y="48" width="7" height="40" rx="2"/><rect x="116" y="62" width="7" height="26" rx="2"/><rect x="128" y="70" width="7" height="18" rx="2"/><rect x="140" y="58" width="7" height="30" rx="2"/><rect x="152" y="42" width="7" height="46" rx="2"/><rect x="164" y="28" width="7" height="60" rx="2"/><rect x="176" y="36" width="7" height="52" rx="2"/><rect x="188" y="52" width="7" height="36" rx="2"/><rect x="200" y="66" width="7" height="22" rx="2"/><rect x="212" y="76" width="7" height="12" rx="2"/><rect x="224" y="80" width="7" height="8" rx="2"/></g><line class="g-water" x1="114" y1="0" x2="114" y2="90"/></svg></div>
+          <h3 data-i18n="p.bento.2t"></h3>
+          <p data-i18n="p.bento.2d"></p>
+          <span class="bento-open"><span data-i18n="p.bento.open"></span><span aria-hidden="true">↗</span></span>
+        </a>
+        <a class="bento-card " href="../?lang=pl#orderflow?m=BTC&amp;w=archive" data-cinema-link data-spot data-reveal style="--d:180ms">
+          <div class="bento-glyph g-replay"><svg viewBox="0 0 240 90" aria-hidden="true"><line class="g-axis" x1="10" y1="70" x2="230" y2="70"/><rect class="g-snap" x="46" y="14" width="40" height="44" rx="6"/><rect class="g-snap" x="160" y="14" width="40" height="44" rx="6"/><circle class="g-trade" cx="122" cy="36" r="6"/><line class="g-cursor" x1="0" y1="8" x2="0" y2="78"/></svg></div>
+          <h3 data-i18n="p.bento.3t"></h3>
+          <p data-i18n="p.bento.3d"></p>
+          <span class="bento-open"><span data-i18n="p.bento.open"></span><span aria-hidden="true">↗</span></span>
+        </a>
+        <a class="bento-card b-wide" href="../?lang=pl#sources" data-cinema-link data-spot data-reveal style="--d:240ms">
+          <div class="bento-glyph g-prov"><svg viewBox="0 0 240 90" aria-hidden="true"><g class="g-chips"><rect x="8" y="30" width="66" height="26" rx="13"/><rect x="86" y="30" width="72" height="26" rx="13"/><rect x="170" y="30" width="58" height="26" rx="13"/></g><g class="g-chip-t"><text x="41" y="47">LIVE</text><text x="122" y="47">MODEL</text><text x="199" y="47">SIM</text></g></svg></div>
+          <h3 data-i18n="p.bento.4t"></h3>
+          <p data-i18n="p.bento.4d"></p>
+          <span class="bento-open"><span data-i18n="p.bento.open"></span><span aria-hidden="true">↗</span></span>
+        </a>
+        <a class="bento-card b-wide" href="../stanowisko/?lang=pl" data-cinema-link data-spot data-reveal style="--d:300ms">
+          <div class="bento-glyph g-bench"><svg viewBox="0 0 240 90" aria-hidden="true"><g class="g-panels"><rect x="6" y="6" width="104" height="36" rx="6"/><rect x="118" y="6" width="116" height="36" rx="6"/><rect x="6" y="48" width="70" height="36" rx="6"/><rect x="84" y="48" width="150" height="36" rx="6"/></g><rect class="g-move" x="20" y="54" width="44" height="24" rx="5"/></svg></div>
+          <h3 data-i18n="p.bento.5t"></h3>
+          <p data-i18n="p.bento.5d"></p>
+          <span class="bento-open"><span data-i18n="p.bento.open"></span><span aria-hidden="true">↗</span></span>
+        </a>
+        <a class="bento-card " href="desk.html?lang=pl#sesja" data-cinema-link data-spot data-reveal style="--d:360ms">
+          <div class="bento-glyph g-device"><svg viewBox="0 0 240 90" aria-hidden="true"><rect class="g-phone" x="20" y="8" width="44" height="76" rx="8"/><rect class="g-desk" x="84" y="8" width="140" height="76" rx="8"/><line class="g-water" x1="24" y1="50" x2="60" y2="50"/><line class="g-water" x1="90" y1="50" x2="218" y2="50"/></svg></div>
+          <h3 data-i18n="p.bento.6t"></h3>
+          <p data-i18n="p.bento.6d"></p>
+          <span class="bento-open"><span data-i18n="p.bento.open"></span><span aria-hidden="true">↗</span></span>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec" id="dzien" data-reveal aria-labelledby="dzien-h">
+    <div class="wrap">
+      <div class="sec-head">
+        <div>
+          <p class="eyebrow"><span class="no">Nº 01</span><span data-i18n="tenses.eyebrow">Trzy czasy dnia</span></p>
+          <h2 class="h2" id="dzien-h" data-i18n="tenses.h2">Dzień tradera ma trzy czasy. Terminal też.</h2>
+        </div>
+        <p class="lead" data-i18n="tenses.lead"></p>
+      </div>
+      <div class="dayline" id="dayline" aria-hidden="true">
+        <div class="track" id="dayline-track"></div>
+        <div class="ticks" id="dayline-ticks"></div>
+        <div class="now-mark" id="dayline-now"><span class="lbl"></span></div>
+      </div>
+      <p class="vh" id="dayline-sr" aria-live="off"></p>
+      <div class="tenses">
+        <article class="tense" data-phase="before">
+          <h3 data-i18n="before.h">Przed sesją</h3>
+          <p data-i18n="before.p"></p>
+          <dl class="kv">
+            <dt data-i18n="before.pdh">Maksimum wczoraj (PDH)</dt><dd id="v-pdh">—</dd>
+            <dt data-i18n="before.pdl">Minimum wczoraj (PDL)</dt><dd id="v-pdl">—</dd>
+            <dt data-i18n="before.fuel">Likwidacje w ±1% od ceny</dt><dd id="v-fuel">—</dd>
+            <dd class="src" id="src-before"></dd>
+          </dl>
+          <a class="more" href="desk.html#przed"><span data-i18n="open">Otwórz</span> →</a>
+        </article>
+        <article class="tense" data-phase="in">
+          <h3 data-i18n="in.h">W sesji</h3>
+          <p data-i18n="in.p"></p>
+          <a class="more" href="desk.html#sesja"><span data-i18n="open">Otwórz</span> →</a>
+        </article>
+        <article class="tense" data-phase="after">
+          <h3 data-i18n="after.h">Po sesji</h3>
+          <p data-i18n="after.p"></p>
+          <dl class="kv">
+            <dt data-i18n="after.n">Rozliczone prognozy · 1 h</dt><dd id="v-n">—</dd>
+            <dt data-i18n="after.brier">Brier dotknięć poziomów</dt><dd id="v-brier">—</dd>
+            <dd class="src" id="src-after"></dd>
+          </dl>
+          <a class="more" href="desk.html#po"><span data-i18n="open">Otwórz</span> →</a>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec" id="onchain" data-reveal aria-labelledby="onchain-h">
+    <div class="wrap">
+      <div class="sec-head">
+        <div>
+          <p class="eyebrow"><span class="no">Nº 02</span><span data-i18n="onchain.eyebrow">On-chain</span></p>
+          <h2 class="h2" id="onchain-h" data-i18n="onchain.h2"></h2>
+        </div>
+        <p class="lead" data-i18n="onchain.lead"></p>
+      </div>
+      <div class="onchain">
+        <div class="card profile">
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px">
+            <span class="eyebrow" data-i18n="onchain.profile">Mapa likwidacji ±6% od ceny</span>
+            <span id="src-profile" style="margin-left:auto"></span>
+          </div>
+          <div id="liq-profile" role="img" aria-label=""></div>
+          <p class="note" data-i18n="onchain.note"></p>
+        </div>
+        <div class="bignums">
+          <div class="bignum"><span class="v num" id="b-cov">—</span><span class="k" data-i18n="onchain.cov">Pokrycie</span></div>
+          <div class="bignum"><span class="v num" id="b-pos">—</span><span class="k" data-i18n="onchain.pos">Pozycje</span></div>
+          <div class="bignum"><span class="v num" id="b-below">—</span><span class="k"><span data-i18n="onchain.below">Poniżej</span><small id="b-below-s">—</small></span></div>
+          <div class="bignum"><span class="v num" id="b-above">—</span><span class="k"><span data-i18n="onchain.above">Powyżej</span><small id="b-above-s">—</small></span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec" id="dowod" data-reveal aria-labelledby="dowod-h">
+    <div class="wrap">
+      <div class="sec-head">
+        <div>
+          <p class="eyebrow"><span class="no">Nº 03</span><span data-i18n="proof.eyebrow">Dowód</span></p>
+          <h2 class="h2" id="dowod-h" data-i18n="proof.h2"></h2>
+        </div>
+        <p class="lead" data-i18n="proof.lead"></p>
+      </div>
+      <ol class="chain" id="chain" style="list-style:none;padding:0"></ol>
+      <div class="proofgrid">
+        <div class="bignum"><span class="v num" id="p-lines">—</span><span class="k" data-i18n="proof.lines">Wpisy</span><span class="hash" id="p-head"></span></div>
+        <div class="bignum"><span class="v num" id="p-issued">—</span><span class="k"><span data-i18n="proof.issued">Wydane</span><small id="p-skipped"></small></span></div>
+        <div class="bignum"><span class="v num" id="p-crpss">—</span><span class="k"><span data-i18n="proof.crpss">CRPSS</span><small data-i18n="proof.crpssSub"></small></span></div>
+        <div class="bignum"><span class="v num" id="p-bss">—</span><span class="k"><span data-i18n="proof.bss">BSS</span><small id="p-bss-s"></small></span></div>
+      </div>
+      <p class="note" id="src-proof" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"></p>
+    </div>
+  </section>
+
+  <section class="sec" id="pochodzenie" data-reveal aria-labelledby="poch-h">
+    <div class="wrap">
+      <div class="sec-head">
+        <div>
+          <p class="eyebrow"><span class="no">Nº 04</span><span data-i18n="origin.eyebrow">Pochodzenie</span></p>
+          <h2 class="h2" id="poch-h" data-i18n="origin.h2"></h2>
+        </div>
+        <p class="lead" data-i18n="origin.lead"></p>
+      </div>
+      <div class="legend4">
+        <div class="card"><span id="o-live"></span><p data-i18n="origin.live"></p><button type="button" class="btn btn-line btn-s" id="o-reset" data-i18n="origin.reset">Nowy odczyt</button><small class="muted" data-i18n="origin.demo"></small></div>
+        <div class="card"><span id="o-model"></span><p data-i18n="origin.model"></p></div>
+        <div class="card"><span id="o-sim"></span><p data-i18n="origin.sim"></p></div>
+        <div class="card"><span id="o-stale"></span><p data-i18n="origin.stale"></p></div>
+        <div class="card"><span id="o-rec"></span><p data-i18n="origin.rec"></p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec" id="wszedzie" data-reveal aria-labelledby="wsz-h">
+    <div class="wrap devices">
+      <div>
+        <p class="eyebrow"><span class="no">Nº 05</span><span data-i18n="devices.eyebrow">Wszędzie</span></p>
+        <h2 class="h2" id="wsz-h" data-i18n="devices.h2"></h2>
+        <p class="lead" data-i18n="devices.lead"></p>
+        <ul class="checks">
+          <li><span><b data-i18n="devices.c1"></b><span data-i18n="devices.c1s"></span></span></li>
+          <li><span><b data-i18n="devices.c2"></b><span data-i18n="devices.c2s"></span></span></li>
+          <li><span><b data-i18n="devices.c3"></b><span data-i18n="devices.c3s"></span></span></li>
+          <li><span><b data-i18n="devices.c4"></b><span data-i18n="devices.c4s"></span></span></li>
+        </ul>
+      </div>
+      <figure class="phone" style="margin:0">
+        <div class="screen"><iframe id="phone-frame" title="" data-i18n-attr="title:devices.frame" loading="lazy" tabindex="-1" data-src="desk.html?embed=1"></iframe></div>
+      </figure>
+    </div>
+  </section>
+
+  <section class="final2" id="final" data-reveal data-film-box aria-labelledby="final-h">
+    <div class="final2-sky" aria-hidden="true">
+      <img src="assets/media/F1-plakat.webp" alt="" width="1920" height="1080" loading="lazy">
+      <video data-film loop muted playsinline preload="none" width="1920" height="1080" data-webm="assets/media/F1.webm" data-mp4="assets/media/F1.mp4"></video>
+      <i class="final2-line"></i><i class="final2-glow"></i>
+    </div>
+    <button class="film-control final2-film" type="button" data-film-control hidden aria-pressed="false"><span aria-hidden="true" data-film-icon>▷</span><span data-film-label></span></button>
+    <div class="final2-in">
+      <p class="cinema-kicker"><span aria-hidden="true"></span><b data-i18n="p.final.kicker"></b></p>
+      <h2 class="final2-h" id="final-h" data-words><span class="fh-top" data-i18n="p.final.top">Zobacz, co jest</span> <span class="fh-bottom" data-i18n="p.final.bottom">pod ceną.</span></h2>
+      <p class="lead" data-i18n="final.p"></p>
+      <a class="cinema-button cinema-button-main final2-cta" href="desk.html?lang=pl#dzis" data-cinema-link data-magnetic><span data-i18n="cta.open">Otwórz terminal</span><span aria-hidden="true">↗</span></a>
+    </div>
+  </section>
+</main>
+
+<footer class="sitefoot">
+  <div class="wrap in">
+    <button type="button" class="linkbtn" data-open-wn data-i18n="wn.menu">Co nowego</button><span data-i18n="p.film"></span><span data-i18n="foot.1"></span><span data-i18n="foot.2"></span><span data-i18n="foot.3"></span>
+  </div>
+</footer>
+<div class="vh" role="status" aria-live="polite" id="st-land"></div>
+</body>
+</html>

@@ -2,6 +2,7 @@ import { HIST_HOUR_MS, HIST_PART_MS, type HistCtx, type HistSpan, type HistoryIn
 import { isHip3DeskMarket } from '../../../config/deskMarkets';
 import type { BookFrame } from '../core/book';
 import { barStart } from '../core/time';
+import { MINUTE } from '../core/tape';
 import type { Candle, Fill } from '../hl/parse';
 import { type Fetcher, gzJson, toBookFrame, toFills } from '../store/serverHistory';
 
@@ -113,7 +114,8 @@ export function clipReplay(d: ReplayData, from: number, to: number): ReplayData 
     bookSpans: clipSpans(d.bookSpans, from, to),
     fills: d.fills.filter((f) => inside(f.time)),
     frames: d.frames.filter((f) => inside(f.t)),
-    oi: d.oi.filter(([t]) => inside(t)),
+    // In v1 minute buckets are released at their end. Keep a bucket intersected by the left edge.
+    oi: d.oi.filter(([t]) => d.context === undefined ? t < to && t + MINUTE >= from : inside(t)),
     ...(d.context ? { context: d.context.filter(c => inside(c.t)) } : {}),
   };
 }
