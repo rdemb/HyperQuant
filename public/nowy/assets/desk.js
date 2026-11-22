@@ -7,7 +7,7 @@
   const $ = (s, r = document) => r.querySelector(s);
   const D = {
     coin: 'BTC', feed: null, ctx: null, ctxAt: 0, frames: [], raw: [], m4pick: null, tapeFrozen: false, tapeFrozenN: 0, tapePicked: null, trades: [], start: null, live: true, cursor: null,
-    status: 'connecting', dec: 0, lastTradeAt: 0, bookAt: 0, bookEpoch: 0, bookSampleEpoch: -1, paused: false, gaps: [], gapFrom: null, connSince: Date.now(),
+    status: 'connecting', dec: 0, lastTradeAt: 0, tapeLostThrough: null, bookAt: 0, bookEpoch: 0, bookSampleEpoch: -1, paused: false, gaps: [], gapFrom: null, connSince: Date.now(),
     sel: null, // { px, bucket, pinned, pinAt, snap }
     win: (HQ.pref('win') || 120) * 1000, focusTrade: null, retryAt: null, focusPx: null, restoredMsg: null,
   };
@@ -81,7 +81,7 @@
     if (!changed) return;
     if (D.feed) D.feed.close();
     { const tb = document.getElementById('tape-ask'); if (tb) { tb.textContent = HQ.t('m4.ask'); tb.dataset.on = 'false'; } const fz = document.getElementById('tape-frz'); if (fz) fz.hidden = true; }
-    Object.assign(D, { frames: [], raw: [], m4pick: null, tapeFrozen: false, tapeFrozenN: 0, tapePicked: null, trades: [], start: null, live: true, cursor: null, ctx: null, dec: 0, lastTradeAt: 0, bookAt: 0, paused: false, gaps: [], gapFrom: null, focusTrade: null, connSince: Date.now() });
+    Object.assign(D, { frames: [], raw: [], m4pick: null, tapeFrozen: false, tapeFrozenN: 0, tapePicked: null, trades: [], start: null, live: true, cursor: null, ctx: null, dec: 0, lastTradeAt: 0, tapeLostThrough: null, bookAt: 0, paused: false, gaps: [], gapFrom: null, focusTrade: null, connSince: Date.now() });
     if (D.sel && announce) { D.sel = null; say(HQ.t('sel.cleared')); }
     document.querySelectorAll('.unit').forEach((u) => (u.textContent = unit())); const uh = $('.unit-h'); if (uh) uh.textContent = unit();
     connect(coin);
@@ -143,7 +143,14 @@
     f.on('trades', (ts) => {
       if (f !== D.feed) return;
       for (const t of ts) D.trades.push(t);
-      if (D.trades.length > MAX_TRADES) D.trades.splice(0, D.trades.length - MAX_TRADES);
+      if (D.trades.length > MAX_TRADES) {
+        const overflow = D.trades.length - MAX_TRADES;
+        for (const { t } of D.trades.splice(0, overflow)) D.tapeLostThrough = Math.max(D.tapeLostThrough ?? -Infinity, t);
+        const frozenN = D.tapeFrozenN;
+        D.tapeFrozenN = Math.max(0, frozenN - overflow);
+        D.tapeSig = '';
+        if (D.tapeFrozen && frozenN > 0 && overflow > Math.max(0, frozenN - 80)) renderTapePick();
+      }
       D.lastTradeAt = Date.now(); schedule();
     });
   }
@@ -156,6 +163,8 @@
   function tradesUpTo(t) { const T = D.trades; if (D.live) return T.length; let lo = 0, hi = T.length - 1, ans = -1; while (lo <= hi) { const m = (lo + hi) >> 1; if (T[m].t <= t) { ans = m; lo = m + 1; } else hi = m - 1; } return ans + 1; }
   const allGaps = () => (D.gapFrom ? D.gaps.concat([{ from: D.gapFrom, to: Date.now(), open: true }]) : D.gaps);
   const gapAt = (t) => allGaps().find((g) => t >= g.from && t <= g.to);
+  const tapeEvictedAt = (t) => D.tapeLostThrough != null && (D.start == null || t >= D.start) && t <= D.tapeLostThrough;
+  const tapeStart = () => D.start == null ? null : Math.max(D.start, (D.tapeLostThrough ?? -Infinity) + 1);
   function bookKind(frame) {
     if (!frame) return 'none';
     if (!D.live) return 'rec';
@@ -328,7 +337,9 @@
   /* ---------- Odczyt wybranej ceny: Δ, obrót, L2, wiek, pokrycie taśmy w oknie ---------- */
   function readAt(px, bucket, T) {
     const W = D.win; const from = T - W, to = T; const rs = D.start || T;
-    const covFrom = Math.max(from, rs); let covered = Math.max(0, to - covFrom); const gaps = [];
+    // Okno (from, to] pomija wykonania dokładnie w from. Ta sama ms może zawierać zachowane i wyparte wykonania.
+    const tapeEvicted = D.tapeLostThrough != null && from < D.tapeLostThrough && to >= rs;
+    const covFrom = Math.max(from, rs, D.tapeLostThrough ?? -Infinity); let covered = Math.max(0, to - covFrom); const gaps = [];
     allGaps().forEach((g) => { const a = Math.max(g.from, covFrom), b = Math.min(g.to, to); if (b > a) { covered -= b - a; gaps.push({ from: a, to: b }); } });
     // Pełne pokrycie wyłącznie dokładnie: każda milisekunda okna nagrana (tolerancja tylko w zaokrągleniu napisu).
     const full = covered >= W;
@@ -344,7 +355,7 @@
       const side = fr.asks[0] && px >= fr.asks[0].px ? 'ask' : 'bid';
       l2 = { has: true, t: fr.t, age, stale: age > BOOK_LIMIT, sz, inRange, side, depth: Math.min(fr.bids.length, fr.asks.length), complete: fr.complete !== false, rows: inB.length };
     }
-    return { px, bucket, T, from, to, W, covered, full, gaps, recLate: from < rs, rs, n, delta: buy - sell, turn, l2 };
+    return { px, bucket, T, from, to, W, covered, full, gaps, recLate: from < rs, rs, tapeEvicted, lostThrough: D.tapeLostThrough, n, delta: buy - sell, turn, l2 };
   }
   function setupRead() {
     const box = $('#readbar');
@@ -380,11 +391,12 @@
     const dec = D.dec; const szd = D.coin === 'BTC' ? 4 : 2; const pl = HQ.lang === 'pl';
     const pxTxt = s.bucket > 1 ? `${HQ.fmt(s.px, dec)}–${HQ.fmt(s.px + s.bucket - 1, dec)}` : HQ.fmt(s.px, dec);
     const sec = (ms) => Math.round(ms / 1000);
-    const cov = r.full ? tagHTML('full', HQ.fill(HQ.t('read.cov'), { c: sec(r.covered), w: sec(r.W) })) : tagHTML('part', HQ.fill(HQ.t('read.covPart'), { c: sec(r.covered), w: sec(r.W) }));
+    const cov = r.full ? tagHTML('full', HQ.fill(HQ.t('read.cov'), { c: sec(r.covered), w: sec(r.W) })) : tagHTML('part', HQ.fill(HQ.t('read.covPart'), { c: Math.floor(r.covered / 1000), w: sec(r.W) }));
     const dTxt = r.n === 0 ? (r.full ? `0 ${unit()}` : HQ.DASH) : `${HQ.fmtSigned(r.delta, szd)} ${unit()}`;
     const tTxt = r.n === 0 ? (r.full ? '0 USD' : HQ.DASH) : HQ.fmtUsd(r.turn);
     const whyParts = [];
     if (r.recLate) whyParts.push(HQ.fill(HQ.t('read.recFrom'), { t: HQ.time(r.rs) }));
+    if (r.tapeEvicted) whyParts.push(HQ.fill(HQ.t('read.tapeEvicted'), { t: HQ.time(r.lostThrough) }));
     r.gaps.forEach((g) => whyParts.push(HQ.fill(HQ.t('read.gap'), { a: HQ.time(g.from), b: HQ.time(g.to) })));
     const whole = r.full ? '' : `<p class="whole">${HQ.t('read.whole')} ${HQ.DASH} (${whyParts.join('; ')})</p>`;
     let l2v, l2tag;
@@ -482,7 +494,7 @@
   const spansFrom = (from) => {
     if (from == null) return []; const out = []; let cur = from;
     for (const g of allGaps().slice().sort((a, b) => a.from - b.from)) { if (g.to <= cur) continue; if (g.from > cur) out.push([cur, g.from]); cur = Math.max(cur, g.to); }
-    out.push([cur, Date.now() + 1]); return out;
+    if (cur <= Date.now()) out.push([cur, Date.now() + 1]); return out;
   };
   /* Wejście z taśmy: zatrzymaj taśmę, wybierz transakcję, pytanie z gotowym wydrukiem, powrót do tej samej transakcji */
   const tradeId = (t) => String(t.id || t.t);
@@ -496,7 +508,7 @@
       const isM = ft && t.id === ft.id && t.t === ft.t;
       out.push(`<tr class="pick${usd >= BIG ? ' big' : ''}${D.tapePicked === id ? ' picked' : ''}${isM ? ' moment' : ''}${inSel(t.px) ? ' selpx' : ''}"${isM ? ' id="tape-moment"' : ''}><td><button type="button" class="tpick" data-tid="${id}" tabindex="${id === tabId ? 0 : -1}" aria-label="${lab}">${HQ.time(t.t)}</button></td><td><span class="side ${b ? 'buy' : 'sell'}" aria-hidden="true">${b ? '▲' : '▼'}</span></td><td class="num ${b ? 'buy' : 'sell'}">${HQ.fmt(t.px, D.dec)}</td><td class="num">${HQ.fmt(t.sz, szd)}</td><td class="num">${HQ.fmtUsdShort(usd)}</td></tr>`);
     }
-    tb.innerHTML = out.join('');
+    tb.innerHTML = out.join('') || `<tr><td colspan="5" class="muted">${HQ.t(D.tapeLostThrough != null ? 'd.tapeEvicted' : 'd.noTrades')}</td></tr>`;
     const fz = $('#tape-frz'); fz.hidden = !hint; if (hint) fz.textContent = HQ.fill(HQ.t('m4.frozen'), { n: Math.max(0, tradesUpTo(at()) - n) });
     if (focusId) { const f = tb.querySelector(`.tpick[data-tid="${focusId}"]`); if (f) { f.focus({ preventScroll: true }); f.scrollIntoView({ block: 'center' }); } } // środek: wiersz nie chowa się pod przyklejonym nagłówkiem panelu ani strony
   }
@@ -527,12 +539,12 @@
       px: () => (D.sel ? D.sel.px : null), bucket: () => (D.sel ? D.sel.bucket : 1),
       get unit() { return D.coin === 'BTC' ? 0.00001 : 0.0001; }, get szd() { return D.coin === 'BTC' ? 5 : 4; }, get u() { return unit(); },
       frames: () => D.raw, trades: () => D.trades, cursor: () => at(),
-      // Pokrycie w makiecie: księga od pierwszej surowej migawki, taśma od startu nagrania, minus przerwy połączenia (w aplikacji: odcinki konkretnego źródła)
-      bookSpans: () => spansFrom(D.raw.length ? D.raw[0].t : null), tapeSpans: () => spansFrom(D.start),
+      // Limit taśmy nie usuwa niezależnego pokrycia księgi.
+      bookSpans: () => spansFrom(D.raw.length ? D.raw[0].t : null), tapeSpans: () => spansFrom(tapeStart()),
       bookClock: 'exchange', tapeClock: 'exchange', utc: false,
       onPick: (cur) => { D.m4pick = cur; m4LastAt = 0; renderRead(); },
       onBack: (tr) => { if (D.live && !D.tapeFrozen) enterPick(); if ($('#insp').dataset.split !== 'true') $('#t-tape').click(); if (!D.live) D.tapeFrozenN = tradesUpTo(at()); renderTapePick(tradeId(tr), D.tapeFrozen); },
-      sourceLine: () => HQ.fill(HQ.t('m4.src'), { n: D.raw.filter((f) => f.exact === true).length, t: D.raw.length ? HQ.time(D.raw[0].t) : HQ.DASH, g: allGaps().length, ts: D.start ? HQ.time(D.start) : HQ.DASH }),
+      sourceLine: () => HQ.fill(HQ.t('m4.src'), { n: D.raw.filter((f) => f.exact === true).length, t: D.raw.length ? HQ.time(D.raw[0].t) : HQ.DASH, g: allGaps().length, ts: tapeStart() == null ? HQ.DASH : HQ.time(tapeStart()) }),
     });
   }
   function updateM4(force) { if (!D.m4view) return; const now = Date.now(); if (!force && now - m4LastAt < 1000) return; m4LastAt = now; D.m4view.update(); }
@@ -550,7 +562,7 @@
     if (!D.live && n) { const sig = [n, D.sel ? D.sel.px : '', D.tapePicked, HQ.lang, D.focusTrade ? D.focusTrade.t : ''].join('|'); if (sig !== D.tapeSig) { D.tapeSig = sig; D.tapeFrozenN = n; renderTapePick(null, false); } return; }
     D.tapeSig = '';
     const tb = $('#tape tbody');
-    if (!n) { tb.innerHTML = `<tr><td colspan="5" class="muted" style="text-align:left;height:48px;white-space:normal">${D.live ? HQ.DASH + ' ' + HQ.t('book.empty.' + (D.status === 'live' ? 'connecting' : D.status)) : HQ.t('d.noTrades')}</td></tr>`; return; }
+    if (!n) { tb.innerHTML = `<tr><td colspan="5" class="muted" style="text-align:left;height:48px;white-space:normal">${D.live ? HQ.DASH + ' ' + HQ.t('book.empty.' + (D.status === 'live' ? 'connecting' : D.status)) : HQ.t(tapeEvictedAt(D.cursor) ? 'd.tapeEvicted' : 'd.noTrades')}</td></tr>`; return; }
     const pl = HQ.lang === 'pl'; const szd = D.coin === 'BTC' ? 5 : 2; const out = [];
     const ft = D.focusTrade && !D.live ? D.focusTrade : null;
     for (let i = n - 1; i >= Math.max(0, n - 80); i--) {
@@ -585,6 +597,7 @@
     else if (D.status === 'reconnecting') { const s = D.retryAt ? Math.max(0, Math.ceil((D.retryAt - now) / 1000)) : null; kind = 'warn'; msg = HQ.fill(HQ.t('ban.lost'), { t: HQ.time(D.gapFrom || D.connSince), s: s == null ? '…' : s }); act = `<button type="button" class="btn btn-line btn-s" data-act="now">${HQ.t('ban.now')}</button>`; }
     else if (D.status === 'connecting' && now - D.connSince > 5000) { kind = 'info'; msg = HQ.fill(HQ.t('ban.slow'), { s: Math.round((now - D.connSince) / 1000) }); act = `<button type="button" class="btn btn-line btn-s" data-act="now">${HQ.t('ban.now')}</button>`; }
     else if (D.live && bookKind(frameAt(now)) === 'stale') { kind = 'warn'; msg = HQ.fill(HQ.t('ban.stale'), { s: Math.round((now - D.bookAt) / 1000) }); act = `<button type="button" class="btn btn-line btn-s" data-act="now">${HQ.t('ban.now')}</button>`; }
+    else if (!D.live && tapeEvictedAt(D.cursor)) { kind = 'info'; msg = HQ.fill(HQ.t('read.tapeEvicted'), { t: HQ.time(D.tapeLostThrough) }); act = `<button type="button" class="btn btn-line btn-s" data-act="live">${HQ.t('d.back')}</button>`; }
     else if (!D.live && gapAt(D.cursor)) { const g = gapAt(D.cursor); kind = 'info'; msg = HQ.fill(HQ.t('ban.inGap'), { a: HQ.time(g.from), b: HQ.time(g.to) }); act = `<button type="button" class="btn btn-line btn-s" data-act="live">${HQ.t('d.back')}</button>`; }
     else if (D.restoredMsg) { kind = 'info'; msg = D.restoredMsg; }
     const key = kind ? kind + msg.replace(/\d+ s/g, '') : '';
@@ -645,6 +658,7 @@
   function renderMarks() {
     const box = $('#marks'); const a = D.start || Date.now(), b = Math.max(a + 1000, Date.now()); const out = []; const pos = (t) => (((t - a) / (b - a)) * 100).toFixed(2);
     allGaps().forEach((g) => out.push(`<i class="gap" style="left:${pos(g.from)}%;width:${Math.max(0.4, ((g.to - g.from) / (b - a)) * 100).toFixed(2)}%" title="${HQ.fill(HQ.t('read.gap'), { a: HQ.time(g.from), b: HQ.time(g.to) })}"></i>`));
+    if (D.start != null && tapeEvictedAt(a)) out.push(`<i class="gap" style="left:0;width:${Math.max(0.4, pos(Math.min(b, D.tapeLostThrough)))}%" title="${HQ.fill(HQ.t('read.tapeEvicted'), { t: HQ.time(D.tapeLostThrough) })}"></i>`);
     let k = 0;
     for (let i = D.trades.length - 1; i >= 0 && k < 160; i--) { const t = D.trades[i]; if (t.t < a) break; if (t.px * t.sz >= JUMP) { k++; out.push(`<i class="${t.px * t.sz >= BIG ? 'big' : ''}" style="left:${pos(t.t)}%;background:var(${t.side === 'buy' ? '--buy' : '--sell'})"></i>`); } }
     if (D.focusTrade && !D.live) out.push(`<i class="momentmark" style="left:${pos(D.focusTrade.t)}%"></i>`);

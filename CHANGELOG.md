@@ -8,6 +8,7 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 <!-- co-nowego: grupa=wykres | pl=Portal Przekrój i własne stanowisko | en=Cross-section portal and custom workbench -->
 - Przekrój prowadzi od pokazu rynku do taśmy, arkusza i przypiętej obserwacji BTC. Podgląd rozróżnia dane bieżące, nagrania i symulacje.
 - Stanowisko pozwala łączyć i przypinać panele, zmieniać ich układ oraz eksportować i importować własne zestawy. Zapis pozostaje w przeglądarce.
+- Powtórka oznacza niepełne okna po wyczerpaniu pamięci taśmy. Menu i sekcje portalu działają przy zablokowanym zapisie ustawień w przeglądarce.
 
 ### Angielski blog produktowy HyperQuant (2026-11-21)
 <!-- co-nowego: grupa=blog | pl=Angielski blog produktowy | en=English product blog -->
