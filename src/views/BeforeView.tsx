@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import type { PhaseId } from '../charts/pro/chart/stations';
 import { COIN, type Market } from '../charts/pro/store/proStore';
 import { ConnectingState } from '../shell/ConnectingState';
@@ -25,16 +25,20 @@ import { NewsFeed } from './market/NewsFeed';
  * między giełdami, najbliższe poziomy rynku wykresu, zegar ruchu (poziom najbliższej godziny i baza sezonowa godzin z rejestru), kontekst aukcji, mapa likwidacji z kaskadą, płynność wg godzin, kafle makro i wiadomości. Na telefonie
  * jedna kolumna w tej samej kolejności.
  */
-const BeforeView: React.FC<{ onPhase?: (phase: PhaseId) => void }> = ({ onPhase }) => {
+const BeforeView: React.FC<{ onPhase?: (phase: PhaseId) => void; onMarket?: (coin: string) => void }> = ({ onPhase, onMarket }) => {
   // Rynek pierwszego wykresu aktywnej karty (Czwórka liczy jego świece)
   const [coin, setCoin] = useState<Market>(COIN);
+  const selectMarket = useCallback((coin: Market) => {
+    setCoin(coin);
+    onMarket?.(coin);
+  }, [onMarket]);
   return (
     <div className="flex flex-col gap-4">
       {/* Zły ładunek z zewnątrz (mapa skanera, blog) wygasza tylko Czwórkę, nie cały ekran */}
       <LocalBoundary what={tr('Czwórka', 'Four numbers')}>
         <FourCard coin={coin} />
       </LocalBoundary>
-      <ChartsView phase="before" onPhase={onPhase} onMarket={setCoin} />
+      <ChartsView phase="before" onPhase={onPhase} onMarket={selectMarket} />
       <ContextRail />
       {/* Dwie stałe kolumny zamiast siatki z równymi rzędami (panele różnej wysokości nie zostawiają dziur, a przy
           wczytywaniu nie przeskakują między kolumnami): struktura rynku po lewej, makro i finansowanie po prawej.

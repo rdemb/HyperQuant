@@ -440,7 +440,7 @@
   };
 
   themeReveal();
-  document.addEventListener('DOMContentLoaded', () => {
+  window.HQ.ready(() => {
     horizon();
     zoomIntoTool();
     resplit();

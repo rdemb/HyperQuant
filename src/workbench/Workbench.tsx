@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, 
 import { ArrowLeft, ArrowRight, ArrowDown, ArrowUp, GripVertical, Maximize2, Pin, Plus, Settings2, X } from 'lucide-react';
 import { motion, MotionConfig } from 'motion/react';
 import { lang, tr } from '../i18n';
+import { setTheme, useTheme } from '../theme';
 import { LocalBoundary } from '../ui/LocalBoundary';
 import {
   exportWorkspaceComposition, importWorkspaceComposition, loadWorkspaceComposition, saveWorkspaceCompositionLocked,
@@ -17,7 +18,7 @@ import { AFTER_B, BEFORE_B, consumeReturn, PanelContent, type Panel } from './Pa
 
 const initial = readEntries();
 const motionPreference = matchMedia('(prefers-reduced-motion: reduce)');
-const reducedSnapshot = () => motionPreference.matches;
+const reducedSnapshot = () => motionPreference.matches || document.documentElement.dataset.motion === 'reduced';
 function subscribeMotionPreference(notify: () => void) {
   motionPreference.addEventListener('change', notify);
   return () => motionPreference.removeEventListener('change', notify);
@@ -83,7 +84,7 @@ export default function Workbench() {
   const [busy, setBusy] = useState(false);
   const [io, setIo] = useState('');
   const [film, setFilm] = useState(false);
-  const [light, setLight] = useState(() => readStorage()?.getItem('hq.workbench.theme') === 'light');
+  const light = useTheme() === 'light';
   const reduced = useSyncExternalStore(subscribeMotionPreference, reducedSnapshot);
   const board = useRef<HTMLDivElement>(null);
   const transfer = useRef<HTMLDetailsElement>(null);
@@ -98,6 +99,7 @@ export default function Workbench() {
   const draft = entry.draft;
   const activeCard = draft.cards.find(card => selectedPanel && card.panels.includes(selectedPanel))?.id ?? selected;
   const panels = new Map(draft.panels.map(panel => [panel.id, panel]));
+  const chartMarket = selectedPanel ? panels.get(selectedPanel)?.market : undefined;
   const focus = (id: string | null) => requestAnimationFrame(() => {
     if (!id) return;
     const el = document.getElementById(id);
@@ -120,10 +122,6 @@ export default function Workbench() {
     }
   }, [reduced, film]);
   useEffect(() => { if (film) video.current?.focus({ preventScroll: true }); }, [film]);
-  useEffect(() => {
-    document.documentElement.dataset.theme = light ? 'light' : 'dark';
-    try { readStorage()?.setItem('hq.workbench.theme', light ? 'light' : 'dark'); } catch { /* theme still works */ }
-  }, [light]);
 
   function change(apply: (previous: WorkspaceComposition) => WorkspaceComposition) {
     setUndo(null);
@@ -359,15 +357,15 @@ export default function Workbench() {
 
   const selectCard = (id: string) => { setSelectedPanel(null); setSelected(id); focus(cardAnchor(id)); };
   const activeIndex = Object.keys(slots).indexOf(active);
-  return <MotionConfig reducedMotion="user">
+  return <MotionConfig reducedMotion={reduced ? 'always' : 'user'}>
     <div className="wb-shell" data-light={light}>
       <a className="wb-skip" href="#wb-workspace">{tr('Przejdź do kompozycji', 'Skip to composition')}</a>
       <header className="wb-bar">
-        <a href={`../nowy/desk.html?lang=${lang}#dzis`} className="wb-back"><ArrowLeft aria-hidden size={16} /> {tr('Przekrój', 'Cross-section')}</a>
-        <a href={`../?lang=${lang}#charts`} className="wb-back">{tr('Wykresy', 'Charts')} ↗</a>
+        <a href={`../?lang=${lang}`} className="wb-back"><ArrowLeft aria-hidden size={16} /> {tr('Przekrój', 'Cross-section')}</a>
+        <a href={`../?lang=${lang}#charts${chartMarket ? `?m=${encodeURIComponent(chartMarket)}` : ''}`} className="wb-back">{tr('Wykresy', 'Charts')} ↗</a>
         <div className="wb-bar-end">
           <a className="wb-back" href={`?lang=${lang === 'pl' ? 'en' : 'pl'}`}>{lang === 'pl' ? 'EN' : 'PL'}</a>
-          <button className="wb-button" type="button" aria-pressed={light} onClick={() => setLight(!light)}>{light ? 'Opal' : 'Zorza'}</button>
+          <button className="wb-button" type="button" aria-pressed={light} onClick={() => setTheme(light ? 'dark' : 'light')}>{light ? 'Opal' : 'Zorza'}</button>
         </div>
       </header>
       <main>

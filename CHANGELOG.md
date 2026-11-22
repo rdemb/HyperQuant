@@ -4,6 +4,11 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Nowy frontend HyperQuant (2026-11-22)
+<!-- co-nowego: grupa=wykres | pl=Nowy frontend HyperQuant | en=New HyperQuant frontend -->
+- Przekrój otwiera się pod głównym adresem. Nowa nawigacja prowadzi do wykresów, faz sesji, Rynków, Order Flow i Stanowiska.
+- Narzędzia korzystają z odświeżonej oprawy Zorza i Opal. Bezpośrednie adresy wykresów i linki do nagrań zachowują wybrany rynek oraz obserwację.
+
 ### Portal Przekrój i własne stanowisko (2026-11-22)
 <!-- co-nowego: grupa=wykres | pl=Portal Przekrój i własne stanowisko | en=Cross-section portal and custom workbench -->
 - Przekrój prowadzi od pokazu rynku do taśmy, arkusza i przypiętej obserwacji BTC. Podgląd rozróżnia dane bieżące, nagrania i symulacje.

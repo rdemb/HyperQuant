@@ -2,7 +2,7 @@
    Rozdziały przewijają się naturalnie, scena i tło są przypięte. Zmiana rozdziału odsłania nową scenę
    od linii wody, tło przechodzi płynnie, a szklane zakładki przesuwają znacznik.
    Film przerywnika gra tylko na ekranie. Ograniczony ruch: bez pętli scen, bez przejść, film jako plakat. */
-document.addEventListener('DOMContentLoaded', () => {
+window.HQ.ready(() => {
   'use strict';
   const HQ = window.HQ;
   const $ = (s, r = document) => r.querySelector(s);
@@ -87,7 +87,7 @@ document.addEventListener('DOMContentLoaded', () => {
       for (let i = 0; i < N; i++) {
         const img = new Image();
         img.decoding = 'async';
-        img.src = `assets/media/t1/${String(i + 1).padStart(2, '0')}.webp`;
+        img.src = HQ.url(`assets/media/t1/${String(i + 1).padStart(2, '0')}.webp`);
         img.onload = () => { if (i === Math.round(dive._p * (N - 1))) draw(dive._p, true); };
         frames[i] = img;
       }

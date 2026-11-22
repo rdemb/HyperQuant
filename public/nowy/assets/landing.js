@@ -7,7 +7,7 @@
   const css = (el, name) => getComputedStyle(el).getPropertyValue(name).trim();
   const STEP = 100; const HALF = 2000; // kubełek i połowa zakresu przekroju (USD)
 
-  document.addEventListener('DOMContentLoaded', () => {
+  window.HQ.ready(() => {
     const xs = new XSec($('#xsec'), $('#flow'));
     setupOrigin();
     setupTable(xs); setupExplore(xs); setupReturn();
@@ -198,7 +198,7 @@
     };
     const pick = (px, announce) => {
       touched = true; xs.sel = px; sl.value = String(px); xs.dirty = true; xs.kick(); renderCard(xs);
-      open.href = HQ.momentUrl({ coin: 'BTC', px, bucket: STEP, win: 120000 }).replace(/^.*desk\.html/, 'desk.html'); open.removeAttribute('aria-disabled');
+      open.href = HQ.momentUrl({ coin: 'BTC', px, bucket: STEP, win: 120000 }); open.removeAttribute('aria-disabled');
       if (announce) { const st = $('#st-land'); if (st) { st.textContent = ''; setTimeout(() => (st.textContent = card.innerText.split('\n')[0]), 60); } }
     };
     sl.addEventListener('input', () => pick(+sl.value, false));
@@ -369,7 +369,7 @@
 })();
 
 
-document.addEventListener('DOMContentLoaded', () => {
+window.HQ.ready(() => {
   const tour = document.querySelector('.event-tour');
   if (!tour) return;
   const steps = [...tour.querySelectorAll('[data-event-step]')];

@@ -397,3 +397,149 @@ html[data-hq-focus='landscape'] [data-app-nav] {
 @media (prefers-reduced-motion: reduce) {
   .postac, .postac * { animation: none !important; }
 }
+
+/* Szklana szyna: unosi się nad stroną, rozmywa poświatę za sobą, aktywna pozycja to szklana pigułka z linią wody */
+.hq-szyna-szklo {
+  border: 1px solid color-mix(in oklab, var(--color-ink-1) 11%, transparent);
+  background:
+    linear-gradient(180deg, color-mix(in oklab, var(--color-ink-1) 7%, transparent), transparent 42%),
+    color-mix(in oklab, var(--color-surface-1) 56%, transparent);
+  -webkit-backdrop-filter: blur(22px) saturate(1.6);
+  backdrop-filter: blur(22px) saturate(1.6);
+  box-shadow: inset 0 1px 0 color-mix(in oklab, white 9%, transparent), 0 30px 80px -34px rgb(0 0 0 / 0.8);
+  scrollbar-width: none;
+}
+.hq-szyna-szklo::-webkit-scrollbar { display: none; }
+.hq-szyna-poswiata {
+  background:
+    radial-gradient(260px 340px at 0% 8%, color-mix(in oklab, #a490d3 26%, transparent), transparent 70%),
+    radial-gradient(220px 260px at 0% 96%, color-mix(in oklab, var(--color-lume) 10%, transparent), transparent 70%);
+}
+.hq-szyna-pigulka {
+  background: color-mix(in oklab, var(--color-ink-1) 8%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--color-ink-1) 13%, transparent), 0 8px 22px -12px rgb(0 0 0 / 0.7);
+}
+
+/* Zmiana motywu: nowy motyw rozlewa się kołem od przełącznika */
+html.vt-motyw::view-transition-old(root) { animation: none; }
+html.vt-motyw::view-transition-new(root) { animation: vt-kolo 0.75s cubic-bezier(0.83, 0, 0.17, 1) both; }
+@keyframes vt-kolo { from { clip-path: circle(0 at var(--vt-x, 50%) var(--vt-y, 0)); } to { clip-path: circle(150vmax at var(--vt-x, 50%) var(--vt-y, 0)); } }
+
+/* Przewodnik pierwszego kontaktu: szklany wiersz nad wykresem, kolejne wskazówki wjeżdżają z prawej, postęp linią wody */
+.hq-przewodnik {
+  border: 1px solid color-mix(in oklab, var(--color-ink-1) 11%, transparent);
+  background: linear-gradient(180deg, color-mix(in oklab, var(--color-ink-1) 6%, transparent), transparent 60%), color-mix(in oklab, var(--color-surface-2) 70%, transparent);
+  -webkit-backdrop-filter: blur(18px) saturate(1.5);
+  backdrop-filter: blur(18px) saturate(1.5);
+  box-shadow: inset 0 1px 0 color-mix(in oklab, white 8%, transparent);
+}
+.hq-przewodnik-postep { box-shadow: 0 0 10px var(--color-lume); transition: width 0.5s cubic-bezier(0.22, 1, 0.36, 1); }
+.hq-przewodnik-krok { animation: hq-krok 0.42s cubic-bezier(0.22, 1, 0.36, 1); }
+@keyframes hq-krok { from { opacity: 0; transform: translateX(14px); } }
+@media (prefers-reduced-motion: reduce) { .hq-przewodnik-krok { animation: none; } .hq-przewodnik-postep { transition: none; } }
+[data-motion='reduced'] .hq-przewodnik-krok { animation: none; }
+
+/* Paleta poleceń w szkle: linia wody pod polem wyszukiwania, aktywny wiersz jako szklana pigułka */
+.hq-paleta-szklo {
+  position: relative;
+  border: 1px solid color-mix(in oklab, var(--color-ink-1) 12%, transparent);
+  background: linear-gradient(180deg, color-mix(in oklab, var(--color-ink-1) 6%, transparent), transparent 40%), color-mix(in oklab, var(--color-surface-1) 74%, transparent);
+  -webkit-backdrop-filter: blur(24px) saturate(1.6);
+  backdrop-filter: blur(24px) saturate(1.6);
+  box-shadow: inset 0 1px 0 color-mix(in oklab, white 9%, transparent), 0 40px 120px -30px rgb(0 0 0 / 0.85);
+}
+.hq-paleta-szklo:focus-within > :first-child { box-shadow: inset 0 -2px 0 var(--color-lume); }
+.hq-paleta-aktywna { background: color-mix(in oklab, var(--color-ink-1) 8%, transparent); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--color-ink-1) 12%, transparent); }
+.hq-paleta-aktywna::before { content: ''; position: absolute; left: 0; top: 9px; bottom: 9px; width: 3px; border-radius: 0 3px 3px 0; background: var(--color-lume); box-shadow: 0 0 10px var(--color-lume); }
+
+/* Łączenie: linia wody rysuje się i odpływa; po 15 s luka w linii (jak przerwa w danych) */
+.hq-laczenie path { fill: none; stroke: var(--color-lume); stroke-width: 2; stroke-linecap: round; stroke-dasharray: 400; stroke-dashoffset: 400; filter: drop-shadow(0 0 5px var(--color-lume)); animation: hq-rysuj 1.9s cubic-bezier(0.83, 0, 0.17, 1) infinite; }
+@keyframes hq-rysuj { 0% { stroke-dashoffset: 400; } 55% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: -400; } }
+.hq-laczenie-luka path { animation: none; stroke-dasharray: 170 60 170; stroke-dashoffset: 0; stroke: var(--color-warn, #fab219); filter: none; opacity: 0.8; }
+@media (prefers-reduced-motion: reduce) { .hq-laczenie path { animation: none; stroke-dashoffset: 0; opacity: 0.5; } }
+[data-motion='reduced'] .hq-laczenie path { animation: none; stroke-dashoffset: 0; opacity: 0.5; }
+
+/* Szkło łapie światło: krawędź rozjaśnia się pod kursorem (pozycję ustawia ui/swiatloSzkla.ts) */
+.hq-spot::before {
+  content: ''; position: absolute; inset: 0; border-radius: inherit; padding: 1px; pointer-events: none; z-index: 3;
+  background: radial-gradient(240px circle at var(--sx, 50%) var(--sy, 50%), color-mix(in oklab, var(--color-lume) 75%, transparent), transparent 62%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude;
+  opacity: 0; transition: opacity 0.35s linear;
+}
+.hq-spot:hover::before { opacity: 0.9; }
+/* Poświata za szyną: jaśnieje przy zmianach ceny i wygasa */
+.hq-szyna-poswiata { opacity: calc(0.55 + var(--aktywnosc, 0) * 0.45); transition: opacity 0.6s linear; }
+/* Dotyk: sprężyste wciśnięcie i unoszące się ikony szyny */
+.hq-szyna-szklo :is(a, button), .hq-przewodnik button, .hq-paleta-szklo li { transition: transform 0.38s cubic-bezier(0.34, 1.56, 0.64, 1), background-color 0.15s linear, color 0.15s linear; }
+.hq-szyna-szklo :is(a, button):active, .hq-przewodnik button:active, .hq-paleta-szklo li:active { transform: scale(0.95); transition-duration: 0.08s; }
+.hq-szyna-szklo a svg { transition: transform 0.38s cubic-bezier(0.34, 1.56, 0.64, 1); }
+.hq-szyna-szklo a:hover svg { transform: translateY(-2px) scale(1.08); }
+@media (prefers-reduced-motion: reduce) {
+  .hq-spot::before { display: none; }
+  .hq-szyna-szklo :is(a, button), .hq-szyna-szklo a svg, .hq-przewodnik button, .hq-paleta-szklo li { transition: none; transform: none !important; }
+}
+[data-motion='reduced'] .hq-szyna-szklo :is(a, button), [data-motion='reduced'] .hq-szyna-szklo a svg { transition: none; transform: none !important; }
+
+/* Połysk: refleks światła przelatuje przez szkło przy pojawieniu się palety i przewodnika */
+.hq-paleta-szklo::after, .hq-przewodnik::after {
+  content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: 2;
+  background: linear-gradient(115deg, transparent 38%, color-mix(in oklab, white 11%, transparent) 50%, transparent 62%) 150% 0 / 250% 100% no-repeat;
+  animation: hq-sheen 1.15s cubic-bezier(0.22, 1, 0.36, 1) 0.15s both;
+}
+@keyframes hq-sheen { from { background-position: 150% 0; } to { background-position: -150% 0; } }
+@media (prefers-reduced-motion: reduce) { .hq-paleta-szklo::after, .hq-przewodnik::after { display: none; } }
+[data-motion='reduced'] .hq-paleta-szklo::after, [data-motion='reduced'] .hq-przewodnik::after { display: none; }
+
+/* Zorza i Opal z Przekroju. Zagnieżdżony zakres motywu wykresów zachowuje własne tokeny. */
+html[data-theme='dark'] [data-app-shell] {
+  --color-page: #0b0a12;
+  --color-surface-1: #121019;
+  --color-surface-2: #19162a;
+  --color-surface-3: #231f38;
+  --color-line: #2b2640;
+  --color-line-strong: #403a5c;
+  --color-ink-1: #f0edf7;
+  --color-ink-2: #b9b3cc;
+  --color-ink-3: #9a94b0;
+}
+
+html[data-theme='light'] [data-app-shell] {
+  --color-page: #f2f1f6;
+  --color-surface-1: #fafafc;
+  --color-surface-2: #ffffff;
+  --color-surface-3: #e8e6f0;
+  --color-line: #d8d5e2;
+  --color-line-strong: #b7b2c9;
+  --color-ink-1: #14121b;
+  --color-ink-2: #474359;
+  --color-ink-3: #5a566d;
+}
+
+[data-app-header],
+[data-app-nav] {
+  background: color-mix(in oklab, var(--color-surface-1) 91%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in oklab, var(--color-ink-1) 7%, transparent);
+}
+
+[data-app-shell] [data-przekroj-panel]:not([data-app-shell] [data-theme] [data-przekroj-panel]) {
+  border-radius: 16px;
+  box-shadow: inset 0 1px 0 color-mix(in oklab, var(--color-ink-1) 5%, transparent);
+}
+
+[data-app-shell] [data-przekroj-heading='1']:not([data-app-shell] [data-theme] [data-przekroj-heading]) {
+  border-block-end: 1px solid var(--color-line);
+  padding-block-end: 16px;
+}
+
+[data-app-shell] [data-przekroj-heading='1']:not([data-app-shell] [data-theme] [data-przekroj-heading])::after {
+  content: '';
+  flex: 0 0 44px;
+  height: 2px;
+  position: absolute;
+  inset-block-end: -1px;
+  inset-inline-start: 0;
+  background: var(--color-accent);
+  border-radius: 2px;
+}
+
+[data-app-shell] [data-przekroj-heading='1'] { position: relative; }
