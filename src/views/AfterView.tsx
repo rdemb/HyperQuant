@@ -13,9 +13,9 @@ import { SessionReview } from './after/SessionReview';
  * sesja Londynu i NY oraz sesja w toku), niżej „Dziennik prognoz” (weryfikowalny dziennik Desku) i „Dziennik transakcji”
  * (zagrania zapisane przez użytkownika).
  */
-const AfterView: React.FC<{ onPhase?: (phase: PhaseId) => void }> = ({ onPhase }) => (
+const AfterView: React.FC<{ onPhase?: (phase: PhaseId) => void; onMarket?: (coin: string) => void }> = ({ onPhase, onMarket }) => (
   <div className="flex flex-col gap-4">
-    <ChartsView phase="after" onPhase={onPhase} />
+    <ChartsView phase="after" onPhase={onPhase} onMarket={onMarket} />
     {/* Zły ładunek z zewnątrz (taśma likwidacji, kohorty, dziennik, blog) wygasza tylko Rozliczenie */}
     <LocalBoundary what={tr('Rozliczenie sesji', 'Session review')}>
       <SessionReview />

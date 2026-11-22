@@ -100,6 +100,12 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(networkFirstShell(request));
     return;
   }
+  // / otwiera gotowy dokument Przekroju. W kolejnych wizytach bez sieci
+  // można skorzystać z wcześniej pobranego dokumentu i zasobów portalu.
+  if (rel === 'nowy/index.html' || rel.startsWith('nowy/assets/') || rel.startsWith('nowy/fonts/')) {
+    event.respondWith(staleWhileRevalidate(request, request));
+    return;
+  }
   // Pliki z hashem w nazwie i fonty u nas (public/fonts, stałe nazwy; cache jest per wersja SW, nowe wdrożenie go czyści):
   // z cache, także offline
   if (rel.startsWith('assets/') || rel.startsWith('fonts/')) {

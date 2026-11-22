@@ -224,7 +224,7 @@ void main(){
   };
 
   /* Hero: podłączenie strumienia BTC, odczyt ostatniej transakcji i licznik minuty */
-  document.addEventListener('DOMContentLoaded', () => {
+  window.HQ.ready(() => {
     const canvas = document.getElementById('waterline');
     if (!canvas) return;
     const hero = canvas.closest('.cinema-hero');

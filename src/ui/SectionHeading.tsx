@@ -18,7 +18,7 @@ export const SectionHeading: React.FC<{
 }> = ({ id, nr, eyebrow, title, lead, note, aside, level = 2 }) => {
   const H = level === 1 ? 'h1' : 'h2';
   return (
-    <div className={`flex flex-wrap items-end justify-between gap-x-6 gap-y-2 ${level === 1 ? 'pt-2 pb-2' : 'pt-6 pb-1'}`}>
+    <div data-przekroj-heading={level} className={`flex flex-wrap items-end justify-between gap-x-6 gap-y-2 ${level === 1 ? 'pt-2 pb-2' : 'pt-6 pb-1'}`}>
       <div className="min-w-0 max-w-3xl">
         {(nr || eyebrow) && (
           <p className="mb-2 flex items-center gap-3 text-[11px] font-bold uppercase tracking-[0.14em] text-ink-3">

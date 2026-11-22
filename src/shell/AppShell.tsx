@@ -8,6 +8,9 @@ import {
   GraduationCap,
   History,
   ListChecks,
+  PanelsTopLeft,
+  PanelLeftClose,
+  ChevronRight,
   Moon,
   MoreHorizontal,
   Newspaper,
@@ -35,6 +38,7 @@ import { InstallButton } from './InstallButton';
 import { ConnectingState } from './ConnectingState';
 import { Lang, lang, setLang, tr } from '../i18n';
 import { type Theme, setTheme, useTheme } from '../theme';
+import { HOME_MARKET } from '../utils/marketCaps';
 import { levelStatusLabel } from '../utils/shaakuniEngine';
 import { NOWE_WIDOKI } from '../nowy/widoki';
 import { PasekDnia } from './PasekDnia';
@@ -47,7 +51,10 @@ import { useStraznicy } from './wyspa/useStraznicy';
 import { Dok, useZaloga } from './wyspa/Dok';
 import { Postac } from './wyspa/Postac';
 import type { PersonaId } from './wyspa/persony';
-import { deskLabels } from '../config/deskMarkets';
+import { deskLabels, marketLabel } from '../config/deskMarkets';
+import { zainstalujSwiatloSzkla } from '../ui/swiatloSzkla';
+
+zainstalujSwiatloSzkla();
 
 // Widoki ładowane leniwie (mniejszy pierwszy bundle; wykresy faz w osobnym pakiecie)
 const StartView = lazy(() => import('../views/StartView'));
@@ -180,9 +187,12 @@ export const PriceButton: React.FC = () => {
         onClick={() => setOpen((o) => !o)}
         className="flex items-baseline gap-2 min-w-0 min-h-10 py-2 rounded-lg px-1.5 -mx-1.5 hover:bg-surface-2 transition-colors duration-150 text-xs"
       >
-        <span className="hidden min-[420px]:inline text-ink-2 font-medium">BTC-PERP</span>
+        <span className="text-ink-2 font-medium">
+          <span className="min-[420px]:hidden">BTC</span>
+          <span className="hidden min-[420px]:inline">BTC-PERP</span>
+        </span>
         <AnimatedNumber value={k.price} format={(v) => fmtPrice(v)} className="text-base sm:text-lg font-semibold text-ink-1" />
-        <Change pct={k.changePct} span={k.windowLabel} />
+        <span className="hidden min-[480px]:inline"><Change pct={k.changePct} span={k.windowLabel} /></span>
       </button>
       {open && (
         <div id={id} data-more-item="" tabIndex={-1} className="absolute left-0 top-full mt-2 z-40 w-72 max-w-[calc(100vw-24px)] bg-surface-2 border border-line-strong rounded-xl p-3 shadow-2xl text-xs outline-none">
@@ -260,6 +270,12 @@ export const inReplay = () => {
   const src = h.startsWith('#charts') ? new URLSearchParams(h.split('?')[1] ?? '').get('replay') : null;
   return src === 'history' || src === 'lessons';
 };
+
+function activeChartMarket() {
+  const [view, query] = window.location.hash.split('?');
+  if (view !== '#charts' && view !== '#before' && view !== '#after') return undefined;
+  return new URLSearchParams(query).get('m');
+}
 
 const Item: React.FC<{ label: string; value: string; title?: string; className?: string }> = ({ label, value, title, className = 'flex' }) => (
   <span data-ticker-item className={`${className} items-baseline gap-1.5`} title={title || undefined}>
@@ -342,7 +358,7 @@ export const ViewLink: React.FC<{ id: ViewId; go: (v: ViewId) => void; current?:
  * Bieżący widok aplikacji (leniwie ładowany) albo stan „łączenie” do pierwszych świec. Wspólny dla obu powłok (stara
  * i nowy wygląd za przełącznikiem `?ui=`), żeby lista widoków i warunki danych były w jednym miejscu.
  */
-export const ViewOutlet: React.FC<{ startedAt: number }> = ({ startedAt }) => {
+export const ViewOutlet: React.FC<{ startedAt: number; onChartMarket?: (coin: string) => void }> = ({ startedAt, onChartMarket }) => {
   const { view, setView, feed } = useDesk();
   // Karta układu innej fazy w Wykresach (Alt+1…6, nowa karta) przenosi do ekranu tej fazy
   const onPhase = useCallback((p: PhaseId) => setView(PHASE_VIEW[p]), [setView]);
@@ -355,9 +371,9 @@ export const ViewOutlet: React.FC<{ startedAt: number }> = ({ startedAt }) => {
       ) : (
         <>
           {view === 'start' && <StartView />}
-          {view === 'before' && <BeforeView onPhase={onPhase} />}
-          {view === 'charts' && <SessionView onPhase={onPhase} />}
-          {view === 'after' && <AfterView onPhase={onPhase} />}
+          {view === 'before' && <BeforeView onPhase={onPhase} onMarket={onChartMarket} />}
+          {view === 'charts' && <SessionView onPhase={onPhase} onMarket={onChartMarket} />}
+          {view === 'after' && <AfterView onPhase={onPhase} onMarket={onChartMarket} />}
           {view === 'research' && <ResearchView />}
           {view === 'lessons' && <LessonsView />}
           {view === 'sources' && <SourcesView />}
@@ -429,12 +445,85 @@ const PaletaPolecen = lazy(() => import('./PaletaPolecen').then((m) => ({ defaul
  * i wiedza, strony serwisu. 1024–1599 px: ikona z krótką nazwą pod nią (każda zakładka podpisana), od 1600 px nazwy w rzędzie
  * (wąska szyna oddaje miejsce wykresowi i kolumnie DOM przy 1440 px).
  */
+/** Stan szyny na tym urządzeniu: widoczna albo schowana (tryb skupienia nad wykresem). */
+export const SZYNA_KLUCZ = 'hq.szyna';
+const czytajSzyne = () => {
+  try {
+    return localStorage.getItem(SZYNA_KLUCZ) === 'ukryta';
+  } catch {
+    return false;
+  }
+};
+
 const Szyna: React.FC<{ go: (v: ViewId) => void }> = ({ go }) => {
-  const { view } = useDesk();
+  const { view, feed } = useDesk();
   const { phase } = dayPhase(useNow(60_000));
+  const [ukryta, setUkryta] = useState(czytajSzyne);
+  // Poświata oddycha z rynkiem: każda zmiana ceny dodaje światła, które powoli wygasa (bez renderów Reacta)
+  const poswiata = useRef<HTMLDivElement>(null);
+  const aktywnosc = useRef(0);
+  const cenaWczesniej = useRef<number | null>(null);
+  useEffect(() => {
+    const c = feed.currentPrice;
+    if (!Number.isFinite(c)) return;
+    if (cenaWczesniej.current !== null && cenaWczesniej.current !== c) aktywnosc.current = Math.min(1, aktywnosc.current * 0.8 + 0.3);
+    cenaWczesniej.current = c;
+  }, [feed.currentPrice]);
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      aktywnosc.current *= 0.82;
+      poswiata.current?.style.setProperty('--aktywnosc', aktywnosc.current.toFixed(3));
+    }, 500);
+    return () => window.clearInterval(id);
+  }, []);
+  const pierwszy = useRef(true);
+  const przycisk = useRef<HTMLButtonElement>(null);
+  const uchwyt = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    try {
+      localStorage.setItem(SZYNA_KLUCZ, ukryta ? 'ukryta' : 'widoczna');
+    } catch {
+      /* pamięć zablokowana */
+    }
+    // Wykresy mierzą kontener przy zmianie rozmiaru okna
+    window.dispatchEvent(new Event('resize'));
+    if (pierwszy.current) {
+      pierwszy.current = false;
+      return;
+    }
+    (ukryta ? uchwyt : przycisk).current?.focus({ preventScroll: true });
+  }, [ukryta]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== '\\' || e.ctrlKey || e.metaKey || e.altKey) return;
+      const cel = e.target as HTMLElement | null;
+      if (cel?.closest('input, textarea, select, [contenteditable="true"]')) return;
+      e.preventDefault();
+      setUkryta((v) => !v);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+  if (ukryta) {
+    return (
+      <button
+        ref={uchwyt}
+        type="button"
+        data-szyna-uchwyt
+        onClick={() => setUkryta(false)}
+        aria-label={tr('Pokaż menu boczne', 'Show side menu')}
+        title={`${tr('Pokaż menu boczne', 'Show side menu')} (\\)`}
+        aria-keyshortcuts={'\\'}
+        className="hidden lg:grid fixed left-0 top-1/2 -translate-y-1/2 z-40 w-[22px] h-[88px] hover:w-[30px] focus-visible:w-[30px] place-items-center rounded-r-2xl border border-l-0 border-line-strong bg-surface-1/70 backdrop-blur-xl text-ink-1 shadow-[0_10px_30px_-14px_rgba(0,0,0,0.7)] transition-[width] duration-200 motion-reduce:transition-none"
+      >
+        <span aria-hidden="true" className="absolute left-1.5 top-[22px] bottom-[22px] w-0.5 rounded-full bg-lume shadow-[0_0_10px_var(--color-lume)]" />
+        <ChevronRight className="w-3.5 h-3.5 ml-1.5" aria-hidden="true" />
+      </button>
+    );
+  }
   const pozycja = (aktywna: boolean) =>
     `group relative flex flex-col items-center justify-center gap-1 min-h-14 px-1 rounded-lg text-[10.5px] leading-tight text-center font-medium transition-colors duration-150 min-[1600px]:flex-row min-[1600px]:justify-start min-[1600px]:gap-3 min-[1600px]:min-h-10 min-[1600px]:px-3 min-[1600px]:text-sm min-[1600px]:text-left ${
-      aktywna ? 'text-ink-1' : 'text-ink-3 hover:text-ink-1 hover:bg-surface-2/70'
+      aktywna ? 'text-ink-1' : 'text-ink-3 hover:text-ink-1 hover:bg-[color-mix(in_oklab,var(--color-ink-1)_5%,transparent)]'
     }`;
   const grupa = (tytul: string, items: NavItem[]) => (
     <div>
@@ -447,9 +536,9 @@ const Szyna: React.FC<{ go: (v: ViewId) => void }> = ({ go }) => {
             <li key={n.id}>
               <ViewLink id={n.id} go={go} current={aktywna} className={pozycja(aktywna)}>
                 {aktywna && (
-                  <motion.span layoutId="szyna-aktywna" className="absolute inset-0 rounded-lg bg-surface-2 shadow-[inset_0_0_0_1px_var(--color-line-strong)]" transition={{ type: 'spring', stiffness: 380, damping: 34 }} />
+                  <motion.span layoutId="szyna-aktywna" className="hq-szyna-pigulka absolute inset-0 rounded-xl" transition={{ type: 'spring', stiffness: 380, damping: 34 }} />
                 )}
-                {aktywna && <span aria-hidden="true" className="absolute left-0 top-2 bottom-2 w-0.5 rounded-full bg-lume" />}
+                {aktywna && <span aria-hidden="true" className="absolute -left-2 top-3 bottom-3 w-[3px] rounded-r-full bg-lume shadow-[0_0_10px_var(--color-lume)]" />}
                 <span className="relative shrink-0" title={n.label}>
                   {n.icon}
                   {teraz && <span aria-hidden="true" className="absolute -right-1 -top-1 w-1.5 h-1.5 rounded-full bg-lume shadow-[0_0_6px_var(--color-lume)]" />}
@@ -465,7 +554,9 @@ const Szyna: React.FC<{ go: (v: ViewId) => void }> = ({ go }) => {
     </div>
   );
   return (
-    <aside data-szyna aria-label={tr('Nawigacja', 'Navigation')} className="hidden lg:flex sticky top-0 h-dvh w-[88px] min-[1600px]:w-60 shrink-0 flex-col gap-5 border-r border-line bg-surface-1/60 px-2 min-[1600px]:px-3 py-4 overflow-y-auto overflow-x-hidden">
+    <>
+    <div ref={poswiata} aria-hidden="true" className="hq-szyna-poswiata hidden lg:block pointer-events-none fixed left-0 top-0 h-dvh w-[100px] min-[1600px]:w-[252px]" />
+    <aside data-szyna aria-label={tr('Nawigacja', 'Navigation')} className="hq-szyna-szklo hq-spot hidden lg:flex sticky top-2.5 z-10 my-2.5 ml-2.5 h-[calc(100dvh-20px)] w-[88px] min-[1600px]:w-60 shrink-0 flex-col gap-5 rounded-[22px] px-2 min-[1600px]:px-3 py-4 overflow-y-auto overflow-x-hidden">
       <ViewLink id="start" go={go} current={view === 'start'} className="flex items-center gap-2.5 h-10 px-1.5 rounded-lg hover:bg-surface-2/70 transition-colors duration-150">
         <LogoMark size={28} />
         <span className="sr-only min-[1600px]:not-sr-only">
@@ -493,14 +584,29 @@ const Szyna: React.FC<{ go: (v: ViewId) => void }> = ({ go }) => {
             </li>
           ))}
         </ul>
+        <button
+          ref={przycisk}
+          type="button"
+          data-szyna-chowaj
+          onClick={() => setUkryta(true)}
+          aria-label={tr('Ukryj menu boczne', 'Hide side menu')}
+          title={`${tr('Ukryj menu boczne', 'Hide side menu')} (\\)`}
+          aria-keyshortcuts={'\\'}
+          aria-expanded="true"
+          className="mt-2 w-full flex items-center justify-center gap-2 min-h-11 rounded-lg border border-dashed border-line-strong text-ink-3 hover:text-ink-1 hover:border-solid transition-colors duration-150 min-[1600px]:justify-start min-[1600px]:px-3 min-[1600px]:text-[13px]"
+        >
+          <PanelLeftClose className="w-4 h-4 shrink-0" aria-hidden="true" />
+          <span className="sr-only min-[1600px]:not-sr-only">{tr('Ukryj menu', 'Hide menu')}</span>
+        </button>
       </div>
     </aside>
+    </>
   );
 };
 
 const THEMES: { value: Theme; label: string; icon: React.ReactNode }[] = [
-  { value: 'dark', label: tr('Ciemny', 'Dark'), icon: <Moon className="w-4 h-4" aria-hidden="true" /> },
-  { value: 'light', label: tr('Jasny', 'Light'), icon: <Sun className="w-4 h-4" aria-hidden="true" /> },
+  { value: 'dark', label: 'Zorza', icon: <Moon className="w-4 h-4" aria-hidden="true" /> },
+  { value: 'light', label: 'Opal', icon: <Sun className="w-4 h-4" aria-hidden="true" /> },
 ];
 
 /** Ustawienia (menu nagłówka i „Więcej” na telefonie): język, motyw, strumień, synchronizacja, dźwięk taśmy. */
@@ -577,7 +683,8 @@ IconBtn.displayName = 'IconBtn';
  */
 export const AppShell: React.FC = () => {
   const { view, setView, feed } = useDesk();
-  const reduce = useReducedMotion();
+  const systemReduce = useReducedMotion();
+  const reduce = systemReduce || document.documentElement.dataset.motion === 'reduced';
   const [ustawienia, setUstawienia] = useState(false);
   const [wiecej, setWiecej] = useState(false);
   const [paleta, setPaleta] = useState(false);
@@ -600,9 +707,14 @@ export const AppShell: React.FC = () => {
   const wiecejBtn = useRef<HTMLButtonElement>(null);
   const ustawieniaId = useId();
   const wiecejId = useId();
-  const transition = reduce ? { initial: { opacity: 0 }, animate: { opacity: 1 }, exit: { opacity: 0 } } : VIEW_TRANSITION;
+  const transition = reduce ? { initial: false as const, animate: { opacity: 1 }, transition: { duration: 0 } } : VIEW_TRANSITION;
   const replay = useSyncExternalStore(subscribeHash, inReplay) && view === 'charts';
   const orderFlow = view === 'orderflow';
+  const linkedMarket = useSyncExternalStore(subscribeHash, activeChartMarket);
+  const [chartMarket, setChartMarket] = useState<{ view: ViewId; coin: string } | null>(null);
+  const onChartMarket = useCallback((coin: string) => setChartMarket({ view, coin }), [view]);
+  const activeCoin = chartMarket?.view === view ? chartMarket.coin : linkedMarket;
+  const otherChartMarket = activeCoin && activeCoin !== HOME_MARKET ? marketLabel(activeCoin) : null;
   const NowyWidok = NOWE_WIDOKI[view];
 
   const go = useCallback(
@@ -698,7 +810,13 @@ export const AppShell: React.FC = () => {
               </span>
             </ViewLink>
             {/* Cena i liczby rynku; w powtórce W sesji bez ceny na żywo */}
-            <div className="flex-1 min-w-0">{!replay && !orderFlow && <TickerInline />}</div>
+            <div className="flex-1 min-w-0">
+              {!replay && !orderFlow && (otherChartMarket ? (
+                <span data-header-chart-market className="block truncate text-sm font-semibold" title={otherChartMarket}>
+                  {otherChartMarket}
+                </span>
+              ) : <TickerInline />)}
+            </div>
             <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
               <button
                 type="button"
@@ -730,7 +848,12 @@ export const AppShell: React.FC = () => {
                   </span>
                 )}
               </button>
-              {!orderFlow && <Badge tone={STATUS_TONE[feed.dataStatus]} title={STATUS_TITLE[feed.dataStatus]} testId="data-status">
+              <a href={`${import.meta.env.BASE_URL}stanowisko/?lang=${lang}`}
+                aria-label={tr('Stanowisko', 'Workbench')} title={tr('Stanowisko', 'Workbench')}
+                className="inline-flex items-center justify-center gap-1.5 min-h-11 min-w-11 px-1.5 sm:px-2 rounded-lg border border-line-strong text-xs font-medium text-ink-1 hover:bg-surface-2">
+                <PanelsTopLeft size={16} aria-hidden="true" /><span className="hidden sm:inline">{tr('Stanowisko', 'Workbench')}</span>
+              </a>
+              {!orderFlow && !otherChartMarket && !replay && <Badge tone={STATUS_TONE[feed.dataStatus]} title={STATUS_TITLE[feed.dataStatus]} testId="data-status">
                 {feed.dataStatus}
               </Badge>}
               {/* Globalny interwał tylko w widokach bez własnego (wykresy faz dnia, Lekcje, Rynki i Agenci mają swój albo żaden) */}
@@ -758,13 +881,13 @@ export const AppShell: React.FC = () => {
 
         <main className="flex-1 w-full max-w-[1920px] mx-auto px-4 lg:px-6 pt-4 pb-6">
           <AnimatePresence mode="wait" initial={false}>
-            <motion.div key={view} data-view-root {...transition}>
+            <motion.div key={view} data-view-root data-view={view} {...transition}>
               {NowyWidok ? (
                 <Suspense fallback={<ViewFallback />}>
                   <NowyWidok />
                 </Suspense>
               ) : (
-                <ViewOutlet startedAt={startedAt} />
+                <ViewOutlet startedAt={startedAt} onChartMarket={onChartMarket} />
               )}
             </motion.div>
           </AnimatePresence>

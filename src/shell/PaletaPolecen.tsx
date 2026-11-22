@@ -90,7 +90,7 @@ export const PaletaPolecen: React.FC<{
           exit={{ opacity: 0 }}
           transition={{ duration: 0.16 }}
           onClick={onClose}
-          className="fixed inset-0 z-50 flex items-start justify-center pt-[14vh] px-4 bg-page/70 backdrop-blur-sm"
+          className="fixed inset-0 z-50 flex items-start justify-center pt-[14vh] px-4 bg-page/45 backdrop-blur-[5px]"
         >
           <motion.div
             role="dialog"
@@ -102,7 +102,7 @@ export const PaletaPolecen: React.FC<{
             transition={{ duration: 0.18 }}
             onClick={(e) => e.stopPropagation()}
             onKeyDown={onKey}
-            className="w-full max-w-lg rounded-xl bg-surface-1 border border-line-strong shadow-2xl overflow-hidden"
+            className="hq-paleta-szklo hq-spot w-full max-w-lg rounded-[22px] overflow-hidden"
           >
             <div className="flex items-center gap-3 px-4 py-3 border-b border-line">
               <Search className="w-4 h-4 text-accent shrink-0" aria-hidden="true" />
@@ -133,8 +133,8 @@ export const PaletaPolecen: React.FC<{
                     aria-selected={i === aktywny}
                     onMouseEnter={() => setAktywny(i)}
                     onClick={() => wybierz(p)}
-                    className={`flex items-center justify-between gap-3 px-3 min-h-10 rounded-lg text-sm cursor-pointer ${
-                      i === aktywny ? 'bg-accent/15 text-ink-1' : 'text-ink-2 hover:bg-surface-2'
+                    className={`relative flex items-center justify-between gap-3 px-3 min-h-10 rounded-xl text-sm cursor-pointer ${
+                      i === aktywny ? 'hq-paleta-aktywna text-ink-1' : 'text-ink-2 hover:bg-[color-mix(in_oklab,var(--color-ink-1)_5%,transparent)]'
                     }`}
                   >
                     <span className="flex items-baseline gap-2 min-w-0">

@@ -3,6 +3,13 @@ import { tr } from '../i18n';
 
 const SLOW_MS = 15000;
 
+/** Linia wody w trakcie łączenia: rysuje się w pętli; gdy trwa to zbyt długo, pokazuje lukę jak przerwa w danych. */
+const LiniaLaczenia: React.FC<{ slow: boolean }> = ({ slow }) => (
+  <svg aria-hidden="true" viewBox="0 0 400 12" preserveAspectRatio="none" className={`hq-laczenie w-full h-3 ${slow ? 'hq-laczenie-luka' : ''}`}>
+    <path d="M2 6 H398" />
+  </svg>
+);
+
 /**
  * Uczciwy stan startowy: zanim przyjdą realne świece, widoki zależne od danych nic nie liczą. `compact` — jeden wiersz
  * w miejscu pojedynczego panelu (np. pas kontekstu Przed sesją), z tym samym ostrzeżeniem po 15 s i ponowieniem.
@@ -20,7 +27,8 @@ export const ConnectingState: React.FC<{ onRetry: () => void; startedAt: number;
   );
   if (compact) {
     return (
-      <div role="status" className="flex flex-wrap items-center gap-x-4 gap-y-2 bg-surface-1 border border-line rounded-xl px-4 py-2.5 text-sm">
+      <div role="status" className="relative overflow-hidden flex flex-wrap items-center gap-x-4 gap-y-2 bg-surface-1 border border-line rounded-xl px-4 py-2.5 text-sm">
+        <span className="absolute inset-x-0 bottom-0"><LiniaLaczenia slow={slow} /></span>
         <span className="flex-1 min-w-[14rem] text-ink-2 leading-relaxed">
           {tr('Łączenie z Hyperliquid… Liczby pojawią się po pierwszej synchronizacji.', 'Connecting to Hyperliquid… The numbers appear after the first sync.')}
           {slow && <span className="block text-warn">{slowText}</span>}
@@ -31,6 +39,7 @@ export const ConnectingState: React.FC<{ onRetry: () => void; startedAt: number;
   }
   return (
     <div className="max-w-xl mx-auto mt-10 bg-surface-1 border border-line rounded-xl p-6 flex flex-col gap-3">
+      <LiniaLaczenia slow={slow} />
       <div className="text-[11px] uppercase tracking-[0.08em] text-ink-3">Hyperliquid</div>
       <h2 className="font-display text-lg font-semibold">{tr('Łączenie z danymi rynkowymi…', 'Connecting to market data…')}</h2>
       <p className="text-sm text-ink-2 leading-relaxed">
