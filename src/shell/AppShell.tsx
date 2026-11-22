@@ -796,7 +796,7 @@ export const AppShell: React.FC = () => {
   );
 
   return (
-    <div data-app-shell className="min-h-dvh flex bg-page text-ink-1">
+    <div data-app-shell data-shell-view={view} className="min-h-dvh flex bg-page text-ink-1">
       <Szyna go={go} />
       <KartaModeluHost />
       <div className="flex-1 min-w-0 flex flex-col">
@@ -917,7 +917,7 @@ export const AppShell: React.FC = () => {
       </div>
 
       {/* Telefon i tablet: dolny pasek (trzy fazy, Rynki, „Więcej”) */}
-      <nav data-app-nav aria-label={tr('Główna (telefon)', 'Main (phone)')} className="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-surface-1/95 backdrop-blur-xl border-t border-line pb-safe">
+      <nav data-app-nav data-chart-navigation={view === 'charts' || undefined} aria-label={tr('Główna (telefon)', 'Main (phone)')} className="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-surface-1/95 backdrop-blur-xl border-t border-line pb-safe">
         <div ref={wiecejRef}>
           <div className="grid grid-cols-5">
             {NAV_TELEFON.map((n) => (

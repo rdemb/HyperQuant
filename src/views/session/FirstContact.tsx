@@ -100,6 +100,21 @@ export const FirstContact: React.FC<{ coin: Market }> = ({ coin }) => {
       );
   };
 
+  const replayLabel = tr('Powtórka ostatnich 15 min', 'Replay the last 15 min');
+  const replayButton = showReplay && (
+    <button
+      type="button"
+      onClick={openReplay}
+      disabled={busy}
+      aria-label={replayLabel}
+      title={replayLabel}
+      className="min-h-11 min-w-11 sm:min-h-8 sm:min-w-8 px-2.5 inline-flex items-center justify-center gap-1.5 rounded-lg bg-surface-3 border border-line-strong font-medium text-ink-1 hover:bg-surface-1 disabled:opacity-60"
+    >
+      <History className="w-4 h-4" aria-hidden />
+      <span className={tips ? 'hidden min-[360px]:inline' : undefined}>{tips ? tr('Powtórka', 'Replay') : replayLabel}</span>
+    </button>
+  );
+
   return (
     <div className="flex flex-col gap-2">
       {tips && (
@@ -122,6 +137,7 @@ export const FirstContact: React.FC<{ coin: Market }> = ({ coin }) => {
             {tr(TIPS[krok].pl, TIPS[krok].en)}
           </p>
           <div className="ml-auto flex items-center gap-1 shrink-0">
+            {replayButton}
             <button
               type="button"
               onClick={() => setKrok(krok - 1)}
@@ -152,24 +168,8 @@ export const FirstContact: React.FC<{ coin: Market }> = ({ coin }) => {
           <span aria-hidden="true" className="hq-przewodnik-postep absolute left-0 bottom-0 h-0.5 rounded-full bg-lume" style={{ width: `${((krok + 1) / TIPS.length) * 100}%` }} />
         </section>
       )}
-      {showReplay && (
-        <div className="flex flex-wrap items-center gap-2 text-xs">
-          <button
-            type="button"
-            onClick={openReplay}
-            disabled={busy}
-            className="min-h-11 sm:min-h-8 px-3 inline-flex items-center gap-1.5 rounded-lg bg-surface-3 border border-line-strong font-medium text-ink-1 hover:bg-surface-1 disabled:opacity-60"
-          >
-            <History className="w-4 h-4" aria-hidden />
-            {tr('Powtórka ostatnich 15 min', 'Replay the last 15 min')}
-          </button>
-          {why && (
-            <span role="status" className="text-ink-2">
-              {why}
-            </span>
-          )}
-        </div>
-      )}
+      {showReplay && !tips && <div className="flex text-xs">{replayButton}</div>}
+      {why && <p role="status" className="text-xs text-ink-2">{why}</p>}
     </div>
   );
 };

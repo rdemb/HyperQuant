@@ -119,7 +119,7 @@ function Hip3FlowColumn({ coin }: { coin: string }) {
   const [advanced, setAdvanced] = useState(false);
   const [tab, setTab] = useState<Hip3FlowTab>('tape');
   return <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-line bg-surface-1" data-theme="dark">
-    <div className="shrink-0 border-b border-line px-2 py-1">
+    <div data-chart-flow-head className="shrink-0 border-b border-line px-2 py-1">
       <Segmented size="xs" ariaLabel={tr('Zakres odczytu', 'Data view')} value={advanced ? 'advanced' : 'market'} onChange={v => setAdvanced(v === 'advanced')}
         options={[{ value: 'market', label: tr('Kontrakt', 'Contract') }, { value: 'advanced', label: tr('Zaawansowane', 'Advanced') }]} />
     </div>
