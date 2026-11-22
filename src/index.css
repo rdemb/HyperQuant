@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./views/session/chartChrome.css";
 
 /* Przy profilu, mobilnej taśmie i drabince Order Flow Załoga jest dostępna z paska aplikacji. */
 body:has([data-smc-range-profile], [data-hip3-mobile], [data-order-flow]) [data-dok-launcher] {

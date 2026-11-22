@@ -3,6 +3,7 @@ import { ChevronDown } from 'lucide-react';
 import { Dropdown, MenuItem, MenuSection } from '../../../ui/Dropdown';
 import type { ChartMarket } from '../../../utils/marketRegistry';
 import { tr } from '../../../i18n';
+import { deskMarketOf } from '../../../config/deskMarkets';
 import { marketGroups, marketTitle } from './marketMenu';
 
 /**
@@ -10,7 +11,7 @@ import { marketGroups, marketTitle } from './marketMenu';
  * w kolejności rejestru. Enter w polu wybiera pierwszy pasujący rynek, strzałka w dół przechodzi do listy, Escape zamyka.
  */
 export const MarketPicker: React.FC<{ value: string; markets: readonly ChartMarket[]; onChange: (coin: string) => void }> = ({ value, markets, onChange }) => (
-  <Dropdown label={value} ariaLabel={tr(`Rynek: ${value}`, `Market: ${value}`)} title={tr('Rynek (M — następny)', 'Market (M — next)')} menuLabel={tr('Rynki', 'Markets')} width="w-60">
+  <Dropdown label={deskMarketOf(value)?.label ?? value} ariaLabel={tr(`Rynek: ${value}`, `Market: ${value}`)} title={tr('Rynek (M — następny)', 'Market (M — next)')} menuLabel={tr('Rynki', 'Markets')} width="w-60">
     {(close) => (
       <MarketMenu
         value={value}
@@ -76,18 +77,19 @@ const MarketMenu: React.FC<{ value: string; markets: readonly ChartMarket[]; onP
 export const PhoneMarketSelect: React.FC<{ value: string; markets: readonly ChartMarket[]; onChange: (coin: string) => void }> = ({ value, markets, onChange }) => (
   <span className="relative inline-flex shrink-0">
     <select
+      data-chart-market-select
       aria-label={tr('Rynek', 'Market')}
       value={value}
       onChange={(e) => onChange(e.target.value)}
       className="appearance-none h-11 pl-2.5 pr-6 rounded-lg border border-line bg-surface-2 text-xs font-medium text-ink-1 max-w-[7.5rem] truncate"
     >
       {/* Rynek spoza listy (przed odpowiedzią rejestru) też widać w polu */}
-      {!markets.some((m) => m.coin === value) && <option value={value}>{value}</option>}
+      {!markets.some((m) => m.coin === value) && <option value={value}>{deskMarketOf(value)?.label ?? value}</option>}
       {marketGroups(markets, '').map((g) => (
         <optgroup key={g.id} label={g.title}>
           {g.markets.map((m) => (
             <option key={m.coin} value={m.coin}>
-              {m.coin}
+              {deskMarketOf(m.coin)?.label ?? m.coin}
             </option>
           ))}
         </optgroup>

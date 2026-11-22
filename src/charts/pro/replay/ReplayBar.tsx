@@ -79,7 +79,7 @@ export const ReplayBar: React.FC<{ session: ReplaySession; narrow: boolean; onEx
 
   if (narrow)
     return (
-      <div className="shrink-0 border-b border-line px-2 py-1">
+      <div data-chart-replay className="shrink-0 border-b border-line px-2 py-1">
         <div className="flex items-center gap-1.5">
           {playBtn}
           {clock}
@@ -108,7 +108,7 @@ export const ReplayBar: React.FC<{ session: ReplaySession; narrow: boolean; onEx
     );
 
   return (
-    <div className="flex items-center gap-2 px-2 sm:px-3 h-10 shrink-0 border-b border-line min-w-0">
+    <div data-chart-replay className="flex items-center gap-2 px-2 sm:px-3 h-10 shrink-0 border-b border-line min-w-0">
       <span
         className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.08em] text-accent"
         title={tr('Powtórka nagranej taśmy i arkusza Hyperliquid — dane z przeszłości, nie na żywo', 'Replay of the recorded Hyperliquid tape and book — data from the past, not live')}

@@ -493,7 +493,7 @@ const ChartsView: React.FC<ChartsViewProps> = ({ phase, onPhase, onMarket }) => 
         </div>
         {/* Kolumna bez własnej wysokości (wypełnia wiersz), więc ma dokładnie wysokość wykresów */}
         {docked && (
-          <aside aria-label={tr('DOM i taśma', 'DOM & tape')} className="relative shrink-0" style={{ width: DOCK_W }}>
+          <aside data-chart-flow-column aria-label={tr('DOM i taśma', 'DOM & tape')} className="relative shrink-0" style={{ width: DOCK_W }}>
             <div className="absolute inset-0">
               <FlowColumn coin={first.coin} narrow={false} variant="column" />
             </div>
@@ -504,6 +504,7 @@ const ChartsView: React.FC<ChartsViewProps> = ({ phase, onPhase, onMarket }) => 
         {drawerOpen && (
           <div className="absolute inset-y-0 right-0 z-20 overflow-hidden rounded-l-xl shadow-2xl" style={{ width: 'min(400px, 92vw)' }}>
             <aside
+              data-chart-flow-column
               ref={drawerRef}
               tabIndex={-1}
               onKeyDown={escDrawer}
