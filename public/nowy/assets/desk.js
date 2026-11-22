@@ -111,9 +111,10 @@
       const now = Date.now();
       // Migawki grupowane po stałym numerze sekundy czasu giełdy (b.t): w tej samej sekundzie zostaje ostatnia, nowa sekunda = nowa migawka.
       // (Wcześniej zastępowanie „gdy < 1 s od ostatniej” przesuwało punkt odniesienia i przy aktualizacjach co 200 ms zostawała jedna migawka; uwaga Astry.)
-      const tx = isFinite(b.t) ? b.t : now; const secN = Math.floor(tx / 1000);
+      const tx = isFinite(b.t) ? b.t : now;
       const last = D.frames[D.frames.length - 1];
-      if (last && (secN < last.sec || tx < last.tx || (tx === last.tx && D.bookSampleEpoch !== D.bookEpoch))) return; // spóźniona migawka (np. zapasowy REST) nie cofa nagrania ani miniatury
+      // Bez numeru wersji zachowujemy pierwszą migawkę o danym czasie giełdy, także przy rozbieżnych danych z REST i WS.
+      if (last && tx <= last.tx) return;
       if (b.bids[0]) D.dec = Math.max(D.dec, decimalsOf(b.bids[0].px));
       // Kompletność strony: każdy wiersz z poprawną ceną i ilością, ceny ściśle monotoniczne. Tylko kompletna strona pozwala czytać brak wiersza jako zero.
       const okSide = (arr, dir) => arr.every((l, i) => isFinite(l.px) && l.px > 0 && isFinite(l.sz) && l.sz > 0 && (i === 0 || (dir < 0 ? l.px < arr[i - 1].px : l.px > arr[i - 1].px)));
