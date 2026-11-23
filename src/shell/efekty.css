@@ -234,8 +234,10 @@ html[data-theme='light'] .hq-swiezo { background: conic-gradient(from var(--hq-o
 
 @media (prefers-reduced-motion: reduce) {
   .hq-swiezo, .hq-deszyfr-nakladka { display: none; }
+  .hq-deszyfr > :first-child { color: inherit !important; }
   .hq-zegar-uchwyt[data-tilt] { transform: none; }
 }
 [data-motion='reduced'] :is(.hq-swiezo, .hq-deszyfr-nakladka) { display: none; }
+[data-motion='reduced'] .hq-deszyfr > :first-child { color: inherit !important; }
 [data-motion='reduced'] .hq-zegar-uchwyt[data-tilt] { transform: none; }
 [data-motion='reduced'] :is([data-dzis-view] .hq-dzis-hero [data-zegar-doby], [data-dzis-view] .hq-dzis-hero h1) { animation: none !important; }
