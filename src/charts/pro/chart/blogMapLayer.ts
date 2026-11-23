@@ -11,6 +11,7 @@ import type { EdgeTags } from './overlay';
 import type { ChartSettings } from './settings';
 import { PRO, rgba } from './theme';
 import { capsOf } from '../../../state/markets';
+import { naZmianePalety } from '../../paleta';
 
 /**
  * Mapa z bloga na wykresie ceny BTC: poziomy z wpisu autora (przerywana linia i podpis „etykieta cena” przy prawej
@@ -99,8 +100,13 @@ export function blogEdgeTags(m: BlogMapModel): EdgeTags {
 // Stałe tablice kreskowania i kolory z kryciem — bez budowania w pętli rysowania
 const DASH = [5, 4];
 const SOLID: number[] = [];
-const LINE = rgba(PRO.blogMap, 0.75);
-const LINE_TOUCHED = rgba(PRO.blogMap, 1);
+let LINE = rgba(PRO.blogMap, 0.75);
+let LINE_TOUCHED = rgba(PRO.blogMap, 1);
+// Przeliczenie przy zmianie motywu (paleta.ts)
+naZmianePalety(() => {
+  LINE = rgba(PRO.blogMap, 0.75);
+  LINE_TOUCHED = rgba(PRO.blogMap, 1);
+});
 
 /**
  * Warstwa mapy z bloga (prymityw serii ceny): przerywane linie poziomów. Podpisy rysuje nakładka wskaźników

@@ -4,6 +4,10 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Jasne wykresy w Opalu (2026-11-23)
+<!-- co-nowego: grupa=wykres | pl=Jasne wykresy w Opalu | en=Light charts in Opal -->
+- W motywie Opal świece, footprint i mapa ciepła korzystają z jasnej palety. Jasną oprawę mają też kolumna księgi i taśmy oraz miniwykresy Stanowiska.
+
 ### Wysuwany dok Załogi (2026-11-23)
 <!-- co-nowego: grupa=wykres | pl=Wysuwany dok Załogi | en=Expandable Crew dock -->
 - Dok Załogi wysuwa się z oznaczeniami stanów i powiększa postacie pod kursorem. Po zwinięciu pokazuje liczbę aktywnych reguł. Ograniczony ruch wyłącza animacje.

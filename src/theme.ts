@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react';
+import { ustawMotywWykresu } from './charts/paleta';
 
 /**
  * Motyw strony: ciemny („Chronograf”, grafit) albo jasny („papier”). Wybór w localStorage (hq.theme); bez wyboru —
@@ -66,6 +67,8 @@ export function setTheme(t: Theme): void {
 
 function zastosujMotyw(t: Theme): void {
   document.documentElement.dataset.theme = t;
+  // Płótno wykresów idzie za motywem (paleta Głębia albo Papier; wykresy montują się od nowa)
+  ustawMotywWykresu(t === 'light' ? 'light' : 'dark');
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', BAR[t]);
   try {
     window.localStorage.setItem(KEY, t);

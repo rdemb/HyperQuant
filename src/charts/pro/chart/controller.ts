@@ -79,6 +79,7 @@ import { BTC_ONLY_NOTE, NO_CEX_BADGE, NO_FORECASTS_NOTE } from '../../../utils/m
 import { capsOf, usdScaleOf } from '../../../state/markets';
 import type { DeskLedgerSummary } from '../../../utils/deskLedger';
 import { fmtCompact, fmtPrice, numLang } from '../../../ui/format';
+import { naZmianePalety } from '../../paleta';
 
 /**
  * Sterownik wykresu Pro (bez Reacta): tworzy wykres Lightweight Charts z serią footprintu, wolumenem
@@ -236,11 +237,16 @@ type VenueLines = Partial<Record<VenueLineId, (number | null)[]>>;
 const fmtFunding = (r: number | null) => (r === null ? '—' : `${r >= 0 ? '+' : ''}${numLang((r * 100).toFixed(4))}%`);
 
 /** Linie poziomów w panelu wskaźnika (RSI 70, 50, 30): widoczne, ale ciszej niż linia wskaźnika. */
-const LEVEL_COLOR = rgba(PRO.ink3, 0.45);
+let LEVEL_COLOR = rgba(PRO.ink3, 0.45);
 /** Krycie słupków wskaźnika (przy kryciu instancji 100%): słupek sprzedaży ma jeszcze kontrast ≥ 3:1 z tłem wykresu. */
 const HIST_ALPHA = 0.9;
 /** Odcinek bez koloru: przerwa między poziomami kolejnych okresów. */
-const CLEAR = rgba(PRO.bg, 0);
+let CLEAR = rgba(PRO.bg, 0);
+// Przeliczenie przy zmianie motywu (paleta.ts)
+naZmianePalety(() => {
+  LEVEL_COLOR = rgba(PRO.ink3, 0.45);
+  CLEAR = rgba(PRO.bg, 0);
+});
 
 const sameOhlc = (a: Ohlc | null, b: Ohlc | null) =>
   a === b || (a !== null && b !== null && a.open === b.open && a.high === b.high && a.low === b.low && a.close === b.close);

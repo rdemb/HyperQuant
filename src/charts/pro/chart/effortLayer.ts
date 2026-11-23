@@ -12,6 +12,7 @@ import { type EffortBand, type EffortSelection, TAPE_SPAN, type ZoneKnown, effor
 import { logicalOfTime } from './overlay';
 import { PRO, rgba } from './theme';
 import { type Tag, drawTags } from './tagColumn';
+import { naZmianePalety } from '../../paleta';
 
 /**
  * Warstwa wskaźnika „Strefy absorpcji i pudełka Effort” na wykresie ceny (interwały do 1 h, na żywo i w powtórce). Model
@@ -47,8 +48,13 @@ const BOX_FILL = 0.3;
  * Kolory stref z rodziny poziomów (plan 59, C2): strefa pod ceną bursztyn poziomów, nad ceną jego jaśniejszy odcień.
  * Strefa to miejsce, gdzie rynek przyjął agresję, a nie strona transakcji, więc bez kolorów kupna i sprzedaży.
  */
-export const ZONE_BELOW = PRO.level;
-export const ZONE_ABOVE = PRO.levelSoft;
+export let ZONE_BELOW = PRO.level;
+export let ZONE_ABOVE = PRO.levelSoft;
+// Przeliczenie przy zmianie motywu (paleta.ts)
+naZmianePalety(() => {
+  ZONE_BELOW = PRO.level;
+  ZONE_ABOVE = PRO.levelSoft;
+});
 export function zoneInk(a: number): (s: Side) => string {
   const below = rgba(ZONE_BELOW, a);
   const above = rgba(ZONE_ABOVE, a);

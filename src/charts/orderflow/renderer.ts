@@ -5,9 +5,10 @@ import { FP_TICK, FpCandle, FpCell, OrderFlowStore } from './orderFlowStore';
 import { fmtFixedEn, numLang } from '../../ui/format';
 import { tr } from '../../i18n';
 import { Frame, bucketFor, priceTickStep, priceToY, timeStep, timeToX } from './scales';
+import { motywWykresu, naZmianePalety } from '../paleta';
 
-/** Kolory płótna = tokeny z src/index.css (canvas nie widzi klas Tailwind). */
-export const C = {
+/** Kolory płótna = tokeny z src/index.css (canvas nie widzi klas Tailwind). Zorza (ciemne) i Opal (papier). */
+const C_CIEMNE = {
   page: '#0c0d0f',
   bg: '#0f1114',
   tip: '#1a1d21',
@@ -24,15 +25,35 @@ export const C = {
   level: '#e0a045',
   zone: '#9085e9',
   series1: '#3987e5',
-} as const;
+};
+const C_JASNE: typeof C_CIEMNE = {
+  page: '#f2f1f6',
+  bg: '#fbfbfd',
+  tip: '#2a2f38',
+  grid: '#e3e5ea',
+  divider: '#d8dbe2',
+  ink1: '#14121b',
+  ink2: '#474359',
+  ink3: '#5a566d',
+  accent: '#0e8aa3',
+  buy: '#3280dd',
+  sell: '#ca3829',
+  buyInk: '#1d5fb0',
+  sellInk: '#a93225',
+  level: '#a86a08',
+  zone: '#5b4fc9',
+  series1: '#2a6fc9',
+};
+/** Paleta bieżącego motywu (obiekt stały, wartości podmieniane przy zmianie motywu: moduły czytają je przy rysowaniu). */
+export const C = { ...(motywWykresu() === 'light' ? C_JASNE : C_CIEMNE) };
 
 export function rgba(hex: string, a: number): string {
   const n = parseInt(hex.slice(1), 16);
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
 }
 
-// Gotowe kolory z kryciem (bez budowania napisów w pętli)
-const K = {
+// Gotowe kolory z kryciem (bez budowania napisów w pętli); przeliczane przy zmianie motywu
+const budujK = () => ({
   shade: rgba(C.page, 0.34),
   cellBack: rgba(C.bg, 0.8),
   buy25: rgba(C.buy, 0.25),
@@ -51,7 +72,12 @@ const K = {
   va: rgba(C.ink2, 0.45),
   buyRing: rgba(C.buyInk, 0.7),
   sellRing: rgba(C.sellInk, 0.7),
-} as const;
+});
+const K = budujK();
+naZmianePalety(() => {
+  Object.assign(C, motywWykresu() === 'light' ? C_JASNE : C_CIEMNE);
+  Object.assign(K, budujK());
+});
 
 export const MONO = '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace';
 

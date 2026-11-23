@@ -10,6 +10,7 @@ import { replayHashCore } from '../../charts/pro/replay/hashCore';
 import { locale, tr } from '../../i18n';
 import { DASH, fmtCompact, fmtFixed, fmtSigned } from '../../ui/format';
 import { bookMetrics, executionWindow, hip3TapeFilters, topBookDepth, visibleExecutions } from './hip3Flow';
+import { motywWykresu } from '../../charts/paleta';
 
 const STALE_MS = 30_000;
 const ROW_LIMIT = 160;
@@ -134,7 +135,7 @@ export function Hip3PublicFlow({ store, tab, onTab, mobile = false }: {
     </div>;
   }
 
-  return <section data-hip3-flow={store.coin} data-hip3-mobile={mobile || undefined} data-theme="dark" aria-label={tr('Dane kontraktu HIP-3', 'HIP-3 contract data')}
+  return <section data-hip3-flow={store.coin} data-hip3-mobile={mobile || undefined} data-theme={motywWykresu()} aria-label={tr('Dane kontraktu HIP-3', 'HIP-3 contract data')}
     className={`min-w-0 flex flex-col bg-surface-1 text-ink-1 ${mobile ? 'my-2 rounded-xl border border-line' : 'h-full min-h-0'}`}>
     <header className="shrink-0 px-2.5 pt-2">
       <div className="flex items-center justify-between gap-1 text-xs">

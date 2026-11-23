@@ -111,6 +111,20 @@ body:has([data-smc-range-profile], [data-hip3-mobile], [data-order-flow]) [data-
   --color-warn: #fab219;
   --color-critical: #ef6158;
   --color-sim: #e9b04f;
+  /* Płótno wykresu „Głębia” (jawnie w zasięgu ciemnym: zasięg ciemny w motywie Opal nie bierze wartości papieru) */
+  --color-of-bg: #0f1114;
+  --color-of-buy-ink: #82bcfc;
+  --color-of-sell-ink: #f68771;
+  --color-of-imb-buy: #a2cfff;
+  --color-of-imb-sell: #ffa28a;
+  --color-of-poc: #f1c45e;
+  --color-of-vol: #4a4f57;
+  --color-of-vwap: #e2e9f0;
+  --color-of-svwap: #c1b3f2;
+  --color-of-heat-1: #647386;
+  --color-of-heat-2: #b4c6db;
+  --color-of-heat-3: #eff6fd;
+  --color-of-ib: #56db8f;
 }
 
 [data-theme='light'] {
@@ -135,6 +149,20 @@ body:has([data-smc-range-profile], [data-hip3-mobile], [data-order-flow]) [data-
   --color-warn: #8a5a00;
   --color-critical: #b42318;
   --color-sim: #7a4f00;
+  /* Płótno wykresu „Papier” (decyzja Rafała 23.11.2026): te same wartości co paleta PAPIER w charts/pro/chart/theme.ts */
+  --color-of-bg: #fbfbfd;
+  --color-of-buy-ink: #1d5fb0;
+  --color-of-sell-ink: #a93225;
+  --color-of-imb-buy: #1d5fb0;
+  --color-of-imb-sell: #a93225;
+  --color-of-poc: #b8860b;
+  --color-of-vol: #b9bec7;
+  --color-of-vwap: #2a2f38;
+  --color-of-svwap: #6b55c9;
+  --color-of-heat-1: #9aa5b6;
+  --color-of-heat-2: #3e4a5c;
+  --color-of-heat-3: #121722;
+  --color-of-ib: #1e9e57;
 }
 
 @layer base {

@@ -6,6 +6,7 @@ import type { ChartSettings } from './settings';
 import { logicalOfTime } from './overlay';
 import { PRO, rgba } from './theme';
 import { tr } from '../../../i18n';
+import { motywWykresu, naZmianePalety } from '../../paleta';
 
 /**
  * Pasek pokrycia danych pod osią czasu: dla każdego źródła spoza świec, którego potrzebują włączone warstwy i wskaźniki
@@ -195,8 +196,13 @@ export function coverageRows(src: CoverageSource, needs: readonly DataSource[], 
 }
 
 /** Tło wiersza (czas bez danych) i wysokość wiersza: przy więcej niż trzech źródłach cieńsze, żeby nie wejść na etykiety osi. */
-const TRACK = rgba(PRO.white, 0.07);
-export const ALL_COLOR = PRO.ink1;
+let TRACK = rgba((motywWykresu() === 'light' ? PRO.ink1 : PRO.white), 0.07);
+export let ALL_COLOR = PRO.ink1;
+// Przeliczenie przy zmianie motywu (paleta.ts)
+naZmianePalety(() => {
+  TRACK = rgba((motywWykresu() === 'light' ? PRO.ink1 : PRO.white), 0.07);
+  ALL_COLOR = PRO.ink1;
+});
 export const rowColor = (src: CoverageRow['src']): string => (src === 'all' ? ALL_COLOR : SOURCE_INFO[src].color);
 const rowPx = (rows: number) => (rows > 3 ? 1 : 2);
 const GAP_PX = 1;

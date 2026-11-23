@@ -13,6 +13,7 @@ import { fmtPx } from './layout';
 import { logicalOfTime } from './overlay';
 import { MONO, PRO, rgba } from './theme';
 import { PB_TOUCHES, boxSpan, formingNote, nearestLevels, selectRanges } from './pbSelect';
+import { naZmianePalety } from '../../paleta';
 
 /**
  * Warstwa wskaźnika „Zakresy P/b (Nill)” na wykresie ceny (interwały do 1 h, na żywo): zakresy P/b ze świec 5m z
@@ -42,9 +43,15 @@ const DAY = 86_400_000;
 const FROM_BEFORE_WEEK = 8 * DAY;
 const MIN_BARS = 200;
 
-const WEEK = PRO.level;
-const DAY_INK = rgba(PRO.ink2, 0.85);
-const BACK = rgba(PRO.bg, 0.86);
+let WEEK = PRO.level;
+let DAY_INK = rgba(PRO.ink2, 0.85);
+let BACK = rgba(PRO.bg, 0.86);
+// Przeliczenie przy zmianie motywu (paleta.ts)
+naZmianePalety(() => {
+  WEEK = PRO.level;
+  DAY_INK = rgba(PRO.ink2, 0.85);
+  BACK = rgba(PRO.bg, 0.86);
+});
 
 interface View {
   ranges: Range[];

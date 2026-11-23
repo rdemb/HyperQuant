@@ -49,6 +49,7 @@ import { tr } from '../i18n';
 import { FlowColumn } from './flow/FlowColumn';
 import { DOCK_MIN_W, DOCK_W, DRAWER_MIN_W, columnAfterHash, dockMode, loadDock, saveDock } from './flow/flowColumnModel';
 import { takeFlowAsk } from '../state/route';
+import { usePaletaWykresu } from '../charts/paleta';
 
 const WIDE = '(min-width: 1024px)';
 
@@ -121,6 +122,8 @@ export interface ChartsViewProps {
  * zamyka szufladę). Link powtórki (#charts?replay=…) pokazuje nagranie z serwera.
  */
 const ChartsView: React.FC<ChartsViewProps> = ({ phase, onPhase, onMarket }) => {
+  // Motyw płótna (Zorza / Opal): zmiana montuje wykresy od nowa z kolorami nowej palety
+  const motyw = usePaletaWykresu();
   // Migracja kart sprzed układów faz przed pierwszym odczytem kart; pasek przywrócenia dawnego Startu raz
   const [restoreOffer, setRestoreOffer] = useState(() => {
     try {
@@ -447,7 +450,7 @@ const ChartsView: React.FC<ChartsViewProps> = ({ phase, onPhase, onMarket }) => 
         </div>
       )}
       {/* Wiersz: wykresy i (w sesji) kolumna DOM i taśmy o wysokości wykresów, obok nich albo w szufladzie nad nimi */}
-      <div data-theme="dark" className={`relative flex gap-2 ${fs ? 'flex-1 min-h-0' : ''}`}>
+      <div data-theme={motyw} className={`relative flex gap-2 ${fs ? 'flex-1 min-h-0' : ''}`}>
         {/* Ten sam kontener dla każdego układu: pierwszy panel nie tworzy się od nowa przy zmianie układu ani kolumny. Poza
             pełnym ekranem dwie kolumny od 1800 px: pasek narzędzi wykresu potrzebuje ok. 720 px, węższa kolumna (szyna
             nawigacji obok) go nie mieści */}
@@ -458,7 +461,7 @@ const ChartsView: React.FC<ChartsViewProps> = ({ phase, onPhase, onMarket }) => 
         >
           {Array.from({ length: n }, (_, i) => (
             <ProChart
-              key={`${tab.id}.${gen}.${i}`}
+              key={`${tab.id}.${gen}.${i}.${motyw}`}
               panel={i}
               station={station}
               tabId={tab.id}

@@ -6,6 +6,7 @@ import { fmtPx } from './layout';
 import { fmtDayTime } from '../core/time';
 import { selectOutcomes } from './hip4Select';
 import { MONO, PRO, rgba } from './theme';
+import { naZmianePalety } from '../../paleta';
 
 /** Poziom rynku wynikowego: cena progu, podpis i nasycenie koloru (0–1, z różnicy modelu i rynku). */
 export interface OutcomeLevel {
@@ -23,7 +24,11 @@ export interface Hip4Source {
 
 /** Różnica modelu i rynku (w prawdopodobieństwie), przy której kolor jest pełny. */
 const FULL_DIFF = 0.2;
-const LABEL_BG = rgba(PRO.bg, 0.85);
+let LABEL_BG = rgba(PRO.bg, 0.85);
+// Przeliczenie przy zmianie motywu (paleta.ts)
+naZmianePalety(() => {
+  LABEL_BG = rgba(PRO.bg, 0.85);
+});
 const LABEL_H = 12;
 
 /** Procent jak w panelu „Model vs rynek”: całe punkty, przy skrajach jedno miejsce po przecinku. */
