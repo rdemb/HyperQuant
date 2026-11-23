@@ -9,6 +9,7 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 - Stanowisko otwiera się w aplikacji. Dodaj wykresy świecowe, wybierz układ siatki i zachowaj własną kompozycję.
 - Pełny ekran Order Flow mieści drabinę i taśmę obok siebie na szerokim ekranie. W układzie pionowym panele są jeden pod drugim.
 - Zegar w Dziś pokazuje rytm doby. Zwinięcie bocznego menu jest dostępne z nagłówka, a efekty interfejsu uwzględniają ograniczony ruch.
+- Widok Dziś zyskuje animowane nagłówki, sygnał nowego odczytu na kartach i reakcję tarczy zegara na kursor. Tryb ograniczonego ruchu wyłącza te efekty.
 
 ### Jeden frontend HyperQuant (2026-11-23)
 <!-- co-nowego: grupa=wykres | pl=Jeden frontend HyperQuant | en=One HyperQuant frontend -->
