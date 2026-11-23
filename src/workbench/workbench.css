@@ -1,49 +1,21 @@
-:root {
-  color-scheme: dark;
-  --wb-back: #101019;
-  --wb-chrome: #181724;
-  --wb-card: #1a1925;
-  --wb-ink: #f5f1fb;
-  --wb-muted: #bfb8d0;
-  --wb-rule: #565067;
-  --wb-cut: #cfea5b;
-  --wb-on-cut: #222904;
-  --color-page: var(--wb-back);
-  --color-surface-1: var(--wb-chrome);
-  --color-surface-2: var(--wb-card);
-  --color-line: #393448;
-  --color-line-strong: var(--wb-rule);
-  --color-ink-1: var(--wb-ink);
-  --color-ink-2: var(--wb-muted);
-  --color-accent: var(--wb-cut);
-}
-:root[data-theme='light'] { color-scheme: light; }
-.wb-shell[data-light='true'] {
-  --wb-back: #f1eef6;
-  --wb-chrome: #e8e3f1;
-  --wb-card: #fbf9ff;
-  --wb-ink: #201a2d;
-  --wb-muted: #574d69;
-  --wb-rule: #817691;
-  --wb-cut: #3a4500;
-  --wb-on-cut: #fff;
-  --color-surface-1: var(--wb-chrome);
-  --color-surface-2: var(--wb-card);
-  --color-surface-3: #e6dfef;
-  --color-line: #d5cddf;
-  --color-buy-ink: #165593;
-  --color-sell-ink: #9d281e;
-}
+/*
+ * Stanowisko (stół warsztatowy) w powłoce aplikacji: wszystkie kolory z tokenów motywu aplikacji (Zorza / Opal), żadnych
+ * nadpisań na :root (arkusz ładuje się razem z widokiem i nie może zmienić innych ekranów). Język nowego frontendu:
+ * karty w szkle z zaokrągleniem 22 px, pigułki przycisków, lume dla „teraz” i wyboru, oliwka jako akcent na papierze.
+ */
 .wb-shell {
-  --color-ink-1: var(--wb-ink);
-  --color-ink-2: var(--wb-muted);
-  --color-accent: var(--wb-cut);
-  --color-line-strong: var(--wb-rule);
-  background: var(--wb-back);
+  --wb-back: var(--color-page);
+  --wb-chrome: var(--color-surface-1);
+  --wb-card: var(--color-surface-2);
+  --wb-ink: var(--color-ink-1);
+  --wb-muted: var(--color-ink-2);
+  --wb-rule: var(--color-line-strong);
+  --wb-cut: var(--color-accent);
+  --wb-on-cut: #14160a;
   color: var(--wb-ink);
-  min-height: 100dvh;
   font-family: var(--font-sans);
 }
+.wb-shell:not([data-embedded]) { background: var(--wb-back); min-height: 100dvh; }
 .wb-shell .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 .wb-shell :focus-visible { outline: 2px solid var(--wb-cut); outline-offset: 3px; }
 .wb-shell :where(h2, h3, h4)[tabindex]:focus { outline: 2px solid var(--wb-cut); outline-offset: 3px; }
@@ -59,9 +31,8 @@
   grid-template-columns: minmax(0, 1fr) minmax(14rem, .58fr);
   gap: clamp(.7rem, 3vw, 3rem);
   padding: 1.05rem clamp(1rem, 3.6vw, 4rem) 1.3rem;
-  border-bottom: 2px solid var(--wb-cut);
-  background: var(--wb-chrome);
 }
+.wb-shell:not([data-embedded]) .wb-intro { border-bottom: 2px solid var(--wb-cut); background: var(--wb-chrome); }
 .wb-brand { color: var(--wb-cut); letter-spacing: .08em; font-size: .75rem; }
 .wb-brand span { margin-inline: .3rem; }
 .wb-intro h1 { font: 680 clamp(2.2rem, 5vw, 4.65rem)/1.06 var(--font-display); letter-spacing: -.055em; margin: .2rem 0 .55rem; }
@@ -210,3 +181,179 @@
 @keyframes wb-chip { 0% { opacity: 0; transform: translateY(-6px) scale(.96); } 12%, 82% { opacity: 1; transform: none; } 100% { opacity: 0; } }
 @keyframes wb-check { to { stroke-dashoffset: 0; } }
 .wb-grid { position: relative; }
+
+/* ======================= Nowy frontend (23.11.2026): Stanowisko w jednym stylu z aplikacją ======================= */
+.wb-shell[data-embedded] .wb-main { display: flex; flex-direction: column; gap: 1.25rem; padding-bottom: 1.5rem; }
+
+/* Otwarcie: zorza nad wodą jak w Dziś */
+.wb-shell[data-embedded] .wb-intro {
+  position: relative;
+  overflow: hidden;
+  border-radius: 28px;
+  border-bottom: 1px solid var(--color-line);
+  padding: clamp(1.4rem, 3.4vw, 2.6rem) clamp(1.2rem, 3.6vw, 2.8rem);
+  grid-template-columns: minmax(0, 1fr) minmax(14rem, .5fr);
+}
+.wb-brand { display: inline-flex; align-items: center; gap: .6rem; color: var(--color-ink-3); letter-spacing: .16em; font-size: 11px; font-weight: 600; text-transform: uppercase; }
+.wb-brand-line { display: inline-block; width: 2rem; height: 1px; background: var(--color-lume); }
+.wb-shell[data-embedded] .wb-intro h1 {
+  margin: .9rem 0 0;
+  font: 800 clamp(2.6rem, 6vw, 5.4rem)/.92 var(--font-display);
+  letter-spacing: -.03em;
+  font-stretch: 82%;
+  color: var(--color-ink-1);
+}
+.wb-title-sub { display: block; color: var(--color-lume); }
+html[data-theme='light'] .wb-title-sub { color: #3a4500; }
+.wb-shell[data-embedded] .wb-intro-copy > p:not(.wb-brand) { margin-top: 1.1rem; max-width: 56ch; font-size: 15.5px; line-height: 1.6; color: var(--color-ink-2); }
+.wb-stats { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: 1.4rem; }
+.wb-stats > div {
+  min-width: 6.5rem; padding: .55rem .85rem; border-radius: 14px;
+  border: 1px solid var(--color-line);
+  background: color-mix(in oklab, var(--color-surface-2) 70%, transparent);
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+}
+.wb-stats dt { font: 600 10px/1 var(--font-mono); letter-spacing: .14em; text-transform: uppercase; color: var(--color-ink-3); }
+.wb-stats dd { margin-top: .35rem; font-size: 18px; font-weight: 700; color: var(--color-ink-1); }
+.wb-shell[data-embedded] .wb-film { border-radius: 18px; overflow: hidden; box-shadow: 0 30px 70px -40px rgb(0 0 0 / .9), 0 0 0 1px var(--color-line); }
+.wb-shell[data-embedded] .wb-play { border-radius: 999px; background: rgb(12 13 15 / .72); color: #f5f1fb; border-color: rgb(255 255 255 / .28); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+.wb-shell[data-embedded] .wb-play:hover { background: rgb(12 13 15 / .85); }
+
+/* Pokój: biblioteka w szkle obok kompozycji */
+.wb-shell[data-embedded] .wb-room { gap: 1.25rem; min-height: 0; grid-template-columns: minmax(15rem, .26fr) minmax(0, 1fr); }
+.wb-shell[data-embedded] .wb-library {
+  align-self: start;
+  position: sticky;
+  top: calc(var(--hq-header-h, 6rem) + 1rem);
+  max-height: calc(100dvh - var(--hq-header-h, 6rem) - 2rem);
+  overflow-y: auto;
+  border: 1px solid var(--color-line);
+  border-radius: 22px;
+  padding: 1.1rem .8rem;
+  background:
+    linear-gradient(180deg, color-mix(in oklab, var(--color-ink-1) 5%, transparent), transparent 38%),
+    var(--color-surface-1);
+  box-shadow: inset 0 1px 0 color-mix(in oklab, var(--color-ink-1) 7%, transparent), 0 24px 60px -40px rgb(0 0 0 / .8);
+  scrollbar-width: thin;
+}
+.wb-shell[data-embedded] .wb-library h2 { padding-inline: .4rem; font: 700 1.35rem var(--font-display); font-stretch: 90%; }
+.wb-shell[data-embedded] .wb-label { padding-inline: .4rem; margin-top: 1rem; font: 600 10px/1.2 var(--font-mono); letter-spacing: .16em; text-transform: uppercase; color: var(--color-ink-3); }
+.wb-shell[data-embedded] .wb-library-item {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: .7rem;
+  margin-top: .25rem; padding: .55rem .5rem; border: 0; border-radius: 14px;
+  transition: background-color .15s linear, transform .38s cubic-bezier(.34, 1.56, .64, 1);
+}
+.wb-shell[data-embedded] .wb-library-item:hover { background: color-mix(in oklab, var(--color-ink-1) 6%, transparent); color: inherit; transform: translateX(2px); }
+.wb-shell[data-embedded] .wb-library-item:active { transform: scale(.97); transition-duration: .08s; }
+.wb-library-icon {
+  display: grid; place-items: center; width: 34px; height: 34px; border-radius: 11px;
+  border: 1px solid var(--color-line-strong); color: var(--color-ink-1);
+  background: color-mix(in oklab, var(--color-surface-2) 80%, transparent);
+}
+.wb-shell[data-embedded] .wb-library-item:hover .wb-library-icon { border-color: var(--color-lume); box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-lume) 18%, transparent); }
+.wb-library-text { display: flex; flex-direction: column; min-width: 0; font-weight: 600; font-size: .86rem; color: var(--color-ink-1); }
+.wb-library-text small { margin-top: .15rem; font-weight: 400; font-size: .74rem; line-height: 1.35; color: var(--color-ink-3); }
+.wb-shell[data-embedded] .wb-library-item > svg:last-child { color: var(--color-ink-3); }
+.wb-shell[data-embedded] .wb-library-item:hover > svg:last-child { color: var(--color-ink-1); }
+.wb-shell[data-embedded] .wb-canvas { padding: 0; }
+
+/* Przyciski: pigułki jak w powłoce, główne działanie w lume */
+.wb-shell[data-embedded] :is(.wb-button, select) { border-radius: 999px; border-color: var(--color-line-strong); background: var(--color-surface-1); padding-inline: .95rem; transition: background-color .15s linear, border-color .15s linear, transform .24s cubic-bezier(.22, 1, .36, 1); }
+.wb-shell[data-embedded] .wb-button:hover { background: var(--color-surface-2); border-color: var(--color-ink-3); }
+.wb-shell[data-embedded] .wb-button:active { transform: scale(.97); transition-duration: .08s; }
+.wb-shell[data-embedded] .wb-primary { background: var(--color-lume); color: #14160a; border-color: transparent; box-shadow: 0 0 0 1px color-mix(in oklab, #14160a 10%, transparent), 0 10px 30px -12px color-mix(in oklab, var(--color-lume) 70%, transparent); }
+.wb-shell[data-embedded] .wb-primary:hover { background: color-mix(in oklab, var(--color-lume) 88%, white); }
+.wb-shell[data-embedded] .wb-icon { border-radius: 12px; border-color: var(--color-line); background: var(--color-surface-1); }
+.wb-shell[data-embedded] .wb-icon:hover { border-color: var(--color-ink-3); }
+.wb-shell[data-embedded] select { border-radius: 999px; }
+
+/* Karty stanowisk: pigułki z kropką „niezapisane” */
+.wb-shell[data-embedded] .wb-tabs { gap: .35rem; padding: .3rem; border-radius: 999px; border: 1px solid var(--color-line); background: color-mix(in oklab, var(--color-surface-1) 80%, transparent); width: fit-content; max-width: 100%; }
+.wb-shell[data-embedded] .wb-tabs button { min-height: 38px; border: 0; border-radius: 999px; padding-inline: .9rem; }
+.wb-shell[data-embedded] .wb-tabs button[aria-pressed='true'] { background: color-mix(in oklab, var(--color-ink-1) 9%, transparent); box-shadow: inset 0 -2px 0 var(--color-lume); color: var(--color-ink-1); }
+.wb-shell[data-embedded] .wb-toolbar h2 { font: 700 clamp(1.5rem, 2.6vw, 2.1rem)/1.05 var(--font-display); font-stretch: 88%; letter-spacing: -.01em; }
+
+/* Przełącznik układów z miniaturami siatki */
+.wb-layouts { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; margin: .4rem 0 .6rem; }
+.wb-layouts-label { display: inline-flex; align-items: center; gap: .4rem; margin-right: .3rem; font: 600 10px/1 var(--font-mono); letter-spacing: .16em; text-transform: uppercase; color: var(--color-ink-3); }
+.wb-layout {
+  display: inline-flex; align-items: center; gap: .55rem; min-height: 44px; padding: .3rem .8rem .3rem .45rem;
+  border-radius: 14px; border: 1px solid var(--color-line); background: var(--color-surface-1);
+  font-size: .8rem; font-weight: 600; color: var(--color-ink-2); cursor: pointer;
+  transition: border-color .15s linear, color .15s linear, transform .38s cubic-bezier(.34, 1.56, .64, 1);
+}
+.wb-layout:hover { color: var(--color-ink-1); border-color: var(--color-ink-3); transform: translateY(-1px); }
+.wb-layout:active { transform: scale(.96); transition-duration: .08s; }
+.wb-layout:disabled { opacity: .5; cursor: default; transform: none; }
+.wb-layout[aria-pressed='true'] { color: var(--color-ink-1); border-color: color-mix(in oklab, var(--color-lume) 70%, var(--color-line)); box-shadow: inset 0 -2px 0 var(--color-lume); }
+.wb-layout-glyph rect { fill: color-mix(in oklab, var(--color-ink-1) 16%, transparent); stroke: var(--color-ink-3); stroke-width: .8; }
+.wb-layout[aria-pressed='true'] .wb-layout-glyph rect { fill: color-mix(in oklab, var(--color-lume) 55%, transparent); stroke: var(--color-accent); }
+@media (max-width: 1280px) { .wb-layout > span { display: none; } .wb-layout { padding-inline: .5rem; } }
+
+/* Mapa kompozycji: pigułki */
+.wb-shell[data-embedded] .wb-rail { background: none; padding: .2rem 0 .8rem; gap: .35rem; }
+.wb-shell[data-embedded] .wb-rail button { border: 1px solid var(--color-line); border-radius: 12px; background: var(--color-surface-1); color: var(--color-ink-2); min-height: 40px; font-size: .78rem; }
+.wb-shell[data-embedded] .wb-rail button[aria-pressed='true'] { color: var(--color-ink-1); border-color: var(--color-line-strong); background: var(--color-surface-2); }
+.wb-shell[data-embedded] .wb-rail-marker { background: var(--color-lume); box-shadow: 0 0 8px var(--color-lume); inset: auto .6rem -1px; }
+
+/* Karty kompozycji w szkle */
+.wb-shell[data-embedded] .wb-grid { gap: 1rem; }
+.wb-shell[data-embedded] .wb-card {
+  border-radius: 22px; border: 1px solid var(--color-line); padding: .75rem .9rem .8rem;
+  background:
+    linear-gradient(180deg, color-mix(in oklab, var(--color-ink-1) 5%, transparent), transparent 38%),
+    var(--color-surface-1);
+  box-shadow: inset 0 1px 0 color-mix(in oklab, var(--color-ink-1) 7%, transparent), 0 24px 60px -40px rgb(0 0 0 / .8);
+  animation: hq-wejscie .5s cubic-bezier(.22, 1, .36, 1) both;
+}
+.wb-shell[data-embedded] .wb-card[data-selected='true'] { border-color: color-mix(in oklab, var(--color-lume) 60%, var(--color-line)); box-shadow: inset 0 2px 0 var(--color-lume), 0 24px 60px -40px rgb(0 0 0 / .8); }
+.wb-shell[data-embedded] .wb-card-head h3 { display: flex; align-items: center; gap: .5rem; font: 700 1rem var(--font-display); font-stretch: 92%; }
+.wb-card-kind { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 9px; background: color-mix(in oklab, var(--color-lume) 18%, transparent); color: var(--color-ink-1); }
+.wb-shell[data-embedded] .wb-card-head .wb-icon { background: transparent; border-color: transparent; }
+.wb-shell[data-embedded] .wb-card-head .wb-icon:hover { border-color: var(--color-line); background: var(--color-surface-2); }
+.wb-shell[data-embedded] .wb-card-settings, .wb-shell[data-embedded] .wb-panel-settings { color: var(--color-ink-3); }
+.wb-shell[data-embedded] .wb-card-settings { border-bottom-color: var(--color-line); }
+.wb-shell[data-embedded] .wb-panel + .wb-panel { border-top-color: var(--color-line); }
+.wb-shell[data-embedded] .wb-empty { border-radius: 22px; border-color: var(--color-line-strong); padding: 2.5rem 1rem; text-align: center; color: var(--color-ink-3); }
+
+/* Ustawienia karty i panelu: niskie wiersze, żeby karta była głównie treścią */
+.wb-shell[data-embedded] :is(.wb-card-settings, .wb-panel-settings) > summary { min-height: 36px; padding-block: .45rem; font-size: .78rem; }
+.wb-shell[data-embedded] .wb-card-settings { border-bottom: 0; display: inline-block; margin-right: 1rem; }
+.wb-shell[data-embedded] .wb-card-settings[open] { display: block; }
+
+/* Panel „Wykres”: oprawa jak pasek wykresu W sesji, płótno zawsze ciemne */
+.wb-chart { display: flex; flex-direction: column; gap: .5rem; }
+.wb-chart-bar { display: flex; flex-wrap: wrap; align-items: center; gap: .45rem; }
+.wb-chart-market select { min-height: 36px; padding: .2rem .8rem; font-weight: 700; }
+.wb-chart-iv { display: inline-flex; gap: 2px; padding: 3px; border-radius: 999px; border: 1px solid var(--color-line); background: color-mix(in oklab, var(--color-page) 70%, transparent); }
+.wb-chart-iv button { min-height: 30px; min-width: 34px; padding: 0 .55rem; border-radius: 999px; font: 600 11.5px var(--font-mono); color: var(--color-ink-3); cursor: pointer; }
+.wb-chart-iv button:hover { color: var(--color-ink-1); }
+.wb-chart-iv button[aria-checked='true'] { color: var(--color-ink-1); background: color-mix(in oklab, var(--color-ink-1) 11%, transparent); box-shadow: inset 0 -2px 0 var(--color-lume); }
+.wb-chart-stan { display: inline-flex; align-items: center; gap: .4rem; margin-left: auto; font-size: 11.5px; white-space: nowrap; }
+.wb-chart-live { display: inline-flex; align-items: center; gap: .3rem; padding: .1rem .45rem; border-radius: 999px; border: 1px solid color-mix(in oklab, var(--color-good) 60%, transparent); font-size: 10px; font-weight: 700; color: var(--color-ink-1); }
+.wb-chart-live::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--color-lume); box-shadow: 0 0 6px var(--color-lume); animation: hq-tetno 2.4s ease-in-out infinite; }
+.wb-chart-px { font-weight: 700; color: var(--color-ink-1); }
+.wb-chart-hist { display: inline-flex; align-items: center; padding: .1rem .45rem; border-radius: 999px; border: 1px dashed var(--color-line-strong); font-size: 10px; font-weight: 700; color: var(--color-ink-2); }
+.wb-chart-open { display: inline-flex; align-items: center; gap: .25rem; min-height: 36px; padding: 0 .75rem; border-radius: 999px; border: 1px solid var(--color-line-strong); font-size: .78rem; font-weight: 600; color: var(--color-ink-1); }
+.wb-chart-open:hover { background: var(--color-surface-2); }
+.wb-chart-plot { position: relative; border-radius: 14px; overflow: hidden; background: #0f1114; box-shadow: inset 0 0 0 1px color-mix(in oklab, #edeef0 8%, transparent); }
+.wb-shell[data-embedded] .wb-panel-content:has(.wb-chart) { overflow: visible; }
+
+@media (max-width: 1000px) {
+  .wb-shell[data-embedded] .wb-room { display: flex; flex-direction: column; }
+  .wb-shell[data-embedded] .wb-library { position: static; max-height: none; }
+  .wb-shell[data-embedded] .wb-intro { grid-template-columns: 1fr; }
+  .wb-shell[data-embedded] .wb-film { justify-self: stretch; width: 100%; }
+}
+@media (max-width: 650px) {
+  .wb-shell[data-embedded] .wb-intro { border-radius: 22px; }
+  /* Film to dekoracja otwarcia: na telefonie miejsce dostaje kompozycja */
+  .wb-shell[data-embedded] .wb-film { display: none; }
+  .wb-stats > div { min-width: 0; flex: 1 1 40%; }
+  .wb-chart-stan { margin-left: 0; width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wb-shell[data-embedded] .wb-card { animation: none; }
+  .wb-chart-live::before { animation: none; }
+}
+[data-motion='reduced'] .wb-shell[data-embedded] :is(.wb-card, .wb-chart-live::before) { animation: none; }

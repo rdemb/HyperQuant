@@ -1,0 +1,36 @@
+/* Chronograf doby (Dziś). Ruch tylko z transform i opacity: kompozytor, bez przeliczania układu. */
+/* Kolor bieżącej sesji: limonka na ciemnym tle, oliwka na papierze (≥ 3:1 dla grafiki, WCAG 1.4.11) */
+.hq-zegar { --z-sesja: var(--color-lume); }
+[data-theme='light'] .hq-zegar { --z-sesja: #6b8410; }
+@keyframes hq-zegar-obrot { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+@keyframes hq-zegar-plyn { to { stroke-dashoffset: -48; } }
+@keyframes hq-zegar-tyk { 0% { opacity: 0.35; } 18% { opacity: 1; } 100% { opacity: 1; } }
+
+.hq-zegar-wskazowka { animation: hq-zegar-obrot 86400s linear infinite; }
+.hq-zegar-minuta { animation: hq-zegar-obrot 60s linear infinite; }
+
+/* Ogon: ostatnie ok. 90 minut doby (22,5°) świecą za wskazówką, w pasie podziałki i sesji */
+.hq-zegar-ogon {
+  pointer-events: none;
+  background: conic-gradient(from 0deg, transparent 0deg, transparent 330deg, color-mix(in oklab, var(--color-lume) 18%, transparent) 348deg, color-mix(in oklab, var(--color-lume) 55%, transparent) 360deg);
+  -webkit-mask: radial-gradient(closest-side, transparent 66%, #000 68%, #000 96%, transparent 97.5%);
+  mask: radial-gradient(closest-side, transparent 66%, #000 68%, #000 96%, transparent 97.5%);
+  animation: hq-zegar-obrot 86400s linear infinite;
+  filter: blur(0.5px);
+}
+.hq-zegar-plyn { animation: hq-zegar-plyn 2.4s linear infinite; }
+.hq-zegar-sekundy { animation: hq-zegar-tyk 1s steps(12, end) infinite; }
+.hq-zegar-postep { transition: stroke-dasharray 0.9s cubic-bezier(0.22, 1, 0.36, 1); }
+.hq-zegar-fala { fill: none; stroke: var(--color-lume); stroke-width: 2.5; transform-box: fill-box; transform-origin: center; pointer-events: none; }
+
+/* Jasny motyw: na papierze ogon i fale ciemniejszą oliwką (limonka ginie na jasnym tle) */
+[data-theme='light'] .hq-zegar-ogon {
+  background: conic-gradient(from 0deg, transparent 0deg, transparent 330deg, color-mix(in oklab, var(--color-accent) 10%, transparent) 348deg, color-mix(in oklab, var(--color-accent) 32%, transparent) 360deg);
+}
+[data-theme='light'] .hq-zegar-fala { stroke: var(--color-accent); }
+
+.hq-zegar[data-ruch='stop'] :is(.hq-zegar-wskazowka, .hq-zegar-ogon, .hq-zegar-minuta, .hq-zegar-plyn, .hq-zegar-sekundy) { animation: none; }
+@media (prefers-reduced-motion: reduce) {
+  .hq-zegar :is(.hq-zegar-wskazowka, .hq-zegar-ogon, .hq-zegar-minuta, .hq-zegar-plyn, .hq-zegar-sekundy) { animation: none; }
+  .hq-zegar-postep { transition: none; }
+}

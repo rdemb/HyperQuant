@@ -15,6 +15,7 @@ import { BOOK_HIDE_AFTER_MS, MAX_BOOK_AGE_MS } from '../views/flow/orderFlowDesk
 import { anchorReasonText, questionHash } from '../views/flow/questionLink';
 import { compareTradeToDrop } from '../views/flow/snapshotOrder';
 import type { WorkspaceComposition } from './composition';
+import { ChartPanel } from './ChartPanel';
 
 const Archive = lazy(() => import('../views/flow/ArchiveHourView'));
 const Basket = lazy(() => import('../views/flow/VenueBasket'));
@@ -103,7 +104,12 @@ function Observation({ panel, slot }: { panel: Panel; slot: string }) {
   </div>;
 }
 
-export function PanelContent({ panel, change, slot, changeCursor }: { panel: Panel; change: (update: Partial<Panel>) => void; slot: string; changeCursor: (value: number) => void }) {
+export function PanelContent({ panel, change, slot, changeCursor, changeMarket }: {
+  panel: Panel; change: (update: Partial<Panel>) => void; slot: string; changeCursor: (value: number) => void; changeMarket: (market: string) => void;
+}) {
+  if (panel.kind === 'chart') return panel.clock.kind === 'live'
+    ? <ChartPanel key={panel.market} panel={panel} change={change} onMarket={changeMarket} />
+    : <p role="status">{tr('— · Wykres pokazuje tylko dane na żywo; kursora nagrania nie obsługuje. Nagranie otworzysz w panelu „Godzina z archiwum”.', '— · The chart shows live data only and does not support a recording cursor. Open recordings in the “Archive hour” panel.')}</p>;
   if (panel.kind === 'observation') return <Observation panel={panel} slot={slot} />;
   if (panel.kind === 'flow') return panel.clock.kind === 'live'
     ? <FlowPanel key={panel.market} panel={panel} change={change} />

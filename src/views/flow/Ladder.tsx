@@ -485,13 +485,13 @@ export const Ladder: React.FC<LadderProps> = ({ store, hist, steps, stepId, onSt
           <>
             {side(shownAsks, askCanvas, true)}
             {heads && headLine(head.ask, head.flow.ask, false)}
-            <div className="flex items-center justify-between gap-2 px-3 shrink-0 border-y border-line bg-surface-2 font-mono text-[11px]" style={{ height: MID_H }}>
+            <div data-ladder-mid className="flex items-center justify-between gap-2 px-3 shrink-0 border-y border-line bg-surface-2 font-mono text-[11px]" style={{ height: MID_H }}>
               <span className="text-ink-3 hidden sm:inline whitespace-nowrap" style={{ width: heatW - 12 }}>
                 {tightW ? '' : '← '}
                 {`${heatMs / 60_000} min`}
                 {!compactW && ` · ${tr('teraz', 'now')}`}
               </span>
-              <span className="text-ink-1">{fmtPx(mid)}</span>
+              <span data-ladder-mid-px className="text-ink-1">{fmtPx(mid)}</span>
               <span className="text-ink-3" title={tr('Najlepszy bid i ask z dokładnego arkusza, bez agregacji', 'Best bid and ask from the exact book, without aggregation')}>
                 spread {numLang(String(Number((bestAsk - bestBid).toPrecision(6))))}
               </span>

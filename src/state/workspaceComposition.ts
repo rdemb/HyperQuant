@@ -1,6 +1,6 @@
 import { loadWorkspaceSnapshot, parseWorkspaceSnapshot, type WorkspacePanel, type WorkspaceSnapshot } from './workspaceSnapshot';
 
-export type WorkspacePanelKind = 'flow' | 'archive' | 'basket' | 'delta' | 'observation';
+export type WorkspacePanelKind = 'flow' | 'chart' | 'archive' | 'basket' | 'delta' | 'observation';
 export type WorkspaceClock = { kind: 'live' } | {
   kind: 'replay';
   group: string | null;
@@ -30,7 +30,7 @@ const maxJsonLength = 32_768;
 const isId = (value: unknown): value is string => typeof value === 'string' && /^[a-z0-9][a-z0-9-]{0,47}$/.test(value);
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const isPanelKind = (value: unknown): value is WorkspacePanelKind =>
-  value === 'flow' || value === 'archive' || value === 'basket' || value === 'delta' || value === 'observation';
+  value === 'flow' || value === 'chart' || value === 'archive' || value === 'basket' || value === 'delta' || value === 'observation';
 const isWeight = (weight: unknown): weight is number =>
   typeof weight === 'number' && Number.isFinite(weight) && weight > 0 && weight <= 1000;
 
