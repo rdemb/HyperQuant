@@ -201,7 +201,8 @@ void main(){
     new IntersectionObserver(([e]) => { visible = e.isIntersecting; if (visible) start(); }, { threshold: 0 }).observe(canvas);
     document.addEventListener('visibilitychange', start);
     document.addEventListener('hq:motion', () => { if (HQ.reduced()) { cancelAnimationFrame(raf); raf = 0; still(); } else start(); });
-    document.addEventListener('hq:theme', () => { if (HQ.reduced()) still(); });
+    // Zmiana motywu przerysowuje też zatrzymaną klatkę (pauza, ograniczony ruch, poza ekranem)
+    document.addEventListener('hq:theme', () => { if (!raf) draw(); });
     addEventListener('resize', () => { if (HQ.reduced()) still(); });
 
     let paused = false;
@@ -240,7 +241,7 @@ void main(){
       if (!c.height || !isFinite(y)) return 0.44;
       return Math.max(0.08, Math.min(0.92, 1 - (y - c.top) / c.height));
     };
-    const wl = HQ.waterline(canvas, { line: lineAt, left: () => (mobile() ? 0.35 : 1) });
+    const wl = HQ.waterline(canvas, { line: lineAt, left: () => (mobile() ? 0.35 : 1), paper: true });
     if (wl) hero.dataset.gl = 'true';
     // Pauza ruchu tła: animacja trwa dłużej niż 5 s, więc użytkownik może ją zatrzymać (WCAG 2.2.2)
     const pauseBtn = document.getElementById('hero-pause');

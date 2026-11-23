@@ -4,6 +4,10 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Przekrój w motywie Opal (2026-11-23)
+<!-- co-nowego: grupa=blog | pl=Przekrój w motywie Opal | en=Opal theme for the homepage -->
+- Strona główna używa tych samych nazw motywów co aplikacja. Opal zmienia tło strony, menu i karty na jasne oraz poprawia czytelność tekstu.
+
 ### Jasne wykresy w Opalu (2026-11-23)
 <!-- co-nowego: grupa=wykres | pl=Jasne wykresy w Opalu | en=Light charts in Opal -->
 - W motywie Opal świece, footprint i mapa ciepła korzystają z jasnej palety. Jasną oprawę mają też kolumna księgi i taśmy oraz miniwykresy Stanowiska.

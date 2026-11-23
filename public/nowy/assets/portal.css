@@ -591,3 +591,112 @@ html[data-motion='reduced'] .interlude-film img, html[data-motion='reduced'] .in
 html.vt-motyw::view-transition-old(root) { animation: none; }
 html.vt-motyw::view-transition-new(root) { animation: vt-kolo .75s cubic-bezier(.83, 0, .17, 1) both; }
 @keyframes vt-kolo { from { clip-path: circle(0 at var(--vt-x, 50%) var(--vt-y, 0)); } to { clip-path: circle(150vmax at var(--vt-x, 50%) var(--vt-y, 0)); } }
+
+/* ================= Opal (jasny motyw) — ten sam co w aplikacji ================= */
+/* Treść strony (nawigacja, nagłówek z linią wody, terminal, sekcje na żywo, menu) przechodzi na tokeny Opalu aplikacji:
+   papier, ciemny atrament, oliwkowy akcent, przyciski w kolorze lume. Filmy i zdjęcia nie mają jasnej wersji, więc
+   przerywnik, pokaz i finał zostają ciemne jako zaokrąglone kadry na papierze (jak film w Stanowisku). */
+html[data-theme='paper'] .cinema {
+  --cinema-bg: var(--page);
+  --cinema-text: var(--ink-1);
+  --cinema-muted: var(--ink-2);
+  --cinema-line: var(--line);
+  --cinema-lime: var(--accent);
+}
+html[data-theme='paper'] .portal {
+  --glass: color-mix(in oklab, var(--s2) 74%, transparent);
+  --glass-strong: color-mix(in oklab, var(--s2) 92%, transparent);
+  --glass-line: color-mix(in oklab, var(--ink-1) 12%, transparent);
+  --glass-hi: rgba(255, 255, 255, .85);
+  --violet: #5b4a8f;
+  --pale: var(--ink-1);
+  --opal-fill: var(--lume);
+  --opal-tint: color-mix(in oklab, var(--ink-1) 6%, transparent);
+  --opal-shadow: 0 18px 44px -30px rgba(20, 18, 27, .38);
+}
+html[data-theme='paper'] :is(.glass, .dock-in, .tour-tabs-in, .hero2-live, .pmenu-in, .gseg) { box-shadow: inset 0 1px 0 var(--glass-hi), var(--opal-shadow); }
+html[data-theme='paper'] .fluid-ind { background: color-mix(in oklab, var(--ink-1) 9%, transparent); box-shadow: inset 0 0 0 1px var(--glass-line); }
+html[data-theme='paper'] .fluid-ind::after { box-shadow: none; }
+
+/* Wypełnienia akcentem: lume z ciemnym napisem, jak główne przyciski aplikacji */
+html[data-theme='paper'] :is(.dock-cta, .cinema-button-main) { background: var(--opal-fill); color: var(--on-lume); }
+html[data-theme='paper'] :is(.dock-cta, .cinema-button-main):hover { background: color-mix(in oklab, var(--opal-fill) 78%, white); box-shadow: 0 0 0 6px color-mix(in oklab, var(--opal-fill) 30%, transparent); }
+html[data-theme='paper'] :is(.dock-progress, .pmenu[open] .pmenu-in::before) { box-shadow: none; }
+
+/* Nawigacja i menu */
+html[data-theme='paper'] .dock-nav a { color: var(--ink-2); }
+html[data-theme='paper'] .dock-nav a:hover, html[data-theme='paper'] .dock-nav a[aria-current] { color: var(--ink-1); }
+html[data-theme='paper'] :is(.dock-menu, .gswitch) { background: var(--opal-tint); }
+html[data-theme='paper'] .dock-menu:hover { background: color-mix(in oklab, var(--ink-1) 11%, transparent); }
+html[data-theme='paper'] .pmenu::backdrop { background: rgba(20, 18, 27, .28); }
+html[data-theme='paper'] .pmenu-in { background: color-mix(in oklab, var(--s1) 94%, transparent); }
+html[data-theme='paper'] .prow > span { color: var(--ink-1); }
+html[data-theme='paper'] .gseg button { color: var(--ink-2); }
+html[data-theme='paper'] .gseg button[aria-pressed='true'] { color: var(--ink-1); }
+html[data-theme='paper'] .gswitch > i { background: var(--line-strong); }
+html[data-theme='paper'] .gswitch > i::after { background: var(--s2); box-shadow: 0 1px 2px rgba(20, 18, 27, .3); }
+html[data-theme='paper'] .gswitch[aria-pressed='true'] > i { background: var(--opal-fill); }
+html[data-theme='paper'] .gswitch[aria-pressed='true'] > i::after { background: var(--on-lume); }
+html[data-theme='paper'] .pmenu-status i { background: var(--warn); }
+html[data-theme='paper'] .pmenu-status:has([data-state='live']) i { box-shadow: none; }
+
+/* Nagłówek: linia wody w jasnym szkle Opalu (ten sam shader, wariant papierowy) */
+html[data-theme='paper'] .cinema-hero { background: var(--page); }
+html[data-theme='paper'] .hero2-media { background: radial-gradient(ellipse at 70% 50%, #dcd5ee 0, #ebe8f3 50%, var(--page) 80%); }
+html[data-theme='paper'] .hero2-poster { display: none; }
+html[data-theme='paper'] .hl-sub, html[data-theme='paper'] .hero2-note { color: var(--ink-2); }
+html[data-theme='paper'] .hero2-note i { box-shadow: 0 0 0 4px color-mix(in oklab, var(--accent) 16%, transparent); }
+html[data-theme='paper'] :is(.cinema-button-alt, .hero2-ctrl .film-control, .hero2-sound) { background: color-mix(in oklab, var(--s2) 70%, transparent); border-color: var(--line-strong); color: var(--ink-1); }
+html[data-theme='paper'] .cinema-button-alt:hover { background: var(--s2); }
+html[data-theme='paper'] .hero2-scroll i { background: color-mix(in oklab, var(--ink-1) 22%, transparent); }
+
+/* Terminal (bento): karty jak w Dziś — biała powierzchnia, cienka linia, miękki cień */
+html[data-theme='paper'] .portal .bento { border-top-color: var(--line); }
+html[data-theme='paper'] .bento-card { background: linear-gradient(170deg, var(--s2), var(--s1)); border-color: var(--line); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .9), var(--opal-shadow); }
+html[data-theme='paper'] .bento-card:hover { border-color: var(--line-strong); }
+html[data-theme='paper'] .bento-card p { color: var(--ink-2); }
+html[data-theme='paper'] .bento-card::before { background: radial-gradient(420px circle at var(--sx) var(--sy), color-mix(in oklab, var(--lume) 22%, transparent), transparent 45%); }
+html[data-theme='paper'] .bento-card::after { background: radial-gradient(260px circle at var(--sx) var(--sy), color-mix(in oklab, var(--accent) 70%, transparent), transparent 60%); }
+html[data-theme='paper'] .bento-glyph .g-water { filter: none; }
+html[data-theme='paper'] .g-bubbles circle { fill: color-mix(in oklab, var(--buy-ink) 14%, transparent); stroke: var(--buy-ink); }
+html[data-theme='paper'] .g-bubbles circle:nth-child(2n) { fill: color-mix(in oklab, var(--sell-ink) 12%, transparent); stroke: var(--sell-ink); }
+html[data-theme='paper'] .g-bars rect { fill: color-mix(in oklab, var(--violet) 55%, transparent); }
+html[data-theme='paper'] .g-bars rect:nth-child(n+11) { fill: color-mix(in oklab, var(--sell-ink) 50%, transparent); }
+html[data-theme='paper'] .g-axis { stroke: color-mix(in oklab, var(--ink-1) 35%, transparent); }
+html[data-theme='paper'] .g-snap { fill: color-mix(in oklab, var(--violet) 12%, transparent); stroke: var(--violet); }
+html[data-theme='paper'] :is(.g-trade, .g-move) { fill: color-mix(in oklab, var(--lume) 45%, transparent); }
+html[data-theme='paper'] .g-chips rect { fill: var(--s2); }
+html[data-theme='paper'] .g-chips rect:nth-child(2) { stroke: var(--violet); }
+html[data-theme='paper'] .g-chips rect:nth-child(3) { stroke: var(--warn); }
+html[data-theme='paper'] .g-chip-t text:nth-child(2) { fill: var(--violet); }
+html[data-theme='paper'] .g-chip-t text:nth-child(3) { fill: var(--warn); }
+html[data-theme='paper'] .g-panels rect, html[data-theme='paper'] :is(.g-phone, .g-desk) { fill: color-mix(in oklab, var(--violet) 8%, transparent); stroke: color-mix(in oklab, var(--violet) 60%, transparent); }
+
+/* Kadry filmowe: ciemne wartości kina wracają lokalnie, a kadr ma zaokrąglone rogi i margines od krawędzi papieru */
+html[data-theme='paper'] :is(.interlude, .tour, .final2) {
+  --cinema-bg: #0d0c13;
+  --cinema-text: #f6f3ff;
+  --cinema-muted: #bcb7cc;
+  --cinema-line: #383348;
+  --cinema-lime: #deff71;
+  --glass: color-mix(in oklab, #191229 64%, transparent);
+  --glass-strong: color-mix(in oklab, #160f24 86%, transparent);
+  --glass-line: rgba(241, 234, 255, .14);
+  --glass-hi: rgba(255, 255, 255, .07);
+  --violet: #a490d3;
+  --pale: #f1eaff;
+  --opal-fill: #deff71;
+  --opal-tint: rgba(241, 234, 255, .05);
+  --opal-shadow: 0 18px 50px -24px rgba(0, 0, 0, .75);
+  --page: #0b0a12; --s1: #121019; --s2: #19162a; --s3: #231f38; --line: #2b2640; --line-strong: #403a5c;
+  --ink-1: #f0edf7; --ink-2: #b9b3cc; --ink-3: #9a94b0;
+  --lume: #cfea5b; --accent: #cfea5b; --on-lume: #171c09; --notch: #cfea5b; --water: #cfea5b;
+  --buy-ink: #82bcfc; --sell-ink: #f68771; --warn: #fab219; --sim: #e9b04f;
+  color-scheme: dark;
+  background-color: #0d0c13;
+  clip-path: inset(0 var(--opal-frame, 12px) round var(--opal-round, 28px));
+}
+html[data-theme='paper'] .final2 { clip-path: inset(0 var(--opal-frame, 12px) var(--opal-frame, 12px) round var(--opal-round, 28px)); }
+html[data-theme='paper'] .portal { --opal-frame: clamp(8px, 1vw, 16px); }
+html[data-theme='paper'] :is(.interlude, .tour) + * { margin-top: var(--opal-frame); }
+@media (max-width: 640px) { html[data-theme='paper'] .portal { --opal-frame: 6px; --opal-round: 20px; } }
