@@ -19,7 +19,6 @@ import {
 } from './composition';
 import { AFTER_B, BEFORE_B, consumeReturn, PanelContent, type Panel } from './Panels';
 
-const initial = readEntries();
 const motionPreference = matchMedia('(prefers-reduced-motion: reduce)');
 const reducedSnapshot = () => motionPreference.matches || document.documentElement.dataset.motion === 'reduced';
 function subscribeMotionPreference(notify: () => void) {
@@ -122,6 +121,7 @@ function LayoutGlyph({ spans }: { spans: number[] }) {
 }
 
 export default function Workbench({ embedded = false }: { embedded?: boolean }) {
+  const [initial] = useState(readEntries);
   const [slots, setSlots] = useState<Record<string, Entry>>(initial.slots);
   const [active, setActive] = useState(initial.active);
   const [selectedPanel, setSelectedPanel] = useState<string | null>(null);

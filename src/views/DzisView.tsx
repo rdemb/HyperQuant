@@ -12,6 +12,7 @@ import { ORDER_FLOW_MARKETS } from './flow/orderFlowDesk';
 import { ZegarDoby } from './dzis/ZegarDoby';
 import { Liczydlo } from '../ui/Liczydlo';
 import { Litery } from '../ui/Litery';
+import { Deszyfr } from '../ui/Deszyfr';
 import { ZBliska } from './dzis/ZBliska';
 import { czytajNic, opisNici } from '../shell/nic';
 
@@ -85,6 +86,8 @@ const KartaRynku: React.FC<{ row: MarketRowModel }> = ({ row }) => {
   const brak = row.why !== null;
   return (
     <article data-dzis-rynek={row.coin} data-tilt aria-labelledby={`dzis-${row.coin}`} className="hq-spot hq-karta-dzis relative flex h-full flex-col gap-5 rounded-[22px] p-5 sm:p-6">
+      {/* Obieg światła po krawędzi przy każdym nowym odczycie (klucz = godzina odczytu): widoczny znak świeżych danych */}
+      {row.readAt !== null && <span key={row.readAt} aria-hidden="true" className="hq-swiezo" />}
       <header className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h3 id={`dzis-${row.coin}`} className="font-display text-[24px] font-bold leading-none tracking-tight [font-stretch:88%] text-ink-1">
@@ -233,7 +236,7 @@ const DzisView: React.FC = () => {
         </div>
         </div>
         {/* Chronograf doby: sesje BTC w czasie lokalnym, „teraz”, odliczanie (zegar, nie dane rynku); na telefonie pod tekstem */}
-        <div className="mx-auto w-[min(82vw,340px)] lg:mx-0 lg:-my-6 lg:mr-2 lg:w-[400px]">
+        <div data-tilt className="hq-zegar-uchwyt relative mx-auto rounded-full w-[min(82vw,340px)] lg:mx-0 lg:-my-6 lg:mr-2 lg:w-[400px]">
           <ZegarDoby />
         </div>
         </div>
@@ -246,7 +249,7 @@ const DzisView: React.FC = () => {
       <section aria-labelledby="dzis-rynki" className="flex flex-col gap-4">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <h2 id="dzis-rynki" className="font-display text-[clamp(22px,2.2vw,30px)] font-bold leading-tight tracking-tight [font-stretch:90%] text-ink-1">
-            {tr('Rynki teraz', 'Markets now')}
+            <Deszyfr text={tr('Rynki teraz', 'Markets now')} />
           </h2>
           <p className="text-xs text-ink-3">
             {tr(`Hyperliquid · odświeżanie co ${page.refreshSec} s przy widocznej karcie · brak odczytu to „—”`, `Hyperliquid · refreshed every ${page.refreshSec} s while the tab is visible · no reading is “—”`)}
@@ -263,7 +266,7 @@ const DzisView: React.FC = () => {
 
       <section aria-labelledby="dzis-fazy" className="flex flex-col gap-4">
         <h2 id="dzis-fazy" className="font-display text-[clamp(22px,2.2vw,30px)] font-bold leading-tight tracking-tight [font-stretch:90%] text-ink-1">
-          {tr('Trzy czasy dnia', 'Three times of the day')}
+          <Deszyfr text={tr('Trzy czasy dnia', 'Three times of the day')} />
         </h2>
         <ol className="grid grid-cols-1 gap-4 md:grid-cols-3">
           {FAZY.map((f) => {
@@ -314,7 +317,7 @@ const DzisView: React.FC = () => {
 
       <section aria-labelledby="dzis-skroty" className="flex flex-col gap-4">
         <h2 id="dzis-skroty" className="font-display text-[clamp(22px,2.2vw,30px)] font-bold leading-tight tracking-tight [font-stretch:90%] text-ink-1">
-          {tr('Na skróty', 'Shortcuts')}
+          <Deszyfr text={tr('Na skróty', 'Shortcuts')} />
         </h2>
         <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {SKROTY.map((s) => (

@@ -197,3 +197,47 @@ html[data-theme='light'] .hq-dzis-hero::before { opacity: 0.7; }
 }
 [data-motion='reduced'] .hq-litera { animation: none; }
 [data-motion='reduced'] :is(.hq-latarka, .hq-klik-fala) { display: none; }
+
+/* ======================= Efekty v4 (23.11.2026) ======================= */
+/* Odszyfrowanie nagłówków: szyfr leży nad właściwym tekstem, układ stoi */
+.hq-deszyfr { position: relative; display: inline-block; }
+.hq-deszyfr-nakladka { position: absolute; inset: 0; white-space: pre; color: var(--color-ink-1); pointer-events: none; font-variant-numeric: tabular-nums; }
+.hq-deszyfr-nakladka:not([data-gotowe]) { text-shadow: 0 0 12px color-mix(in oklab, var(--color-lume) 55%, transparent); }
+
+/* Świeże dane: światło obiega krawędź karty rynku raz po każdym odczycie */
+@property --hq-obieg { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
+.hq-swiezo {
+  position: absolute; inset: 0; z-index: 3; border-radius: inherit; padding: 1.5px; pointer-events: none;
+  background: conic-gradient(from var(--hq-obieg), transparent 0deg 250deg, color-mix(in oklab, var(--color-lume) 30%, transparent) 300deg, var(--color-lume) 350deg, transparent 360deg);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  animation: hq-obieg 1.6s cubic-bezier(0.45, 0, 0.2, 1) forwards;
+}
+html[data-theme='light'] .hq-swiezo { background: conic-gradient(from var(--hq-obieg), transparent 0deg 250deg, color-mix(in oklab, var(--color-accent) 30%, transparent) 300deg, var(--color-accent) 350deg, transparent 360deg); }
+@keyframes hq-obieg { 0% { --hq-obieg: 0deg; opacity: 1; } 80% { opacity: 1; } 100% { --hq-obieg: 360deg; opacity: 0; } }
+
+/* Zegar: uchwyt przechyla tarczę jak szkło (przechył i odblask z [data-tilt]) */
+.hq-zegar-uchwyt[data-tilt] { transform: perspective(900px) rotateX(calc(var(--ty, 0) * -9deg)) rotateY(calc(var(--tx, 0) * 11deg)); }
+.hq-zegar-uchwyt[data-tilt]::after { border-radius: 50%; }
+
+/* Paralaksa otwarcia Dziś przy przewijaniu: zegar obraca się i oddala, tytuł zostaje w tyle (CSS, bez JS) */
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    /* Oś nazwana na samej sekcji: sekcja ma overflow hidden, więc view() dzieci liczyłby się względem niej, nie strony */
+    [data-dzis-view] > .hq-dzis-hero { view-timeline: --hq-otwarcie block; }
+    [data-dzis-view] .hq-dzis-hero [data-zegar-doby] { animation: hq-paralaksa-zegar linear both; animation-timeline: --hq-otwarcie; animation-range: exit 0% exit 100%; }
+    [data-dzis-view] .hq-dzis-hero h1 { animation: hq-paralaksa-tytul linear both; animation-timeline: --hq-otwarcie; animation-range: exit 0% exit 100%; }
+  }
+  @keyframes hq-paralaksa-zegar { to { transform: rotate(-28deg) scale(0.82); opacity: 0.15; } }
+  @keyframes hq-paralaksa-tytul { to { transform: translateY(45%); opacity: 0.1; } }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hq-swiezo, .hq-deszyfr-nakladka { display: none; }
+  .hq-deszyfr > :first-child { color: inherit !important; transition: none !important; }
+  .hq-zegar-uchwyt[data-tilt] { transform: none; }
+}
+[data-motion='reduced'] :is(.hq-swiezo, .hq-deszyfr-nakladka) { display: none; }
+[data-motion='reduced'] .hq-deszyfr > :first-child { color: inherit !important; transition: none !important; }
+[data-motion='reduced'] .hq-zegar-uchwyt[data-tilt] { transform: none; }
+[data-motion='reduced'] :is([data-dzis-view] .hq-dzis-hero [data-zegar-doby], [data-dzis-view] .hq-dzis-hero h1) { animation: none !important; }
