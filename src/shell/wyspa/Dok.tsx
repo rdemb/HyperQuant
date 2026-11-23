@@ -7,6 +7,7 @@ import { usePaused, useRules } from './magazyn';
 import { PERSONY, type Persona, type PersonaId, type PersonaState, STRAZNICY, personaOf, personaState } from './persony';
 import { Postac } from './Postac';
 import type { GuardEvent } from './straznicy';
+import './dok.css';
 
 /**
  * Dok załogi: pływająca wyspa z twarzami strażników (te z regułami, a bez reguł trzech polecanych, uśpionych) i Suflerem.
@@ -67,11 +68,11 @@ export const Dok: React.FC<{
   onOpen: (p?: PersonaId) => void;
   open: boolean;
 }> = ({ flash, onDismissFlash, onOpen, open }) => {
-  const { crew, lead } = useZaloga(flash);
+  const { crew, lead, aktywni } = useZaloga(flash);
   const [pos, setPos] = useState<Pos>(readPos);
   const ref = useRef<HTMLDivElement>(null);
   const drag = useRef<{ dx: number; dy: number; moved: boolean; id: number } | null>(null);
-  const reduce = useReducedMotion();
+  const reduce = useReducedMotion() || document.documentElement.dataset.motion === 'reduced';
   const flashPersona = flash ? personaOf(flash.kind) : null;
 
   // Przeciąganie za tło doku (nie za przyciski); zapis pozycji jako ułamek ekranu, żeby przetrwał zmianę rozmiaru okna
@@ -98,6 +99,18 @@ export const Dok: React.FC<{
   const onPointerUp = () => {
     if (drag.current?.moved) setPos((p) => (savePos(p), p));
     drag.current = null;
+  };
+  // Powiększenie jak w doku: każda postać rośnie (do 1,4×) zależnie od odległości kursora od jej środka
+  const lupa = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (reduce || e.pointerType !== 'mouse' || drag.current?.moved) return;
+    e.currentTarget.querySelectorAll<HTMLElement>('.hq-dok-postac').forEach((b) => {
+      const r = b.getBoundingClientRect();
+      const d = Math.abs(e.clientX - (r.left + r.width / 2));
+      b.style.setProperty('--lupa', (1 + 0.4 * Math.max(0, 1 - d / 110)).toFixed(3));
+    });
+  };
+  const zgasLupe = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.currentTarget.querySelectorAll<HTMLElement>('.hq-dok-postac').forEach((b) => b.style.removeProperty('--lupa'));
   };
   const toggle = () =>
     setPos((p) => {
@@ -166,37 +179,67 @@ export const Dok: React.FC<{
         )}
       </AnimatePresence>
 
-      <motion.div data-dok-launcher layout={!reduce} className="flex items-center gap-1 rounded-full border border-line-strong bg-surface-1/90 backdrop-blur-xl p-1.5 shadow-[0_18px_40px_-12px_rgb(0_0_0/0.7)] cursor-grab active:cursor-grabbing">
+      {/* Wyspa: szkło z linią „lume”, zwinięta do kuli z pierścieniem stanu, rozwinięta wysuwa postacie po kolei.
+          Postacie rosną pod kursorem jak w doku (powiększenie liczone w onMove, tylko precyzyjny wskaźnik). */}
+      <motion.div
+        data-dok-launcher
+        data-zwiniety={pos.zwiniety || undefined}
+        layout={!reduce}
+        transition={{ type: 'spring', stiffness: 420, damping: 34 }}
+        initial={reduce ? false : { opacity: 0, y: 40, scale: 0.9 }}
+        animate={{ opacity: 1, y: 0, scale: 1, transition: { type: 'spring', stiffness: 260, damping: 24, delay: reduce ? 0 : 1.2 } }}
+        onPointerMove={lupa}
+        onPointerLeave={zgasLupe}
+        className="hq-dok flex items-end gap-1 p-1.5 cursor-grab active:cursor-grabbing"
+      >
         {pos.zwiniety ? (
-          <button type="button" data-dok-postac={lead.p.id} onClick={() => onOpen()} aria-label={tr(`Otwórz załogę (${lead.p.name})`, `Open the crew (${lead.p.name})`)} className="rounded-full p-0.5 hover:bg-surface-3 focus-visible:outline-2 focus-visible:outline-accent">
+          <button
+            type="button"
+            data-dok-postac={lead.p.id}
+            data-stan={lead.state}
+            onClick={() => onOpen()}
+            aria-label={tr(`Otwórz załogę (${lead.p.name})`, `Open the crew (${lead.p.name})`)}
+            className="hq-dok-kula relative rounded-full p-1 focus-visible:outline-2 focus-visible:outline-accent"
+          >
+            <span aria-hidden="true" className="hq-dok-pierscien" />
             <Postac id={lead.p.id} state={lead.state} size={44} />
+            {aktywni > 0 && <span aria-hidden="true" className="hq-dok-licznik">{aktywni}</span>}
           </button>
         ) : (
           <>
-            {crew.map(({ p, state }) => (
-              <button
-                key={p.id}
-                type="button"
-                data-dok-postac={p.id}
-                onClick={() => onOpen(p.id)}
-                title={p.name}
-                aria-label={tr(`${p.name}: ${state === 'spi' ? 'śpi' : state === 'alarm' ? 'zdarzenie' : 'czuwa'}`, `${p.name}: ${state === 'spi' ? 'asleep' : state === 'alarm' ? 'event' : 'watching'}`)}
-                className="group relative rounded-full p-0.5 transition-transform duration-150 hover:-translate-y-1 hover:bg-surface-3 focus-visible:outline-2 focus-visible:outline-accent"
-              >
-                <Postac id={p.id} state={state} size={44} />
-                <span className="pointer-events-none absolute left-1/2 -top-7 -translate-x-1/2 whitespace-nowrap rounded-md bg-surface-3 px-2 py-0.5 text-[11px] text-ink-1 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100">
-                  {p.name}
-                </span>
-              </button>
-            ))}
-            <span aria-hidden="true" className="mx-0.5 h-8 w-px bg-line" />
-            <button type="button" onClick={() => onOpen()} aria-label={tr('Dodaj strażnika', 'Add a guard')} className="inline-flex h-10 w-10 items-center justify-center rounded-full text-ink-2 hover:bg-surface-3 hover:text-ink-1">
+            <AnimatePresence initial={false}>
+              {crew.map(({ p, state }, i) => (
+                <motion.button
+                  key={p.id}
+                  type="button"
+                  data-dok-postac={p.id}
+                  data-stan={state}
+                  onClick={() => onOpen(p.id)}
+                  aria-label={tr(`${p.name}: ${state === 'spi' ? 'śpi' : state === 'alarm' ? 'zdarzenie' : 'czuwa'}`, `${p.name}: ${state === 'spi' ? 'asleep' : state === 'alarm' ? 'event' : 'watching'}`)}
+                  initial={reduce ? false : { opacity: 0, x: -18, scale: 0.6 }}
+                  animate={{ opacity: 1, x: 0, scale: 1, transition: { type: 'spring', stiffness: 520, damping: 26, delay: reduce ? 0 : i * 0.05 } }}
+                  exit={reduce ? { opacity: 0 } : { opacity: 0, scale: 0.6, transition: { duration: 0.12 } }}
+                  className="hq-dok-postac group relative rounded-full p-0.5 focus-visible:outline-2 focus-visible:outline-accent"
+                >
+                  <span className="hq-dok-lupa block">
+                    <Postac id={p.id} state={state} size={44} />
+                  </span>
+                  <span aria-hidden="true" className="hq-dok-stan" />
+                  <span aria-hidden="true" className="hq-dok-podpis">
+                    <b>{p.name}</b>
+                    <i>{state === 'spi' ? tr('śpi', 'asleep') : state === 'alarm' ? tr('zdarzenie', 'event') : tr('czuwa', 'watching')}</i>
+                  </span>
+                </motion.button>
+              ))}
+            </AnimatePresence>
+            <span aria-hidden="true" className="mx-0.5 mb-2 h-8 w-px bg-line" />
+            <button type="button" onClick={() => onOpen()} aria-label={tr('Dodaj strażnika', 'Add a guard')} className="hq-dok-plus mb-1 inline-flex h-10 w-10 items-center justify-center rounded-full text-ink-2 hover:text-ink-1">
               <Plus className="h-4 w-4" aria-hidden="true" />
             </button>
           </>
         )}
-        <button type="button" onClick={toggle} aria-label={pos.zwiniety ? tr('Rozwiń dok', 'Expand the dock') : tr('Zwiń dok', 'Collapse the dock')} className="inline-flex h-8 w-6 items-center justify-center rounded-full text-ink-3 hover:text-ink-1">
-          <ChevronDown className={`h-3.5 w-3.5 transition-transform duration-150 ${pos.zwiniety ? 'rotate-180' : ''}`} aria-hidden="true" />
+        <button type="button" onClick={toggle} aria-label={pos.zwiniety ? tr('Rozwiń dok', 'Expand the dock') : tr('Zwiń dok', 'Collapse the dock')} className="mb-2 inline-flex h-8 w-6 items-center justify-center rounded-full text-ink-3 hover:text-ink-1">
+          <ChevronDown className={`h-3.5 w-3.5 transition-transform duration-300 ${pos.zwiniety ? 'rotate-180' : ''}`} aria-hidden="true" />
         </button>
       </motion.div>
     </div>
