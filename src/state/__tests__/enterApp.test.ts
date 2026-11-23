@@ -26,9 +26,9 @@ function page(hash: string, init?: Record<string, string>) {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('wejście do aplikacji (pusty adres)', () => {
-  it('pierwsza wizyta (pusta pamięć) otwiera Start i zapisuje pierwszą wizytę', () => {
+  it('pierwsza wizyta (pusta pamięć) otwiera Dziś i zapisuje pierwszą wizytę', () => {
     const s = page('');
-    expect(enterApp(1)).toBe('start');
+    expect(enterApp(1)).toBe('dzis');
     expect(s.getItem('hq.onboarding.v1')).not.toBeNull();
   });
 

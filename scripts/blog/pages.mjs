@@ -439,7 +439,7 @@ function notFoundPage(site) {
   const main = `<article class="page page--404">
 <h1>${esc(t.notFound.h1)}</h1>
 <p class="lead">${esc(t.notFound.text)}</p>
-<ul class="more">${link('', 'In session')}${link(PATHS.charts.en, T.en.charts)}${link(PATHS.lessons.en, T.en.lessons)}${link(PATHS.results.en, 'Forecast results')}${link('blog/', 'Blog')}</ul>
+<ul class="more">${link('?lang=en#charts', 'In session')}${link(PATHS.charts.en, T.en.charts)}${link(PATHS.lessons.en, T.en.lessons)}${link(PATHS.results.en, 'Forecast results')}${link('blog/', 'Blog')}</ul>
 <p lang="pl">${esc(T.pl.notFound.h1)}. Po polsku: <a href="${u}${PATHS.charts.pl}">${esc(T.pl.charts)}</a> · <a href="${u}${PATHS.lessons.pl}">${esc(T.pl.lessons)}</a> · <a href="${u}blog/">Blog</a></p>
 </article>`;
   return {

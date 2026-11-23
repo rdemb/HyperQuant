@@ -8,7 +8,7 @@ const page = (lang, current, path) =>
 const bar = (html) => html.match(/<nav class="bottom-nav"[\s\S]*?<\/nav>/)?.[0] ?? '';
 
 describe('dolny pasek stron statycznych (telefon i tablet)', () => {
-  it('każda strona ma pasek jak aplikacja: cztery pozycje i „Więcej” z siedmioma linkami', () => {
+  it('każda strona ma pasek jak aplikacja: Dziś, Sesja, Order Flow, Rynki i „Więcej” z dziesięcioma linkami', () => {
     for (const [lang, current, path] of [
       ['pl', 'blog', 'blog/'],
       ['pl', 'news', 'co-nowego/'],
@@ -20,9 +20,11 @@ describe('dolny pasek stron statycznych (telefon i tablet)', () => {
       const b = bar(page(lang, current, path));
       expect(b, `${lang} ${path}`).not.toBe('');
       expect(b.match(/class="bottom-nav__item/g), path).toHaveLength(5);
-      expect(b.match(/class="bottom-nav__link/g), path).toHaveLength(7);
+      expect(b.match(/class="bottom-nav__link/g), path).toHaveLength(10);
       expect(b, path).toContain('<details class="bottom-nav__more">');
+      expect(b, path).not.toContain('nowy/');
     }
+    expect(bar(page('pl', 'blog', 'blog/'))).toMatch(/Dziś[\s\S]*Sesja[\s\S]*Order Flow[\s\S]*Rynki[\s\S]*Więcej/);
   });
 
   it('bieżąca strona zaznaczona: w „Więcej” link z aria-current, a sam przycisk „Więcej” podświetlony', () => {
@@ -38,12 +40,17 @@ describe('dolny pasek stron statycznych (telefon i tablet)', () => {
 
 describe('szyna boczna stron statycznych (komputer)', () => {
   const rail = (html) => html.match(/<aside class="rail"[\s\S]*?<\/aside>/)?.[0] ?? '';
-  it('te same pozycje co szyna aplikacji: 8 w grupach i 3 publikacje; bieżąca strona podświetlona; marka i język w szynie', () => {
+  it('te same pozycje co szyna aplikacji: 10 w grupach i 4 w serwisie; bieżąca strona podświetlona; marka i język w szynie', () => {
     const r = rail(page('pl', 'news', 'co-nowego/'));
-    expect(r.match(/class="rail__item/g)).toHaveLength(11);
+    expect(r.match(/class="rail__item/g)).toHaveLength(14);
     expect(r).toMatch(/class="rail__item is-here" href="\.\.\/co-nowego\/" aria-current="page"/);
     expect(r).toContain('class="rail__brand"');
-    expect(r).toMatch(/Dzień tradera[\s\S]*Rynki i wiedza[\s\S]*Publikacje/);
-    expect(rail(page('en', 'news', 'en/whats-new/'))).toMatch(/Trading day[\s\S]*Markets and knowledge[\s\S]*Publications/);
+    expect(r).toMatch(/Dzień[\s\S]*Rynek[\s\S]*Wiedza[\s\S]*Serwis/);
+    expect(r).toContain('href="../?lang=pl#dzis"');
+    expect(r).toContain('href="../stanowisko/?lang=pl"');
+    expect(rail(page('en', 'news', 'en/whats-new/'))).toContain('stanowisko/?lang=en"');
+    // Stanowisko w „Więcej” na telefonie też z językiem strony (świeży profil bez zapisanego języka)
+    expect(bar(page('pl', 'news', 'co-nowego/'))).toContain('href="../stanowisko/?lang=pl"');
+    expect(rail(page('en', 'news', 'en/whats-new/'))).toMatch(/Day[\s\S]*Market[\s\S]*Knowledge[\s\S]*Site/);
   });
 });

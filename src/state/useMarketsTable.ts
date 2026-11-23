@@ -116,16 +116,17 @@ export class MarketsPoller {
       dexes.map(async (dex) => {
         this.meter.add(this.deps.now(), META_CTXS_WEIGHT);
         this.requests++;
+        // Godzina odczytu każdej giełdy z chwili jej własnej odpowiedzi (wolniejsza giełda nie postarza ani nie odmładza innych)
         try {
-          return { dex, ctxs: parseDexCtxs(await this.deps.fetchDex(dex), dex) };
+          const raw = await this.deps.fetchDex(dex);
+          return { dex, ctxs: parseDexCtxs(raw, dex), t: this.deps.now() };
         } catch {
-          return { dex, ctxs: null };
+          return { dex, ctxs: null, t: this.deps.now() };
         }
       })
     );
     this.inFlight = false;
-    const t = this.deps.now();
-    for (const { dex, ctxs } of results) {
+    for (const { dex, ctxs, t } of results) {
       if (!this.dexes.includes(dex)) continue;
       const prev = this.state[dex] ?? { at: null, ctxs: null, failedAt: null };
       this.state[dex] = ctxs ? { at: t, ctxs, failedAt: prev.failedAt } : { ...prev, failedAt: t };

@@ -1,15 +1,16 @@
-/* Blog HyperQuant: te same tokeny co desk (src/index.css, paleta „Chronograf”: grafit i lume; docs/STYLEGUIDE.md), układ do czytania. */
+/* Strony serwisu HyperQuant: te same tokeny co aplikacja (src/index.css, [data-app-shell]: Zorza ciemna i Opal jasna,
+   lume jako akcent; docs/STYLEGUIDE.md), układ do czytania. Motyw ustawia blog/motyw.js przed pierwszym malowaniem. */
 :root {
   color-scheme: dark;
-  --page: #0c0d0f;
-  --surface-1: #131518;
-  --surface-2: #1a1d21;
-  --surface-3: #22262b;
-  --line: #24282e;
-  --line-strong: #343a42;
-  --ink-1: #edeef0;
-  --ink-2: #a9aeb6;
-  --ink-3: #8c929a;
+  --page: #0b0a12;
+  --surface-1: #121019;
+  --surface-2: #19162a;
+  --surface-3: #231f38;
+  --line: #2b2640;
+  --line-strong: #403a5c;
+  --ink-1: #f0edf7;
+  --ink-2: #b9b3cc;
+  --ink-3: #9a94b0;
   --accent: #cfea5b;
   --level: #e0a045;
   --buy: #3280dd;
@@ -19,6 +20,27 @@
   --font-display: 'Bricolage Grotesque', 'Bricolage Fallback', system-ui, sans-serif;
   --font-sans: 'Plus Jakarta Sans', 'Plus Jakarta Fallback', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-mono: 'JetBrains Mono', 'JetBrains Mono Fallback', ui-monospace, monospace;
+}
+
+/* Opal: jasny motyw jak w aplikacji, według ustawienia systemu (strony serwisu są bez skryptów); akcent na papierze
+   to ciemna oliwka (tekst, obrys, wypełnienie przycisku) */
+@media (prefers-color-scheme: light) {
+:root {
+  color-scheme: light;
+  --page: #f2f1f6;
+  --surface-1: #fafafc;
+  --surface-2: #ffffff;
+  --surface-3: #e8e6f0;
+  --line: #d8d5e2;
+  --line-strong: #b7b2c9;
+  --ink-1: #14121b;
+  --ink-2: #474359;
+  --ink-3: #5a566d;
+  --accent: #3a4500;
+  --level: #8a5a00;
+  --buy-ink: #1d5fb0;
+  --sell-ink: #a93225;
+}
 }
 
 *,
@@ -62,7 +84,7 @@ a {
   position: sticky;
   top: 0;
   z-index: 10;
-  background: rgb(12 13 15 / 0.95);
+  background: color-mix(in srgb, var(--surface-1) 91%, transparent);
   backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--line);
   padding-top: env(safe-area-inset-top);
@@ -180,10 +202,11 @@ main.wrap {
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
-    gap: 20px;
-    padding: 16px 8px;
+    gap: 14px;
+    padding: 16px 6px;
     overflow-y: auto;
     overflow-x: hidden;
+    scrollbar-width: none;
     border-right: 1px solid var(--line);
     background: rgb(19 21 24 / 0.6);
   }
@@ -195,10 +218,13 @@ main.wrap {
     flex-direction: column;
     gap: 2px;
   }
+  .rail::-webkit-scrollbar {
+    display: none;
+  }
   .rail nav {
     display: flex;
     flex-direction: column;
-    gap: 24px;
+    gap: 14px;
   }
   .rail__brand {
     display: flex;
@@ -233,7 +259,7 @@ main.wrap {
     align-items: center;
     justify-content: center;
     gap: 4px;
-    min-height: 56px;
+    min-height: 48px;
     padding: 0 4px;
     border-radius: 8px;
     color: var(--ink-3);
@@ -244,7 +270,7 @@ main.wrap {
   }
   .rail__item:hover {
     color: var(--ink-1);
-    background: rgb(26 29 33 / 0.7);
+    background: color-mix(in srgb, var(--ink-1) 6%, transparent);
   }
   .rail__item.is-here {
     color: var(--ink-1);
@@ -266,12 +292,15 @@ main.wrap {
   }
   .rail__label {
     max-width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .rail__foot {
     margin-top: auto;
   }
   .rail__foot .rail__item {
-    min-height: 48px;
+    min-height: 42px;
   }
   .rail__extra {
     display: flex;
@@ -356,7 +385,7 @@ main.wrap {
     right: 0;
     bottom: 0;
     z-index: 20;
-    background: rgb(19 21 24 / 0.95);
+    background: color-mix(in srgb, var(--surface-1) 95%, transparent);
     backdrop-filter: blur(16px);
     border-top: 1px solid var(--line);
     padding-bottom: env(safe-area-inset-bottom);
@@ -825,7 +854,7 @@ h1 {
   vertical-align: 3px;
 }
 .sw--vwap {
-  border-top-color: #e6ebf2;
+  border-top-color: var(--ink-1);
 }
 .sw--poc {
   border-top-color: var(--level);
@@ -1890,8 +1919,8 @@ h1 {
   color: var(--page);
 }
 .btn--primary:hover {
-  background: #dcf27a;
-  border-color: #dcf27a;
+  background: color-mix(in srgb, var(--accent) 86%, var(--ink-1));
+  border-color: color-mix(in srgb, var(--accent) 86%, var(--ink-1));
 }
 
 /* ───── Powtórka pod wpisem ───── */
@@ -2495,5 +2524,129 @@ h1 {
 @media (prefers-reduced-motion: reduce) {
   * {
     transition: none !important;
+  }
+}
+
+
+/* ───── Jeden frontend (23.11.2026): oprawa jak w aplikacji — zorza nad stroną, szklana szyna, krój nagłówków ───── */
+html {
+  background: var(--page);
+}
+body {
+  min-height: 100dvh;
+  background:
+    radial-gradient(900px 520px at 85% -120px, color-mix(in srgb, #7b5cff 16%, transparent), transparent 70%),
+    radial-gradient(700px 420px at -120px 105%, color-mix(in srgb, #cfea5b 6%, transparent), transparent 70%),
+    var(--page);
+  background-repeat: no-repeat;
+}
+@media (prefers-color-scheme: light) {
+  body {
+    background:
+      radial-gradient(900px 520px at 85% -120px, color-mix(in srgb, #7b5cff 10%, transparent), transparent 70%),
+      var(--page);
+    background-repeat: no-repeat;
+  }
+  .bottom-nav__item.is-here::before,
+  .rail__item.is-here::before {
+    box-shadow: none;
+  }
+}
+h1 {
+  font-weight: 800;
+  font-stretch: 88%;
+  letter-spacing: -0.025em;
+  line-height: 1.04;
+}
+h2,
+h3 {
+  font-weight: 700;
+  font-stretch: 90%;
+  letter-spacing: -0.015em;
+}
+.eyebrow {
+  font-family: var(--font-mono);
+  letter-spacing: 0.14em;
+}
+@media (min-width: 1024px) {
+  /* Szyna w szkle unosi się nad stroną, jak w aplikacji (aktywna pozycja: pigułka i linia wody) */
+  .rail {
+    top: 10px;
+    height: calc(100dvh - 20px);
+    margin: 10px 0 10px 10px;
+    border: 1px solid color-mix(in srgb, var(--ink-1) 11%, transparent);
+    border-radius: 22px;
+    background:
+      linear-gradient(180deg, color-mix(in srgb, var(--ink-1) 7%, transparent), transparent 42%),
+      color-mix(in srgb, var(--surface-1) 56%, transparent);
+    -webkit-backdrop-filter: blur(22px) saturate(1.6);
+    backdrop-filter: blur(22px) saturate(1.6);
+    box-shadow: inset 0 1px 0 color-mix(in srgb, white 9%, transparent), 0 30px 80px -34px rgb(0 0 0 / 0.8);
+  }
+  .rail__item {
+    border-radius: 12px;
+  }
+  .rail__item.is-here {
+    background: color-mix(in srgb, var(--ink-1) 8%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink-1) 13%, transparent), 0 8px 22px -12px rgb(0 0 0 / 0.7);
+  }
+  .rail__item.is-here::before {
+    left: -6px;
+    top: 12px;
+    bottom: 12px;
+    width: 3px;
+    border-radius: 0 3px 3px 0;
+    box-shadow: 0 0 10px var(--accent);
+  }
+  .rail__title {
+    font-family: var(--font-mono);
+    color: var(--ink-3);
+  }
+  .rail__extra {
+    border-radius: 12px;
+    border-style: dashed;
+    border-color: var(--line-strong);
+  }
+}
+.bottom-nav {
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  backdrop-filter: blur(16px) saturate(1.4);
+}
+.bottom-nav__item.is-here::before {
+  box-shadow: 0 0 10px var(--accent);
+}
+/* Nagłówki stron z własnym skrótem `font` (Blog, Wyniki, Co nowego): ten sam krój co reszta (800, zwężenie 88%) */
+.intro--blog h1,
+.news-hero h1,
+.page--results h1,
+.page--news h1 {
+  font-weight: 800;
+  font-stretch: 88%;
+}
+/* Opal: kolory stanu i grup z ciemnego tła mają ciemniejsze odpowiedniki (tekst ≥ 4,5:1, grafika ≥ 3:1) */
+@media (prefers-color-scheme: light) {
+  .status--ok {
+    color: #1d6b1d;
+    border-color: #1d6b1d;
+  }
+  .page--news {
+    --g-prognozy: #5b4fc9;
+    --g-skaner: #0f766e;
+  }
+}
+/* Co nowego: kafle dat mieszczą najdłuższy polski miesiąc („października” w kroju 26 px ≈ 190 px). Kafel ≥ 230 px,
+   a na telefonie liczby po dwie w rzędzie i daty na pełną szerokość */
+.news-stats {
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+}
+.news-stats dd {
+  overflow-wrap: break-word;
+}
+@media (max-width: 499px) {
+  .news-stats {
+    grid-template-columns: 1fr 1fr;
+  }
+  .news-stats > div:nth-child(n + 3) {
+    grid-column: 1 / -1;
   }
 }

@@ -48,7 +48,7 @@ const RETURNING = { 'hq.lang': 'pl', 'hq.onboarding.v1': JSON.stringify({ firstA
 
 /** Rejestr rynków z danych stałych (`markets.json`) podawany stronie — włączany przed przebiegiem rynków. */
 let serveRegistry = false;
-/** Mapa likwidacji BTC z danych stałych (teren płynności na Starcie) — tylko w przebiegu „Start”. */
+/** Mapa likwidacji BTC z danych stałych (widoki z mapą) — włączana w przebiegu „Dziś”, jak dawniej na Starcie. */
 let serveLiq = false;
 /** Przebieg „Uwięzieni”: plik entry-map/BTC.json z danych stałych. */
 let serveEntry = false;
@@ -336,7 +336,7 @@ const KARTA_VIEWPORTS = [
   ['390', 390, 844, true],
 ];
 /** Widoki z plakietkami MODEL z kartą (pierwszy, w którym jest widoczna plakietka). */
-const KARTA_WIDOKI = ['#research', '#before', '#after', '#start'];
+const KARTA_WIDOKI = ['#research', '#before', '#after'];
 const KARTA_KLIK = `(() => {
   const b = [...document.querySelectorAll('[data-model-card]')].find((e) => { const r = e.getBoundingClientRect(); return r.width > 0 && getComputedStyle(e).visibility !== 'hidden'; });
   if (!b) return null;
@@ -398,10 +398,10 @@ const WYSPA_PROBE = `(() => {
   };
 })()`;
 
-// ───────────────────────── Start ─────────────────────────
+// ───────────────────────── Dziś ─────────────────────────
 /**
- * Start (#start) od 360 do 1440 px z mapą likwidacji z danych stałych: bez przewijania w bok, teren płynności
- * narysowany, etykiety skupisk i podziałka ceny terenu bez nakładania, ryciny (teren, pokaz przepływu) w ekranie.
+ * Dziś (#dzis, pierwszy ekran aplikacji; strona startowa pod `/` to Przekrój) od 360 do 1440 px bez sieci: bez
+ * przewijania w bok, tytuł, karty rynków (z odczytem albo „—” z powodem), trzy czasy dnia, nic poza ekranem.
  */
 const START_VIEWPORTS = [
   ['1440', 1440, 900, false],
@@ -487,13 +487,20 @@ const START_PROBE = `(() => {
   const W = innerWidth;
   const over = (a, b) => a.width > 0 && b.width > 0 && a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1;
   const pary = (rs) => { let n = 0; for (let i = 0; i < rs.length; i++) for (let j = i + 1; j < rs.length; j++) if (over(rs[i], rs[j])) n++; return n; };
+  const widok = document.querySelector('[data-dzis-view]');
   const teren = document.querySelector('[data-view-root] figure canvas[role="img"]');
   const fig = teren?.closest('figure');
   const etykiety = teren ? [...teren.parentElement.querySelectorAll(':scope > span')].map((e) => e.getBoundingClientRect()) : [];
   const podzialka = fig ? [...fig.querySelectorAll(':scope > [aria-hidden="true"] > span')].map((e) => e.getBoundingClientRect()) : [];
   const ryciny = [...document.querySelectorAll('[data-view-root] figure')];
+  const elementy = widok ? [...widok.querySelectorAll('section, article, [data-dzis-faza]')] : [];
   return {
     overflowX: document.documentElement.scrollWidth - W,
+    tytul: !!document.getElementById('dzis-tytul'),
+    karty: widok ? widok.querySelectorAll('[data-dzis-rynek]').length : 0,
+    fazy: widok ? widok.querySelectorAll('[data-dzis-faza]').length : 0,
+    poza: elementy.filter((e) => { const r = e.getBoundingClientRect(); return r.width > 0 && (r.right > W + 1 || r.left < -1); }).length,
+    elementy: elementy.length,
     teren: !!teren && teren.getBoundingClientRect().width > 0,
     etykiety: etykiety.length,
     podzialka: podzialka.length,
@@ -1258,7 +1265,7 @@ async function main() {
     }
     await page.viewport(1440, 900, false);
 
-    // Start: pierwsza strona od 360 do 1440 px (teren z mapy likwidacji z danych stałych)
+    // Dziś: pierwszy ekran aplikacji od 360 do 1440 px (bez sieci: karty rynków z „—” i powodem)
     report.start = {};
     serveLiq = true;
     for (const [key, w, h, mobile] of START_VIEWPORTS) {
@@ -1266,16 +1273,17 @@ async function main() {
       const [e0, c0] = [page.errors.length, page.consoleErrors.length];
       await page.go(`${BASE}robots.txt`, 300);
       await page.ev(`(() => { localStorage.clear(); const s = ${JSON.stringify(RETURNING)}; for (const k in s) localStorage.setItem(k, s[k]); return true; })()`);
-      await page.go(`${BASE}#start`, 500);
+      await page.go(`${BASE}#dzis`, 500);
       await sleep(3000);
-      // Przewinięcie całej strony: rozdziały (Czwórka, teren) ładują się, gdy zbliżają się do ekranu
+      // Przewinięcie całej strony: rozdziały „Z bliska: BTC” (teren, przepływ, dziennik) ładują się przy ekranie
       await page.ev(`(async () => { for (let y = 0; y < document.documentElement.scrollHeight; y += 400) { scrollTo(0, y); await new Promise((r) => setTimeout(r, 120)); } scrollTo(0, 0); return true; })()`);
       await sleep(3000);
       const x = await page.ev(START_PROBE);
       report.start[key] = { ...x, nan: await probe(page, nanText), errors: page.errors.slice(e0), consoleErrors: page.consoleErrors.slice(c0) };
+      await shot(page, `${w}-dzis`);
       await page.ev(`(() => { const f = document.querySelector('[data-view-root] figure canvas[role="img"]')?.closest('figure'); f?.scrollIntoView({ block: 'center' }); return true; })()`);
       await sleep(600);
-      await shot(page, `${w}-start-teren`);
+      await shot(page, `${w}-dzis-teren`);
     }
     serveLiq = false;
     await page.viewport(1440, 900, false);
@@ -1505,10 +1513,11 @@ async function main() {
     );
   };
   r.summary.wyspa = WYSPA_VIEWPORTS.every(([key]) => wyspaOk(key));
-  // Start: bez przewijania w bok, teren narysowany, etykiety i podziałka bez nakładania, ryciny w ekranie, bez błędów i NaN
+  // Dziś: bez przewijania w bok, tytuł, karty rynków, trzy czasy dnia, nic poza ekranem; teren płynności (dawny Start)
+  // narysowany, etykiety i podziałka bez nakładania, ryciny w ekranie; bez błędów i NaN
   const startOk = (key) => {
     const x = r.start?.[key];
-    return !!x && x.overflowX <= 0 && x.teren === true && x.nakladanie === 0 && x.rycinyPoza === 0 && x.nan?.length === 0 && x.errors.length === 0 && x.consoleErrors.length === 0;
+    return !!x && x.overflowX <= 0 && x.tytul === true && x.karty > 0 && x.fazy === 3 && x.poza === 0 && x.teren === true && x.nakladanie === 0 && x.rycinyPoza === 0 && x.nan?.length === 0 && x.errors.length === 0 && x.consoleErrors.length === 0;
   };
   r.summary.start = START_VIEWPORTS.every(([key]) => startOk(key));
   r.summary.opisLiczb = OPIS_LICZB_VIEWPORTS.every(([key]) => { const x = r.opisLiczb?.[key]; return !!x?.okno && x.left >= 0 && x.right <= x.vw && x.errors.length === 0; });
@@ -1599,11 +1608,11 @@ async function main() {
     }).join('; ')}`);
   }
   if (r.start) {
-    lines.push(`Start (mapa likwidacji z danych stałych): ${START_VIEWPORTS.map(([key]) => {
+    lines.push(`Dziś z terenem płynności (mapa z danych stałych): ${START_VIEWPORTS.map(([key]) => {
       const x = r.start[key];
       if (!x) return `${key}: —`;
       const errs = [...x.errors, ...x.consoleErrors].map((e) => e.split('\n')[0]);
-      return `${key}: w bok ${x.overflowX} px, teren ${x.teren ? 'tak' : 'NIE'}, etykiety ${x.etykiety}, podziałka ${x.podzialka}, nakładanie ${x.nakladanie}, ryciny poza ekranem ${x.rycinyPoza}/${x.ryciny}, błędy ${errs.length}${errs.length ? ` (${errs.join(' | ')})` : ''}, NaN ${x.nan?.length ?? '—'} — ${ok(startOk(key))}`;
+      return `${key}: w bok ${x.overflowX} px, tytuł ${x.tytul ? 'tak' : 'NIE'}, karty rynków ${x.karty}, czasy dnia ${x.fazy}, poza ekranem ${x.poza}/${x.elementy}, teren ${x.teren ? 'tak' : 'NIE'}, etykiety ${x.etykiety}, podziałka ${x.podzialka}, nakładanie ${x.nakladanie}, ryciny poza ekranem ${x.rycinyPoza}/${x.ryciny}, błędy ${errs.length}${errs.length ? ` (${errs.join(' | ')})` : ''}, NaN ${x.nan?.length ?? '—'} — ${ok(startOk(key))}`;
     }).join('; ')}`);
   }
   if (r.pustyStan) {

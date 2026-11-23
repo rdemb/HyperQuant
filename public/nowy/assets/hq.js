@@ -294,7 +294,7 @@
       <img src="${art}.webp" width="1120" height="320" alt="">
       </picture><div class="wn-in"><p class="eyebrow">${HQ.fill(HQ.t('wn.eyebrow'), { v: HQ.VERSION })}</p><h2 id="wn-h" tabindex="-1">${HQ.t('wn.h')}</h2><i class="wn-line" aria-hidden="true"></i><ol>${items}</ol>
       <p class="muted wn-foot">${HQ.t('wn.again')}</p>
-      <div class="wn-act"><a class="btn btn-lume btn-s" href="${location.pathname.endsWith('desk.html') ? '#sesja' : HQ.url('desk.html#sesja')}" data-wn-go>${HQ.t('wn.try')}</a><button type="button" class="btn btn-line btn-s" value="close" formmethod="dialog" data-wn-close>${HQ.t('wn.close')}</button></div></div>`;
+      <div class="wn-act"><a class="btn btn-lume btn-s" href="${HQ.appUrl('dzis')}" data-wn-go>${HQ.t('wn.try')}</a><button type="button" class="btn btn-line btn-s" value="close" formmethod="dialog" data-wn-close>${HQ.t('wn.close')}</button></div></div>`;
     dlg.querySelector('[data-wn-close]').addEventListener('click', () => dlg.close('button'));
     dlg._opener = opener || document.activeElement;
     if (!dlg.open) dlg.showModal();
@@ -319,7 +319,10 @@
   // Parametry po znaku ? w kotwicy: #sesja?m=BTC&px=59140&b=1&w=120&t=1795…
   HQ.hashRoute = () => location.hash.replace('#', '').split('?')[0];
   HQ.hashParams = () => { const q = location.hash.split('?')[1] || ''; const o = {}; new URLSearchParams(q).forEach((v, k) => (o[k] = v)); return o; };
-  HQ.momentUrl = (c) => { const u = new URL(HQ.url('desk.html')); const q = new URLSearchParams(); q.set('m', c.coin); if (c.px != null) q.set('px', c.px); if (c.bucket && c.bucket !== 1) q.set('b', c.bucket); if (c.win) q.set('w', Math.round(c.win / 1000)); if (c.t) q.set('t', c.t); u.hash = 'sesja?' + q.toString(); return u.toString(); };
+  // Widok aplikacji pod głównym adresem (jedna aplikacja: Dziś, fazy dnia, Order Flow…), w bieżącym języku
+  HQ.appUrl = (hash) => { const u = new URL(HQ.url('../')); u.searchParams.set('lang', HQ.lang); u.hash = hash; return u.toString(); };
+  // Poziom z Przekroju: księga i taśma rynku na żywo w Order Flow (aplikacja nie przyjmuje ceny w adresie)
+  HQ.momentUrl = (c) => HQ.appUrl('orderflow?m=' + encodeURIComponent(c.coin));
   HQ.marketName = (coin) => ({ BTC: 'BTC', 'xyz:GOLD': 'GOLD', 'xyz:SP500': 'S&P 500' }[coin] || coin);
 
   /* ---------- Logo „Chronograf H”: pierścień doby, H z dwóch świec, punkt „teraz” ---------- */

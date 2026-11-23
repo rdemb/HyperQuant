@@ -15,7 +15,7 @@ describe('adres strony → widok', () => {
     expect(resolveHash('#market')).toEqual({ view: 'before', rewrite: '#before' });
     expect(resolveHash('#lab')).toEqual({ view: 'charts', rewrite: '#charts' });
     expect(resolveHash('#micro')).toEqual({ view: 'research', rewrite: '#research' });
-    expect(LEGACY_VIEW).toEqual({ desk: 'before', market: 'before', plan: 'after', lab: 'charts', micro: 'research', flow: 'charts' });
+    expect(LEGACY_VIEW).toEqual({ desk: 'before', market: 'before', plan: 'after', lab: 'charts', micro: 'research', flow: 'charts', start: 'dzis', today: 'dzis', przed: 'before', sesja: 'charts', po: 'after', ustawienia: 'dzis' });
   });
 
   it('nowe adresy bez zmian (parametry wykresu i powtórki zostają)', () => {
@@ -33,7 +33,7 @@ describe('adres strony → widok', () => {
   it('#agents: zakładka Agenci AI (piąta pozycja menu głównego, po Blogu), w kolejności paska po fazach dnia', () => {
     expect(resolveHash('#agents')).toEqual({ view: 'agents', rewrite: null });
     expect(resolveHash('#agents?x=1').view).toBe('agents');
-    expect(VIEWS).toEqual(['before', 'charts', 'after', 'markets', 'agents', 'research', 'lessons', 'sources', 'start', 'orderflow']);
+    expect(VIEWS).toEqual(['dzis', 'before', 'charts', 'after', 'markets', 'orderflow', 'lessons', 'research', 'sources', 'agents']);
     expect(resolveHash('#orderflow?m=xyz%3AGOLD')).toEqual({ view: 'orderflow', rewrite: null });
   });
 
@@ -119,16 +119,28 @@ describe('przekierowanie w oknie (start i hashchange)', () => {
   });
 });
 
-describe('pusty adres: Start albo ostatni widok', () => {
+describe('dawny terminal i stary Start prowadzą do jednej aplikacji', () => {
+  it('#dzis to widok, adresy dawnego terminala i #start przechodzą na nowe miejsca z parametrami', () => {
+    expect(resolveHash('#dzis')).toEqual({ view: 'dzis', rewrite: null });
+    expect(resolveHash('#sesja?m=BTC')).toEqual({ view: 'charts', rewrite: '#charts?m=BTC' });
+    expect(resolveHash('#przed')).toEqual({ view: 'before', rewrite: '#before' });
+    expect(resolveHash('#po')).toEqual({ view: 'after', rewrite: '#after' });
+    expect(resolveHash('#ustawienia')).toEqual({ view: 'dzis', rewrite: '#dzis' });
+    expect(resolveHash('#start')).toEqual({ view: 'dzis', rewrite: '#dzis' });
+    expect(VIEWS).not.toContain('start' as never);
+  });
+});
+
+describe('pusty adres (zapas, gdy Przekrój się nie wczyta): Dziś albo ostatni widok', () => {
   const store = (entries: Record<string, string>) => {
     const keys = Object.keys(entries);
     return { getItem: (k: string) => entries[k] ?? null, key: (i: number) => keys[i] ?? null, length: keys.length };
   };
 
-  it('pierwsza wizyta (bez kluczy hq.* albo tylko z wybranym motywem) otwiera Start', () => {
-    expect(landingView(store({}))).toBe('start');
-    expect(landingView(store({ 'hq.theme': 'light', 'inna.strona': '1' }))).toBe('start');
-    expect(landingView(null)).toBe('start');
+  it('pierwsza wizyta (bez kluczy hq.* albo tylko z wybranym motywem) otwiera Dziś', () => {
+    expect(landingView(store({}))).toBe('dzis');
+    expect(landingView(store({ 'hq.theme': 'light', 'inna.strona': '1' }))).toBe('dzis');
+    expect(landingView(null)).toBe('dzis');
   });
 
   it('powrót otwiera ostatnio używany widok; nieznana nazwa nie wybiera widoku, ale zdradza wcześniejszą wizytę', () => {
