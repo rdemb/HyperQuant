@@ -672,3 +672,9 @@ html[data-theme='light'] .hq-dzis-hero::after { opacity: 0.05; mix-blend-mode: m
 }
 [data-motion='reduced'] :is([data-dzis-view] > section, [data-dzis-view] [role='listitem'], [data-dzis-view] [data-dzis-faza], [data-dzis-view] svg[role='img'] circle, [data-dzis-rynek] [data-tone='live'] > span:first-child),
 [data-motion='reduced'] .hq-przycisk-lume::after { animation: none !important; }
+
+/* Oś odległości w „Najbliższych poziomach”: znak ceny w Opalu oliwką (limonka ginie na papierze) */
+html[data-theme='light'] .hq-os-poziomu > span:nth-child(2) { background: var(--color-accent); box-shadow: none; }
+
+/* Przełącznik szyny w nagłówku: kreska lume przy schowanym menu przypomina, gdzie ono wraca */
+.hq-szyna-przelacznik[aria-pressed='false'] { border-color: color-mix(in oklab, var(--color-lume) 60%, var(--color-line)); box-shadow: inset 2px 0 0 var(--color-lume); }

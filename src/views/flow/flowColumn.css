@@ -1,0 +1,149 @@
+/*
+ * Kolumna DOM i taśmy obok wykresu (W sesji) w języku nowego frontendu: szklane karty z zaokrągleniem 16 px, tytuły
+ * paneli krojem Bricolage, kafle Pulse jak przyciski szyny (sprężyste uniesienie, znak „lume” przy wybranym), pigułki
+ * przełączników. Tylko oprawa: wiersze drabiny i taśmy, kolory kupna i sprzedaży oraz liczby bez zmian. Kolumna stoi
+ * w ciemnym zasięgu wykresu (data-theme="dark"), więc kontrast liczony na ciemnych powierzchniach.
+ */
+[data-flow-column] {
+  --fc-r: 16px;
+  --fc-edge: color-mix(in oklab, var(--color-ink-1) 10%, transparent);
+  --fc-glass: linear-gradient(180deg, color-mix(in oklab, var(--color-ink-1) 3.5%, var(--color-surface-1)) 0%, var(--color-surface-1) 42%);
+}
+
+/* Oprawa (kafle Pulse, nagłówki kart) idzie za motywem jak pasek wykresu (chartChrome.css); dane zostają ciemne */
+[data-flow-column] :is([data-pulse], section.rounded-xl > div:first-child) {
+  --color-page: var(--chart-chrome-bg);
+  --color-surface-1: var(--chart-chrome-bg);
+  --color-surface-2: var(--chart-chrome-control);
+  --color-surface-3: var(--chart-chrome-active);
+  --color-line: var(--chart-chrome-edge);
+  --color-line-strong: var(--chart-chrome-edge);
+  --color-ink-1: var(--chart-chrome-text);
+  --color-ink-2: var(--chart-chrome-muted);
+  --color-ink-3: var(--chart-chrome-muted);
+  --color-accent: var(--chart-chrome-accent);
+  --color-lume: var(--chart-chrome-accent);
+  --color-of-buy-ink: var(--chart-chrome-buy);
+  --color-of-sell-ink: var(--chart-chrome-sell);
+  --color-buy-ink: var(--chart-chrome-buy);
+  --color-sell-ink: var(--chart-chrome-sell);
+  --color-warn: var(--chart-chrome-warn);
+  --fc-edge: var(--chart-chrome-edge);
+  --fc-glass: linear-gradient(180deg, var(--chart-chrome-top), var(--chart-chrome-bg));
+  color-scheme: var(--chart-chrome-scheme);
+  color: var(--chart-chrome-text);
+}
+
+/* Kafle Pulse: liczba na górze kolumny */
+[data-flow-column] [data-pulse] { gap: 6px; }
+[data-flow-column] [data-pulse] > :is(button, div) {
+  position: relative;
+  border-radius: 12px;
+  border-color: var(--fc-edge);
+  background: var(--fc-glass);
+  padding: 7px 9px 6px;
+  box-shadow: inset 0 1px 0 color-mix(in oklab, white 5%, transparent);
+  transition: transform 0.38s cubic-bezier(0.34, 1.56, 0.64, 1), border-color 0.15s linear, box-shadow 0.2s linear;
+}
+[data-flow-column] [data-pulse] > button:hover { transform: translateY(-1px); border-color: color-mix(in oklab, var(--color-ink-1) 22%, transparent); }
+[data-flow-column] [data-pulse] > button:active { transform: scale(0.96); transition-duration: 0.08s; }
+[data-flow-column] [data-pulse] > button[aria-pressed='true'] {
+  border-color: color-mix(in oklab, var(--color-lume) 70%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in oklab, white 6%, transparent), 0 10px 26px -16px var(--color-lume);
+}
+[data-flow-column] [data-pulse] > button[aria-pressed='true']::after {
+  content: '';
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--color-lume);
+  box-shadow: 0 0 8px var(--color-lume);
+}
+[data-flow-column] [data-pulse] [data-pulse-label] { font-family: var(--font-mono); font-size: 9px; font-weight: 600; letter-spacing: 0.14em; }
+[data-flow-column] [data-pulse] [data-pulse-value] { font-size: 12.5px; margin-top: 2px; }
+
+/* Karty paneli: drabina, taśma, kto, TWAP-y, ściany */
+[data-flow-column] section.rounded-xl {
+  border-radius: var(--fc-r);
+  border-color: var(--chart-chrome-edge);
+  background:
+    radial-gradient(120% 50% at 0% 0%, color-mix(in oklab, var(--color-lume) 4%, transparent), transparent 62%),
+    var(--color-surface-1);
+  box-shadow: inset 0 1px 0 color-mix(in oklab, white 5%, transparent), 0 22px 44px -30px rgb(0 0 0 / 0.85);
+}
+/* Nagłówek karty */
+[data-flow-column] section.rounded-xl > div:first-child {
+  min-height: 40px;
+  padding-inline: 12px 8px;
+  border-bottom-color: var(--chart-chrome-edge);
+  background: linear-gradient(180deg, var(--chart-chrome-top), var(--chart-chrome-bg));
+  box-shadow: inset 0 1px 0 color-mix(in oklab, var(--chart-chrome-text) 10%, transparent);
+}
+[data-flow-column] section.rounded-xl > div:first-child > span.uppercase {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-display);
+  font-size: 13.5px;
+  font-weight: 700;
+  letter-spacing: -0.005em;
+  text-transform: none;
+  color: var(--color-ink-1);
+  font-stretch: 92%;
+}
+[data-flow-column] section.rounded-xl > div:first-child > span.uppercase::before {
+  content: '';
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-lume);
+  box-shadow: 0 0 8px var(--color-lume);
+}
+/* Przełączniki w nagłówkach (krok poziomów, karty pod drabiną): pigułki */
+[data-flow-column] [role='radiogroup'] {
+  border-radius: 999px;
+  border-color: var(--fc-edge);
+  background: color-mix(in oklab, var(--color-page) 70%, transparent);
+  padding: 3px;
+}
+[data-flow-column] [role='radiogroup'] > button { border-radius: 999px; }
+[data-flow-column] [role='radiogroup'] > button[aria-checked='true'] {
+  background: color-mix(in oklab, var(--color-ink-1) 12%, transparent);
+  color: var(--color-ink-1);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--color-ink-1) 14%, transparent);
+}
+[data-flow-column] select {
+  border-radius: 999px;
+  border-color: var(--fc-edge);
+  padding-inline: 10px 6px;
+  background-color: color-mix(in oklab, var(--color-page) 70%, transparent);
+}
+/* Wiersze nagłówków kolumn (Cena, BTC, zl. …): podpis jak w szynie */
+[data-flow-column] section.rounded-xl > div.font-mono.text-\[10px\] { letter-spacing: 0.06em; border-bottom-color: var(--fc-edge); }
+/* Pasek środka arkusza (cena, spread, udział bid/ask): cienka linia „teraz” */
+[data-flow-column] [data-ladder-mid] {
+  position: relative;
+  border-color: color-mix(in oklab, var(--color-lume) 28%, transparent) !important;
+  background: color-mix(in oklab, var(--color-lume) 6%, var(--color-surface-2)) !important;
+}
+[data-flow-column] [data-ladder-mid] [data-ladder-mid-px] { font-family: var(--font-display); font-weight: 700; font-size: 13px; font-stretch: 92%; }
+/* Wiersze taśmy: zaokrąglone podświetlenie */
+[data-flow-column] section.rounded-xl button.grid:hover { background: color-mix(in oklab, var(--color-ink-1) 6%, transparent); }
+/* Stopka drabiny (migawka, poziomy na stronę) */
+[data-flow-column] section.rounded-xl > p:last-child { border-top-color: var(--fc-edge); }
+
+@media (prefers-reduced-motion: reduce) {
+  [data-flow-column] [data-pulse] > :is(button, div) { transition: none; transform: none !important; }
+}
+[data-motion='reduced'] [data-flow-column] [data-pulse] > :is(button, div) { transition: none; transform: none !important; }
+
+/* Wąska kolumna (ok. 400 px): przełącznik kart i próg taśmy mieszczą się obok siebie bez nachodzenia */
+/* Gdy przełącznik kart i próg taśmy się nie mieszczą (np. 1366 × 680), próg schodzi do drugiego wiersza: nic nie nachodzi */
+[data-flow-column] section.rounded-xl > div:first-child { flex-wrap: wrap; height: auto; row-gap: 4px; padding-block: 4px; }
+[data-flow-column] section.rounded-xl > div:first-child > span.mr-auto { min-width: 0; }
+[data-flow-column] section.rounded-xl > div:first-child [role='radiogroup'] > button { padding-inline: 6px; font-size: 11.5px; }
+[data-flow-column] section.rounded-xl > div:first-child select { max-width: 118px; flex: none; }

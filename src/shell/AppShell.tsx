@@ -11,6 +11,7 @@ import {
   ListChecks,
   PanelsTopLeft,
   PanelLeftClose,
+  PanelLeftOpen,
   ChevronRight,
   Moon,
   MoreHorizontal,
@@ -34,7 +35,7 @@ import { useDesk } from '../state/DeskContext';
 import { PHASE_VIEW, subscribeHash } from '../state/route';
 import { ViewId } from '../state/types';
 import { awaitingBars } from '../state/viewNeeds';
-import { AnimatedNumber, Badge, BadgeTone, EmptyState, Segmented, VIEW_TRANSITION, fmtCompact, fmtPrice, numLang, DASH, fmtNum } from '../ui';
+import { AnimatedNumber, Badge, BadgeTone, Segmented, VIEW_TRANSITION, fmtCompact, fmtPrice, numLang, DASH, fmtNum } from '../ui';
 import { InstallButton } from './InstallButton';
 import { ConnectingState } from './ConnectingState';
 import { Lang, lang, setLang, tr } from '../i18n';
@@ -55,6 +56,8 @@ import type { PersonaId } from './wyspa/persony';
 import { deskLabels, marketLabel } from '../config/deskMarkets';
 import { zainstalujSwiatloSzkla } from '../ui/swiatloSzkla';
 import { zapiszNic } from './nic';
+import { przelaczSzyne, ustawSzyne, useSzynaUkryta } from './szyna';
+import { CoNowego, Kurtyna, LadowanieWidoku } from './Efekty';
 
 zainstalujSwiatloSzkla();
 
@@ -69,6 +72,7 @@ const SourcesView = lazy(() => import('../views/SourcesView'));
 const AgentsView = lazy(() => import('../views/agents/AgentsView'));
 const MarketsView = lazy(() => import('../views/MarketsView'));
 const OrderFlowView = lazy(() => import('../views/flow/OrderFlowView'));
+const StanowiskoView = lazy(() => import('../workbench/StanowiskoView'));
 
 /** Pozycja nawigacji: widok aplikacji; `short` — krótsza nazwa w dolnym pasku telefonu. */
 export type NavItem = { id: ViewId; label: string; icon: React.ReactNode; short?: string };
@@ -295,14 +299,10 @@ const Item: React.FC<{ label: string; value: string; title?: string; className?:
  * Zastępnik leniwego widoku: zajmuje wysokość ekranu pod nagłówkiem, żeby stopka nie stała na ekranie przed widokiem
  * i nie skakała w dół, gdy widok się wczyta (przesunięcie układu, CLS, na wolnym łączu).
  */
-const ViewFallback = () => (
-  <div data-view-fallback className="min-h-[calc(100dvh-var(--hq-header-h,6rem))]">
-    <EmptyState title={tr('Ładowanie widoku…', 'Loading view…')} />
-  </div>
-);
+const ViewFallback = LadowanieWidoku;
 
 // Bez globalnego przełącznika interwału: widoki z własnymi interwałami (wykresy faz dnia, Lekcje) i bez wykresów (Agenci AI)
-export const OWN_INTERVALS: ViewId[] = ['before', 'charts', 'after', 'lessons', 'agents', 'markets', 'orderflow'];
+export const OWN_INTERVALS: ViewId[] = ['before', 'charts', 'after', 'lessons', 'agents', 'markets', 'orderflow', 'stanowisko'];
 
 /** Zmienna CSS z wysokością przypiętego nagłówka aplikacji (px); widoki używają jej w klasie `top-[var(--hq-header-h,0px)]`. */
 export const HEADER_H_VAR = '--hq-header-h';
@@ -387,6 +387,7 @@ export const ViewOutlet: React.FC<{ startedAt: number; onChartMarket?: (coin: st
           {view === 'agents' && <AgentsView />}
           {view === 'markets' && <MarketsView />}
           {view === 'orderflow' && <OrderFlowView />}
+          {view === 'stanowisko' && <StanowiskoView />}
         </>
       )}
     </Suspense>
@@ -442,15 +443,19 @@ export const NAV_STRONY: PageLink[] = [
 ];
 /** Strona startowa (Przekrój pod `/`, ten sam dokument co dawne `/nowy/`): logo w szynie i nagłówku, pozycja palety. */
 export const START_HREF = `${import.meta.env.BASE_URL}?lang=${lang}`;
-/** Stanowisko (osobna strona pracowni): pozycja szyny, menu „Więcej” i palety. */
+/**
+ * Stanowisko (stół warsztatowy): widok aplikacji `#stanowisko` w tej samej powłoce co reszta (szyna, nagłówek, motyw).
+ * Dawny adres `/stanowisko/` przekierowuje tutaj (stanowisko/index.html).
+ */
+export const STANOWISKO_WIDOK: NavItem = { id: 'stanowisko', label: tr('Stanowisko', 'Workbench'), icon: <PanelsTopLeft className="w-4 h-4" aria-hidden="true" /> };
 export const STANOWISKO: PageLink = {
-  href: `${import.meta.env.BASE_URL}stanowisko/?lang=${lang}`,
-  label: tr('Stanowisko', 'Workbench'),
-  icon: <PanelsTopLeft className="w-4 h-4" aria-hidden="true" />,
+  href: `${import.meta.env.BASE_URL}?lang=${lang}#stanowisko`,
+  label: STANOWISKO_WIDOK.label,
+  icon: STANOWISKO_WIDOK.icon,
 };
 /** Dolny pasek telefonu (decyzja R3): Dziś, Sesja, Order Flow, Rynki; piąte miejsce to „Więcej”. */
 export const NAV_TELEFON: NavItem[] = [DZIS, { ...PHASES[1], short: tr('Sesja', 'Session') }, ORDER_FLOW, MARKETS];
-export const NAV_TELEFON_WIECEJ: NavItem[] = [...NAV_DZIEN, ...NAV_RYNEK, ...NAV_WIEDZA].filter((n) => !NAV_TELEFON.some((t) => t.id === n.id));
+export const NAV_TELEFON_WIECEJ: NavItem[] = [...NAV_DZIEN, ...NAV_RYNEK, ...NAV_WIEDZA, STANOWISKO_WIDOK].filter((n) => !NAV_TELEFON.some((t) => t.id === n.id));
 /** Fazy dnia: „Sesja” w dolnym pasku świeci przy każdej z nich. */
 const FAZY_IDS: ViewId[] = ['before', 'charts', 'after'];
 /**
@@ -468,20 +473,12 @@ const PaletaPolecen = lazy(() => import('./PaletaPolecen').then((m) => ({ defaul
  * i wiedza, strony serwisu. 1024–1599 px: ikona z krótką nazwą pod nią (każda zakładka podpisana), od 1600 px nazwy w rzędzie
  * (wąska szyna oddaje miejsce wykresowi i kolumnie DOM przy 1440 px).
  */
-/** Stan szyny na tym urządzeniu: widoczna albo schowana (tryb skupienia nad wykresem). */
-export const SZYNA_KLUCZ = 'hq.szyna';
-const czytajSzyne = () => {
-  try {
-    return localStorage.getItem(SZYNA_KLUCZ) === 'ukryta';
-  } catch {
-    return false;
-  }
-};
+export { SZYNA_KLUCZ } from './szyna';
 
 const Szyna: React.FC<{ go: (v: ViewId) => void }> = ({ go }) => {
   const { view, feed } = useDesk();
   const { phase } = dayPhase(useNow(60_000));
-  const [ukryta, setUkryta] = useState(czytajSzyne);
+  const ukryta = useSzynaUkryta();
   // Poświata oddycha z rynkiem: każda zmiana ceny dodaje światła, które powoli wygasa (bez renderów Reacta)
   const poswiata = useRef<HTMLDivElement>(null);
   const aktywnosc = useRef(0);
@@ -500,7 +497,6 @@ const Szyna: React.FC<{ go: (v: ViewId) => void }> = ({ go }) => {
     return () => window.clearInterval(id);
   }, []);
   const pierwszy = useRef(true);
-  const przycisk = useRef<HTMLButtonElement>(null);
   const uchwyt = useRef<HTMLButtonElement>(null);
   const [serwis, setSerwis] = useState(false);
   const serwisBtn = useRef<HTMLButtonElement>(null);
@@ -514,18 +510,12 @@ const Szyna: React.FC<{ go: (v: ViewId) => void }> = ({ go }) => {
     setSerwisPoz({ left: Math.round(r.right + 12), bottom: Math.max(12, Math.round(window.innerHeight - r.bottom)) });
   }, [serwis]);
   useEffect(() => {
-    try {
-      localStorage.setItem(SZYNA_KLUCZ, ukryta ? 'ukryta' : 'widoczna');
-    } catch {
-      /* pamięć zablokowana */
-    }
-    // Wykresy mierzą kontener przy zmianie rozmiaru okna
-    window.dispatchEvent(new Event('resize'));
     if (pierwszy.current) {
       pierwszy.current = false;
       return;
     }
-    (ukryta ? uchwyt : przycisk).current?.focus({ preventScroll: true });
+    // Fokus zostaje przy przełączniku, którym go zmieniono (nagłówek); skrót „\\” przenosi go na uchwyt schowanej szyny
+    if (ukryta && document.activeElement === document.body) uchwyt.current?.focus({ preventScroll: true });
   }, [ukryta]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -533,7 +523,7 @@ const Szyna: React.FC<{ go: (v: ViewId) => void }> = ({ go }) => {
       const cel = e.target as HTMLElement | null;
       if (cel?.closest('input, textarea, select, [contenteditable="true"]')) return;
       e.preventDefault();
-      setUkryta((v) => !v);
+      przelaczSzyne();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -544,7 +534,7 @@ const Szyna: React.FC<{ go: (v: ViewId) => void }> = ({ go }) => {
         ref={uchwyt}
         type="button"
         data-szyna-uchwyt
-        onClick={() => setUkryta(false)}
+        onClick={() => ustawSzyne(false)}
         aria-label={tr('Pokaż menu boczne', 'Show side menu')}
         title={`${tr('Pokaż menu boczne', 'Show side menu')} (\\)`}
         aria-keyshortcuts={'\\'}
@@ -612,12 +602,16 @@ const Szyna: React.FC<{ go: (v: ViewId) => void }> = ({ go }) => {
         {grupa(tr('Wiedza', 'Knowledge'), NAV_WIEDZA)}
       </nav>
       <div className="mt-auto flex flex-col gap-0.5">
-        <a href={STANOWISKO.href} data-szyna-stanowisko className={pozycja(false)}>
-          <span className="relative shrink-0" title={STANOWISKO.label}>
+        <ViewLink id="stanowisko" go={go} current={view === 'stanowisko'} className={`${pozycja(view === 'stanowisko')} hq-szyna-stanowisko`}>
+          {view === 'stanowisko' && (
+            <motion.span layoutId="szyna-aktywna" className="hq-szyna-pigulka absolute inset-0 rounded-xl" transition={{ type: 'spring', stiffness: 380, damping: 34 }} />
+          )}
+          {view === 'stanowisko' && <span aria-hidden="true" className="absolute -left-2 top-3 bottom-3 w-[3px] rounded-r-full bg-lume shadow-[0_0_10px_var(--color-lume)]" />}
+          <span data-szyna-stanowisko className="relative shrink-0" title={STANOWISKO.label}>
             {STANOWISKO.icon}
           </span>
           <span className="relative max-w-full min-[1600px]:flex-1 min-[1600px]:truncate">{STANOWISKO.label}</span>
-        </a>
+        </ViewLink>
         <button
           ref={serwisBtn}
           type="button"
@@ -632,20 +626,6 @@ const Szyna: React.FC<{ go: (v: ViewId) => void }> = ({ go }) => {
             <MoreHorizontal className="w-4 h-4" aria-hidden="true" />
           </span>
           <span className="relative max-w-full min-[1600px]:flex-1 min-[1600px]:truncate">{tr('Serwis', 'Site')}</span>
-        </button>
-        <button
-          ref={przycisk}
-          type="button"
-          data-szyna-chowaj
-          onClick={() => setUkryta(true)}
-          aria-label={tr('Ukryj menu boczne', 'Hide side menu')}
-          title={`${tr('Ukryj menu boczne', 'Hide side menu')} (\\)`}
-          aria-keyshortcuts={'\\'}
-          aria-expanded="true"
-          className="mt-2 w-full flex items-center justify-center gap-2 min-h-11 rounded-xl border border-dashed border-line-strong text-ink-3 hover:text-ink-1 hover:border-solid transition-colors duration-150 min-[1600px]:justify-start min-[1600px]:px-3 min-[1600px]:text-[13px]"
-        >
-          <PanelLeftClose className="w-4 h-4 shrink-0" aria-hidden="true" />
-          <span className="sr-only min-[1600px]:not-sr-only">{tr('Ukryj menu', 'Hide menu')}</span>
         </button>
       </div>
     </aside>
@@ -743,6 +723,29 @@ const MotywPrzelacznik: React.FC = () => {
       className="hidden sm:inline-flex items-center justify-center w-10 h-10 rounded-xl border border-line bg-surface-1 text-ink-2 hover:text-ink-1 hover:border-line-strong transition-colors duration-150"
     >
       {theme === 'dark' ? <Sun className="w-4 h-4" aria-hidden="true" /> : <Moon className="w-4 h-4" aria-hidden="true" />}
+    </button>
+  );
+};
+
+/**
+ * Przełącznik szyny w nagłówku (od 1024 px): ikona panelu z animowaną kreską „lume”, podpis skrótu „\” w podpowiedzi.
+ * Stan wspólny z szyną i jej uchwytem (szyna.ts).
+ */
+const PrzelacznikSzyny: React.FC = () => {
+  const ukryta = useSzynaUkryta();
+  const etykieta = ukryta ? tr('Pokaż menu boczne', 'Show side menu') : tr('Ukryj menu boczne', 'Hide side menu');
+  return (
+    <button
+      type="button"
+      data-szyna-przelacznik
+      onClick={przelaczSzyne}
+      aria-label={etykieta}
+      aria-pressed={!ukryta}
+      aria-keyshortcuts={'\\'}
+      title={`${etykieta} (\\)`}
+      className="hq-szyna-przelacznik group hidden lg:inline-flex shrink-0 items-center justify-center w-10 h-10 -ml-1 rounded-xl border border-line bg-surface-1 text-ink-2 hover:text-ink-1 hover:border-line-strong transition-colors duration-150"
+    >
+      {ukryta ? <PanelLeftOpen className="w-[18px] h-[18px]" aria-hidden="true" /> : <PanelLeftClose className="w-[18px] h-[18px]" aria-hidden="true" />}
     </button>
   );
 };
@@ -925,6 +928,8 @@ export const AppShell: React.FC = () => {
                 {tr('HyperQuant: strona startowa', 'HyperQuant: home page')}
               </span>
             </a>
+            {/* Komputer: chowanie i pokazywanie szyny zawsze w zasięgu wzroku (też na niskim ekranie laptopa) */}
+            <PrzelacznikSzyny />
             {/* Cena i liczby rynku; w powtórce W sesji bez ceny na żywo */}
             <div className="flex-1 min-w-0">
               {!replay && !orderFlow && (otherChartMarket ? (
@@ -964,11 +969,10 @@ export const AppShell: React.FC = () => {
                   </span>
                 )}
               </button>
-              <a href={STANOWISKO.href}
-                aria-label={STANOWISKO.label} title={STANOWISKO.label}
+              <ViewLink id="stanowisko" go={go} current={view === 'stanowisko'}
                 className="hidden sm:inline-flex lg:hidden items-center justify-center gap-1.5 min-h-10 min-w-10 px-2 rounded-xl border border-line text-xs font-medium text-ink-1 hover:bg-surface-2">
                 <PanelsTopLeft size={16} aria-hidden="true" /><span className="hidden md:inline">{STANOWISKO.label}</span>
-              </a>
+              </ViewLink>
               {!orderFlow && !otherChartMarket && !replay && <Badge tone={STATUS_TONE[feed.dataStatus]} title={STATUS_TITLE[feed.dataStatus]} testId="data-status">
                 {feed.dataStatus}
               </Badge>}
@@ -1073,7 +1077,7 @@ export const AppShell: React.FC = () => {
                   </ViewLink>
                 ))}
                 <div role="separator" className="my-1 border-t border-line" />
-                {[STANOWISKO, ...NAV_STRONY].map((l) => (
+                {NAV_STRONY.map((l) => (
                   <a key={l.href} href={l.href} className={MENU_ITEM}>
                     {l.icon}
                     {l.label}
@@ -1108,6 +1112,10 @@ export const AppShell: React.FC = () => {
         </div>
       </nav>
 
+      {/* Otwarcie aplikacji (raz na sesję) i „Co nowego” po aktualizacji (raz na wersję, z falą po „Rozumiem”) */}
+      <Kurtyna />
+      <CoNowego go={go} />
+
       {/* Dok załogi: pływająca wyspa z postaciami; zdarzenie strażnika jako dymek nad dokiem */}
       <Dok flash={straz.flash} onDismissFlash={dismissFlash} onOpen={otworzZDoku} open={wyspa} />
       <div role="status" aria-live="polite" className="sr-only">
@@ -1126,8 +1134,8 @@ export const AppShell: React.FC = () => {
             open={paleta}
             onClose={() => setPaleta(false)}
             onAkcja={wykonaj}
-            widoki={[...NAV_DZIEN, ...NAV_RYNEK, ...NAV_WIEDZA]}
-            zewnetrzne={[{ href: START_HREF, label: tr('Strona startowa (Przekrój)', 'Home page (Cross-section)') }, STANOWISKO, ...NAV_STRONY]}
+            widoki={[...NAV_DZIEN, ...NAV_RYNEK, ...NAV_WIEDZA, STANOWISKO_WIDOK]}
+            zewnetrzne={[{ href: START_HREF, label: tr('Strona startowa (Przekrój)', 'Home page (Cross-section)') }, ...NAV_STRONY]}
             przelaczniki={[
               { co: 'strumien', etykieta: feed.isStreaming ? tr('Wstrzymaj strumień', 'Pause stream') : tr('Wznów strumień', 'Resume stream') },
               { co: 'synchronizuj', etykieta: tr('Synchronizuj teraz', 'Sync now') },

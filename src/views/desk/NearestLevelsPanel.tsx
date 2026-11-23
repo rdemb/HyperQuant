@@ -45,6 +45,8 @@ export const NearestLevelsView: React.FC<{ n: NearestLevels }> = ({ n }) => {
   const sz = marketOf(n.coin)?.szDecimals;
   const px = (p: number) => fmtPx(p, sz);
   const atr = isAbsent(n.atr) ? null : n.atr;
+  // Wspólna skala osi odległości: najdalszy poziom listy dochodzi do brzegu osi
+  const skala = Math.max(0, ...[...n.above, ...n.below].map((r) => Math.abs(r.distPct)).filter(Number.isFinite));
   const atrTag = (
     <span className="text-[11px] text-ink-3" title={atr ? tr(`ATR(${atr.n}) świec 5m: średni prawdziwy zakres ${atr.n} ostatnich zamkniętych świec`, `ATR(${atr.n}) of 5m candles: mean true range of the last ${atr.n} closed candles`) : isAbsent(n.atr) ? n.atr.why : undefined}>
       <span data-etykieta>{`ATR(${ATR_N}) 5m`}</span> <span className="font-mono tabular-nums text-ink-2">{atr ? px(atr.value) : DASH}</span>
@@ -64,8 +66,11 @@ export const NearestLevelsView: React.FC<{ n: NearestLevels }> = ({ n }) => {
         />
       ) : (
         <>
-          <div className="grid grid-cols-[minmax(0,1fr)_4.25rem_2.5rem_4.75rem] gap-x-2 px-4 pt-2.5 pb-1 text-[10.5px] font-medium uppercase tracking-[0.08em] text-ink-3 sm:grid-cols-[minmax(0,1fr)_5rem_3.5rem_5rem]">
+          <div className="grid grid-cols-[minmax(0,1fr)_4.25rem_2.5rem_4.75rem] md:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)_5rem_3.5rem_5rem] gap-x-2 px-4 pt-2.5 pb-1 text-[10.5px] font-medium uppercase tracking-[0.08em] text-ink-3 sm:grid-cols-[minmax(0,1fr)_5rem_3.5rem_5rem]">
             <span>{tr('Poziom', 'Level')}</span>
+            <span className="hidden md:block text-center" title={tr('Położenie poziomu wobec ceny (środek osi) w skali najdalszego poziomu z listy', 'Level position against the price (axis centre), scaled to the farthest level in the list')}>
+              {tr('Oś: pod ceną · nad ceną', 'Axis: below · above')}
+            </span>
             <span className="text-right">{tr('Odległość', 'Distance')}</span>
             <span className="text-right">ATR</span>
             <span className="text-right" title={tr('USD likwidacji z mapy skanera między ceną a poziomem', 'USD of liquidations on the scanner map between the price and the level')}>
@@ -74,14 +79,14 @@ export const NearestLevelsView: React.FC<{ n: NearestLevels }> = ({ n }) => {
           </div>
           <ol className="flex flex-col pb-1" aria-label={tr('Poziomy nad ceną i pod nią', 'Levels above and below the price')}>
             {[...n.above].reverse().map((r) => (
-              <Row key={r.id} r={r} px={px} />
+              <Row key={r.id} r={r} px={px} skala={skala} />
             ))}
             <li className="mx-4 my-1 flex items-center justify-between gap-2 rounded-md border border-line-strong bg-surface-2 px-2.5 py-1 text-xs">
               <span className="text-ink-2">{tr('Cena', 'Price')}</span>
               <span className="font-mono tabular-nums text-ink-1">{px(n.price)}</span>
             </li>
             {n.below.map((r) => (
-              <Row key={r.id} r={r} px={px} />
+              <Row key={r.id} r={r} px={px} skala={skala} />
             ))}
             {n.above.length === 0 && n.below.length === 0 && <li className="px-4 py-2 text-xs text-ink-3">{tr('Żaden poziom nie ma jeszcze liczby (powody niżej).', 'No level has a number yet (reasons below).')}</li>}
           </ol>
@@ -94,8 +99,10 @@ export const NearestLevelsView: React.FC<{ n: NearestLevels }> = ({ n }) => {
 };
 
 /** Wiersz poziomu; dotknięcie rozwija opis (skąd liczba), jak kafle Czwórki. */
-const Row: React.FC<{ r: LevelRow; px: (p: number) => string }> = ({ r, px }) => {
+const Row: React.FC<{ r: LevelRow; px: (p: number) => string; skala: number }> = ({ r, px, skala }) => {
   const [open, setOpen] = useState(false);
+  // Położenie na osi: środek = cena, brzeg = najdalszy poziom listy (te same procenty co kolumna „Odległość”)
+  const pos = skala > 0 && Number.isFinite(r.distPct) ? 50 + Math.max(-1, Math.min(1, r.distPct / skala)) * 46 : 50;
   const fuelWhy = isAbsent(r.fuel) ? r.fuel.why : undefined;
   return (
     <li>
@@ -105,7 +112,7 @@ const Row: React.FC<{ r: LevelRow; px: (p: number) => string }> = ({ r, px }) =>
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
         title={r.hint}
-        className="grid w-full grid-cols-[minmax(0,1fr)_4.25rem_2.5rem_4.75rem] items-center gap-x-2 px-4 py-1.5 text-left text-xs transition-colors duration-150 hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent sm:grid-cols-[minmax(0,1fr)_5rem_3.5rem_5rem]"
+        className="grid w-full grid-cols-[minmax(0,1fr)_4.25rem_2.5rem_4.75rem] md:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)_5rem_3.5rem_5rem] items-center gap-x-2 px-4 py-1.5 text-left text-xs transition-colors duration-150 hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent sm:grid-cols-[minmax(0,1fr)_5rem_3.5rem_5rem]"
       >
         <span className="flex min-w-0 flex-col">
           <span className="flex min-w-0 flex-wrap items-center gap-x-1.5">
@@ -115,6 +122,15 @@ const Row: React.FC<{ r: LevelRow; px: (p: number) => string }> = ({ r, px }) =>
             </Badge>
           </span>
           <span className="font-mono text-[11px] tabular-nums text-ink-3">{px(r.px)}</span>
+        </span>
+        <span aria-hidden="true" className="hq-os-poziomu hidden md:block relative h-5">
+          <span className="absolute inset-x-0 top-1/2 h-px bg-line" />
+          <span className="absolute left-1/2 top-0.5 bottom-0.5 w-px bg-lume shadow-[0_0_6px_var(--color-lume)]" />
+          <span className="absolute top-1/2 h-0.5 -translate-y-1/2 rounded-full bg-ink-3/45" style={{ left: `${Math.min(50, pos)}%`, width: `${Math.abs(pos - 50)}%` }} />
+          <span
+            className={`hq-os-kropka absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 ${r.badge === 'LIVE' ? 'border-ink-1 bg-ink-1' : 'border-ink-1 bg-surface-1'}`}
+            style={{ left: `${pos}%` }}
+          />
         </span>
         <span className="text-right font-mono tabular-nums text-ink-1">{fmtPct(r.distPct, 2)}</span>
         <span className="text-right font-mono tabular-nums text-ink-2">{r.distAtr === null ? DASH : fmtFixed(r.distAtr, 1)}</span>

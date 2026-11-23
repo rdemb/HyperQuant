@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { VIEWS } from '../../state/route';
-import { MARKETS, NAV_DZIEN, NAV_RYNEK, NAV_STRONY, NAV_TELEFON, NAV_TELEFON_WIECEJ, NAV_WIEDZA, NEWS_LABEL, RESULTS_LABEL, START_HREF, STANOWISKO } from '../AppShell';
+import { MARKETS, NAV_DZIEN, NAV_RYNEK, NAV_STRONY, NAV_TELEFON, NAV_TELEFON_WIECEJ, NAV_WIEDZA, NEWS_LABEL, RESULTS_LABEL, START_HREF, STANOWISKO, STANOWISKO_WIDOK } from '../AppShell';
 
 const ids = (xs: { id: string }[]) => xs.map((x) => x.id);
 
@@ -13,7 +13,8 @@ describe('nawigacja aplikacji (jedno źródło: szyna, dolny pasek, menu „Wię
   });
 
   it('każdy widok aplikacji jest w nawigacji komputera i telefonu, każdy raz', () => {
-    const komputer = ids([...NAV_DZIEN, ...NAV_RYNEK, ...NAV_WIEDZA]);
+    // Szyna: trzy grupy i Stanowisko na dole (widok aplikacji, nie strona serwisu)
+    const komputer = ids([...NAV_DZIEN, ...NAV_RYNEK, ...NAV_WIEDZA, STANOWISKO_WIDOK]);
     const telefon = ids([...NAV_TELEFON, ...NAV_TELEFON_WIECEJ]);
     for (const lista of [komputer, telefon]) {
       expect([...lista].sort()).toEqual([...VIEWS].sort());
@@ -26,9 +27,10 @@ describe('nawigacja aplikacji (jedno źródło: szyna, dolny pasek, menu „Wię
     expect(NAV_TELEFON[1].short).toBe('Sesja');
   });
 
-  it('strona startowa to logo, nie zakładka; Stanowisko i strony serwisu jako zwykłe linki', () => {
+  it('strona startowa to logo, nie zakładka; Stanowisko to widok aplikacji, strony serwisu zwykłe linki', () => {
     expect(START_HREF).toBe('/?lang=pl');
-    expect(STANOWISKO.href).toBe('/stanowisko/?lang=pl');
+    expect(STANOWISKO.href).toBe('/?lang=pl#stanowisko');
+    expect(NAV_TELEFON_WIECEJ.map((n) => n.id)).toContain('stanowisko');
     expect(NAV_STRONY.map((l) => l.href)).toEqual(['./blog/', './wyniki/', './co-nowego/']);
     expect(NAV_STRONY.map((l) => l.label)).toEqual(['Blog', RESULTS_LABEL, NEWS_LABEL]);
     expect(NAV_STRONY.some((l) => l.href.includes('nowy'))).toBe(false);

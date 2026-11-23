@@ -9,7 +9,9 @@ import { useMarketsPage } from '../state/useMarketsTable';
 import { Badge } from '../ui';
 import type { MarketRowModel } from '../utils/marketsTable';
 import { ORDER_FLOW_MARKETS } from './flow/orderFlowDesk';
-import { SessionDial } from './start/SessionDial';
+import { ZegarDoby } from './dzis/ZegarDoby';
+import { Liczydlo } from '../ui/Liczydlo';
+import { Litery } from '../ui/Litery';
 import { ZBliska } from './dzis/ZBliska';
 import { czytajNic, opisNici } from '../shell/nic';
 
@@ -82,7 +84,7 @@ const KartaRynku: React.FC<{ row: MarketRowModel }> = ({ row }) => {
   const sesja = `#charts?m=${encodeURIComponent(row.coin)}`;
   const brak = row.why !== null;
   return (
-    <article data-dzis-rynek={row.coin} aria-labelledby={`dzis-${row.coin}`} className="hq-spot hq-karta-dzis relative flex h-full flex-col gap-5 rounded-[22px] p-5 sm:p-6">
+    <article data-dzis-rynek={row.coin} data-tilt aria-labelledby={`dzis-${row.coin}`} className="hq-spot hq-karta-dzis relative flex h-full flex-col gap-5 rounded-[22px] p-5 sm:p-6">
       <header className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h3 id={`dzis-${row.coin}`} className="font-display text-[24px] font-bold leading-none tracking-tight [font-stretch:88%] text-ink-1">
@@ -111,7 +113,7 @@ const KartaRynku: React.FC<{ row: MarketRowModel }> = ({ row }) => {
         </span>
       </header>
       <p className={`font-mono text-[clamp(30px,3vw,40px)] leading-none tabular-nums tracking-tight ${brak ? 'text-ink-3' : 'text-ink-1'}`} aria-label={tr(`Cena: ${row.price}`, `Price: ${row.price}`)}>
-        {row.price}
+        <Liczydlo text={row.price} />
       </p>
       <dl className="grid grid-cols-3 gap-3 border-t border-line pt-4">
         <Liczba etykieta={tr('Funding · rok', 'Funding · year')} wartosc={row.fundingYear ?? '—'} dopisek={row.fieldWhy.funding} />
@@ -153,11 +155,10 @@ const SKROTY: { href: string; tytul: string; opis: string; ikona: React.ReactNod
     ikona: <History className="h-5 w-5" aria-hidden="true" />,
   },
   {
-    href: `${import.meta.env.BASE_URL}stanowisko/?lang=${lang}`,
+    href: '#stanowisko',
     tytul: tr('Stanowisko', 'Workbench'),
-    opis: tr('Własny układ paneli, zapisany w tej przeglądarce.', 'Your own panel layout, saved in this browser.'),
+    opis: tr('Wykresy, księga i nagrania w Twoim układzie, zapisanym w tej przeglądarce.', 'Charts, book and recordings in your own layout, saved in this browser.'),
     ikona: <PanelsTopLeft className="h-5 w-5" aria-hidden="true" />,
-    zewnetrzny: true,
   },
   {
     href: '#lessons',
@@ -175,7 +176,7 @@ const Powrot: React.FC<{ now: number }> = ({ now }) => {
   const opis = nic ? opisNici(nic.hash, chwila) : null;
   if (!nic || !opis) return null;
   return (
-    <a href={nic.hash} data-dzis-powrot className="hq-spot hq-karta-dzis group relative flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl px-5 py-4">
+    <a href={nic.hash} data-dzis-powrot data-tilt className="hq-spot hq-karta-dzis group relative flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl px-5 py-4">
       <span aria-hidden="true" className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-lume text-[#14160a]">↩</span>
       <span className="min-w-0 flex-1">
         <span className="block font-mono text-[10.5px] font-semibold uppercase tracking-[0.12em] text-ink-3">
@@ -200,7 +201,7 @@ const DzisView: React.FC = () => {
 
   return (
     <div data-dzis-view className="flex flex-col gap-10 pb-6">
-      <section aria-labelledby="dzis-tytul" className="hq-dzis-hero relative overflow-hidden rounded-[28px] px-5 py-8 sm:px-10 sm:py-12">
+      <section aria-labelledby="dzis-tytul" data-latarka className="hq-dzis-hero relative overflow-hidden rounded-[28px] px-5 py-8 sm:px-10 sm:py-12">
         <div className="grid items-center gap-8 lg:grid-cols-[minmax(0,1fr)_auto]">
         <div className="min-w-0">
         <p className="flex flex-wrap items-center gap-3 font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-ink-3">
@@ -210,9 +211,9 @@ const DzisView: React.FC = () => {
           <span className="hidden sm:inline">{STREFA}</span>
         </p>
         <h1 id="dzis-tytul" className="mt-4 font-display text-[clamp(44px,7vw,96px)] font-extrabold leading-[0.92] tracking-[-0.03em] [font-stretch:82%] text-ink-1">
-          {tr('Dziś', 'Today')}
+          <Litery text={tr('Dziś', 'Today')} />
           <br />
-          <span className="text-lume-ink">{tr('na rynku.', 'in the market.')}</span>
+          <Litery text={tr('na rynku.', 'in the market.')} start={4} className="text-lume-ink" />
         </h1>
         <p className="mt-6 max-w-2xl text-[16px] leading-relaxed text-ink-2 text-pretty">
           {tr(
@@ -231,11 +232,12 @@ const DzisView: React.FC = () => {
           </a>
         </div>
         </div>
-        {/* Tarcza doby: sesje BTC w czasie lokalnym i „teraz” (zegar, nie dane rynku) */}
-        <div className="hidden lg:block -my-4 mr-2">
-          <SessionDial now={now} size={360} />
+        {/* Chronograf doby: sesje BTC w czasie lokalnym, „teraz”, odliczanie (zegar, nie dane rynku); na telefonie pod tekstem */}
+        <div className="mx-auto w-[min(82vw,340px)] lg:mx-0 lg:-my-6 lg:mr-2 lg:w-[400px]">
+          <ZegarDoby />
         </div>
         </div>
+        <span aria-hidden="true" className="hq-latarka" />
         <span aria-hidden="true" className="hq-dzis-woda pointer-events-none absolute inset-x-0 bottom-5 h-px lg:bottom-auto lg:top-[49%]" />
       </section>
 
@@ -273,6 +275,7 @@ const DzisView: React.FC = () => {
                   href={`#${f.id}`}
                   aria-current={teraz ? 'time' : undefined}
                   data-dzis-faza={f.id}
+                  data-tilt
                   className={`hq-spot group relative flex h-full flex-col gap-3 rounded-[22px] border p-5 sm:p-6 transition-colors duration-150 ${
                     teraz ? 'hq-faza-teraz border-line-strong' : 'border-line bg-surface-1 hover:bg-surface-2'
                   }`}
@@ -316,7 +319,7 @@ const DzisView: React.FC = () => {
         <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {SKROTY.map((s) => (
             <li key={s.href} className="min-w-0">
-              <a href={s.href} className="hq-spot group relative flex h-full items-start gap-4 rounded-2xl border border-line bg-surface-1 p-4 transition-colors duration-150 hover:bg-surface-2">
+              <a href={s.href} data-tilt className="hq-spot group relative flex h-full items-start gap-4 rounded-2xl border border-line bg-surface-1 p-4 transition-colors duration-150 hover:bg-surface-2">
                 <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-line-strong text-ink-1">{s.ikona}</span>
                 <span className="min-w-0">
                   <span className="flex items-center gap-1 font-semibold text-ink-1">

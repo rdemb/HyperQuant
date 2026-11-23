@@ -4,6 +4,12 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Stanowisko z wykresami i pełny ekran Order Flow (2026-11-23)
+<!-- co-nowego: grupa=wykres | pl=Stanowisko z wykresami i pełny ekran Order Flow | en=Chart workbench and full-screen Order Flow -->
+- Stanowisko otwiera się w aplikacji. Dodaj wykresy świecowe, wybierz układ siatki i zachowaj własną kompozycję.
+- Pełny ekran Order Flow mieści drabinę i taśmę obok siebie na szerokim ekranie. W układzie pionowym panele są jeden pod drugim.
+- Zegar w Dziś pokazuje rytm doby. Zwinięcie bocznego menu jest dostępne z nagłówka, a efekty interfejsu uwzględniają ograniczony ruch.
+
 ### Jeden frontend HyperQuant (2026-11-23)
 <!-- co-nowego: grupa=wykres | pl=Jeden frontend HyperQuant | en=One HyperQuant frontend -->
 - Aplikacja ma jedno menu: Dzień (Dziś, Przed sesją, W sesji, Po sesji), Rynek i Wiedza. Logo prowadzi na stronę startową Przekrój, a Stanowisko jest w menu.
