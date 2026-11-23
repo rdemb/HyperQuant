@@ -496,7 +496,7 @@ describe('strony serwisu: Wykresy, Lekcje, atlas, 404', () => {
     expect(en).toContain('<a class="nav-lang" href="https://example.org/HQ/lekcje/atlas/cvd/" hreflang="pl" lang="pl">PL</a>');
     expect(en).toContain('<a class="nav-blog" href="../../../../blog/">Blog</a>');
     // Hasło atlasu: „Lessons” prowadzi do strony Lekcji, nie do tego hasła — dział bez aria-current
-    expect(en).toContain('<a class="nav-before" href="../../../../?lang=en#before">Pre-session</a><a class="nav-charts" href="../../../../?lang=en#charts">In session</a><a class="nav-after" href="../../../../?lang=en#after">Post-session</a><a class="nav-markets" href="../../../../?lang=en#markets">Markets</a><a class="nav-lessons is-section" href="../../../../en/lessons/">Lessons</a>');
+    expect(en).toContain('<a class="nav-before" href="../../../../?lang=en#before">Pre-session</a><a class="nav-charts" href="../../../../?lang=en#charts">In session</a><a class="nav-after" href="../../../../?lang=en#after">Post-session</a><a class="nav-markets" href="../../../../?lang=en#markets">Markets</a><a class="nav-orderflow" href="../../../../?lang=en#orderflow">Order Flow</a><a class="nav-lessons is-section" href="../../../../en/lessons/">Lessons</a>');
     // aria-current tylko na linku do bieżącego dokumentu (strona Lekcji, strona bloga)
     expect(byPath.get('lekcje/').html).toContain('<a class="nav-lessons" href="../lekcje/" aria-current="page">Lekcje</a>');
     for (const p of byPath.values()) {
@@ -514,7 +514,7 @@ describe('strony serwisu: Wykresy, Lekcje, atlas, 404', () => {
   });
 
   it('linki względne prowadzą do istniejących stron, plików albo widoków aplikacji', () => {
-    const files = new Set(['', 'blog/', 'blog/feed.xml', 'blog/blog.css', 'fonts/fonts.css', 'favicon.svg', 'icons/apple-touch-icon.png', ...byPath.keys(), ...pages.filter((p) => p.card).map((p) => `${p.path}og.png`)]);
+    const files = new Set(['', 'stanowisko/', 'blog/', 'blog/feed.xml', 'blog/blog.css', 'fonts/fonts.css', 'favicon.svg', 'icons/apple-touch-icon.png', ...byPath.keys(), ...pages.filter((p) => p.card).map((p) => `${p.path}og.png`)]);
     for (const k of ['charts', 'lessons']) for (const l of ['pl', 'en']) files.add(`site/${k}-${l}.jpg`);
     for (const [path_, p] of byPath) {
       if (path_ === '404.html') continue;
@@ -524,7 +524,7 @@ describe('strony serwisu: Wykresy, Lekcje, atlas, 404', () => {
         if (!u.href.startsWith(SITE.url)) continue;
         const rel = u.pathname.slice(new URL(SITE.url).pathname.length);
         expect(files.has(rel), `${path_} → ${href}`).toBe(true);
-        if (rel === '' && u.hash) expect(u.hash, `${path_} → ${href}`).toMatch(/^#(before|charts|after|markets|lessons|research|sources|agents)(\?|$)/);
+        if (rel === '' && u.hash) expect(u.hash, `${path_} → ${href}`).toMatch(/^#(dzis|before|charts|after|markets|orderflow|lessons|research|sources|agents)(\?|$)/);
       }
     }
   });
@@ -540,6 +540,12 @@ describe('strony serwisu: Wykresy, Lekcje, atlas, 404', () => {
     const html = byPath.get('404.html').html;
     expect(html).toContain('<meta name="robots" content="noindex">');
     for (const [, href] of html.matchAll(/(?:href|src)="([^"]+)"/g)) expect(href, href).toMatch(/^(https:|#)/);
+  });
+
+  it('404: „In session” prowadzi do W sesji w aplikacji, nie na stronę startową (Przekrój pod /)', () => {
+    const html = byPath.get('404.html').html;
+    expect(html).toMatch(/<a href="https:\/\/[^"]*\?lang=en#charts">In session<\/a>/);
+    expect(html).not.toMatch(/<a href="https:\/\/[^"?#]*\/">In session<\/a>/);
   });
 
   it('404 po angielsku najpierw, polskie zdanie drugie (powłoka po angielsku)', () => {
@@ -578,7 +584,7 @@ describe('strony serwisu: Wykresy, Lekcje, atlas, 404', () => {
     expect(html).toContain('<a class="nav-blog is-section" href="../blog/">Blog</a><a class="nav-results" href="../wyniki/">Wyniki</a><a class="nav-news" href="../co-nowego/">Co nowego</a><a class="nav-rss" href="../blog/feed.xml">RSS</a>');
     const index = layout(SITE, { title: 't', description: 'd', url: `${SITE.url}blog/`, root: '../', image: 'i', imageAlt: 'a', jsonLd: {}, main: '' });
     expect(index).toContain('<a class="nav-blog" href="../blog/" aria-current="page">Blog</a>');
-    expect(html).toContain('<nav aria-label="Główna"><a class="nav-before" href="../?lang=pl#before">Przed sesją</a><a class="nav-charts" href="../?lang=pl#charts">W sesji</a><a class="nav-after" href="../?lang=pl#after">Po sesji</a><a class="nav-markets" href="../?lang=pl#markets">Rynki</a><a class="nav-lessons" href="../lekcje/">Lekcje</a><a class="nav-blog');
+    expect(html).toContain('<nav aria-label="Główna"><a class="nav-dzis" href="../?lang=pl#dzis">Dziś</a><a class="nav-before" href="../?lang=pl#before">Przed sesją</a><a class="nav-charts" href="../?lang=pl#charts">W sesji</a><a class="nav-after" href="../?lang=pl#after">Po sesji</a><a class="nav-markets" href="../?lang=pl#markets">Rynki</a><a class="nav-orderflow" href="../?lang=pl#orderflow">Order Flow</a><a class="nav-lessons" href="../lekcje/">Lekcje</a><a class="nav-blog');
     expect(html).not.toContain('nav-desk');
     expect(html).not.toContain('hreflang');
   });

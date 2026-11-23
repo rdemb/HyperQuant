@@ -183,7 +183,7 @@
   /* ---------- Telefon: podgląd terminala ładowany przy zbliżeniu ---------- */
   function setupPhone() {
     const f = $('#phone-frame'); if (!f || innerWidth <= 760) return;
-    const io = new IntersectionObserver((e) => { if (e[0].isIntersecting) { f.src = f.dataset.src; io.disconnect(); } }, { rootMargin: '400px' });
+    const io = new IntersectionObserver((e) => { if (e[0].isIntersecting) { f.src = window.HQ.appUrl ? window.HQ.appUrl('dzis') : f.dataset.src; io.disconnect(); } }, { rootMargin: '400px' });
     io.observe(f);
   }
 

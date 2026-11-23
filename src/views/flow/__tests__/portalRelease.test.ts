@@ -40,8 +40,10 @@ describe('Cross-section portal release entry points', () => {
     const shell = readFileSync('src/shell/AppShell.tsx', 'utf8');
     const workbench = readFileSync('stanowisko/index.html', 'utf8');
     const config = readFileSync('vite.config.ts', 'utf8');
-    expect(shell).toContain('./nowy/?lang=');
+    expect(shell).toContain('START_HREF');
+    expect(shell).not.toContain('./nowy/?lang=');
     expect(portal).toContain('../stanowisko/?lang=');
+    expect(portal).not.toContain('desk.html');
     expect(workbench).toContain('id="workbench-root"');
     expect(config).toContain("path.join(ROOT, 'stanowisko/index.html')");
   });
@@ -60,15 +62,20 @@ describe('Cross-section portal release entry points', () => {
     }
   });
 
-  it('ships every relative document reached directly from the terminal command palette', () => {
-    const desk = readFileSync('public/nowy/assets/desk.js', 'utf8');
-    const targets = [...desk.matchAll(/location\.href\s*=\s*['"]([^'"]+\.html)['"]/g)].map(([, link]) => link);
-    expect(targets).toContain('index.html');
-    const entry = new URL('/nowy/desk.html', releaseRoot);
-    for (const target of targets) {
-      const url = new URL(target, entry);
-      if (url.origin === entry.origin) expect(existsSync(destination(url)), url.pathname).toBe(true);
-    }
+  it('sends old terminal addresses to the same places in the single app, with market and language', () => {
+    const script = terminal.match(/<script>([\s\S]*?)<\/script>/)?.[1] ?? '';
+    const go = (href: string) => {
+      let target = '';
+      const location = new URL(href);
+      runInNewContext(script, { location: { ...location, href: location.href, hash: location.hash, search: location.search, replace: (to: string) => { target = to; } }, URL, URLSearchParams });
+      return target;
+    };
+    expect(go('https://example.test/nowy/desk.html?lang=en#sesja?m=xyz%3AGOLD&px=1')).toBe('https://example.test/?lang=en#charts?m=xyz%3AGOLD');
+    expect(go('https://example.test/nowy/desk.html?lang=pl#przed')).toBe('https://example.test/?lang=pl#before');
+    expect(go('https://example.test/nowy/desk.html#po')).toBe('https://example.test/#after');
+    expect(go('https://example.test/nowy/desk.html?embed=1')).toBe('https://example.test/#dzis');
+    expect(go('https://example.test/nowy/desk.html#constructor')).toBe('https://example.test/#dzis');
+    expect(terminal).toContain('noindex');
   });
 
   it('resolves the published observation to the checked-in clip, trade and book pair', () => {

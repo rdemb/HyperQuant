@@ -70,9 +70,9 @@ const MarketCard: React.FC<{ row: MarketRowModel }> = ({ row }) => (
       {row.price}
     </p>
     <dl className="grid grid-cols-3 gap-4 border-t border-line pt-4">
-      <Stat label={tr('Obrót 24 h', '24h volume')} value={row.volume} />
-      <Stat label={tr('Otwarte poz.', 'Open int.')} value={row.openInterest} />
-      <Stat label={tr('Funding 1 h', 'Funding 1h')} value={row.fundingHour} sub={row.fundingYear !== null ? tr(`${row.fundingYear} rocznie`, `${row.fundingYear} per year`) : null} />
+      <Stat label={tr('Obrót 24 h', '24h volume')} value={row.volume} sub={row.fieldWhy.volume} />
+      <Stat label={tr('Otwarte poz.', 'Open int.')} value={row.openInterest} sub={row.fieldWhy.openInterest} />
+      <Stat label={tr('Funding 1 h', 'Funding 1h')} value={row.fundingHour} sub={row.fundingYear !== null ? tr(`${row.fundingYear} rocznie`, `${row.fundingYear} per year`) : row.fieldWhy.funding} />
     </dl>
     {row.chartHref !== null ? (
       <a href={row.chartHref} className="inline-flex h-11 items-center justify-center gap-2 self-start rounded-full border border-line-strong px-5 text-sm font-semibold text-ink-1 transition-colors duration-150 hover:bg-surface-2">

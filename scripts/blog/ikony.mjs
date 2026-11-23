@@ -2,7 +2,7 @@
  * Ikony nawigacji stron statycznych jako SVG w HTML: dane tych samych ikon lucide co w aplikacji (dolny pasek, menu
  * „Więcej”; „History” aplikacji to w lucide alias `rotate-ccw-clock`), więc pasek na blogu i stronach serwisu wygląda jak w desku. Czytane przy budowie, bez skryptu na stronie.
  */
-const NAMES = ['sunrise', 'chart-candlestick', 'sunset', 'table-2', 'ellipsis', 'graduation-cap', 'flask-conical', 'database', 'bot', 'newspaper', 'list-checks', 'rotate-ccw-clock'];
+const NAMES = ['house', 'sunrise', 'chart-candlestick', 'sunset', 'table-2', 'rows-3', 'ellipsis', 'graduation-cap', 'flask-conical', 'database', 'bot', 'panels-top-left', 'newspaper', 'list-checks', 'rotate-ccw-clock'];
 
 const attr = (k, v) => `${k}="${String(v).replace(/"/g, '&quot;')}"`;
 

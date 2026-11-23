@@ -22,7 +22,7 @@ if (typeof window !== 'undefined') {
   window.addEventListener('pointerdown', (e) => { wskazanie = { x: e.clientX, y: e.clientY, at: Date.now() }; }, { capture: true, passive: true });
 }
 
-type DocVT = Document & { startViewTransition?: (cb: () => void) => { finished: Promise<void> } };
+type DocVT = Document & { startViewTransition?: (cb: () => void) => { finished: Promise<void>; ready?: Promise<void>; skipTransition?: () => void } };
 
 export function setTheme(t: Theme): void {
   const doc = typeof document !== 'undefined' ? (document as DocVT) : null;
@@ -43,7 +43,21 @@ export function setTheme(t: Theme): void {
   root.style.setProperty('--vt-y', `${Math.round(p.y)}px`);
   root.classList.add('vt-motyw');
   try {
-    void doc.startViewTransition(() => zastosujMotyw(t)).finished.catch(() => undefined).finally(() => root.classList.remove('vt-motyw'));
+    const przejscie = doc.startViewTransition(() => zastosujMotyw(t));
+    // Pominięte przejście odrzuca `ready` (AbortError): motyw i tak jest już zmieniony
+    przejscie.ready?.catch(() => undefined);
+    // Zatrzymany zegar animacji (karta w tle, słaby sprzęt) nie może zostawić strony pod warstwą przejścia: koniec po 1,2 s
+    const straz = window.setTimeout(() => {
+      try {
+        przejscie.skipTransition?.();
+      } catch {
+        // przejście już skończone
+      }
+    }, 1200);
+    void przejscie.finished.catch(() => undefined).finally(() => {
+      window.clearTimeout(straz);
+      root.classList.remove('vt-motyw');
+    });
   } catch {
     root.classList.remove('vt-motyw');
     zastosujMotyw(t);

@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="pl" data-theme="deep" data-palette="zorza">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>HyperQuant · W sesji</title>
+<meta name="theme-color" content="#0b0a12">
+<link rel="preload" href="fonts/plus-jakarta-sans-latin-600-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/jetbrains-mono-latin-500-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preconnect" href="https://api.hyperliquid.xyz" crossorigin>
+<link rel="stylesheet" href="assets/hq.css?v=20261123d">
+<link rel="stylesheet" href="assets/desk-plus.css?v=1">
+<script>try{var d=document.documentElement,t=localStorage.getItem('hqp.theme');if(!t||t==='system')t=matchMedia('(prefers-color-scheme: light)').matches?'paper':'deep';d.dataset.theme=t;var m=localStorage.getItem('hqp.motion');if(m)d.dataset.motion=m;var p=localStorage.getItem('hqp.palette');d.dataset.palette=p==='ton'?'ton':'zorza'}catch(e){}</script>
+<script src="assets/i18n.js?v=20261122-root2" defer></script>
+<script src="assets/hq.js?v=20261122-root2" defer></script>
+<script src="assets/m4.js?v=20261123d" defer></script>
+<script src="assets/desk.js?v=20261122-live8" defer></script>
+<script src="assets/views.js?v=20261123d" defer></script>
+<script src="assets/portal.js?v=20261122-root" defer></script>
+<script src="assets/desk-plus.js?v=20261122-live4" defer></script>
+</head>
+<body class="app">
+<a class="skip" href="#main" data-i18n="skip">Przejdź do treści</a>
+<div class="desk" data-view="sesja">
+  <nav class="rail" aria-label="Główna" data-i18n-attr="aria-label:d.navMain">
+    <a class="logo" href="../" data-home-link data-logo aria-label="HyperQuant" data-i18n-attr="title:d.home"></a>
+    <a href="#dzis" data-route="dzis"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true"><path d="M4 11 12 4l8 7v9h-5v-6H9v6H4z"/></svg><span data-i18n="d.today">Dziś</span></a>
+    <span class="grp" data-i18n="d.g.day">Dzień</span>
+    <a href="#przed" data-route="przed"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M3 18h18M7 18a5 5 0 0 1 10 0M12 5v3M5.6 9.6l1.8 1.8M18.4 9.6l-1.8 1.8"/></svg><span data-i18n="d.before">Przed</span></a>
+    <a href="#sesja" data-route="sesja"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M7 3v4M7 15v6M17 3v8M17 17v4"/><rect x="5" y="7" width="4" height="8" rx="1"/><rect x="15" y="11" width="4" height="6" rx="1"/></svg><span data-i18n="d.in">W sesji</span></a>
+    <a href="#po" data-route="po"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M3 18h18M7 18a5 5 0 0 1 10 0M12 11V7M9.5 8.5 12 11l2.5-2.5"/></svg><span data-i18n="d.after">Po</span></a>
+    <span class="grp" data-i18n="d.g.market">Rynek</span>
+    <a href="../#charts?m=BTC" data-chart-link><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M6 3v4m0 8v6m6-18v8m0 6v4m6-16v3m0 6v7"/><path d="M4 7h4v8H4zm6 4h4v6h-4zm6-3h4v6h-4z"/></svg><span data-i18n="d.charts">Wykresy</span></a>
+    <a href="/#markets" data-react="markets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17M3.5 14.5h17M9.5 9.5v10"/></svg><span data-i18n="d.markets">Rynki</span></a>
+    <a href="/#orderflow?m=BTC" data-react="orderflow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M4 6h7M13 6h7M4 10h5M15 10h5M4 14h9M15 14h5M4 18h3M11 18h9"/></svg><span data-i18n="d.flow">Order Flow</span></a>
+    <span class="grp" data-i18n="d.g.learn">Wiedza</span>
+    <a href="#po" data-route="po" data-alias="dowod"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="10" r="6"/><path d="M9.5 10l1.7 1.7L14.8 8M8.5 15.2 7.5 21l4.5-2.2 4.5 2.2-1-5.8"/></svg><span data-i18n="d.proof">Dowód</span></a>
+    <a href="#ustawienia" data-route="ustawienia" class="sp"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg><span data-i18n="d.settings">Ustawienia</span></a>
+  </nav>
+
+  <header class="dhead">
+    <label class="mkt"><span class="vh" data-i18n="d.market">Rynek</span>
+      <select id="mkt"><option value="BTC">BTC-PERP</option><option value="xyz:GOLD">GOLD</option><option value="xyz:SP500">S&amp;P 500</option></select>
+    </label>
+    <div class="px" aria-live="off"><span class="v num" id="h-px">—</span><span class="d" id="h-chg" title="">—</span></div>
+    <span id="h-prov"></span>
+    <dl class="stats" style="margin:0">
+      <div class="stat"><dt class="k" data-i18n="d.funding">Funding · rok</dt><dd class="v" id="h-fund" style="margin:0">—</dd></div>
+      <div class="stat"><dt class="k" data-i18n="d.oi">Otwarte poz.</dt><dd class="v" id="h-oi" style="margin:0">—</dd></div>
+      <div class="stat"><dt class="k" data-i18n="d.vol">Wolumen 24 h</dt><dd class="v" id="h-vol" style="margin:0">—</dd></div>
+      <div class="stat"><dt class="k">&nbsp;</dt><dd class="v" id="h-ctxprov" style="margin:0"></dd></div>
+    </dl>
+    <div class="right">
+      <a class="ctxchip" id="ctxchip" href="#sesja" hidden></a>
+      <span class="conn" id="conn" hidden></span>
+      <button type="button" class="search" data-open-pal aria-label="Szukaj rynku lub widoku" data-i18n-attr="aria-label:d.search"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><span class="lbl" data-i18n="d.searchShort">Szukaj</span><span class="kbd">⌘K</span></button>
+      <button type="button" class="crew" id="crew"><span class="dot" aria-hidden="true"></span><span data-i18n="d.crew">Załoga</span><span class="muted" data-i18n="d.crewRules">0 reguł</span></button>
+      <button type="button" class="iconbtn" id="theme-btn" aria-label="" data-i18n-attr="aria-label:theme.label;title:theme.label"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 0 0 16z" fill="currentColor"/></svg></button>
+    </div>
+  </header>
+
+  <div class="dday" id="dday" role="img" aria-label=""></div>
+  <div class="entryline" aria-hidden="true"></div>
+
+  <main class="dmain" id="main" tabindex="-1">
+    <!-- Dziś -->
+    <section class="view page" id="v-dzis" data-view="dzis" aria-labelledby="h-dzis">
+      <div class="pin">
+        <div class="vhead"><div><p class="eyebrow" id="dzis-date"></p><h1 id="h-dzis" tabindex="-1" data-i18n="v.dzis.h">Dziś na rynku</h1></div><p id="dzis-now" class="lead"></p></div>
+        <div class="dayline small" aria-hidden="true"><div class="track" id="dz-track"></div><div class="ticks" id="dz-ticks"></div><div class="now-mark" id="dz-now"><span class="lbl"></span></div></div>
+        <div class="resume" id="dz-resume" hidden></div>
+        <div class="mcards" id="mcards"></div>
+        <p class="note" data-i18n="v.dzis.hip3"></p>
+        <h2 class="h3" data-i18n="v.dzis.tenses">Trzy czasy dnia</h2>
+        <div class="tiles" id="tiles"></div>
+      </div>
+    </section>
+
+    <!-- Przed sesją -->
+    <section class="view page" id="v-przed" data-view="przed" aria-labelledby="h-przed">
+      <div class="pin">
+        <div class="phaseseg" role="group" data-phase-seg></div>
+        <div class="vhead"><div><p class="eyebrow" data-i18n="v.przed.eyebrow">BTC · przygotowanie</p><h1 id="h-przed" tabindex="-1" data-i18n="v.przed.h">Przed sesją</h1></div><p class="lead" data-i18n="v.przed.lead"></p></div>
+        <div class="grid2">
+          <div class="card">
+            <div class="chead"><h2 class="h3" data-i18n="v.przed.levels">Poziomy wokół ceny</h2><span class="sp" id="lv-provs"></span></div>
+            <div class="tblwrap"><table class="lvtable" id="lvtable"><caption class="vh" data-i18n="v.przed.levels"></caption>
+              <thead><tr><th scope="col" data-i18n="v.przed.th.level">Poziom</th><th scope="col" class="r" data-i18n="v.przed.th.price">Cena</th><th scope="col" class="r" data-i18n="v.przed.th.dist">Odległość</th><th scope="col" class="r" data-i18n="v.przed.th.touch">Dotknięcie 1 h</th></tr></thead>
+              <tbody></tbody></table></div>
+            <p class="note" data-i18n="v.przed.levelsNote"></p>
+          </div>
+          <div class="stack">
+            <div class="card">
+              <div class="chead"><h2 class="h3" data-i18n="v.przed.fuel">Paliwo likwidacji</h2><span class="sp" id="fuel-prov"></span></div>
+              <dl class="kv2" id="fuel"></dl>
+              <div id="fuel-profile" role="img"></div>
+            </div>
+            <div class="card">
+              <div class="chead"><h2 class="h3" data-i18n="v.przed.trap">Pozycje pod wodą</h2><span class="sp" id="trap-prov"></span></div>
+              <div class="trap" id="trap"></div>
+              <p class="note" data-i18n="v.przed.trapNote"></p>
+            </div>
+            <div class="card empty">
+              <h2 class="h3" data-i18n="v.przed.macro">Kalendarz makro</h2>
+              <p data-i18n="v.przed.macroEmpty"></p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- W sesji -->
+    <section class="view" id="v-sesja" data-view="sesja" aria-labelledby="h-sesja" data-on="true">
+      <h1 class="vh" id="h-sesja" tabindex="-1" data-i18n="d.in">W sesji</h1>
+      <div class="phaseseg" role="group" data-phase-seg></div>
+      <div class="stage" id="stage">
+        <div class="react-links" role="group" aria-label="Działające ścieżki aplikacji"><a class="btn btn-lume btn-s" href="../stanowisko/?lang=pl" data-workbench-link data-app-en="Build a workbench">Zbuduj stanowisko</a><a class="btn btn-line btn-s" href="../#charts?m=BTC" data-chart-link data-i18n="d.charts">Wykresy</a><a class="btn btn-line btn-s" href="/#orderflow?m=BTC&amp;w=level" data-app-en="Which came first?">Co było pierwsze? (Order Flow)</a><a class="btn btn-line btn-s" href="/#orderflow?m=BTC&amp;w=archive" data-app-en="Verified 08 UTC recording">Nagranie 08 UTC (zweryfikowane)</a><a class="btn btn-line btn-s" href="/#before" data-app-en="Liquidation map">Mapa likwidacji i paliwo (aplikacja)</a></div><figure class="chartzone" style="margin:0" aria-labelledby="zone-cap">
+          <img src="assets/wykres-bez-zmian.webp" alt="" width="1440" height="900" decoding="async">
+          <figcaption class="badge" id="zone-cap" data-i18n="d.zone">Strefa wykresu HyperQuant · bez zmian</figcaption>
+        </figure>
+      </div>
+      <div class="sbanner" id="sbanner" hidden><span class="ic" aria-hidden="true"></span><span class="msg"></span><span class="act"></span></div>
+      <footer class="dtime">
+        <button type="button" class="live-btn" id="live-btn" aria-pressed="true"><span class="d" aria-hidden="true"></span><span data-i18n="d.live">Na żywo</span></button>
+        <div class="jumps" role="group" aria-label="Skoki po dużych transakcjach" data-i18n-attr="aria-label:jump.group">
+          <button type="button" class="iconbtn sm" id="jump-prev" aria-keyshortcuts="[" data-i18n-attr="aria-label:jump.prev;title:jump.prev"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M15 6l-6 6 6 6M19 6v12"/></svg></button>
+          <button type="button" class="iconbtn sm" id="jump-next" aria-keyshortcuts="]" data-i18n-attr="aria-label:jump.next;title:jump.next"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M9 6l6 6-6 6M5 6v12"/></svg></button>
+        </div>
+        <div class="scrub">
+          <div class="marks" id="marks" aria-hidden="true"></div>
+          <input type="range" id="scrub" min="0" max="1" step="1000" value="1" aria-label="" data-i18n-attr="aria-label:d.scrub">
+        </div>
+        <span class="tlabel" id="tlabel">—</span>
+        <span class="gaps-lbl" id="gaps-lbl" hidden></span>
+      </footer>
+      <aside class="insp deep" id="insp" aria-label="Panel rynku" data-i18n-attr="aria-label:d.inspLabel">
+        <div class="tabsrow">
+          <div class="tabs" role="tablist" aria-label="Panel" data-i18n-attr="aria-label:d.inspLabel">
+            <button type="button" role="tab" id="t-book" aria-controls="p-book" aria-selected="true" data-i18n="d.tab.book">Księga</button>
+            <button type="button" role="tab" id="t-tape" aria-controls="p-tape" aria-selected="false" tabindex="-1" data-i18n="d.tab.tape">Taśma</button>
+            <button type="button" role="tab" id="t-split" aria-controls="p-book p-tape" aria-selected="false" tabindex="-1" data-i18n="d.tab.split">Księga i taśma</button>
+            <button type="button" role="tab" id="t-num" aria-controls="p-num" aria-selected="false" tabindex="-1" data-i18n="d.tab.num">Liczby</button>
+          </div>
+          <button type="button" class="iconbtn sm helpbtn" id="help-btn" aria-expanded="false" aria-controls="help" aria-keyshortcuts="Shift+/" data-i18n-attr="aria-label:help.btn;title:help.btn">?</button>
+        </div>
+        <div class="panels">
+          <section class="panel" id="p-book" role="tabpanel" aria-labelledby="t-book" data-on="true">
+            <div class="phead"><span class="t" data-i18n="d.book">Księga · L2</span><span class="selpill" id="sel-off" hidden></span><span class="sp" id="book-prov"></span>
+              <button type="button" class="iconbtn sm" id="touch-btn" aria-pressed="false" data-i18n-attr="aria-label:dens.btn;title:dens.btn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button></div>
+            <div class="hint" id="sel-hint" hidden><span data-i18n="hint.sel">Wybierz cenę kliknięciem albo strzałkami, żeby zobaczyć odczyt. ? otwiera pomoc.</span><button type="button" class="btn btn-line btn-s" data-i18n="hint.ok">Rozumiem</button></div>
+            <section class="readbar2" id="readbar" aria-label="Odczyt wybranej ceny" data-i18n-attr="aria-label:read.title" hidden></section>
+            <table class="ladder" id="ladder"><caption class="vh" data-i18n="d.bookCap">Księga: wybierz cenę strzałkami w górę i w dół</caption>
+              <colgroup><col style="width:36%"><col style="width:28%"><col style="width:36%"></colgroup>
+              <thead><tr><th scope="col" style="text-align:right"><span data-i18n="d.th.bid">BID</span> <span class="unit"></span></th><th scope="col" data-i18n="d.th.price">Cena</th><th scope="col" style="text-align:left"><span data-i18n="d.th.ask">ASK</span> <span class="unit"></span></th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </section>
+          <section class="panel" id="p-tape" role="tabpanel" aria-labelledby="t-tape" data-on="false" tabindex="0">
+            <div class="phead"><span class="t" data-i18n="d.tape">Taśma</span><button type="button" class="btn btn-line btn-s" id="tape-ask" data-i18n="m4.ask">Co było pierwsze?</button><span class="sp" id="tape-prov"></span><span class="muted tape-frz" id="tape-frz" hidden></span></div>
+            <table class="tape" id="tape"><caption class="vh" data-i18n="d.big"></caption>
+              <thead><tr><th scope="col" data-i18n="d.th.time">Czas</th><th scope="col"><span class="vh" data-i18n="d.th.side">Strona</span></th><th scope="col" data-i18n="d.th.price">Cena</th><th scope="col" class="unit-h">BTC</th><th scope="col" data-i18n="d.th.usd">USD</th></tr></thead>
+              <tbody></tbody>
+            </table>
+            <p class="muted" style="padding:10px 12px;margin:0;font-size:12px" data-i18n="d.big"></p>
+          </section>
+          <section class="panel" id="p-num" role="tabpanel" aria-labelledby="t-num" data-on="false" tabindex="0">
+            <div class="phead"><span class="t" data-i18n="d.num">Liczby rynku</span><span class="sp" id="num-prov"></span></div>
+            <dl class="statsgrid" id="numgrid" style="margin:0"></dl>
+          </section>
+        </div>
+        <div class="help" id="help" role="dialog" aria-labelledby="help-h" hidden>
+          <h2 id="help-h" tabindex="-1" data-i18n="help.h">Jak czytać ten ekran</h2>
+          <ol>
+            <li data-i18n-html="help.1"></li><li data-i18n-html="help.2"></li><li data-i18n-html="help.3"></li><li data-i18n-html="help.4"></li><li data-i18n-html="help.5"></li>
+          </ol>
+          <p class="muted" data-i18n="help.keys"></p>
+          <button type="button" class="btn btn-line btn-s" data-close data-i18n="v.close">Zamknij</button>
+        </div>
+      </aside>
+    </section>
+
+    <!-- Po sesji -->
+    <section class="view page" id="v-po" data-view="po" aria-labelledby="h-po">
+      <div class="pin">
+        <div class="phaseseg" role="group" data-phase-seg></div>
+        <div class="vhead"><div><p class="eyebrow" data-i18n="v.po.eyebrow">BTC · rozliczenie</p><h1 id="h-po" tabindex="-1" data-i18n="v.po.h">Po sesji</h1></div><p class="lead" data-i18n="v.po.lead"></p></div>
+        <div class="daynums" id="daynums"></div>
+        <div class="grid2">
+          <div class="card">
+            <div class="chead"><h2 class="h3" data-i18n="v.po.calib">Kalibracja: dotknięcia poziomów</h2><span class="sp" id="cal-prov"></span></div>
+            <div id="calib" role="img"></div>
+            <p class="note" data-i18n="v.po.calibNote"></p>
+            <details class="alt"><summary data-i18n="v.po.calibTable">Pokaż jako tabelę</summary><div id="calib-table"></div></details>
+          </div>
+          <div class="stack">
+            <div class="card">
+              <div class="chead"><h2 class="h3" data-i18n="v.po.ledger">Dziennik prognoz</h2><span class="sp" id="led-prov"></span></div>
+              <dl class="kv2" id="ledger-kv"></dl>
+            </div>
+            <div class="card">
+              <div class="chead"><h2 class="h3" data-i18n="v.po.chain">Łańcuch i znaczniki czasu</h2></div>
+              <ol class="chain mini" id="po-chain"></ol>
+              <p class="note" data-i18n="v.po.chainNote"></p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Ustawienia -->
+    <section class="view page" id="v-ustawienia" data-view="ustawienia" aria-labelledby="h-ust">
+      <div class="pin narrow">
+        <div class="vhead"><div><p class="eyebrow" data-i18n="v.ust.eyebrow">To urządzenie</p><h1 id="h-ust" tabindex="-1" data-i18n="d.settings">Ustawienia</h1></div><p class="lead" data-i18n="v.ust.lead"></p></div>
+        <div class="setgroup">
+          <h2 class="h3" data-i18n="v.ust.look">Wygląd</h2>
+          <div class="setrow"><span id="lbl-pal" data-i18n="pal.label">Kolorystyka</span><div class="seg big" role="group" aria-labelledby="lbl-pal">
+            <button type="button" data-set-palette="zorza" data-i18n="pal.zorza">Zorza</button><button type="button" data-set-palette="ton" data-i18n="pal.ton">Toń</button></div></div>
+          <div class="setrow"><span id="lbl-theme" data-i18n="theme.label">Motyw</span><div class="seg big" role="group" aria-labelledby="lbl-theme">
+            <button type="button" data-set-theme="deep" data-i18n="theme.deep">Głębia</button><button type="button" data-set-theme="paper" data-i18n="theme.paper">Papier</button><button type="button" data-set-theme="system" data-i18n="theme.system">Jak w systemie</button></div></div>
+          <div class="setrow"><span id="lbl-motion" data-i18n="motion.label">Ruch</span><div class="seg big" role="group" aria-labelledby="lbl-motion">
+            <button type="button" data-set-motion="system" data-i18n="motion.system">Jak w systemie</button><button type="button" data-set-motion="reduced" data-i18n="motion.reduced">Ograniczony</button></div></div>
+          <div class="setrow"><span id="lbl-lang" data-i18n="lang.label">Język</span><div class="seg big" role="group" aria-labelledby="lbl-lang">
+            <button type="button" data-set-lang="pl">PL · Polski</button><button type="button" data-set-lang="en">EN · English</button></div></div>
+        </div>
+        <div class="setgroup">
+          <h2 class="h3" data-i18n="v.ust.work">Praca w terminalu</h2>
+          <div class="setrow"><span id="lbl-dens"><b data-i18n="dens.label">Gęstość księgi</b><small data-i18n="dens.sub"></small></span><div class="seg big" role="group" aria-labelledby="lbl-dens">
+            <button type="button" data-set-density="auto" data-i18n="dens.auto">Automatyczna</button><button type="button" data-set-density="compact" data-i18n="dens.compact">Zwarta</button><button type="button" data-set-density="touch" data-i18n="dens.touch">Dotykowa</button></div></div>
+          <div class="setrow"><span id="lbl-win"><b data-i18n="win.label">Domyślne okno odczytu</b><small data-i18n="win.sub"></small></span><div class="seg big" role="group" aria-labelledby="lbl-win">
+            <button type="button" data-set-win="60">1 min</button><button type="button" data-set-win="120">2 min</button><button type="button" data-set-win="300">5 min</button></div></div>
+        </div>
+        <div class="setgroup">
+          <h2 class="h3" data-i18n="v.ust.data">Dane</h2>
+          <div class="setrow"><span><b data-i18n="v.ust.stream">Strumień na żywo</b><small id="stream-state"></small></span><button type="button" class="btn btn-line btn-s" id="stream-btn"></button></div>
+          <div class="setrow"><span><b data-i18n="v.ust.sync">Synchronizuj teraz</b><small data-i18n="v.ust.syncSub"></small></span><button type="button" class="btn btn-line btn-s" id="sync-btn" data-i18n="v.ust.syncBtn">Połącz ponownie</button></div>
+          <div class="setrow"><span><b data-i18n="v.ust.memory">Pamięć ostatniej wizyty</b><small data-i18n="v.ust.memorySub"></small></span><button type="button" class="btn btn-line btn-s" id="forget-btn" data-i18n="v.ust.forget">Wyczyść</button></div>
+        </div>
+        <div class="setgroup">
+          <h2 class="h3" data-i18n="v.ust.app">Aplikacja</h2>
+          <div class="setrow"><span><b data-i18n="wn.menu">Co nowego</b><small id="wn-ver"></small></span><button type="button" class="btn btn-line btn-s" data-open-wn data-i18n="wn.open">Pokaż zmiany</button></div>
+          <div class="setrow"><span><b data-i18n="v.ust.sound">Dźwięk taśmy</b><small data-i18n="v.ust.soundSub"></small></span><button type="button" class="btn btn-line btn-s" disabled aria-disabled="true" data-i18n="v.ust.unavailable">Niedostępne w prototypie</button></div>
+          <div class="setrow"><span><b data-i18n="v.ust.install">Dodaj do ekranu głównego</b><small data-i18n="v.ust.installSub"></small></span><button type="button" class="btn btn-line btn-s" disabled aria-disabled="true" data-i18n="v.ust.unavailable">Niedostępne w prototypie</button></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="view page" id="v-flow" data-view="flow" aria-labelledby="h-flow">
+      <div class="pin narrow"><div class="outscope"><p class="eyebrow" data-i18n="v.out.eyebrow">Aplikacja</p><h1 id="h-flow" tabindex="-1">Order Flow</h1><p><a class="btn btn-lume" href="/#orderflow?m=BTC" data-app-en="Open Order Flow">Otwórz Order Flow w aplikacji</a></p><p class="lead" data-i18n="v.flow.p"></p><a class="btn btn-line" href="#sesja" data-route="sesja" data-i18n="v.out.back">Wróć do sesji</a></div></div>
+    </section>
+    <section class="view page" id="v-rynki" data-view="rynki" aria-labelledby="h-rynki">
+      <div class="pin narrow"><div class="outscope"><p class="eyebrow" data-i18n="v.out.eyebrow">Aplikacja</p><h1 id="h-rynki" tabindex="-1" data-i18n="d.markets">Rynki</h1><p><a class="btn btn-lume" href="/#markets" data-app-en="Open Markets">Otwórz Rynki w aplikacji</a></p><p class="lead" data-i18n="v.rynki.p"></p><a class="btn btn-line" href="#sesja" data-route="sesja" data-i18n="v.out.back">Wróć do sesji</a></div></div>
+    </section>
+  </main>
+</div>
+
+<nav class="bnav" aria-label="Główna (telefon)" data-i18n-attr="aria-label:d.navPhone">
+  <a href="#dzis" data-route="dzis"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" aria-hidden="true"><path d="M4 11 12 4l8 7v9h-5v-6H9v6H4z"/></svg><span data-i18n="d.today">Dziś</span></a>
+  <a href="#sesja" data-route="sesja" data-group="przed po sesja"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M7 3v4M7 15v6M17 3v8M17 17v4"/><rect x="5" y="7" width="4" height="8" rx="1"/><rect x="15" y="11" width="4" height="6" rx="1"/></svg><span data-i18n="d.session">Sesja</span></a>
+  <a href="/#orderflow?m=BTC" data-react="orderflow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M4 6h7M13 6h7M4 10h5M15 10h5M4 14h9M15 14h5M4 18h3M11 18h9"/></svg><span data-i18n="d.flow">Order Flow</span></a>
+  <a href="/#markets" data-react="markets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17M3.5 14.5h17M9.5 9.5v10"/></svg><span data-i18n="d.markets">Rynki</span></a>
+  <a href="#ustawienia" data-route="ustawienia" data-more><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5.5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="18.5" cy="12" r="1.7"/></svg><span data-i18n="d.more">Więcej</span></a>
+</nav>
+
+<div class="sheet-back" id="sheet-back"></div>
+<div class="sheet" id="more-sheet" role="dialog" aria-modal="true" aria-labelledby="more-h" hidden>
+  <div class="grab" aria-hidden="true"></div>
+  <h2 class="h3" id="more-h" data-i18n="d.more">Więcej</h2>
+  <ul class="sheetlist">
+    <li><a href="../#charts?m=BTC" data-chart-link data-sheet-item><span data-i18n="d.charts">Wykresy</span></a></li>
+    <li><a href="#po" data-route="po" data-sheet-item><span data-i18n="d.proof">Dowód</span><small data-i18n="v.more.proof"></small></a></li>
+    <li><a href="#" data-open-wn data-sheet-item><span data-i18n="wn.menu">Co nowego</span><small data-i18n="v.more.wn"></small></a></li>
+    <li><a href="../" data-home-link data-sheet-item><span data-i18n="d.home">Strona startowa</span><small data-i18n="v.more.home"></small></a></li>
+    <li><a href="#ustawienia" data-route="ustawienia" data-sheet-item><span data-i18n="d.settings">Ustawienia</span><small data-i18n="v.more.settings"></small></a></li>
+  </ul>
+  <button type="button" class="btn btn-line" id="sheet-close" data-i18n="v.close">Zamknij</button>
+</div>
+
+<div class="pal-back" id="pal-back"></div>
+<div class="pal" id="pal" role="dialog" aria-modal="true" aria-labelledby="pal-input">
+  <input id="pal-input" type="text" role="combobox" aria-expanded="true" aria-controls="pal-list" aria-autocomplete="list" autocomplete="off" spellcheck="false" placeholder="" data-i18n-attr="placeholder:d.pal.ph;aria-label:d.pal.ph">
+  <ul id="pal-list" role="listbox"></ul>
+</div>
+<div class="vh" role="status" aria-live="polite" id="st"></div>
+<script>document.addEventListener('DOMContentLoaded',()=>{const fix=()=>{const l=(window.HQ&&HQ.lang)||'pl';document.querySelectorAll('a[data-react],.react-links a,a[href^="/#"]').forEach(a=>{const h=a.getAttribute('href');if(a.hasAttribute('data-workbench-link')){const dest=new URL(h,location.href);dest.searchParams.set('lang',l);a.href=dest.href;}else if(h&&h.startsWith('/#'))a.setAttribute('href','/?lang='+l+h.slice(1));else if(h&&h.startsWith('/?lang='))a.setAttribute('href',h.replace(/lang=(pl|en)/,'lang='+l));});};const localize=()=>{const en=window.HQ?.lang==='en';document.querySelectorAll('[data-app-en]').forEach(a=>{a.dataset.appPl??=a.textContent;a.textContent=en?a.dataset.appEn:a.dataset.appPl;});const group=document.querySelector('.react-links');if(group)group.setAttribute('aria-label',en?'Application tools':'Narzędzia aplikacji');};const update=()=>{fix();localize();};update();document.addEventListener('hq:lang',update);});</script>
+<script src="assets/desk-links.js?v=1" defer></script>
+</body>
+</html>

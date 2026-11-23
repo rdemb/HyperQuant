@@ -114,7 +114,7 @@ export const MARKETS_FUTURE_SKEW_MS = 60_000;
 export const isFresh = (at: number | null, now: number): boolean =>
   at !== null && now - at <= MARKETS_STALE_MS && at - now <= MARKETS_FUTURE_SKEW_MS;
 
-export type RowWhy = 'waiting' | 'no-response' | 'not-listed' | 'stale';
+export type RowWhy = 'waiting' | 'no-response' | 'not-listed' | 'no-price' | 'stale';
 
 export interface MarketRow {
   market: ChartMarket;
@@ -147,6 +147,8 @@ export function marketRows(markets: readonly ChartMarket[], dexes: Readonly<Reco
     }
     const ctx = s.ctxs.get(market.coin);
     if (!ctx) return { ...base, at: s.at, why: 'not-listed' as const };
+    // Rynek w odpowiedzi bez ceny (pusty albo zły kontekst): bez LIVE i godziny, „—” z powodem
+    if (ctx.markPx === null) return { ...base, at: s.at, why: 'no-price' as const };
     return { ...base, ctx, oiUsd: openInterestUsd(ctx.openInterest, ctx.markPx), at: s.at, why: null };
   });
 }
@@ -175,6 +177,8 @@ export function rowWhyText(why: RowWhy, dex: string): string {
       return tr(`giełda ${dexLabel(dex)} nie odpowiedziała`, `exchange ${dexLabel(dex)} did not respond`);
     case 'not-listed':
       return tr('rynku nie ma w odpowiedzi giełdy', 'the exchange response does not list this market');
+    case 'no-price':
+      return tr('giełda nie podała ceny tego rynku', 'the exchange gave no price for this market');
     case 'stale':
       return tr('odczyt starszy niż 3 min', 'reading older than 3 min');
   }
@@ -197,6 +201,8 @@ export interface MarketRowModel {
   fundingHour: string;
   /** Funding roczny przeliczony (null, gdy brak stawki) */
   fundingYear: string | null;
+  /** Powód „—” pojedynczej liczby przy odczycie z ceną (obrót, otwarte pozycje, funding); null — liczba jest */
+  fieldWhy: { volume: string | null; openInterest: string | null; funding: string | null };
   /** Godzina odczytu LIVE (czas lokalny) — gdy liczby są; inaczej null i powód w `why` */
   readAt: string | null;
   why: string | null;
@@ -222,6 +228,8 @@ export interface RowModelDeps {
   wallStreet: (m: ChartMarket) => WallStreetCellModel;
 }
 
+const BRAK_POLA = tr('brak w odczycie giełdy', 'not in the exchange reading');
+
 export function rowModel(r: MarketRow, { fmtTime, scannerWhy, wallStreet, inRegistry = () => true }: RowModelDeps): MarketRowModel {
   const c = r.ctx;
   const m = r.market;
@@ -238,6 +246,11 @@ export function rowModel(r: MarketRow, { fmtTime, scannerWhy, wallStreet, inRegi
     openInterest: c ? fmtCompact(r.oiUsd, '$') : DASH,
     fundingHour: c ? fmtPct(fundingHourPct(c.funding), 4) : DASH,
     fundingYear: c && c.funding !== null ? fmtPct(fundingYearPct(c.funding), 1) : null,
+    fieldWhy: {
+      volume: c && c.dayNtlVlm === null ? BRAK_POLA : null,
+      openInterest: c && r.oiUsd === null ? BRAK_POLA : null,
+      funding: c && c.funding === null ? tr('brak stawki w odczycie giełdy', 'no rate in the exchange reading') : null,
+    },
     readAt: r.why === null && r.at !== null ? fmtTime(r.at) : null,
     why: r.why === null ? null : rowWhyText(r.why, m.dex),
     cls: m.class ?? null,

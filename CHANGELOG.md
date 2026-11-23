@@ -4,6 +4,14 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Jeden frontend HyperQuant (2026-11-23)
+<!-- co-nowego: grupa=wykres | pl=Jeden frontend HyperQuant | en=One HyperQuant frontend -->
+- Aplikacja ma jedno menu: Dzień (Dziś, Przed sesją, W sesji, Po sesji), Rynek i Wiedza. Logo prowadzi na stronę startową Przekrój, a Stanowisko jest w menu.
+- Nowy widok Dziś pokazuje bieżącą sesję z odliczaniem, tarczę doby, trzy rynki z godziną odczytu i trzy czasy dnia, a pod nimi krajobraz płynności BTC, przepływ i wyniki dziennika prognoz z dawnego Startu. Karta „Wróć do ostatniego miejsca pracy” otwiera ten sam rynek, interwał, nagranie albo obserwację Order Flow.
+- Na telefonie dolny pasek ma Dziś, Sesję, Order Flow, Rynki i Więcej. W Przed i Po sesji fazy przełącza się nad widokiem; W sesji wykres zaczyna się od razu pod nagłówkiem.
+- Dawny osobny terminal i stara strona startowa przekierowują do tych samych miejsc w aplikacji. W sesji zawsze pracujesz na żywym wykresie.
+- Blog, Wyniki, Co nowego, Lekcje, Wykresy, Prywatność i strona błędu mają to samo menu i tę samą oprawę co aplikacja: paleta Zorza, a przy jasnym ustawieniu systemu Opal, szklana szyna i nagłówki krojem aplikacji. Ekran Dziś wita kolejnym wejściem sekcji, ziarnem i tętnem znaku LIVE; przy ograniczonym ruchu bez animacji.
+
 ### Nowy frontend HyperQuant (2026-11-22)
 <!-- co-nowego: grupa=wykres | pl=Nowy frontend HyperQuant | en=New HyperQuant frontend -->
 - Przekrój otwiera się pod głównym adresem i po uruchomieniu z ikony aplikacji. Nowa nawigacja prowadzi do wykresów, faz sesji, Rynków, Order Flow i Stanowiska.

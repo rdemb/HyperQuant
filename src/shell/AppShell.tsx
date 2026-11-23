@@ -7,6 +7,7 @@ import {
   FlaskConical,
   GraduationCap,
   History,
+  House,
   ListChecks,
   PanelsTopLeft,
   PanelLeftClose,
@@ -53,11 +54,12 @@ import { Postac } from './wyspa/Postac';
 import type { PersonaId } from './wyspa/persony';
 import { deskLabels, marketLabel } from '../config/deskMarkets';
 import { zainstalujSwiatloSzkla } from '../ui/swiatloSzkla';
+import { zapiszNic } from './nic';
 
 zainstalujSwiatloSzkla();
 
 // Widoki ładowane leniwie (mniejszy pierwszy bundle; wykresy faz w osobnym pakiecie)
-const StartView = lazy(() => import('../views/StartView'));
+const DzisView = lazy(() => import('../views/DzisView'));
 const BeforeView = lazy(() => import('../views/BeforeView'));
 const SessionView = lazy(() => import('../views/SessionView'));
 const AfterView = lazy(() => import('../views/AfterView'));
@@ -68,7 +70,11 @@ const AgentsView = lazy(() => import('../views/agents/AgentsView'));
 const MarketsView = lazy(() => import('../views/MarketsView'));
 const OrderFlowView = lazy(() => import('../views/flow/OrderFlowView'));
 
-export type NavItem = { id: ViewId; label: string; icon: React.ReactNode };
+/** Pozycja nawigacji: widok aplikacji; `short` — krótsza nazwa w dolnym pasku telefonu. */
+export type NavItem = { id: ViewId; label: string; icon: React.ReactNode; short?: string };
+
+/** Dziś: pierwszy ekran aplikacji (doba, rynki teraz, trzy czasy dnia). */
+export const DZIS: NavItem = { id: 'dzis', label: tr('Dziś', 'Today'), icon: <House className="w-4 h-4" /> };
 
 /** Pasek główny: trzy fazy dnia tradera (obok Blog jako osobne strony, Agenci AI i menu „Więcej”). */
 export const PHASES: NavItem[] = [
@@ -187,12 +193,12 @@ export const PriceButton: React.FC = () => {
         onClick={() => setOpen((o) => !o)}
         className="flex items-baseline gap-2 min-w-0 min-h-10 py-2 rounded-lg px-1.5 -mx-1.5 hover:bg-surface-2 transition-colors duration-150 text-xs"
       >
-        <span className="text-ink-2 font-medium">
+        <span className="self-center text-ink-2 font-medium">
           <span className="min-[420px]:hidden">BTC</span>
-          <span className="hidden min-[420px]:inline">BTC-PERP</span>
+          <span className="hidden min-[420px]:inline-flex items-center h-7 px-2.5 rounded-full border border-line text-[11px] font-semibold tracking-wide">BTC-PERP</span>
         </span>
-        <AnimatedNumber value={k.price} format={(v) => fmtPrice(v)} className="text-base sm:text-lg font-semibold text-ink-1" />
-        <span className="hidden min-[480px]:inline"><Change pct={k.changePct} span={k.windowLabel} /></span>
+        <AnimatedNumber value={k.price} format={(v) => fmtPrice(v)} className="font-display text-[19px] sm:text-[22px] font-semibold leading-none tracking-tight tabular-nums [font-stretch:92%] text-ink-1" />
+        <span className="hidden min-[480px]:inline font-mono text-[11px]"><Change pct={k.changePct} span={k.windowLabel} /></span>
       </button>
       {open && (
         <div id={id} data-more-item="" tabIndex={-1} className="absolute left-0 top-full mt-2 z-40 w-72 max-w-[calc(100vw-24px)] bg-surface-2 border border-line-strong rounded-xl p-3 shadow-2xl text-xs outline-none">
@@ -227,7 +233,7 @@ const TickerInline: React.FC = () => {
   return (
     <div ref={ref} data-header-ticker className="flex items-center gap-x-5 min-w-0 overflow-hidden whitespace-nowrap text-xs">
       <PriceButton />
-      <span className={`flex items-baseline gap-x-4 ${k.fresh ? '' : 'opacity-50'}`} title={k.fresh ? undefined : STALE_TITLE}>
+      <span className={`flex items-center gap-x-5 ${k.fresh ? '' : 'opacity-50'}`} title={k.fresh ? undefined : STALE_TITLE}>
         <Item label="Funding" value={k.funding} title="Funding HL" className="hidden md:flex" />
         <Item label="OI" value={k.oi} className="hidden md:flex" />
         <Item label="Basis" value={k.basis} className="hidden md:flex" />
@@ -277,10 +283,11 @@ function activeChartMarket() {
   return new URLSearchParams(query).get('m');
 }
 
+/** Liczba rynku w nagłówku: drobny podpis nad wartością (jak w projekcie terminala). */
 const Item: React.FC<{ label: string; value: string; title?: string; className?: string }> = ({ label, value, title, className = 'flex' }) => (
-  <span data-ticker-item className={`${className} items-baseline gap-1.5`} title={title || undefined}>
-    <span className="text-ink-3">{label}</span>
-    <span className="font-mono tabular-nums text-ink-1">{value}</span>
+  <span data-ticker-item className={`${className} flex-col justify-center gap-1`} title={title || undefined}>
+    <span className="font-mono text-[9.5px] font-semibold uppercase leading-none tracking-[0.12em] text-ink-3">{label}</span>
+    <span className="font-mono text-[12.5px] leading-none tabular-nums text-ink-1">{value}</span>
   </span>
 );
 
@@ -370,7 +377,7 @@ export const ViewOutlet: React.FC<{ startedAt: number; onChartMarket?: (coin: st
         <ConnectingState onRetry={feed.syncNow} startedAt={startedAt} now={feed.nowTick} />
       ) : (
         <>
-          {view === 'start' && <StartView />}
+          {view === 'dzis' && <DzisView />}
           {view === 'before' && <BeforeView onPhase={onPhase} onMarket={onChartMarket} />}
           {view === 'charts' && <SessionView onPhase={onPhase} onMarket={onChartMarket} />}
           {view === 'after' && <AfterView onPhase={onPhase} onMarket={onChartMarket} />}
@@ -421,20 +428,36 @@ const LogoMark: React.FC<{ size?: number }> = ({ size = 24 }) => (
 export type PageLink = { href: string; label: string; icon: React.ReactNode };
 
 /**
- * Nawigacja aplikacji jako dane (jedno źródło dla szyny, dolnego paska, menu „Więcej” i palety ⌘K):
- * dzień tradera (trzy fazy), rynki i wiedza, strony serwisu. Kolejność grup i pozycji jest kolejnością na ekranie.
+ * Nawigacja aplikacji jako dane (jedno źródło dla szyny, dolnego paska, menu „Więcej” i palety ⌘K): dzień tradera
+ * (Dziś i trzy fazy), rynek, wiedza, strony serwisu. Kolejność grup i pozycji jest kolejnością na ekranie. Strona
+ * startowa (Przekrój pod `/`) to logo, nie zakładka.
  */
-export const NAV_DZIEN: NavItem[] = PHASES;
-export const NAV_WIEDZA: NavItem[] = [MARKETS, ORDER_FLOW, ...MORE, AGENTS];
+export const NAV_DZIEN: NavItem[] = [DZIS, ...PHASES];
+export const NAV_RYNEK: NavItem[] = [MARKETS, ORDER_FLOW];
+export const NAV_WIEDZA: NavItem[] = [...MORE, AGENTS];
 export const NAV_STRONY: PageLink[] = [
-  { href: `./nowy/?lang=${lang}`, label: tr('Przekrój', 'Cross-section'), icon: <Radar className="w-4 h-4" aria-hidden="true" /> },
   { href: './blog/', label: BLOG_LABEL, icon: <Newspaper className="w-4 h-4" /> },
   { href: tr('./wyniki/', './en/results/'), label: RESULTS_LABEL, icon: <ListChecks className="w-4 h-4" /> },
   { href: tr('./co-nowego/', './en/whats-new/'), label: NEWS_LABEL, icon: <History className="w-4 h-4" /> },
 ];
-/** Dolny pasek telefonu: trzy fazy i Rynki; reszta w „Więcej”. */
-export const NAV_TELEFON: NavItem[] = [...PHASES, MARKETS];
-export const NAV_TELEFON_WIECEJ: NavItem[] = NAV_WIEDZA.filter((n) => !NAV_TELEFON.includes(n));
+/** Strona startowa (Przekrój pod `/`, ten sam dokument co dawne `/nowy/`): logo w szynie i nagłówku, pozycja palety. */
+export const START_HREF = `${import.meta.env.BASE_URL}?lang=${lang}`;
+/** Stanowisko (osobna strona pracowni): pozycja szyny, menu „Więcej” i palety. */
+export const STANOWISKO: PageLink = {
+  href: `${import.meta.env.BASE_URL}stanowisko/?lang=${lang}`,
+  label: tr('Stanowisko', 'Workbench'),
+  icon: <PanelsTopLeft className="w-4 h-4" aria-hidden="true" />,
+};
+/** Dolny pasek telefonu (decyzja R3): Dziś, Sesja, Order Flow, Rynki; piąte miejsce to „Więcej”. */
+export const NAV_TELEFON: NavItem[] = [DZIS, { ...PHASES[1], short: tr('Sesja', 'Session') }, ORDER_FLOW, MARKETS];
+export const NAV_TELEFON_WIECEJ: NavItem[] = [...NAV_DZIEN, ...NAV_RYNEK, ...NAV_WIEDZA].filter((n) => !NAV_TELEFON.some((t) => t.id === n.id));
+/** Fazy dnia: „Sesja” w dolnym pasku świeci przy każdej z nich. */
+const FAZY_IDS: ViewId[] = ['before', 'charts', 'after'];
+/**
+ * Przełącznik faz nad widokiem na telefonie tylko w Przed i Po sesji: W sesji wykres zaczyna się od razu pod
+ * nagłówkiem (pomiar ui:check panelu ceny i brak nachodzenia dolnego paska na świece); Przed i Po są też w „Więcej”.
+ */
+const FAZY_Z_PRZELACZNIKIEM: ViewId[] = ['before', 'after'];
 
 // Paleta poleceń ładowana przy pierwszym otwarciu (⌘K, przycisk „Szukaj”): pierwszy pakiet bez niej
 const Wyspa = lazy(() => import('./wyspa/Wyspa').then((m) => ({ default: m.Wyspa })));
@@ -479,6 +502,17 @@ const Szyna: React.FC<{ go: (v: ViewId) => void }> = ({ go }) => {
   const pierwszy = useRef(true);
   const przycisk = useRef<HTMLButtonElement>(null);
   const uchwyt = useRef<HTMLButtonElement>(null);
+  const [serwis, setSerwis] = useState(false);
+  const serwisBtn = useRef<HTMLButtonElement>(null);
+  const serwisRef = useRef<HTMLDivElement>(null);
+  const serwisId = useId();
+  const [serwisPoz, setSerwisPoz] = useState({ left: 112, bottom: 80 });
+  useMenuDismiss(serwis, setSerwis, serwisRef, serwisBtn);
+  useEffect(() => {
+    if (!serwis || !serwisBtn.current) return;
+    const r = serwisBtn.current.getBoundingClientRect();
+    setSerwisPoz({ left: Math.round(r.right + 12), bottom: Math.max(12, Math.round(window.innerHeight - r.bottom)) });
+  }, [serwis]);
   useEffect(() => {
     try {
       localStorage.setItem(SZYNA_KLUCZ, ukryta ? 'ukryta' : 'widoczna');
@@ -522,12 +556,12 @@ const Szyna: React.FC<{ go: (v: ViewId) => void }> = ({ go }) => {
     );
   }
   const pozycja = (aktywna: boolean) =>
-    `group relative flex flex-col items-center justify-center gap-1 min-h-14 px-1 rounded-lg text-[10.5px] leading-tight text-center font-medium transition-colors duration-150 min-[1600px]:flex-row min-[1600px]:justify-start min-[1600px]:gap-3 min-[1600px]:min-h-10 min-[1600px]:px-3 min-[1600px]:text-sm min-[1600px]:text-left ${
+    `group relative flex flex-col items-center justify-center gap-1 min-h-[52px] px-1 rounded-xl text-[10.5px] leading-tight text-center font-medium transition-colors duration-150 min-[1600px]:flex-row min-[1600px]:justify-start min-[1600px]:gap-3 min-[1600px]:min-h-10 min-[1600px]:px-3 min-[1600px]:text-sm min-[1600px]:text-left ${
       aktywna ? 'text-ink-1' : 'text-ink-3 hover:text-ink-1 hover:bg-[color-mix(in_oklab,var(--color-ink-1)_5%,transparent)]'
     }`;
   const grupa = (tytul: string, items: NavItem[]) => (
     <div>
-      <p className="hidden min-[1600px]:block px-3 mb-1.5 font-mono text-[10px] font-semibold tracking-[0.14em] uppercase text-ink-3">{tytul}</p>
+      <p className="hq-szyna-grupa mb-1 px-1 text-center font-mono font-semibold uppercase text-ink-3 min-[1600px]:px-3 min-[1600px]:text-left">{tytul}</p>
       <ul className="space-y-0.5">
         {items.map((n) => {
           const aktywna = view === n.id;
@@ -556,34 +590,49 @@ const Szyna: React.FC<{ go: (v: ViewId) => void }> = ({ go }) => {
   return (
     <>
     <div ref={poswiata} aria-hidden="true" className="hq-szyna-poswiata hidden lg:block pointer-events-none fixed left-0 top-0 h-dvh w-[100px] min-[1600px]:w-[252px]" />
-    <aside data-szyna aria-label={tr('Nawigacja', 'Navigation')} className="hq-szyna-szklo hq-spot hidden lg:flex sticky top-2.5 z-10 my-2.5 ml-2.5 h-[calc(100dvh-20px)] w-[88px] min-[1600px]:w-60 shrink-0 flex-col gap-5 rounded-[22px] px-2 min-[1600px]:px-3 py-4 overflow-y-auto overflow-x-hidden">
-      <ViewLink id="start" go={go} current={view === 'start'} className="flex items-center gap-2.5 h-10 px-1.5 rounded-lg hover:bg-surface-2/70 transition-colors duration-150">
+    <aside data-szyna aria-label={tr('Nawigacja', 'Navigation')} className="hq-szyna-szklo hq-spot hidden lg:flex sticky top-2.5 z-10 my-2.5 ml-2.5 h-[calc(100dvh-20px)] w-[88px] min-[1600px]:w-60 shrink-0 flex-col gap-4 rounded-[22px] px-2 min-[1600px]:px-3 py-4 overflow-y-auto overflow-x-hidden">
+      <a
+        href={START_HREF}
+        data-szyna-start
+        aria-label={tr('HyperQuant: strona startowa', 'HyperQuant: home page')}
+        title={tr('Strona startowa (Przekrój)', 'Home page (Cross-section)')}
+        className="flex items-center justify-center min-[1600px]:justify-start gap-2.5 h-11 px-1.5 rounded-xl hover:bg-surface-2/70 transition-colors duration-150"
+      >
         <LogoMark size={28} />
-        <span className="sr-only min-[1600px]:not-sr-only">
+        <span aria-hidden="true" className="hidden min-[1600px]:block">
           <span data-marka className="block font-display text-[17px] font-bold leading-none tracking-tight [font-stretch:85%] text-ink-1">
             HyperQuant
           </span>
           <span className="block mt-1 font-mono text-[10px] leading-none text-ink-3">{`${deskLabels()} · Hyperliquid`}</span>
         </span>
-      </ViewLink>
-      <nav aria-label={tr('Główna', 'Main')} className="flex flex-col gap-6">
-        {grupa(tr('Dzień tradera', 'Trading day'), NAV_DZIEN)}
-        {grupa(tr('Rynki i wiedza', 'Markets and knowledge'), NAV_WIEDZA)}
+      </a>
+      <nav aria-label={tr('Główna', 'Main')} className="flex flex-col gap-4">
+        {grupa(tr('Dzień', 'Day'), NAV_DZIEN)}
+        {grupa(tr('Rynek', 'Market'), NAV_RYNEK)}
+        {grupa(tr('Wiedza', 'Knowledge'), NAV_WIEDZA)}
       </nav>
-      <div className="mt-auto">
-        <p className="hidden min-[1600px]:block px-3 mb-1.5 font-mono text-[10px] font-semibold tracking-[0.14em] uppercase text-ink-3">{tr('Publikacje', 'Publications')}</p>
-        <ul className="space-y-0.5">
-          {NAV_STRONY.map((l) => (
-            <li key={l.href}>
-              <a href={l.href} className="flex flex-col items-center justify-center gap-1 min-h-12 px-1 rounded-lg text-[10.5px] leading-tight text-center text-ink-3 hover:text-ink-1 hover:bg-surface-2/70 transition-colors duration-150 min-[1600px]:flex-row min-[1600px]:justify-start min-[1600px]:gap-3 min-[1600px]:min-h-9 min-[1600px]:px-3 min-[1600px]:text-[13px] min-[1600px]:text-left">
-                <span className="shrink-0" title={l.label}>
-                  {l.icon}
-                </span>
-                <span className="max-w-full min-[1600px]:truncate">{l.label}</span>
-              </a>
-            </li>
-          ))}
-        </ul>
+      <div className="mt-auto flex flex-col gap-0.5">
+        <a href={STANOWISKO.href} data-szyna-stanowisko className={pozycja(false)}>
+          <span className="relative shrink-0" title={STANOWISKO.label}>
+            {STANOWISKO.icon}
+          </span>
+          <span className="relative max-w-full min-[1600px]:flex-1 min-[1600px]:truncate">{STANOWISKO.label}</span>
+        </a>
+        <button
+          ref={serwisBtn}
+          type="button"
+          data-szyna-serwis
+          onPointerDown={(e) => e.stopPropagation()}
+          aria-expanded={serwis}
+          aria-controls={serwis ? serwisId : undefined}
+          onClick={() => setSerwis((o) => !o)}
+          className={pozycja(serwis)}
+        >
+          <span className="relative shrink-0" title={tr('Serwis: blog, wyniki, co nowego', 'Site: blog, results, what’s new')}>
+            <MoreHorizontal className="w-4 h-4" aria-hidden="true" />
+          </span>
+          <span className="relative max-w-full min-[1600px]:flex-1 min-[1600px]:truncate">{tr('Serwis', 'Site')}</span>
+        </button>
         <button
           ref={przycisk}
           type="button"
@@ -593,13 +642,33 @@ const Szyna: React.FC<{ go: (v: ViewId) => void }> = ({ go }) => {
           title={`${tr('Ukryj menu boczne', 'Hide side menu')} (\\)`}
           aria-keyshortcuts={'\\'}
           aria-expanded="true"
-          className="mt-2 w-full flex items-center justify-center gap-2 min-h-11 rounded-lg border border-dashed border-line-strong text-ink-3 hover:text-ink-1 hover:border-solid transition-colors duration-150 min-[1600px]:justify-start min-[1600px]:px-3 min-[1600px]:text-[13px]"
+          className="mt-2 w-full flex items-center justify-center gap-2 min-h-11 rounded-xl border border-dashed border-line-strong text-ink-3 hover:text-ink-1 hover:border-solid transition-colors duration-150 min-[1600px]:justify-start min-[1600px]:px-3 min-[1600px]:text-[13px]"
         >
           <PanelLeftClose className="w-4 h-4 shrink-0" aria-hidden="true" />
           <span className="sr-only min-[1600px]:not-sr-only">{tr('Ukryj menu', 'Hide menu')}</span>
         </button>
       </div>
     </aside>
+    {/* Menu „Serwis” poza szkłem szyny (szkło z backdrop-filter przycina i zakotwicza elementy fixed) */}
+    <div ref={serwisRef} className="hidden lg:block">
+      <AnimatePresence>
+        {serwis && (
+          <motion.div
+            id={serwisId}
+            {...MENU_MOTION}
+            style={{ left: serwisPoz.left, bottom: serwisPoz.bottom }}
+            className={`fixed z-50 ${MENU_PANEL}`}
+          >
+            {NAV_STRONY.map((l) => (
+              <a key={l.href} href={l.href} data-more-item="" className={MENU_ITEM}>
+                {l.icon}
+                {l.label}
+              </a>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
     </>
   );
 };
@@ -659,6 +728,46 @@ const ShellToggles: React.FC<{ onDone: () => void }> = ({ onDone }) => {
   );
 };
 
+/** Szybka zmiana motywu w nagłówku (Zorza ↔ Opal); nowy motyw rozlewa się kołem od przycisku (theme.ts). */
+const MotywPrzelacznik: React.FC = () => {
+  const theme = useTheme();
+  const nastepny: Theme = theme === 'dark' ? 'light' : 'dark';
+  const etykieta = nastepny === 'light' ? tr('Motyw Opal (jasny)', 'Opal theme (light)') : tr('Motyw Zorza (ciemny)', 'Zorza theme (dark)');
+  return (
+    <button
+      type="button"
+      data-motyw-przelacznik
+      aria-label={etykieta}
+      title={etykieta}
+      onClick={() => setTheme(nastepny)}
+      className="hidden sm:inline-flex items-center justify-center w-10 h-10 rounded-xl border border-line bg-surface-1 text-ink-2 hover:text-ink-1 hover:border-line-strong transition-colors duration-150"
+    >
+      {theme === 'dark' ? <Sun className="w-4 h-4" aria-hidden="true" /> : <Moon className="w-4 h-4" aria-hidden="true" />}
+    </button>
+  );
+};
+
+/** Telefon i tablet: trzy fazy dnia jako przełącznik nad widokiem fazy (dolny pasek ma Dziś, Sesję, Order Flow, Rynki). */
+const FazyTelefon: React.FC<{ view: ViewId; go: (v: ViewId) => void }> = ({ view, go }) => {
+  const { phase } = dayPhase(useNow(60_000));
+  if (!FAZY_Z_PRZELACZNIKIEM.includes(view)) return null;
+  return (
+    <nav data-fazy-telefon aria-label={tr('Fazy dnia', 'Day phases')} className="hq-fazy-tel lg:hidden mb-3 grid grid-cols-3 gap-1 rounded-2xl p-1">
+      {PHASES.map((n) => (
+        <ViewLink key={n.id} id={n.id} go={go} current={view === n.id} className="relative flex min-h-11 items-center justify-center gap-1.5 rounded-xl px-2 text-[13px] font-semibold text-ink-3 transition-colors duration-150">
+          {n.label}
+          {n.id === phase && (
+            <>
+              <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-lume shadow-[0_0_6px_var(--color-lume)]" />
+              <span className="sr-only"> · {tr('teraz', 'now')}</span>
+            </>
+          )}
+        </ViewLink>
+      ))}
+    </nav>
+  );
+};
+
 const IconBtn = React.forwardRef<HTMLButtonElement, { label: string; onClick: () => void; children: React.ReactNode; className?: string; expanded?: boolean; controls?: string }>(
   ({ label, onClick, children, className = 'inline-flex', expanded, controls }, ref) => (
     <button
@@ -711,11 +820,18 @@ export const AppShell: React.FC = () => {
   const replay = useSyncExternalStore(subscribeHash, inReplay) && view === 'charts';
   const orderFlow = view === 'orderflow';
   const linkedMarket = useSyncExternalStore(subscribeHash, activeChartMarket);
+  // Nić kontekstu: pełny adres ostatniego widoku pracy (rynek, interwał, nagranie, obserwacja) do powrotu z Dziś
+  const adres = useSyncExternalStore(subscribeHash, () => window.location.hash);
+  useEffect(() => {
+    zapiszNic(adres, Date.now());
+  }, [adres]);
   const [chartMarket, setChartMarket] = useState<{ view: ViewId; coin: string } | null>(null);
   const onChartMarket = useCallback((coin: string) => setChartMarket({ view, coin }), [view]);
   const activeCoin = chartMarket?.view === view ? chartMarket.coin : linkedMarket;
   const otherChartMarket = activeCoin && activeCoin !== HOME_MARKET ? marketLabel(activeCoin) : null;
   const NowyWidok = NOWE_WIDOKI[view];
+  // Dolny pasek: „Sesja” prowadzi do W sesji i świeci przy każdej fazie dnia (przełącznik faz jest nad widokiem)
+  const naTelefonie = (id: ViewId) => view === id || (id === 'charts' && FAZY_IDS.includes(view));
 
   const go = useCallback(
     (v: ViewId) => {
@@ -803,12 +919,12 @@ export const AppShell: React.FC = () => {
         <header ref={headerRef} data-app-header className="pt-safe sticky top-0 z-30 bg-page/90 backdrop-blur-xl border-b border-line">
           <div className="flex items-center gap-2 sm:gap-3 px-4 lg:px-6 h-14">
             {/* Telefon i tablet: znak marki (od 1024 px marka jest w szynie) */}
-            <ViewLink id="start" go={go} current={view === 'start'} className="lg:hidden shrink-0 inline-flex items-center justify-center w-10 h-10 -ml-1.5 rounded-lg hover:bg-surface-2">
+            <a href={START_HREF} data-naglowek-start title={tr('Strona startowa (Przekrój)', 'Home page (Cross-section)')} className="lg:hidden shrink-0 inline-flex items-center justify-center w-10 h-10 -ml-1.5 rounded-lg hover:bg-surface-2">
               <LogoMark />
               <span data-marka className="sr-only font-display">
-                HyperQuant
+                {tr('HyperQuant: strona startowa', 'HyperQuant: home page')}
               </span>
-            </ViewLink>
+            </a>
             {/* Cena i liczby rynku; w powtórce W sesji bez ceny na żywo */}
             <div className="flex-1 min-w-0">
               {!replay && !orderFlow && (otherChartMarket ? (
@@ -822,7 +938,7 @@ export const AppShell: React.FC = () => {
                 type="button"
                 onClick={otworzPalete}
                 aria-label={tr('Otwórz paletę poleceń', 'Open command palette')}
-                className="inline-flex items-center gap-2 h-10 px-2.5 rounded-lg border border-line bg-surface-1 text-xs text-ink-2 hover:text-ink-1 hover:border-line-strong transition-colors duration-150"
+                className="inline-flex items-center gap-2 h-10 px-3 rounded-xl border border-line bg-surface-1 text-xs text-ink-2 hover:text-ink-1 hover:border-line-strong transition-colors duration-150"
               >
                 <Search className="w-4 h-4" aria-hidden="true" />
                 <span className="hidden xl:inline">{tr('Szukaj rynku lub widoku', 'Search market or view')}</span>
@@ -848,10 +964,10 @@ export const AppShell: React.FC = () => {
                   </span>
                 )}
               </button>
-              <a href={`${import.meta.env.BASE_URL}stanowisko/?lang=${lang}`}
-                aria-label={tr('Stanowisko', 'Workbench')} title={tr('Stanowisko', 'Workbench')}
-                className="inline-flex items-center justify-center gap-1.5 min-h-11 min-w-11 px-1.5 sm:px-2 rounded-lg border border-line-strong text-xs font-medium text-ink-1 hover:bg-surface-2">
-                <PanelsTopLeft size={16} aria-hidden="true" /><span className="hidden sm:inline">{tr('Stanowisko', 'Workbench')}</span>
+              <a href={STANOWISKO.href}
+                aria-label={STANOWISKO.label} title={STANOWISKO.label}
+                className="hidden sm:inline-flex lg:hidden items-center justify-center gap-1.5 min-h-10 min-w-10 px-2 rounded-xl border border-line text-xs font-medium text-ink-1 hover:bg-surface-2">
+                <PanelsTopLeft size={16} aria-hidden="true" /><span className="hidden md:inline">{STANOWISKO.label}</span>
               </a>
               {!orderFlow && !otherChartMarket && !replay && <Badge tone={STATUS_TONE[feed.dataStatus]} title={STATUS_TITLE[feed.dataStatus]} testId="data-status">
                 {feed.dataStatus}
@@ -862,6 +978,7 @@ export const AppShell: React.FC = () => {
                   <Segmented<number> ariaLabel={tr('Interwał', 'Timeframe')} size="xs" value={feed.timeframeSec} onChange={feed.setTimeframeSec} options={TIMEFRAMES} />
                 </div>
               )}
+              <MotywPrzelacznik />
               <div ref={ustawieniaRef} className="relative hidden sm:block">
                 <IconBtn ref={ustawieniaBtn} label={tr('Ustawienia', 'Settings')} onClick={() => setUstawienia((o) => !o)} expanded={ustawienia} controls={ustawieniaId}>
                   <SlidersHorizontal className="w-4 h-4" />
@@ -882,6 +999,7 @@ export const AppShell: React.FC = () => {
         <main className="flex-1 w-full max-w-[1920px] mx-auto px-4 lg:px-6 pt-4 pb-6">
           <AnimatePresence mode="wait" initial={false}>
             <motion.div key={view} data-view-root data-view={view} {...transition}>
+              <FazyTelefon view={view} go={go} />
               {NowyWidok ? (
                 <Suspense fallback={<ViewFallback />}>
                   <NowyWidok />
@@ -916,7 +1034,7 @@ export const AppShell: React.FC = () => {
         </footer>
       </div>
 
-      {/* Telefon i tablet: dolny pasek (trzy fazy, Rynki, „Więcej”) */}
+      {/* Telefon i tablet: dolny pasek (Dziś, Sesja, Order Flow, Rynki, „Więcej”) */}
       <nav data-app-nav data-chart-navigation={view === 'charts' || undefined} aria-label={tr('Główna (telefon)', 'Main (phone)')} className="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-surface-1/95 backdrop-blur-xl border-t border-line pb-safe">
         <div ref={wiecejRef}>
           <div className="grid grid-cols-5">
@@ -925,12 +1043,12 @@ export const AppShell: React.FC = () => {
                 key={n.id}
                 type="button"
                 onClick={() => go(n.id)}
-                aria-current={view === n.id ? 'page' : undefined}
-                className={`relative min-h-14 flex flex-col items-center justify-center gap-1 text-[11px] font-medium transition-colors duration-150 ${view === n.id ? 'text-ink-1' : 'text-ink-3'}`}
+                aria-current={naTelefonie(n.id) ? 'page' : undefined}
+                className={`relative min-h-14 flex flex-col items-center justify-center gap-1 text-[11px] font-medium transition-colors duration-150 ${naTelefonie(n.id) ? 'text-ink-1' : 'text-ink-3'}`}
               >
-                {view === n.id && <motion.span layoutId="dolny-aktywny" className="absolute top-0 inset-x-5 h-0.5 rounded-full bg-lume" transition={{ type: 'spring', stiffness: 420, damping: 36 }} />}
+                {naTelefonie(n.id) && <motion.span layoutId="dolny-aktywny" className="absolute top-0 inset-x-5 h-0.5 rounded-full bg-lume" transition={{ type: 'spring', stiffness: 420, damping: 36 }} />}
                 {n.icon}
-                <span className="max-w-full px-1 truncate">{n.label}</span>
+                <span className="max-w-full px-1 truncate">{n.short ?? n.label}</span>
               </button>
             ))}
             <button
@@ -939,7 +1057,7 @@ export const AppShell: React.FC = () => {
               onClick={() => setWiecej((o) => !o)}
               aria-expanded={wiecej}
               aria-controls={wiecej ? wiecejId : undefined}
-              className={`min-h-14 flex flex-col items-center justify-center gap-1 text-[11px] font-medium ${NAV_TELEFON_WIECEJ.some((n) => n.id === view) ? 'text-ink-1' : 'text-ink-3'}`}
+              className={`min-h-14 flex flex-col items-center justify-center gap-1 text-[11px] font-medium ${!FAZY_IDS.includes(view) && NAV_TELEFON_WIECEJ.some((n) => n.id === view) ? 'text-ink-1' : 'text-ink-3'}`}
             >
               <MoreHorizontal className="w-4 h-4" aria-hidden="true" />
               {tr('Więcej', 'More')}
@@ -954,12 +1072,17 @@ export const AppShell: React.FC = () => {
                     {n.label}
                   </ViewLink>
                 ))}
-                {NAV_STRONY.map((l) => (
+                <div role="separator" className="my-1 border-t border-line" />
+                {[STANOWISKO, ...NAV_STRONY].map((l) => (
                   <a key={l.href} href={l.href} className={MENU_ITEM}>
                     {l.icon}
                     {l.label}
                   </a>
                 ))}
+                <a href={START_HREF} className={MENU_ITEM}>
+                  <LogoMark size={16} />
+                  {tr('Strona startowa', 'Home page')}
+                </a>
                 <button
                   type="button"
                   data-more-wyspa
@@ -1003,8 +1126,8 @@ export const AppShell: React.FC = () => {
             open={paleta}
             onClose={() => setPaleta(false)}
             onAkcja={wykonaj}
-            widoki={[{ id: 'start', label: 'Start', icon: null }, ...NAV_DZIEN, ...NAV_WIEDZA]}
-            zewnetrzne={NAV_STRONY}
+            widoki={[...NAV_DZIEN, ...NAV_RYNEK, ...NAV_WIEDZA]}
+            zewnetrzne={[{ href: START_HREF, label: tr('Strona startowa (Przekrój)', 'Home page (Cross-section)') }, STANOWISKO, ...NAV_STRONY]}
             przelaczniki={[
               { co: 'strumien', etykieta: feed.isStreaming ? tr('Wstrzymaj strumień', 'Pause stream') : tr('Wznów strumień', 'Resume stream') },
               { co: 'synchronizuj', etykieta: tr('Synchronizuj teraz', 'Sync now') },
