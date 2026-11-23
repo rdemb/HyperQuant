@@ -86,6 +86,7 @@ import { ReplayBar } from './replay/ReplayBar';
 import { type ReplayLink, linkPatch, parseReplayLink, replayHash } from './replay/link';
 import { type ReplaySession, replayBase } from './replay/session';
 import { lang, tr } from '../../i18n';
+import { motywWykresu } from '../paleta';
 
 // Okna otwierane dopiero na prośbę (klatka, alarmy, wskaźniki) ładują się leniwie: na starcie W sesji to ok. 50 KB
 // niewykonanego kodu. Po pierwszym malowaniu wykresu pobieramy je w wolnej chwili, żeby pierwsze otwarcie nie czekało.
@@ -1016,8 +1017,8 @@ export const ProChart: React.FC<{
 
   const chartCard = (
     <div
-      // Pole rysowania ma zakres ciemnego motywu. Kontrolki korzystają z oprawy Przekroju.
-      data-theme="dark"
+      // Pole rysowania ma zakres motywu płótna (Głębia albo Papier). Kontrolki korzystają z oprawy Przekroju.
+      data-theme={motywWykresu()}
       data-chart-card
       data-focus={chartOnly ? (landscape ? 'landscape' : 'focus') : undefined}
       // Bez overflow-hidden na karcie: listy paska wychodzą poza kartę (niski wykres w układzie 2 i 4, telefon); przycina

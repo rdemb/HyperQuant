@@ -45,6 +45,7 @@ import {
   visibleOn,
 } from './model';
 import { tr } from '../../../i18n';
+import { naZmianePalety } from '../../paleta';
 
 /**
  * Warstwa rysunków nad wykresem (prymityw głównej serii, dołączany ostatni, więc rysuje nad wszystkim):
@@ -104,11 +105,18 @@ const DASH: Record<DrawStyle['dash'], number[]> = {
   dashed: [6, 4],
   dotted: [1.5, 3],
 };
-const PROFIT = PRO.buyInk;
-const LOSS = PRO.sellInk;
+let PROFIT = PRO.buyInk;
+let LOSS = PRO.sellInk;
 // Pomiar: ruch w górę w kolorze kupna, w dół w kolorze sprzedaży (paleta Głębia; dawniej niebieski i czerwony palety Neon)
-const MEASURE_UP = PRO.buyInk;
-const MEASURE_DOWN = PRO.sellInk;
+let MEASURE_UP = PRO.buyInk;
+let MEASURE_DOWN = PRO.sellInk;
+// Przeliczenie przy zmianie motywu (paleta.ts)
+naZmianePalety(() => {
+  PROFIT = PRO.buyInk;
+  LOSS = PRO.sellInk;
+  MEASURE_UP = PRO.buyInk;
+  MEASURE_DOWN = PRO.sellInk;
+});
 /** Profil zakresu: najdłuższy wiersz jako ułamek szerokości zakresu, minimalna wysokość wiersza (px). */
 const RANGE_PROFILE_FRAC = 0.6;
 const RANGE_PROFILE_ROW_PX = 4;

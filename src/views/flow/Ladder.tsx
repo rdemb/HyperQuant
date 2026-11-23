@@ -15,6 +15,7 @@ import { numLang } from '../../ui/format';
 import { tr } from '../../i18n';
 import { HelpButton } from '../../ui/HelpButton';
 import { VERDICT, fateTitle } from './verdicts';
+import { naZmianePalety } from '../../charts/paleta';
 
 /**
  * Drabina „kto stoi w kolejce”: stała siatka cen wybranej agregacji arkusza Hyperliquid z wielkością, liczbą zleceń
@@ -53,7 +54,11 @@ const NEAR_MIN = 3;
 const ICON_HALF = 5;
 const ICON_GAP = 10;
 
-const LUT = buildHeatLut(LIQ_RAMP);
+let LUT = buildHeatLut(LIQ_RAMP);
+// Przeliczenie przy zmianie motywu (paleta.ts)
+naZmianePalety(() => {
+  LUT = buildHeatLut(LIQ_RAMP);
+});
 
 /** Zlecenia wielorybów na wierszu: suma, rodzaje i pseudonim największego. */
 interface WhaleMark {

@@ -6,6 +6,7 @@ import { useStoreVersion } from '../charts/pro/store/useStoreVersion';
 import { ENABLED_MARKETS, deskMarketOf } from '../config/deskMarkets';
 import { lang, tr } from '../i18n';
 import { useNow } from '../shell/dzien';
+import { useTheme } from '../theme';
 import { intervalById } from '../charts/pro/core/time';
 import type { Panel } from './Panels';
 import { WORKSPACE_CHART_INTERVALS, type WorkspaceChartInterval } from '../state/workspaceSnapshot';
@@ -28,7 +29,11 @@ const fmtPelna = new Intl.DateTimeFormat(LOCALE, { day: 'numeric', month: 'short
 const fmtOdczyt = new Intl.DateTimeFormat(LOCALE, { hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' });
 
 /** Paleta wykresu „Głębia” (te same wartości co src/charts/pro/chart/theme.ts): obszar wykresu zawsze ciemny. */
-const KOLOR = { tlo: '#0f1114', tekst: '#9aa0a8', siatka: 'rgba(237, 238, 240, 0.05)', kupno: '#3280dd', sprzedaz: '#ca3829' };
+/** Paleta panelu: w Zorzy jak wykres W sesji („Głębia”), w Opalu na papierze (tekst i siatka z tokenów jasnego motywu). */
+const PALETA = {
+  dark: { tlo: '#0f1114', tekst: '#9aa0a8', siatka: 'rgba(237, 238, 240, 0.05)', ramka: 'rgba(237, 238, 240, 0.12)', etykieta: '#2b2640', kupno: '#3280dd', sprzedaz: '#ca3829', cena: '#cfea5b' },
+  light: { tlo: '#ffffff', tekst: '#474359', siatka: 'rgba(20, 18, 27, 0.06)', ramka: 'rgba(20, 18, 27, 0.14)', etykieta: '#14121b', kupno: '#1d5fb0', sprzedaz: '#b42318', cena: '#3a4500' },
+} as const;
 
 /** Najdłuższa przerwa między zmianami świec, po której odczyt przestaje być „LIVE” (aktywny rynek zmienia świecę co sekundy). */
 export const LIVE_MAX_CISZA_MS = 90_000;
@@ -85,16 +90,18 @@ export function ChartPanel({ panel, change, onMarket }: { panel: Panel; change: 
     setZmianaAt(null);
   }, [store, interval]);
 
+  const motyw = useTheme() === 'light' ? 'light' : 'dark';
   useEffect(() => {
     const el = box.current;
     if (!el) return;
+    const KOLOR = PALETA[motyw];
     const c = createChart(el, {
       autoSize: true,
       layout: { background: { type: ColorType.Solid, color: KOLOR.tlo }, textColor: KOLOR.tekst, fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontSize: 11, attributionLogo: false },
       grid: { vertLines: { color: KOLOR.siatka }, horzLines: { color: KOLOR.siatka } },
-      rightPriceScale: { borderColor: 'rgba(237, 238, 240, 0.12)', scaleMargins: { top: 0.08, bottom: 0.22 } },
+      rightPriceScale: { borderColor: KOLOR.ramka, scaleMargins: { top: 0.08, bottom: 0.22 } },
       timeScale: {
-        borderColor: 'rgba(237, 238, 240, 0.12)',
+        borderColor: KOLOR.ramka,
         timeVisible: true,
         secondsVisible: false,
         rightOffset: 4,
@@ -104,11 +111,11 @@ export function ChartPanel({ panel, change, onMarket }: { panel: Panel; change: 
         },
       },
       localization: { locale: LOCALE, timeFormatter: (t: number) => fmtPelna.format(t * 1000), priceFormatter: (p: number) => store.fmtPx(p) },
-      crosshair: { vertLine: { color: 'rgba(207, 234, 91, 0.5)', labelBackgroundColor: '#2b2640' }, horzLine: { color: 'rgba(207, 234, 91, 0.5)', labelBackgroundColor: '#2b2640' } },
+      crosshair: { vertLine: { color: 'rgba(207, 234, 91, 0.5)', labelBackgroundColor: KOLOR.etykieta }, horzLine: { color: 'rgba(207, 234, 91, 0.5)', labelBackgroundColor: KOLOR.etykieta } },
     });
     swiece.current = c.addSeries(CandlestickSeries, {
       upColor: KOLOR.kupno, downColor: KOLOR.sprzedaz, borderUpColor: KOLOR.kupno, borderDownColor: KOLOR.sprzedaz,
-      wickUpColor: KOLOR.kupno, wickDownColor: KOLOR.sprzedaz, priceLineColor: '#cfea5b', priceLineWidth: 1,
+      wickUpColor: KOLOR.kupno, wickDownColor: KOLOR.sprzedaz, priceLineColor: KOLOR.cena, priceLineWidth: 1,
     });
     wolumen.current = c.addSeries(HistogramSeries, { priceScaleId: 'wol', priceFormat: { type: 'volume' }, lastValueVisible: false, priceLineVisible: false });
     c.priceScale('wol').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
@@ -120,7 +127,7 @@ export function ChartPanel({ panel, change, onMarket }: { panel: Panel; change: 
       swiece.current = null;
       wolumen.current = null;
     };
-  }, [store, interval]);
+  }, [store, interval, motyw]);
 
   useEffect(() => {
     const s = swiece.current;

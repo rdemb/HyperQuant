@@ -79,6 +79,7 @@ import { BTC_ONLY_NOTE, NO_CEX_BADGE, NO_FORECASTS_NOTE } from '../../../utils/m
 import { capsOf, usdScaleOf } from '../../../state/markets';
 import type { DeskLedgerSummary } from '../../../utils/deskLedger';
 import { fmtCompact, fmtPrice, numLang } from '../../../ui/format';
+import { naZmianePalety } from '../../paleta';
 
 /**
  * Sterownik wykresu Pro (bez Reacta): tworzy wykres Lightweight Charts z serią footprintu, wolumenem
@@ -236,11 +237,16 @@ type VenueLines = Partial<Record<VenueLineId, (number | null)[]>>;
 const fmtFunding = (r: number | null) => (r === null ? '—' : `${r >= 0 ? '+' : ''}${numLang((r * 100).toFixed(4))}%`);
 
 /** Linie poziomów w panelu wskaźnika (RSI 70, 50, 30): widoczne, ale ciszej niż linia wskaźnika. */
-const LEVEL_COLOR = rgba(PRO.ink3, 0.45);
+let LEVEL_COLOR = rgba(PRO.ink3, 0.45);
 /** Krycie słupków wskaźnika (przy kryciu instancji 100%): słupek sprzedaży ma jeszcze kontrast ≥ 3:1 z tłem wykresu. */
 const HIST_ALPHA = 0.9;
 /** Odcinek bez koloru: przerwa między poziomami kolejnych okresów. */
-const CLEAR = rgba(PRO.bg, 0);
+let CLEAR = rgba(PRO.bg, 0);
+// Przeliczenie przy zmianie motywu (paleta.ts)
+naZmianePalety(() => {
+  LEVEL_COLOR = rgba(PRO.ink3, 0.45);
+  CLEAR = rgba(PRO.bg, 0);
+});
 
 const sameOhlc = (a: Ohlc | null, b: Ohlc | null) =>
   a === b || (a !== null && b !== null && a.open === b.open && a.high === b.high && a.low === b.low && a.close === b.close);
@@ -274,6 +280,20 @@ export function carryViewTime(): void {
   const t = from?.viewTime() ?? null;
   carried = t === null ? null : { t, until: Date.now() + CARRY_MS };
 }
+/**
+ * Kadr przy zmianie motywu: wykres montuje się od nowa z nową paletą (paleta.ts), więc tuż przed tym każdy otwarty
+ * wykres zapisuje widoczny zakres (czas pierwszej widocznej świecy, przesunięcie, szerokość w świecach), a nowy wykres
+ * tego samego rynku, interwału i trybu (na żywo albo powtórka) odtwarza go przy pierwszych danych. Zapis powstaje tylko
+ * przy zmianie motywu: zmiana rynku, interwału i układu działa jak dotąd.
+ */
+type KadrMotywu = { coin: string; ms: number; replay: boolean; fromT: number; frac: number; span: number };
+let kadryMotywu: KadrMotywu[] = [];
+let kadryDo = 0;
+naZmianePalety(() => {
+  kadryMotywu = [...crossPeers].map((p) => p.zapiszKadr()).filter((k): k is KadrMotywu => k !== null);
+  kadryDo = Date.now() + CARRY_MS;
+});
+
 /** W trakcie ustawiania krzyża na innych panelach (ich zdarzenia krzyża nie są ruchem użytkownika). */
 let crossSyncing = false;
 
@@ -1379,6 +1399,28 @@ export class ProChartController {
     });
   }
 
+  /** Widoczny zakres do odtworzenia po zmianie motywu (null bez świec albo zakresu). */
+  zapiszKadr(): KadrMotywu | null {
+    const r = this.chart.timeScale().getVisibleLogicalRange();
+    const bars = this.bars;
+    if (!r || bars.length === 0) return null;
+    const i0 = Math.min(bars.length - 1, Math.max(0, Math.floor(r.from)));
+    return { coin: this.store.coin, ms: this.series.interval.ms, replay: !!this.store.replay, fromT: bars[i0].t, frac: r.from - i0, span: r.to - r.from };
+  }
+
+  /** Odtwarza kadr zapisany przy zmianie motywu, gdy pasuje rynek, interwał i tryb; true, gdy odtworzono. */
+  private przywrocKadr(): boolean {
+    if (kadryMotywu.length === 0 || Date.now() > kadryDo) return false;
+    const k = kadryMotywu.findIndex((x) => x.coin === this.store.coin && x.ms === this.series.interval.ms && x.replay === !!this.store.replay);
+    if (k < 0) return false;
+    const [kadr] = kadryMotywu.splice(k, 1);
+    const i = indexOfTime(this.bars, barStart(kadr.fromT, kadr.ms));
+    if (i < 0) return false;
+    const from = i + kadr.frac;
+    this.chart.timeScale().setVisibleLogicalRange({ from, to: from + kadr.span });
+    return true;
+  }
+
   /** Przewija do bieżącej świecy (z zachowaniem zbliżenia); odstęp od osi ceny stały w pikselach. */
   scrollToNow(): void {
     const ts = this.chart.timeScale();
@@ -1567,6 +1609,11 @@ export class ProChartController {
       this.volume?.setData(next.map(toVolume));
       this.delta?.setData(next.map(deltaPoint));
       this.statsSeries?.setData(next.map((b) => ({ time: sec(b.t) })));
+      if (next.length > 0 && this.przywrocKadr()) {
+        // Kadr sprzed zmiany motywu ma pierwszeństwo przed startem przy bieżącej świecy i przeniesioną chwilą
+        this.toNow = false;
+        this.focusT = null;
+      }
       if (this.toNow && next.length > 0) {
         this.toNow = false;
         if (this.focusT === null) this.scrollToNow();
@@ -1870,6 +1917,10 @@ export class ProChartController {
 
   private readonly onRange = (range: LogicalRange | null): void => {
     if (!range || this.bars.length === 0) return;
+    // Widoczny zakres (czas pierwszej i ostatniej widocznej świecy) w atrybutach karty: próby kadru i ui:check
+    const ostatni = this.bars.length - 1;
+    this.container.dataset.widokOd = String(this.bars[Math.min(ostatni, Math.max(0, Math.ceil(range.from)))].t);
+    this.container.dataset.widokDo = String(this.bars[Math.min(ostatni, Math.max(0, Math.floor(range.to)))].t);
     if (range.from < LOAD_OLDER_MARGIN) void this.series.loadOlder();
     // Historia taśmy i arkusza z serwera od lewej krawędzi widoku, a przy wskaźniku z oknem poprzednich świec (absorpcja,
     // OFI) o to okno wcześniej — inaczej na wąskim ekranie świece z lewej nie miałyby wartości; z bąblami, seriami
