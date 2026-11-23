@@ -82,6 +82,9 @@
     }
     </script>
     <style>
+      /* First paint before the home page or the app loads: theme background instead of a white page */
+      html { background: #0b0a12; }
+      html[data-theme='light'] { background: #f2f1f6; }
       /* HyperQuant page transition: the next page opens from the waterline */
       @view-transition { navigation: auto; }
       ::view-transition-old(root) { animation: hq-vt-out .38s cubic-bezier(.64,0,.78,0) both; }
@@ -90,6 +93,13 @@
       @keyframes hq-vt-in { from { clip-path: inset(49.6% 0 49.6% 0); } to { clip-path: inset(0 0 0 0); } }
       html[data-motion='reduced']::view-transition-old(root), html[data-motion='reduced']::view-transition-new(root) { animation: none; }
       @media (prefers-reduced-motion: reduce) { ::view-transition-old(root), ::view-transition-new(root) { animation: none; } }
+      .hq-start-recovery { --start-lume: #cfea5b; --start-page: #0b0a12; box-sizing: border-box; max-width: 32rem; margin: 12vh auto; padding: 1.5rem; color: #edeef0; font: 1rem/1.6 system-ui, sans-serif; }
+      html[data-theme='light'] .hq-start-recovery { --start-lume: #3a4500; --start-page: #f2f1f6; color: #181525; }
+      .hq-start-recovery a { color: var(--start-lume); }
+      .hq-start-options { animation: hq-start-options 0s 4s both; }
+      @keyframes hq-start-options { from { visibility: hidden; } to { visibility: visible; } }
+      html[data-motion='reduced'] .hq-start-options { animation: none; }
+      @media (prefers-reduced-motion: reduce) { .hq-start-options { animation: none; } }
     </style>
   </head>
   <body class="bg-page text-ink-1 antialiased overflow-x-hidden notranslate" translate="no">
@@ -107,7 +117,31 @@
         </p>
       </div>
     </noscript>
-    <div id="root" class="notranslate" translate="no"></div>
+    <div id="root" class="notranslate" translate="no">
+      <main class="hq-start-recovery" data-start-recovery>
+        <svg width="32" height="32" viewBox="40 40 432 432" aria-hidden="true">
+          <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="30">
+            <path d="M270.9 78.6A178 178 0 0 1 417.1 331.8" opacity=".25"/>
+            <path d="M402.2 357.6A178 178 0 0 1 201.9 425.6" opacity=".55"/>
+            <path d="M174.4 414.2A178 178 0 0 1 241.1 78.6"/>
+          </g>
+          <g fill="currentColor">
+            <rect x="183" y="150" width="14" height="212" rx="7"/>
+            <rect x="160" y="184" width="60" height="132" rx="14"/>
+            <rect x="315" y="138" width="14" height="196" rx="7"/>
+            <rect x="292" y="166" width="60" height="122" rx="14"/>
+            <rect x="214" y="238" width="84" height="26" rx="13"/>
+          </g>
+          <circle cx="187.9" cy="420.5" r="34" fill="var(--start-lume)" stroke="var(--start-page)" stroke-width="12"/>
+        </svg>
+        <p><strong>HyperQuant</strong></p>
+        <p role="status">Loading HyperQuant…</p>
+        <div class="hq-start-options">
+          <p><a href="./?view=app#dzis">Open the app</a> · <a href="./">Reload home</a></p>
+          <p>Open Cross-section: <a href="./nowy/?lang=pl" lang="pl">Polski</a> · <a href="./nowy/?lang=en">English</a></p>
+        </div>
+      </main>
+    </div>
     <script type="module" src="/src/entry.ts"></script>
   </body>
 </html>

@@ -56,6 +56,25 @@ describe('odświeżanie tabeli „Rynki”: wagi zapytań', () => {
     p.stop();
   });
 
+  it('godzina odczytu każdej giełdy z chwili jej odpowiedzi: wolniejsza giełda nie zmienia godziny szybszej', async () => {
+    const opoznienie: Record<string, number> = { '': 10, xyz: 3_400 };
+    const deps: PollerDeps = {
+      fetchDex: (dex) =>
+        new Promise((resolve) => setTimeout(() => resolve([{ universe: [{ name: dex === '' ? 'BTC' : `${dex}:X` }] }, [{ markPx: '100', openInterest: '5', dayNtlVlm: '1', funding: '0' }]]), opoznienie[dex])),
+      now: () => Date.now(),
+      visible: () => true,
+      onVisibility: () => () => undefined,
+    };
+    const start = Date.now();
+    const p = new MarketsPoller(deps);
+    p.run(['', 'xyz']);
+    await vi.advanceTimersByTimeAsync(4_000);
+    const snap = p.snapshot();
+    expect(snap.dexes[''].at).toBe(start + 10);
+    expect(snap.dexes.xyz.at).toBe(start + 3_400);
+    p.stop();
+  });
+
   it('pierwsza runda od razu: dane wszystkich giełd po odpowiedzi', async () => {
     const { deps } = fakeDeps();
     const p = new MarketsPoller(deps);

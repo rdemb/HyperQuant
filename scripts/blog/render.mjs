@@ -322,20 +322,24 @@ const FONTS_PATH = 'fonts/fonts.css';
  */
 const NAV = {
   pl: [
+    ['dzis', 'Dziś', '#dzis'],
     ['before', 'Przed sesją', '#before'],
     ['charts', 'W sesji', '#charts'],
     ['after', 'Po sesji', '#after'],
     ['markets', 'Rynki', '#markets'],
+    ['orderflow', 'Order Flow', '#orderflow'],
     ['lessons', 'Lekcje', 'lekcje/'],
     ['blog', 'Blog', 'blog/'],
     ['results', 'Wyniki', 'wyniki/'],
     ['news', 'Co nowego', 'co-nowego/'],
   ],
   en: [
+    ['dzis', 'Today', '#dzis'],
     ['before', 'Pre-session', '#before'],
     ['charts', 'In session', '#charts'],
     ['after', 'Post-session', '#after'],
     ['markets', 'Markets', '#markets'],
+    ['orderflow', 'Order Flow', '#orderflow'],
     ['lessons', 'Lessons', 'en/lessons/'],
     ['blog', 'Blog', 'blog/'],
     ['results', 'Results', 'en/results/'],
@@ -344,17 +348,20 @@ const NAV = {
 };
 
 /**
- * Dolny pasek telefonu i tabletu (poniżej 1024 px), jak w aplikacji: trzy fazy dnia i Rynki, reszta w „Więcej” (Lekcje,
- * Badania, Źródła, Agenci AI i strony serwisu). „Więcej” to <details>: działa bez skryptu (CSP strony: skrypty tylko z plików).
+ * Dolny pasek telefonu i tabletu (poniżej 1024 px), jak w aplikacji: Dziś, Sesja, Order Flow, Rynki, reszta w „Więcej”
+ * (Przed i Po sesji, wiedza, Stanowisko i strony serwisu). „Więcej” to <details>: działa bez skryptu (CSP strony: skrypty tylko z plików).
  */
 const BOTTOM = {
   pl: {
-    bar: [['before', 'Przed sesją', '#before', 'sunrise'], ['charts', 'W sesji', '#charts', 'chart-candlestick'], ['after', 'Po sesji', '#after', 'sunset'], ['markets', 'Rynki', '#markets', 'table-2']],
+    bar: [['dzis', 'Dziś', '#dzis', 'house'], ['charts', 'Sesja', '#charts', 'chart-candlestick'], ['orderflow', 'Order Flow', '#orderflow', 'rows-3'], ['markets', 'Rynki', '#markets', 'table-2']],
     more: [
+      ['before', 'Przed sesją', '#before', 'sunrise'],
+      ['after', 'Po sesji', '#after', 'sunset'],
       ['lessons', 'Lekcje', 'lekcje/', 'graduation-cap'],
       ['research', 'Badania', '#research', 'flask-conical'],
       ['sources', 'Źródła', '#sources', 'database'],
       ['agents', 'Agenci AI', '#agents', 'bot'],
+      ['workbench', 'Stanowisko', 'stanowisko/?lang=pl', 'panels-top-left'],
       ['blog', 'Blog', 'blog/', 'newspaper'],
       ['results', 'Wyniki', 'wyniki/', 'list-checks'],
       ['news', 'Co nowego', 'co-nowego/', 'rotate-ccw-clock'],
@@ -363,12 +370,15 @@ const BOTTOM = {
     aria: 'Główna (telefon)',
   },
   en: {
-    bar: [['before', 'Pre-session', '#before', 'sunrise'], ['charts', 'In session', '#charts', 'chart-candlestick'], ['after', 'Post-session', '#after', 'sunset'], ['markets', 'Markets', '#markets', 'table-2']],
+    bar: [['dzis', 'Today', '#dzis', 'house'], ['charts', 'Session', '#charts', 'chart-candlestick'], ['orderflow', 'Order Flow', '#orderflow', 'rows-3'], ['markets', 'Markets', '#markets', 'table-2']],
     more: [
+      ['before', 'Pre-session', '#before', 'sunrise'],
+      ['after', 'Post-session', '#after', 'sunset'],
       ['lessons', 'Lessons', 'en/lessons/', 'graduation-cap'],
       ['research', 'Research', '#research', 'flask-conical'],
       ['sources', 'Sources', '#sources', 'database'],
       ['agents', 'AI agents', '#agents', 'bot'],
+      ['workbench', 'Workbench', 'stanowisko/?lang=en', 'panels-top-left'],
       ['blog', 'Blog', 'blog/', 'newspaper'],
       ['results', 'Results', 'en/results/', 'list-checks'],
       ['news', "What's new", 'en/whats-new/', 'rotate-ccw-clock'],
@@ -379,28 +389,30 @@ const BOTTOM = {
 };
 
 /**
- * Szyna boczna (komputer, od 1024 px), jak w aplikacji: marka, „Dzień tradera” (trzy fazy), „Rynki i wiedza”, na dole
- * „Publikacje” (blog, wyniki, co nowego) i przełącznik języka. 1024–1599 px: 88 px, ikona z nazwą pod nią; od 1600 px
+ * Szyna boczna (komputer, od 1024 px), jak w aplikacji: marka (strona startowa), „Dzień” (Dziś i trzy fazy), „Rynek”,
+ * „Wiedza”, na dole „Serwis” (Stanowisko, blog, wyniki, co nowego) i przełącznik języka. 1024–1599 px: 88 px, ikona z nazwą pod nią; od 1600 px
  * 240 px z nazwami w rzędzie i tytułami grup. Bieżąca strona: tło i pasek lume (aria-current tylko na tym dokumencie).
  */
 const RAIL = {
   pl: {
     groups: [
-      ['Dzień tradera', [['before', 'Przed sesją', '#before', 'sunrise'], ['charts', 'W sesji', '#charts', 'chart-candlestick'], ['after', 'Po sesji', '#after', 'sunset']]],
-      ['Rynki i wiedza', [['markets', 'Rynki', '#markets', 'table-2'], ['lessons', 'Lekcje', 'lekcje/', 'graduation-cap'], ['research', 'Badania', '#research', 'flask-conical'], ['sources', 'Źródła', '#sources', 'database'], ['agents', 'Agenci AI', '#agents', 'bot']]],
+      ['Dzień', [['dzis', 'Dziś', '#dzis', 'house'], ['before', 'Przed sesją', '#before', 'sunrise'], ['charts', 'W sesji', '#charts', 'chart-candlestick'], ['after', 'Po sesji', '#after', 'sunset']]],
+      ['Rynek', [['markets', 'Rynki', '#markets', 'table-2'], ['orderflow', 'Order Flow', '#orderflow', 'rows-3']]],
+      ['Wiedza', [['lessons', 'Lekcje', 'lekcje/', 'graduation-cap'], ['research', 'Badania', '#research', 'flask-conical'], ['sources', 'Źródła', '#sources', 'database'], ['agents', 'Agenci AI', '#agents', 'bot']]],
     ],
-    pubs: [['blog', 'Blog', 'blog/', 'newspaper'], ['results', 'Wyniki', 'wyniki/', 'list-checks'], ['news', 'Co nowego', 'co-nowego/', 'rotate-ccw-clock']],
-    pubTitle: 'Publikacje',
+    pubs: [['workbench', 'Stanowisko', 'stanowisko/?lang=pl', 'panels-top-left'], ['blog', 'Blog', 'blog/', 'newspaper'], ['results', 'Wyniki', 'wyniki/', 'list-checks'], ['news', 'Co nowego', 'co-nowego/', 'rotate-ccw-clock']],
+    pubTitle: 'Serwis',
     tag: `${esc(deskLabels())} · Hyperliquid`,
     aria: 'Nawigacja',
   },
   en: {
     groups: [
-      ['Trading day', [['before', 'Pre-session', '#before', 'sunrise'], ['charts', 'In session', '#charts', 'chart-candlestick'], ['after', 'Post-session', '#after', 'sunset']]],
-      ['Markets and knowledge', [['markets', 'Markets', '#markets', 'table-2'], ['lessons', 'Lessons', 'en/lessons/', 'graduation-cap'], ['research', 'Research', '#research', 'flask-conical'], ['sources', 'Sources', '#sources', 'database'], ['agents', 'AI agents', '#agents', 'bot']]],
+      ['Day', [['dzis', 'Today', '#dzis', 'house'], ['before', 'Pre-session', '#before', 'sunrise'], ['charts', 'In session', '#charts', 'chart-candlestick'], ['after', 'Post-session', '#after', 'sunset']]],
+      ['Market', [['markets', 'Markets', '#markets', 'table-2'], ['orderflow', 'Order Flow', '#orderflow', 'rows-3']]],
+      ['Knowledge', [['lessons', 'Lessons', 'en/lessons/', 'graduation-cap'], ['research', 'Research', '#research', 'flask-conical'], ['sources', 'Sources', '#sources', 'database'], ['agents', 'AI agents', '#agents', 'bot']]],
     ],
-    pubs: [['blog', 'Blog', 'blog/', 'newspaper'], ['results', 'Results', 'en/results/', 'list-checks'], ['news', "What's new", 'en/whats-new/', 'rotate-ccw-clock']],
-    pubTitle: 'Publications',
+    pubs: [['workbench', 'Workbench', 'stanowisko/?lang=en', 'panels-top-left'], ['blog', 'Blog', 'blog/', 'newspaper'], ['results', 'Results', 'en/results/', 'list-checks'], ['news', "What's new", 'en/whats-new/', 'rotate-ccw-clock']],
+    pubTitle: 'Site',
     tag: `${esc(deskLabels())} · Hyperliquid`,
     aria: 'Navigation',
   },
@@ -526,7 +538,8 @@ export function layout(
 <link rel="alternate" type="application/rss+xml" title="HyperQuant Blog" href="${site.url}blog/feed.xml">
 <link rel="icon" type="image/svg+xml" href="${root}favicon.svg?v=2">
 <link rel="apple-touch-icon" href="${root}icons/apple-touch-icon.png?v=2">
-<meta name="theme-color" content="#0C0D0F">
+<meta name="theme-color" content="#0B0A12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F2F1F6" media="(prefers-color-scheme: light)">
 <meta property="og:type" content="${type}">
 <meta property="og:locale" content="${OG_LOCALE[lang]}">${localeAlt}
 <meta property="og:site_name" content="HyperQuant">

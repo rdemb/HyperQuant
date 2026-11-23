@@ -361,8 +361,8 @@ export default function Workbench() {
     <div className="wb-shell" data-light={light}>
       <a className="wb-skip" href="#wb-workspace">{tr('Przejdź do kompozycji', 'Skip to composition')}</a>
       <header className="wb-bar">
-        <a href={`../?lang=${lang}`} className="wb-back"><ArrowLeft aria-hidden size={16} /> {tr('Przekrój', 'Cross-section')}</a>
-        <a href={`../?lang=${lang}#charts${chartMarket ? `?m=${encodeURIComponent(chartMarket)}` : ''}`} className="wb-back">{tr('Wykresy', 'Charts')} ↗</a>
+        <a href={`../?lang=${lang}#dzis`} className="wb-back"><ArrowLeft aria-hidden size={16} /> {tr('Aplikacja · Dziś', 'App · Today')}</a>
+        <a href={`../?lang=${lang}#charts${chartMarket ? `?m=${encodeURIComponent(chartMarket)}` : ''}`} className="wb-back">{tr('W sesji', 'In session')} ↗</a>
         <div className="wb-bar-end">
           <a className="wb-back" href={`?lang=${lang === 'pl' ? 'en' : 'pl'}`}>{lang === 'pl' ? 'EN' : 'PL'}</a>
           <button className="wb-button" type="button" aria-pressed={light} onClick={() => setTheme(light ? 'dark' : 'light')}>{light ? 'Opal' : 'Zorza'}</button>

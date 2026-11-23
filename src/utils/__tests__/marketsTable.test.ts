@@ -165,8 +165,23 @@ describe('model tabeli (gotowe teksty dla widoku)', () => {
       wallStreet: { label: 'ws BTC', note: null, why: null },
       ctx: expect.objectContaining({ markPx: 80_000 }),
       szDecimals: 5,
+      fieldWhy: { volume: null, openInterest: null, funding: null },
     });
     expect(rows[1]).toMatchObject({ fundingHour: '−0,0100%', fundingYear: '−87,6%', scanner: { text: '—', why: 'bez skanera ETH' } });
+  });
+
+  it('rynek w odpowiedzi z pustym kontekstem: bez LIVE i godziny, „—” z powodem (nie cztery kreski bez przyczyny)', () => {
+    const pusty = parseDexCtxs([{ universe: [{ name: 'xyz:NVDA' }] }, [{}]], 'xyz')!;
+    const [nv] = marketListModel([nvda], { xyz: { at: NOW - 1000, ctxs: pusty, failedAt: null } }, NOW, 'oi', deps);
+    expect(nv).toMatchObject({ price: '—', volume: '—', openInterest: '—', readAt: null, why: 'giełda nie podała ceny tego rynku' });
+    expect(marketRows([nvda], { xyz: { at: NOW - 1000, ctxs: pusty, failedAt: null } }, NOW)[0].why).toBe('no-price');
+  });
+
+  it('cena jest, a funding nie: zera zostają prawdziwymi zerami, brak stawki ma powód', () => {
+    const zera = parseDexCtxs([{ universe: [{ name: 'xyz:NVDA' }] }, [{ markPx: '6400', openInterest: '0', dayNtlVlm: '0', funding: null }]], 'xyz')!;
+    const [nv] = marketListModel([nvda], { xyz: { at: NOW - 1000, ctxs: zera, failedAt: null } }, NOW, 'oi', deps);
+    expect(nv).toMatchObject({ price: fmtMarketPrice(6400, nvda.szDecimals), volume: '$0', openInterest: '$0', fundingYear: null, readAt: `t${NOW - 1000}`, why: null });
+    expect(nv.fieldWhy).toEqual({ volume: null, openInterest: null, funding: 'brak stawki w odczycie giełdy' });
   });
 
   it('wiersz bez danych: same „—”, bez godziny, z powodem', () => {
