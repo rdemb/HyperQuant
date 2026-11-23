@@ -1,18 +1,21 @@
-import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
-import { ArrowLeft, ArrowRight, ArrowDown, ArrowUp, GripVertical, Maximize2, Pin, Plus, Settings2, X } from 'lucide-react';
+import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { Archive, ArrowLeft, ArrowRight, ArrowDown, ArrowUp, CandlestickChart, Crosshair, GripVertical, Layers, LayoutGrid, Maximize2, Pin, Plus, Rows3, Scale, Settings2, Sigma, X } from 'lucide-react';
 import { motion, MotionConfig } from 'motion/react';
 import { lang, tr } from '../i18n';
 import { setTheme, useTheme } from '../theme';
 import { LocalBoundary } from '../ui/LocalBoundary';
+import { Liczydlo } from '../ui/Liczydlo';
+import { Litery } from '../ui/Litery';
 import {
   exportWorkspaceComposition, importWorkspaceComposition, loadWorkspaceComposition, saveWorkspaceCompositionLocked,
   type WorkspaceCard, type WorkspacePanelKind,
 } from '../state/workspaceComposition';
 import { ORDER_FLOW_MARKETS } from '../views/flow/orderFlowDesk';
+import { deskMarketOf } from '../config/deskMarkets';
 import {
-  assignPanel, fromPreset, isPreset, kinds, labels, makeId, makePanel, presets,
+  applyGridLayout, assignPanel, currentGridLayout, fromPreset, gridLayouts, isPreset, kinds, labels, makeId, makePanel, presetNotes, presets,
   readEntries, readStorage, rememberActive, removePanels, reorder, spanOf,
-  type Entry, type Preset, type WorkspaceComposition,
+  type Entry, type GridLayout, type Preset, type WorkspaceComposition,
 } from './composition';
 import { AFTER_B, BEFORE_B, consumeReturn, PanelContent, type Panel } from './Panels';
 
@@ -75,7 +78,50 @@ function settleBoard(root: HTMLElement | null, before: Map<string, DOMRect>) {
   });
 }
 
-export default function Workbench() {
+/** Ikona rodzaju panelu w bibliotece i na mapie kompozycji. */
+const KIND_ICON: Record<WorkspacePanelKind, ReactNode> = {
+  chart: <CandlestickChart size={iconSize} aria-hidden />,
+  flow: <Rows3 size={iconSize} aria-hidden />,
+  observation: <Crosshair size={iconSize} aria-hidden />,
+  archive: <Archive size={iconSize} aria-hidden />,
+  basket: <Scale size={iconSize} aria-hidden />,
+  delta: <Sigma size={iconSize} aria-hidden />,
+};
+const KIND_NOTE: Record<WorkspacePanelKind, string> = {
+  chart: tr('Świece dowolnego rynku i interwału, na żywo', 'Live candles of any market and timeframe'),
+  flow: tr('Kolejka zleceń obok wykonań', 'Order queue next to executions'),
+  observation: tr('Co było pierwsze: zlecenie czy zdjęcie', 'Which came first: the trade or the pull'),
+  archive: tr('Nagrana godzina co do milisekundy', 'A recorded hour to the millisecond'),
+  basket: tr('Ta sama minuta na kilku giełdach', 'The same minute on several venues'),
+  delta: tr('Znak delty mimo luki w danych', 'Delta sign through a data gap'),
+};
+
+/** Miniatura układu siatki: prostokąty kart w proporcjach 12 kolumn (dekoracja przy podpisie). */
+function LayoutGlyph({ spans }: { spans: number[] }) {
+  const rows: number[][] = [];
+  let row: number[] = [];
+  let used = 0;
+  for (const s of spans) {
+    if (used + s > 12) { rows.push(row); row = []; used = 0; }
+    row.push(s);
+    used += s;
+  }
+  if (row.length) rows.push(row);
+  const h = (20 - (rows.length - 1) * 2) / rows.length;
+  return <svg viewBox="0 0 28 20" width="28" height="20" aria-hidden="true" className="wb-layout-glyph">
+    {rows.flatMap((r, ri) => {
+      let x = 0;
+      return r.map((s, ci) => {
+        const w = (s / 12) * 28 - (r.length > 1 ? 1 : 0);
+        const el = <rect key={`${ri}-${ci}`} x={x} y={ri * (h + 2)} width={w} height={h} rx="2" />;
+        x += w + 2;
+        return el;
+      });
+    })}
+  </svg>;
+}
+
+export default function Workbench({ embedded = false }: { embedded?: boolean }) {
   const [slots, setSlots] = useState<Record<string, Entry>>(initial.slots);
   const [active, setActive] = useState(initial.active);
   const [selectedPanel, setSelectedPanel] = useState<string | null>(null);
@@ -127,11 +173,17 @@ export default function Workbench() {
     setUndo(null);
     setSlots(old => ({ ...old, [active]: { ...old[active], draft: apply(old[active].draft), dirty: true } }));
   }
-  const cardName = (card: WorkspaceCard) => card.panels.map(id => labels[panels.get(id)!.kind]).join(' / ');
+  const panelName = (panel: Panel) => {
+    const market = deskMarketOf(panel.market)?.label ?? panel.market;
+    if (panel.kind === 'chart') return `${market} · ${(panel.settings?.interval ?? '5m').replace('1d', '1D')}`;
+    if (panel.kind === 'flow') return `${labels.flow} · ${market}`;
+    return labels[panel.kind];
+  };
+  const cardName = (card: WorkspaceCard) => card.panels.map(id => panelName(panels.get(id)!)).join(' / ');
   const groupMarket = (panel: Panel, targetId: string) => {
     if (!targetId) { changePanel(panel.id, { marketGroup: null }); return; }
     const target = panels.get(targetId);
-    if (!target || target.kind !== 'flow') return;
+    if (!target || (target.kind !== 'flow' && target.kind !== 'chart')) return;
     const group = target.marketGroup ?? makeId('market');
     change(old => ({ ...old, panels: old.panels.map(p => p.id === panel.id
       ? { ...p, marketGroup: group, market: target.market }
@@ -159,7 +211,7 @@ export default function Workbench() {
   const add = (kind: WorkspacePanelKind) => {
     if (draft.panels.length >= 24) return;
     const panel = makePanel(kind);
-    const card: WorkspaceCard = { id: makeId('card'), kind: 'card', panels: [panel.id], weight: kind === 'flow' || kind === 'archive' ? 12 : 6 };
+    const card: WorkspaceCard = { id: makeId('card'), kind: 'card', panels: [panel.id], weight: kind === 'archive' ? 12 : 6 };
     change(old => ({ ...old, cards: [...old.cards, card], panels: [...old.panels, panel], leader: old.leader ?? panel.id }));
     say(tr(`Dodano: ${labels[kind]}.`, `Added: ${labels[kind]}.`));
     setSelectedPanel(null);
@@ -199,6 +251,12 @@ export default function Workbench() {
         p.id === panel.id || (clock.group && p.clock.group === clock.group)
       ) ? { ...p, clock: { ...p.clock, cursorMs } } : p),
     }));
+  }
+  function layout(id: GridLayout) {
+    const before = ruchOgraniczony() ? null : snapshotBoard(board.current);
+    change(old => applyGridLayout(old, id));
+    if (before) requestAnimationFrame(() => requestAnimationFrame(() => settleBoard(board.current, before)));
+    say(tr(`Układ: ${gridLayouts.find(l => l.id === id)?.label}.`, `Layout: ${gridLayouts.find(l => l.id === id)?.label}.`));
   }
   function weight(id: string, span: number) {
     change(old => ({ ...old, cards: old.cards.map(card => card.id === id ? { ...card, weight: span } : card) }));
@@ -355,25 +413,40 @@ export default function Workbench() {
     grip.addEventListener('lostpointercapture', finish);
   }
 
+  // Skok w obrębie Stanowiska bez zmiany adresu: w aplikacji „#…” to trasa widoku, a jej zmiana zamknęłaby Stanowisko
+  // razem z niezapisanym szkicem
+  const skok = (id: string) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.scrollIntoView({ block: 'start', behavior: ruchOgraniczony() ? 'instant' : 'smooth' });
+    el.focus({ preventScroll: true });
+  };
   const selectCard = (id: string) => { setSelectedPanel(null); setSelected(id); focus(cardAnchor(id)); };
   const activeIndex = Object.keys(slots).indexOf(active);
   return <MotionConfig reducedMotion={reduced ? 'always' : 'user'}>
-    <div className="wb-shell" data-light={light}>
-      <a className="wb-skip" href="#wb-workspace">{tr('Przejdź do kompozycji', 'Skip to composition')}</a>
-      <header className="wb-bar">
+    <div className="wb-shell" data-light={light} data-embedded={embedded || undefined}>
+      <a className="wb-skip" href="#wb-workspace" onClick={e => { e.preventDefault(); skok('wb-workspace'); }}>{tr('Przejdź do kompozycji', 'Skip to composition')}</a>
+      {!embedded && <header className="wb-bar">
         <a href={`../?lang=${lang}#dzis`} className="wb-back"><ArrowLeft aria-hidden size={16} /> {tr('Aplikacja · Dziś', 'App · Today')}</a>
         <a href={`../?lang=${lang}#charts${chartMarket ? `?m=${encodeURIComponent(chartMarket)}` : ''}`} className="wb-back">{tr('W sesji', 'In session')} ↗</a>
         <div className="wb-bar-end">
           <a className="wb-back" href={`?lang=${lang === 'pl' ? 'en' : 'pl'}`}>{lang === 'pl' ? 'EN' : 'PL'}</a>
           <button className="wb-button" type="button" aria-pressed={light} onClick={() => setTheme(light ? 'dark' : 'light')}>{light ? 'Opal' : 'Zorza'}</button>
         </div>
-      </header>
-      <main>
-        <section className="wb-intro" aria-labelledby="wb-title">
+      </header>}
+      <div className="wb-main">
+        <section className={`wb-intro${embedded ? ' hq-dzis-hero' : ''}`} data-latarka={embedded || undefined} aria-labelledby="wb-title">
           <div className="wb-intro-copy">
-            <p className="mono wb-brand">HYPERQUANT <span aria-hidden>╱</span> {tr('PRACOWNIA', 'STUDIO')}</p>
-            <h1 id="wb-title">{lab}</h1>
-            <p>{tr('Ułóż księgę, nagrania i własne obserwacje w jednej kompozycji.', 'Arrange your book, recordings and observations in one composition.')}</p>
+            <p className="mono wb-brand"><span aria-hidden className="wb-brand-line" />{tr('Stół warsztatowy', 'Workbench')} <span aria-hidden>·</span> {tr('zapis w tej przeglądarce', 'saved in this browser')}</p>
+            <h1 id="wb-title">{embedded ? <Litery text={lab} /> : lab}<span className="wb-title-sub">{embedded ? <Litery text={tr('Twój układ rynku.', 'Your market, your layout.')} start={10} /> : tr('Twój układ rynku.', 'Your market, your layout.')}</span></h1>
+            <p>{tr('Ułóż wykresy, księgę, nagrania i własne obserwacje w jednej kompozycji. Przeciągnij karty, zmień ich szerokość albo wybierz gotowy układ.',
+              'Arrange charts, the book, recordings and your own observations in one composition. Drag cards, resize them or pick a ready layout.')}</p>
+            <dl className="wb-stats">
+              <div><dt>{tr('Panele', 'Panels')}</dt><dd className="mono"><Liczydlo text={String(draft.panels.length)} /></dd></div>
+              <div><dt>{tr('Wykresy', 'Charts')}</dt><dd className="mono"><Liczydlo text={String(draft.panels.filter(p => p.kind === 'chart').length)} /></dd></div>
+              <div><dt>{tr('Karty', 'Cards')}</dt><dd className="mono"><Liczydlo text={String(draft.cards.length)} /></dd></div>
+              <div><dt>{tr('Stan', 'State')}</dt><dd>{entry.dirty ? tr('szkic', 'draft') : `${tr('zapis', 'saved')} r${entry.expected ?? 0}`}</dd></div>
+            </dl>
           </div>
           <figure ref={filmBox} tabIndex={-1} className="wb-film">
             {film && !reduced ? <video ref={video} controls autoPlay muted playsInline preload="metadata" poster={media('grok-c-v2-plakat.webp')} aria-label={tr('Film: odsłonięcie warstw', 'Film: reveal the layers')}>
@@ -383,6 +456,8 @@ export default function Workbench() {
               <span aria-hidden>▷</span> {tr('Film: warstwy', 'Film: layers')}
             </button>}
           </figure>
+          {embedded && <span aria-hidden="true" className="hq-latarka" />}
+          {embedded && <span aria-hidden="true" className="hq-dzis-woda pointer-events-none absolute inset-x-0 bottom-6 h-px" />}
         </section>
         <section id="wb-workspace" tabIndex={-1} className="wb-room" aria-label={tr('Kompozycja stanowiska', 'Workbench composition')}>
           <div className="wb-canvas">
@@ -398,11 +473,22 @@ export default function Workbench() {
                 <p className="wb-muted">{entry.dirty ? tr('Szkic lokalny', 'Local draft') : tr('Zapis lokalny', 'Saved locally')}</p>
               </div>
               <div className="wb-actions">
-                <a href="#wb-library" className="wb-button wb-library-jump">{tr('Biblioteka', 'Library')}</a>
+                <a href="#wb-library" className="wb-button wb-library-jump" onClick={e => { e.preventDefault(); skok('wb-library'); }}>{tr('Biblioteka', 'Library')}</a>
                 <button className="wb-button" id="wb-restore" type="button" onClick={restore}>{tr('Odtwórz', 'Restore')}</button>
                 <button className="wb-button" type="button" onClick={showExport}>{tr('Eksportuj', 'Export')}</button>
                 <button className="wb-button wb-primary" id="wb-save" type="button" disabled={busy || !entry.dirty} onClick={() => void save()}>{tr('Zapisz', 'Save')}</button>
               </div>
+            </div>
+            <div className="wb-layouts" role="group" aria-label={tr('Układ kart', 'Card layout')}>
+              <span className="wb-layouts-label"><LayoutGrid size={15} aria-hidden />{tr('Układ', 'Layout')}</span>
+              {gridLayouts.map(l => {
+                const on = currentGridLayout(draft) === l.id;
+                return <button key={l.id} type="button" className="wb-layout" aria-pressed={on} disabled={!draft.cards.length}
+                  title={l.label} onClick={() => layout(l.id)}>
+                  <LayoutGlyph spans={l.id === 'hero' ? [12, 6, 6] : l.id === 'grid' ? [6, 6, 6, 6] : l.spans} />
+                  <span>{l.label}</span>
+                </button>;
+              })}
             </div>
             <details ref={transfer} className="wb-transfer">
               <summary>{tr('Importuj lub skopiuj układ JSON', 'Import or copy layout JSON')}</summary>
@@ -430,7 +516,7 @@ export default function Workbench() {
                 style={{ '--rail-weight': spanOf(card) } as CSSProperties}>
                 {activeCard === card.id && <motion.i className="wb-rail-marker" aria-hidden="true"
                   layoutId={reduced ? undefined : 'wb-rail-marker'} transition={{ duration: reduced ? 0 : .18 }} />}
-                {draft.pinned.includes(card.id) && <Pin size={14} aria-hidden />}<span>{cardName(card)}</span>
+                {draft.pinned.includes(card.id) ? <Pin size={14} aria-hidden /> : KIND_ICON[panels.get(card.panels[0])!.kind]}<span>{cardName(card)}</span>
               </button>)}
             </div>
             {!!draft.pinnedPanels?.length && <div className="wb-actions wb-pinned" aria-label={tr('Przypięte panele', 'Pinned panels')}>
@@ -452,7 +538,7 @@ export default function Workbench() {
                       e.preventDefault();
                       move(card.id, index + (e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : -1));
                     }}><GripVertical size={iconSize} aria-hidden /></button>
-                  <h3 tabIndex={-1} id={cardAnchor(card.id)}>{cardName(card)}
+                  <h3 tabIndex={-1} id={cardAnchor(card.id)}><span className="wb-card-kind">{KIND_ICON[panels.get(card.panels[0])!.kind]}</span>{cardName(card)}
                     {card.panels.length === 1 && draft.leader === card.panels[0] && <span className="wb-leader">{tr('Prowadzący', 'Lead panel')}</span>}
                   </h3>
                   <button className="wb-icon" type="button" aria-pressed={draft.pinned.includes(card.id)}
@@ -472,7 +558,7 @@ export default function Workbench() {
                 <div className="wb-card-body">
                   {card.panels.map((id, panelIndex) => {
                     const panel = panels.get(id)!;
-                    const marketPeers = draft.panels.filter(p => p.kind === 'flow' && p.id !== id);
+                    const marketPeers = draft.panels.filter(p => (p.kind === 'flow' || p.kind === 'chart') && p.id !== id);
                     const replay = panel.clock.kind === 'replay' ? panel.clock : null;
                     const clockPeers = replay ? draft.panels.filter(p => p.id !== id && p.kind === panel.kind
                       && p.clock.kind === 'replay' && p.clock.analysisId === replay.analysisId) : [];
@@ -499,7 +585,7 @@ export default function Workbench() {
                           {panel.kind === 'flow' && <label>{tr('Rynek', 'Market')} <select value={panel.market} onChange={e => changeMarket(panel, e.target.value)}>
                             {ORDER_FLOW_MARKETS.map(m => <option value={m.coin} key={m.coin}>{m.label}</option>)}
                           </select></label>}
-                          {panel.kind === 'flow' && marketPeers.length > 0 && <label>{tr('Rynek połączony z', 'Market linked to')}
+                          {(panel.kind === 'flow' || panel.kind === 'chart') && marketPeers.length > 0 && <label>{tr('Rynek połączony z', 'Market linked to')}
                             <select value={marketPeers.find(p => p.marketGroup && p.marketGroup === panel.marketGroup)?.id ?? ''} onChange={e => groupMarket(panel, e.target.value)}>
                               <option value="">{tr('Osobny', 'Independent')}</option>
                               {marketPeers.map(p => <option key={p.id} value={p.id}>{p.market} · {draft.panels.indexOf(p) + 1}</option>)}
@@ -552,7 +638,7 @@ export default function Workbench() {
                             </button>
                           </div>
                         }>
-                          <PanelContent panel={panel} slot={active} change={values => changePanel(panel.id, values)} changeCursor={value => changeCursor(panel, value)} />
+                          <PanelContent panel={panel} slot={active} change={values => changePanel(panel.id, values)} changeCursor={value => changeCursor(panel, value)} changeMarket={market => changeMarket(panel, market)} />
                         </LocalBoundary>
                       </div>
                     </section>;
@@ -573,16 +659,18 @@ export default function Workbench() {
             <div className="wb-library-body">
               <p className="wb-label">{tr('Nowe z szablonu', 'New from template')}</p>
               {presetsList.map(key => <button type="button" className="wb-library-item" key={key} onClick={() => template(key)}>
-                <span>{presets[key]}</span><Plus size={iconSize} aria-hidden />
+                <span className="wb-library-icon"><Layers size={iconSize} aria-hidden /></span>
+                <span className="wb-library-text"><span>{presets[key]}</span><small>{presetNotes[key]}</small></span><Plus size={iconSize} aria-hidden />
               </button>)}
               <p className="wb-label" id="wb-add" tabIndex={-1}>{tr('Dodaj panel', 'Add a panel')}</p>
               {kinds.map(kind => <button type="button" className="wb-library-item" key={kind} disabled={draft.panels.length >= 24} onClick={() => add(kind)}>
-                <span>{labels[kind]}</span><Plus size={iconSize} aria-hidden />
+                <span className="wb-library-icon">{KIND_ICON[kind]}</span>
+                <span className="wb-library-text"><span>{labels[kind]}</span><small>{KIND_NOTE[kind]}</small></span><Plus size={iconSize} aria-hidden />
               </button>)}
             </div>
           </aside>
         </section>
-      </main>
+      </div>
     </div>
   </MotionConfig>;
 }

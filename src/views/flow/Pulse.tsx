@@ -31,8 +31,8 @@ export const Pulse: React.FC<{
   const box = `min-w-0 text-left rounded-lg border bg-surface-1 transition-colors ${small ? 'px-1.5 py-1' : 'px-3 py-1.5'}`;
   const body = (t: PulseTile, on: boolean) => (
     <>
-      <span className={`block truncate uppercase tracking-[0.06em] ${on ? 'text-accent' : 'text-ink-3'} ${small ? 'text-[9px]' : 'text-[10px]'}`}>{t.label}</span>
-      <span className={`block truncate font-mono text-ink-1 ${small ? 'text-[11px]' : 'text-[13px] leading-tight'}`}>{t.value}</span>
+      <span data-pulse-label className={`block truncate uppercase tracking-[0.06em] ${on ? 'text-accent' : 'text-ink-3'} ${small ? 'text-[9px]' : 'text-[10px]'}`}>{t.label}</span>
+      <span data-pulse-value className={`block truncate font-mono text-ink-1 ${small ? 'text-[11px]' : 'text-[13px] leading-tight'}`}>{t.value}</span>
       {/* Niski ekran (laptop 800 px): bez dopisku, żeby panele miały więcej wysokości */}
       {!small && t.sub && <span className="block truncate font-mono text-[10px] text-ink-3 [@media(max-height:860px)]:hidden">{t.sub}</span>}
     </>
@@ -41,6 +41,7 @@ export const Pulse: React.FC<{
     <div
       role={tabs ? 'tablist' : onPick ? 'toolbar' : 'group'}
       aria-label={tabs ? tr('Panel', 'Panel') : tr('Co się dzieje teraz', 'What is happening now')}
+      data-pulse
       className={`grid grid-cols-5 ${small ? 'gap-1' : 'gap-2'} shrink-0`}
     >
       {tiles.map((t) => {

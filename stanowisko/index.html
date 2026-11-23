@@ -4,29 +4,18 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="robots" content="noindex">
-    <link rel="stylesheet" href="/fonts/fonts.css">
     <title>HyperQuant · Stanowisko</title>
+    <!-- Stanowisko jest widokiem aplikacji (#stanowisko) w tej samej powłoce co reszta frontendu; stary adres przekierowuje
+         tam z zachowaniem języka. Bez skryptu: zwykły link. -->
     <script>
-      try {
-        const theme = localStorage.getItem('hq.theme') || localStorage.getItem('hq.workbench.theme');
-        document.documentElement.dataset.theme = theme === 'light' || theme === 'dark'
-          ? theme : matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
-        if (localStorage.getItem('hqp.motion') === 'reduced') document.documentElement.dataset.motion = 'reduced';
-      } catch {}
+      (function () {
+        var lang = new URLSearchParams(location.search).get('lang');
+        location.replace('../' + (lang === 'en' || lang === 'pl' ? '?lang=' + lang : '') + '#stanowisko');
+      })();
     </script>
-    <style>
-      /* HyperQuant page transition: the next page opens from the waterline */
-      @view-transition { navigation: auto; }
-      ::view-transition-old(root) { animation: hq-vt-out .38s cubic-bezier(.64,0,.78,0) both; }
-      ::view-transition-new(root) { animation: hq-vt-in .7s cubic-bezier(.83,0,.17,1) both; }
-      @keyframes hq-vt-out { to { opacity: 0; transform: scale(.985); } }
-      @keyframes hq-vt-in { from { clip-path: inset(49.6% 0 49.6% 0); } to { clip-path: inset(0 0 0 0); } }
-      html[data-motion='reduced']::view-transition-old(root), html[data-motion='reduced']::view-transition-new(root) { animation: none; }
-      @media (prefers-reduced-motion: reduce) { ::view-transition-old(root), ::view-transition-new(root) { animation: none; } }
-    </style>
+    <noscript><meta http-equiv="refresh" content="0; url=../#stanowisko"></noscript>
   </head>
   <body>
-    <div id="workbench-root"></div>
-    <script type="module" src="../src/workbench/main.tsx"></script>
+    <div id="workbench-root"><p><a href="../#stanowisko">HyperQuant · Stanowisko</a></p></div>
   </body>
 </html>

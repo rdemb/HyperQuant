@@ -11,7 +11,7 @@ const DOCK_KEY = 'hq.charts.dock.v1';
  * Widoki aplikacji w kolejności szyny: dzień tradera (Dziś i trzy fazy), rynek (Rynki, Order Flow), wiedza. Strona
  * startowa (Przekrój) nie jest widokiem aplikacji: pusty adres i `#start` otwiera ją `entry.ts`.
  */
-export const VIEWS: readonly ViewId[] = ['dzis', 'before', 'charts', 'after', 'markets', 'orderflow', 'lessons', 'research', 'sources', 'agents'];
+export const VIEWS: readonly ViewId[] = ['dzis', 'before', 'charts', 'after', 'markets', 'orderflow', 'lessons', 'research', 'sources', 'agents', 'stanowisko'];
 
 /** Widok nieznanego adresu: W sesji. Pusty adres rozstrzyga `landingView` (gdy Przekrój się nie wczyta: Dziś). */
 export const DEFAULT_VIEW: ViewId = 'charts';

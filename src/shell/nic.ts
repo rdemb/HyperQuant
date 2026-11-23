@@ -9,7 +9,7 @@ import { deskMarketOf } from '../config/deskMarkets';
 export const NIC_KLUCZ = 'hq.nic.v1';
 /** Starszy wpis nie jest już „miejscem, w którym skończyłeś” */
 export const NIC_WAZNOSC_MS = 12 * 3_600_000;
-const WIDOKI_PRACY = ['before', 'charts', 'after', 'orderflow'] as const;
+const WIDOKI_PRACY = ['before', 'charts', 'after', 'orderflow', 'stanowisko'] as const;
 type WidokPracy = (typeof WIDOKI_PRACY)[number];
 
 export interface Nic {
@@ -59,6 +59,7 @@ const WIDOK_NAZWA: Record<WidokPracy, () => string> = {
   charts: () => tr('W sesji', 'In session'),
   after: () => tr('Po sesji', 'After the session'),
   orderflow: () => 'Order Flow',
+  stanowisko: () => tr('Stanowisko', 'Workbench'),
 };
 
 /**

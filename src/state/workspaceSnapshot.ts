@@ -1,12 +1,16 @@
 import { deskMarketOf } from '../config/deskMarkets';
 
+/** Interwały panelu „Wykres” Stanowiska (świece Hyperliquid). */
+export const WORKSPACE_CHART_INTERVALS = ['1m', '5m', '15m', '1h', '4h', '1d'] as const;
+export type WorkspaceChartInterval = (typeof WORKSPACE_CHART_INTERVALS)[number];
+
 export type WorkspacePanel = {
   id: string;
   market: string;
   marketGroup: string | null;
   clock: { kind: 'live' } | { kind: 'replay'; group: string; analysisId: string };
   weight?: number;
-  settings?: { tapeMinimumUsd?: number; bookDepth?: 5 | 10 | 20 };
+  settings?: { tapeMinimumUsd?: number; bookDepth?: 5 | 10 | 20; interval?: WorkspaceChartInterval };
 };
 export type WorkspaceSnapshot = {
   v: 1;
@@ -43,11 +47,16 @@ export function parseWorkspaceSnapshot(value: unknown): WorkspaceSnapshot | null
     if (weight !== undefined) appearance.weight = weight;
     if (settings !== undefined) {
       if (!object(settings)) return null;
-      const { tapeMinimumUsd, bookDepth } = settings;
+      const { tapeMinimumUsd, bookDepth, interval } = settings;
       if (tapeMinimumUsd !== undefined && (typeof tapeMinimumUsd !== 'number' || !Number.isFinite(tapeMinimumUsd)
         || tapeMinimumUsd < 0 || tapeMinimumUsd > 1_000_000_000)) return null;
       if (bookDepth !== undefined && bookDepth !== 5 && bookDepth !== 10 && bookDepth !== 20) return null;
-      appearance.settings = { ...(tapeMinimumUsd === undefined ? {} : { tapeMinimumUsd }), ...(bookDepth === undefined ? {} : { bookDepth }) };
+      if (interval !== undefined && !(WORKSPACE_CHART_INTERVALS as readonly unknown[]).includes(interval)) return null;
+      appearance.settings = {
+        ...(tapeMinimumUsd === undefined ? {} : { tapeMinimumUsd }),
+        ...(bookDepth === undefined ? {} : { bookDepth }),
+        ...(interval === undefined ? {} : { interval: interval as WorkspaceChartInterval }),
+      };
     }
     if (clock.kind === 'live') {
       panels.push({ id: panelId, market, marketGroup, clock: { kind: 'live' }, ...appearance });

@@ -11,7 +11,7 @@ const SNAPSHOT_ID = 'orderflow';
 const storage = (): Storage | null => { try { return window.localStorage; } catch { return null; } };
 const panelIdFor = (coin: string) => `of-${(deskMarketOf(coin)?.slug ?? coin).toLowerCase().replace(/[^a-z0-9-]/g, '-')}`.slice(0, 48);
 
-type LadderSettings = Required<NonNullable<WorkspacePanel['settings']>>;
+type LadderSettings = Required<Omit<NonNullable<WorkspacePanel['settings']>, 'interval'>>;
 const defaultSettings: LadderSettings = { tapeMinimumUsd: 0, bookDepth: 10 };
 const settingsFor = (snapshot: WorkspaceSnapshot, coin: string) => snapshot.panels.find(
   p => p.id === panelIdFor(coin) && p.market === coin && p.clock.kind === 'live',

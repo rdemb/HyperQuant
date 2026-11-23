@@ -157,3 +157,61 @@ body:has(.of-desk[data-of-maximized="page"]) { overflow: hidden; }
 }
 [data-app-shell] > div:has(> main .of-desk[data-of-maximized="page"]) > footer { display: none; }
 [data-view-root]:has(.of-desk[data-of-maximized="page"]) { transform: none !important; }
+
+/*
+ * Pełny ekran Order Flow jako terminal (23.11.2026): wszystko na jednym ekranie, bez przewijania strony. Pasek tytułu,
+ * widoki i parametry w zwartych rzędach, drabina i taśma wypełniają resztę wysokości i przewijają się tylko w swoich
+ * panelach. Szeroki ekran: drabina obok taśmy; ekran pionowy albo wąski: drabina nad taśmą (60/40). Wiersze 24 px
+ * także na dotyku (minimalny cel WCAG 2.5.8), dopisek zmiany L2 w tym samym wierszu. Dane i kolumny bez zmian.
+ */
+.of-desk:is(:fullscreen, [data-of-maximized]) { display: flex; flex-direction: column; gap: 6px; overflow: hidden; }
+.of-desk:is(:fullscreen, [data-of-maximized]) > .of-link { display: none; }
+.of-desk:is(:fullscreen, [data-of-maximized]) .of-page-heading { flex: none; padding-block: 4px; }
+.of-desk:is(:fullscreen, [data-of-maximized]) .of-page-heading #orderflow-title { font-size: 20px; }
+.of-desk:is(:fullscreen, [data-of-maximized]) > [data-of-market] { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; gap: 6px; }
+.of-desk:is(:fullscreen, [data-of-maximized]) > [data-of-market] > .oc-switch { flex: none; margin: 0; }
+.of-desk:is(:fullscreen, [data-of-maximized]) > [data-of-market] > div:not([hidden]):has(> .oc-workspace) {
+  flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; gap: 6px;
+}
+.of-desk:is(:fullscreen, [data-of-maximized]) .of-status { flex: none; margin: 0; padding-block: 2px; }
+.of-desk:is(:fullscreen, [data-of-maximized]) .oc-workspace-save { display: none; }
+.of-desk:is(:fullscreen, [data-of-maximized]) .oc-workspace { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; gap: 6px; }
+.of-desk:is(:fullscreen, [data-of-maximized]) .oc-control-card { flex: none; display: flex; flex-wrap: wrap; align-items: center; }
+.of-desk:is(:fullscreen, [data-of-maximized]) .oc-control-card > .oc-read { border-top: 0; flex: 1 1 auto; }
+.of-desk:is(:fullscreen, [data-of-maximized]) .oc-controls, .of-desk:is(:fullscreen, [data-of-maximized]) .oc-read { padding-block: 3px; }
+.of-desk:is(:fullscreen, [data-of-maximized]) .oc-grid {
+  flex: 1 1 0; min-height: 0;
+  grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+}
+.of-desk:is(:fullscreen, [data-of-maximized]) :is(.oc-ladder, .oc-tape) { min-height: 0; overflow: hidden; }
+.of-desk:is(:fullscreen, [data-of-maximized]) .oc-scroll { max-height: none !important; flex: 1 1 0; min-height: 0; }
+.of-desk:is(:fullscreen, [data-of-maximized]) .oc-card-head { min-height: 30px; padding-block: 3px; }
+.of-desk:is(:fullscreen, [data-of-maximized]) :is(.oc-ladder, .oc-tape) :is(th, td) { padding-block: 1px; }
+.of-desk:is(:fullscreen, [data-of-maximized]) .oc-price button { min-height: 22px; padding-block: 0; }
+.of-desk:is(:fullscreen, [data-of-maximized]) .oc-ladder tbody tr { height: 24px; }
+.of-desk:is(:fullscreen, [data-of-maximized]) .oc-change { display: inline; margin-inline-start: 4px; }
+.of-desk:is(:fullscreen, [data-of-maximized]) .oc-ladder td:has(.oc-change) .oc-amount { width: auto; min-width: 50%; }
+.of-desk:is(:fullscreen, [data-of-maximized]) :is(.oc-switch button, .oc-workspace :is(select, button:not([data-of-level]))) { min-height: 30px; }
+@media (pointer: coarse) {
+  .of-desk:is(:fullscreen, [data-of-maximized]) :is(.oc-switch button, .oc-workspace :is(select, button:not([data-of-level]))) { min-height: 36px; }
+}
+/* Pion albo wąsko: drabina nad taśmą */
+@container (max-width: 760px) {
+  .of-desk:is(:fullscreen, [data-of-maximized]) .oc-grid { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 3fr) minmax(0, 2fr); }
+}
+@media (orientation: portrait) {
+  .of-desk:is(:fullscreen, [data-of-maximized]) .oc-grid { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 3fr) minmax(0, 2fr); }
+}
+/* Telefon: na jednym ekranie nie zmieści się czytelna drabina i taśma; drabina dostaje 62% wysokości, taśma 50%,
+   pełny ekran przewija się jako całość (panele dalej przewijają się w sobie) */
+@container (max-width: 560px) {
+  .of-desk:is(:fullscreen, [data-of-maximized]) > [data-of-market],
+  .of-desk:is(:fullscreen, [data-of-maximized]) > [data-of-market] > div:not([hidden]):has(> .oc-workspace),
+  .of-desk:is(:fullscreen, [data-of-maximized]) .oc-workspace,
+  .of-desk:is(:fullscreen, [data-of-maximized]) .oc-grid { flex: none; }
+  .of-desk:is(:fullscreen, [data-of-maximized]) .oc-grid { grid-template-rows: 62dvh 50dvh; }
+}
+@media (max-width: 560px) {
+  .of-desk:is(:fullscreen, [data-of-maximized]) { overflow: auto; }
+}

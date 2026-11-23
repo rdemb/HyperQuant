@@ -18,6 +18,7 @@ import { WallFatesPanel } from './WallFatesPanel';
 import { type WhoData, WhoPanel, useWho } from './WhoPanel';
 import { Hip3PublicFlow, type Hip3FlowTab } from './Hip3PublicFlow';
 import { isHip3DeskFlow } from './hip3Flow';
+import './flowColumn.css';
 
 /**
  * Prawa kolumna DOM i taśmy obok wykresu (W sesji): na górze Pulse, pod nim drabina „kto stoi w kolejce”, a niżej
@@ -118,7 +119,7 @@ export const FlowColumn: React.FC<FlowColumnProps> = props => props.variant === 
 function Hip3FlowColumn({ coin }: { coin: string }) {
   const [advanced, setAdvanced] = useState(false);
   const [tab, setTab] = useState<Hip3FlowTab>('tape');
-  return <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-line bg-surface-1" data-theme="dark">
+  return <div data-flow-column className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-line bg-surface-1" data-theme="dark">
     <div data-chart-flow-head className="shrink-0 border-b border-line px-2 py-1">
       <Segmented size="xs" ariaLabel={tr('Zakres odczytu', 'Data view')} value={advanced ? 'advanced' : 'market'} onChange={v => setAdvanced(v === 'advanced')}
         options={[{ value: 'market', label: tr('Kontrakt', 'Contract') }, { value: 'advanced', label: tr('Zaawansowane', 'Advanced') }]} />
@@ -205,7 +206,7 @@ const DetailedFlowColumn: React.FC<FlowColumnProps> = ({ coin, narrow, variant }
       walls: <WallFatesPanel fates={f.walls.fates} minUsd={f.walls.minUsd} step={f.chosen?.step ?? Number.NaN} since={f.walls.since} narrow={narrow} className={frame} head={lowerHead} />,
     };
     return (
-      <div className="relative h-full flex flex-col gap-1.5 min-h-0">
+      <div data-flow-column className="relative h-full flex flex-col gap-2 min-h-0">
         <Pulse tiles={pulseTiles(f, s, true)} active={max} narrow={false} dense onPick={(id) => setMax((m) => (m === id ? null : id))} />
         {max !== null ? (
           <div className="flex-1 min-h-0">{panels[max]}</div>
