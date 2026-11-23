@@ -147,3 +147,19 @@
 [data-flow-column] section.rounded-xl > div:first-child > span.mr-auto { min-width: 0; }
 [data-flow-column] section.rounded-xl > div:first-child [role='radiogroup'] > button { padding-inline: 6px; font-size: 11.5px; }
 [data-flow-column] section.rounded-xl > div:first-child select { max-width: 118px; flex: none; }
+
+/* Opal: dane kolumny (drabina, taśma, Kto, TWAP, Ściany) na papierze, a nie w ciemnym zasięgu wykresu. Kolory kupna
+   i sprzedaży w ciemniejszych odcieniach (kontrast ≥ 4,5:1 na jasnym tle). Pasek ciepła drabiny rysuje skala mapy ciepła
+   bieżącego motywu (w Opalu „atrament”: ściany najciemniejsze na papierze). */
+[data-flow-column][data-theme='light'] {
+  --color-of-buy-ink: #1d5fb0;
+  --color-of-sell-ink: #a93225;
+  --color-of-imb-buy: #1d5fb0;
+  --color-of-imb-sell: #a93225;
+}
+[data-flow-column][data-theme='light'] section.rounded-xl {
+  background:
+    radial-gradient(120% 50% at 0% 0%, color-mix(in oklab, var(--color-lume) 10%, transparent), transparent 62%),
+    var(--color-surface-2);
+  box-shadow: inset 0 1px 0 color-mix(in oklab, white 70%, transparent), 0 18px 40px -30px rgb(20 18 27 / 0.35);
+}

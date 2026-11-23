@@ -26,6 +26,7 @@ import {
   pickDetail,
 } from './layout';
 import { MONO, PRO, luminance, mixRamp, rgba } from './theme';
+import { motywWykresu, naZmianePalety } from '../../paleta';
 
 /**
  * Seria footprintu dla Lightweight Charts: jedna seria rysuje świecę, a przy zbliżeniu także footprint
@@ -64,19 +65,32 @@ export interface FootprintFrame {
 
 const LEVELS = 16;
 // Kafle komórek: od szarości przy małym wolumenie do nasyconego koloru strony przy największym w świecy
-const ASK_TILE = mixRamp(PRO.fpAskRamp, LEVELS);
-const BID_TILE = mixRamp(PRO.fpBidRamp, LEVELS);
-const POS_TILE = mixRamp(PRO.fpDeltaPosRamp, LEVELS);
-const NEG_TILE = mixRamp(PRO.fpDeltaNegRamp, LEVELS);
+let ASK_TILE = mixRamp(PRO.fpAskRamp, LEVELS);
+let BID_TILE = mixRamp(PRO.fpBidRamp, LEVELS);
+let POS_TILE = mixRamp(PRO.fpDeltaPosRamp, LEVELS);
+let NEG_TILE = mixRamp(PRO.fpDeltaNegRamp, LEVELS);
 // Liczby ciemne na jasnym kaflu, jasne na ciemnym (próg równego kontrastu obu wariantów)
 const inkFor = (tiles: string[]) => tiles.map((c) => (luminance(c) > 0.18 ? PRO.fpText : PRO.fpTextLight));
-const ASK_INK = inkFor(ASK_TILE);
-const BID_INK = inkFor(BID_TILE);
+let ASK_INK = inkFor(ASK_TILE);
+let BID_INK = inkFor(BID_TILE);
 const ramp = (hex: string, a0: number, a1: number) => Array.from({ length: LEVELS + 1 }, (_, i) => rgba(hex, a0 + ((a1 - a0) * i) / LEVELS));
-const DPOS_BAR = ramp(PRO.deltaPosBar, 0.55, 1);
-const DNEG_BAR = ramp(PRO.deltaNegBar, 0.55, 1);
-const VOL_BAR = rgba(PRO.volBar, 0.62);
-const TILE_EDGE = rgba(PRO.white, 0.12);
+let DPOS_BAR = ramp(PRO.deltaPosBar, 0.55, 1);
+let DNEG_BAR = ramp(PRO.deltaNegBar, 0.55, 1);
+let VOL_BAR = rgba(PRO.volBar, 0.62);
+let TILE_EDGE = rgba((motywWykresu() === 'light' ? PRO.ink1 : PRO.white), 0.12);
+// Przeliczenie przy zmianie motywu (paleta.ts)
+naZmianePalety(() => {
+  ASK_TILE = mixRamp(PRO.fpAskRamp, LEVELS);
+  BID_TILE = mixRamp(PRO.fpBidRamp, LEVELS);
+  POS_TILE = mixRamp(PRO.fpDeltaPosRamp, LEVELS);
+  NEG_TILE = mixRamp(PRO.fpDeltaNegRamp, LEVELS);
+  DPOS_BAR = ramp(PRO.deltaPosBar, 0.55, 1);
+  DNEG_BAR = ramp(PRO.deltaNegBar, 0.55, 1);
+  VOL_BAR = rgba(PRO.volBar, 0.62);
+  TILE_EDGE = rgba((motywWykresu() === 'light' ? PRO.ink1 : PRO.white), 0.12);
+  ASK_INK = inkFor(ASK_TILE);
+  BID_INK = inkFor(BID_TILE);
+});
 const lvl = (x: number) => (x >= 1 ? LEVELS : x > 0 ? Math.round(x * LEVELS) : 0);
 /** Liczby w komórkach: bezszeryfowe, węższe od czcionki o stałej szerokości. */
 const CELL_FONT = '"Plus Jakarta Sans", -apple-system, "Segoe UI", sans-serif';

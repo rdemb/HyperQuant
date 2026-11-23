@@ -6,6 +6,7 @@ import { type PriceBucket } from '../core/smcRangeProfileFlow';
 import type { TapeCell, TapeWindow } from '../core/smcRangeProfileTape';
 import { fmtHms } from '../core/time';
 import { rangeProfileLabel, type ProfileDisplayRow, type RangeProfileInfo } from './smcRangeProfileLayer';
+import { motywWykresu } from '../../paleta';
 
 const grid = 'grid grid-cols-[1.35fr_1fr_1fr] items-baseline gap-x-2';
 
@@ -76,7 +77,7 @@ export function MobileSmcRangeProfile({ id, info, expanded, onToggle, replayAt, 
     <span className="text-right">Δ USD</span>
   </div>;
 
-  return <section data-smc-mobile-profile data-theme="dark" aria-label={tr('Profil zakresu SMC', 'SMC range profile')}
+  return <section data-smc-mobile-profile data-theme={motywWykresu()} aria-label={tr('Profil zakresu SMC', 'SMC range profile')}
     className="mt-2 min-w-0 rounded-xl border border-line bg-surface-1 px-3 text-ink-1">
     <button type="button" aria-expanded={expanded} aria-controls={expanded ? id : undefined} onClick={onToggle}
       className="flex min-h-11 w-full items-center justify-between gap-2 rounded-lg text-left text-xs font-semibold focus-visible:outline-2 focus-visible:outline-accent">

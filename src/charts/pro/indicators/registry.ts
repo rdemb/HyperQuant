@@ -21,6 +21,7 @@ import { numLang } from '../../../ui/format';
 import { PRO } from '../chart/theme';
 import { SMC_RATES_SUMMARY } from '../chart/smcRates';
 import { tr } from '../../../i18n';
+import { naZmianePalety } from '../../paleta';
 
 /** Historia wykresu dla RVOL: 10 dni roboczych w oknie ok. 14 dni kalendarzowych */
 const RVOL_MIN_HISTORY_DAYS = 14;
@@ -136,14 +137,24 @@ export interface PlotDef {
  * (linie w odcieniach ink, czytelne także jako liczby legendy), druga i trzecia linia bez strony w kolejności kategorii
  * (złoto, zieleń), linia bazy w szarości. Kolor instancji (INDICATOR_COLORS) żadnego z nich nie używa.
  */
-const BUY_LINE = PRO.buyInk;
-const SELL_LINE = PRO.sellInk;
-const SECOND = PRO.indSecond;
-const THIRD = PRO.indThird;
-const BASE = PRO.cohortRest;
+let BUY_LINE = PRO.buyInk;
+let SELL_LINE = PRO.sellInk;
+let SECOND = PRO.indSecond;
+let THIRD = PRO.indThird;
+let BASE = PRO.cohortRest;
 /** Słupki i chmura: dodatnie (kupno, wzrost) w kolorze kupna, ujemne w kolorze sprzedaży. */
-export const HIST_UP = PRO.buy;
-export const HIST_DOWN = PRO.sell;
+export let HIST_UP = PRO.buy;
+export let HIST_DOWN = PRO.sell;
+// Przeliczenie przy zmianie motywu (paleta.ts)
+naZmianePalety(() => {
+  BUY_LINE = PRO.buyInk;
+  SELL_LINE = PRO.sellInk;
+  SECOND = PRO.indSecond;
+  THIRD = PRO.indThird;
+  BASE = PRO.cohortRest;
+  HIST_UP = PRO.buy;
+  HIST_DOWN = PRO.sell;
+});
 
 /** Krok wskaźnika: wartości plotów świecy do `out` (NaN = brak); `keep` zatwierdza zamkniętą świecę. */
 export type Step = (c: Candle, keep: boolean, out: Float64Array) => void;

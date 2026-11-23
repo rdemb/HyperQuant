@@ -7,6 +7,7 @@ import type { AggressorOrder } from '../../charts/pro/core/orders';
 import { type ProStore, storeFor } from '../../charts/pro/store/proStore';
 import { Segmented, numLang } from '../../ui';
 import { tr } from '../../i18n';
+import { useTheme } from '../../theme';
 import { noScannerTitle, type StepId, scannerScope } from './flowColumnModel';
 import { NO_SCANNER_NOTE } from '../../utils/marketCaps';
 import { FlowTape } from './FlowTape';
@@ -117,9 +118,11 @@ export const FlowColumn: React.FC<FlowColumnProps> = props => props.variant === 
   : <DetailedFlowColumn {...props} />;
 
 function Hip3FlowColumn({ coin }: { coin: string }) {
+  // Kolumna obok wykresu idzie za motywem aplikacji (płótno wykresu zostaje ciemne)
+  const theme = useTheme();
   const [advanced, setAdvanced] = useState(false);
   const [tab, setTab] = useState<Hip3FlowTab>('tape');
-  return <div data-flow-column className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-line bg-surface-1" data-theme="dark">
+  return <div data-flow-column className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-line bg-surface-1" data-theme={theme}>
     <div data-chart-flow-head className="shrink-0 border-b border-line px-2 py-1">
       <Segmented size="xs" ariaLabel={tr('Zakres odczytu', 'Data view')} value={advanced ? 'advanced' : 'market'} onChange={v => setAdvanced(v === 'advanced')}
         options={[{ value: 'market', label: tr('Kontrakt', 'Contract') }, { value: 'advanced', label: tr('Zaawansowane', 'Advanced') }]} />
@@ -131,6 +134,7 @@ function Hip3FlowColumn({ coin }: { coin: string }) {
 }
 
 const DetailedFlowColumn: React.FC<FlowColumnProps> = ({ coin, narrow, variant }) => {
+  const theme = useTheme();
   const f = useFlowColumn(coin);
   // Karta pod drabiną, panel powiększony kaflem Pulse (drugie kliknięcie wraca), kliknięte zlecenie i podświetlone konto
   const [lower, setLower] = useState<LowerTab>('tape');
@@ -206,7 +210,7 @@ const DetailedFlowColumn: React.FC<FlowColumnProps> = ({ coin, narrow, variant }
       walls: <WallFatesPanel fates={f.walls.fates} minUsd={f.walls.minUsd} step={f.chosen?.step ?? Number.NaN} since={f.walls.since} narrow={narrow} className={frame} head={lowerHead} />,
     };
     return (
-      <div data-flow-column className="relative h-full flex flex-col gap-2 min-h-0">
+      <div data-flow-column data-theme={theme} className="relative h-full flex flex-col gap-2 min-h-0">
         <Pulse tiles={pulseTiles(f, s, true)} active={max} narrow={false} dense onPick={(id) => setMax((m) => (m === id ? null : id))} />
         {max !== null ? (
           <div className="flex-1 min-h-0">{panels[max]}</div>

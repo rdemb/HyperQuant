@@ -4,6 +4,7 @@ import type { HeatRamp } from '../../orderflow/heatColor';
 import { C, MONO, rgba } from '../../orderflow/renderer';
 import { fmtHm, fmtHms } from '../core/time';
 import { locale, tr } from '../../../i18n';
+import { motywWykresu, naZmianePalety } from '../../paleta';
 
 /** Wygląd wykresu Pro: tokeny projektu (src/index.css), oś czasu w czasie lokalnym, polskie skróty miesięcy. */
 
@@ -113,18 +114,72 @@ const GLEBIA = {
   smcDiscount: '#8FB070',
 };
 
-export const PRO = {
-  ...C,
-  cross: rgba(C.ink2, 0.5),
-  va: rgba(C.ink2, 0.55),
-  warn: '#fab219',
-  partial: rgba('#fab219', 0.85),
-  /** Świeca niepełna (luka w taśmie) w panelach delty i CVD: wyszarzona jak niepełny footprint */
-  incomplete: rgba(C.ink2, 0.45),
-  // Grupa „Kto handluje” w Tablicy liczb: neutralna jasna (to nie giełda, nie bierze koloru z palety giełd)
-  players: '#e4e8ee',
-  ...GLEBIA,
-} as const;
+/**
+ * „Papier” (Opal, decyzja Rafała 23.11.2026): ta sama logika kolorów na jasnym tle. Świece w tych samych kolorach stron,
+ * liczby i opisy w ciemniejszych odcieniach (kontrast ≥ 4,5:1 na papierze), footprint od papieru do nasyconego koloru
+ * strony, profile w jasnych szarościach, poziomy i POC w ciemniejszym złocie.
+ */
+const PAPIER: Partial<typeof GLEBIA> = {
+  bg: '#FBFBFD',
+  axisText: '#474359',
+  buyInk: '#1D5FB0',
+  sellInk: '#A93225',
+  volBuy: rgba('#3280DD', 0.45),
+  volSell: rgba('#CA3829', 0.45),
+  priceLine: '#0E8AA3',
+  vwap: '#2A2F38',
+  levelSoft: '#B57A12',
+  svwap: '#6B55C9',
+  fpNeutral: '#EEF0F4',
+  fpBidRamp: ['#F1F2F5', '#F4D9D5', '#EBAFA6', '#DB7365', '#CA3829'],
+  fpAskRamp: ['#F1F2F5', '#D7E5F7', '#A9C8EE', '#6E9FE3', '#3280DD'],
+  fpDeltaPosRamp: ['#F1F2F5', '#D7E5F7', '#A9C8EE', '#6E9FE3', '#3280DD'],
+  fpDeltaNegRamp: ['#F1F2F5', '#F4D9D5', '#EBAFA6', '#DB7365', '#CA3829'],
+  fpText: '#0F1114',
+  fpTextLight: '#FFFFFF',
+  fpTextProfile: '#3A3F48',
+  fpRowLine: '#E3E5EA',
+  imbBuy: '#1D5FB0',
+  imbSell: '#A93225',
+  pocFrame: '#B8860B',
+  volBar: '#B9BEC7',
+  profileVa: '#D5D9E0',
+  profileOut: '#ECEEF2',
+  profilePoc: '#B8860B',
+  domText: '#1A1D21',
+  ice: '#0A9CC0',
+  surface2: '#FFFFFF',
+  coverExact: '#B8860B',
+  bubbleBuy: ['#3280DD', '#1D5FB0', '#174E93'],
+  bubbleSell: ['#CA3829', '#A93225', '#8C2419'],
+  ib: '#1E9E57',
+  smcLiquidity: '#1F9A92',
+  smcDiscount: '#5E8A3A',
+};
+
+const budujPRO = () => {
+  const jasne = motywWykresu() === 'light';
+  const warn = jasne ? '#B07400' : '#fab219';
+  return {
+    ...C,
+    cross: rgba(C.ink2, 0.5),
+    va: rgba(C.ink2, 0.55),
+    warn,
+    partial: rgba(warn, 0.85),
+    /** Świeca niepełna (luka w taśmie) w panelach delty i CVD: wyszarzona jak niepełny footprint */
+    incomplete: rgba(C.ink2, 0.45),
+    // Grupa „Kto handluje” w Tablicy liczb: neutralna (to nie giełda, nie bierze koloru z palety giełd)
+    players: jasne ? '#1a1d21' : '#e4e8ee',
+    ...GLEBIA,
+    ...(jasne ? PAPIER : {}),
+  };
+};
+/** Paleta płótna bieżącego motywu: obiekt stały, wartości podmieniane przy zmianie motywu (paleta.ts). */
+export const PRO = budujPRO();
+naZmianePalety(() => {
+  Object.assign(PRO, budujPRO());
+  LIQ_RAMP = rampaCiepla();
+});
 
 /** Konwersja sRGB ↔ OKLab (Ottosson) do mieszania stopni rampy bez brudnych środków. */
 const toLin = (c: number) => ((c /= 255) <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
@@ -158,12 +213,16 @@ function oklabAt(stops: readonly string[], t: number): string {
 
 /** „Światło księżyca”: pięć stopni od grafitu do bieli (kolejność: jasność rośnie). */
 const MOON = ['#424E5E', '#647386', '#879AB1', '#B4C6DB', '#EFF6FD'];
+/** „Atrament”: na papierze odwrotnie, od jasnej szarości do prawie czarnego (ściany najciemniejsze). */
+const INK = ['#C9D0DB', '#9AA5B6', '#6C7A8F', '#3E4A5C', '#121722'];
 
 /**
  * Rampa mapy ciepła arkusza „Głębia”: przezroczysty → grafit (półprzezroczysty, świece widać przez niego) → błękitna
  * szarość → biel (ściany). Kolory z rampy `MOON` w OKLab, pozycje i krycie stopni stałe.
  */
-export const LIQ_RAMP: HeatRamp = [
+const rampaCiepla = (): HeatRamp => {
+  const S = motywWykresu() === 'light' ? INK : MOON;
+  return [
   [0, 0],
   [0.12, 0.45],
   [0.28, 0.65],
@@ -173,7 +232,10 @@ export const LIQ_RAMP: HeatRamp = [
   [0.8, 1],
   [0.9, 1],
   [1, 1],
-].map(([t, alpha]) => ({ t, color: t === 0 ? MOON[0] : t === 1 ? MOON[4] : oklabAt(MOON, t), alpha }));
+].map(([t, alpha]) => ({ t, color: t === 0 ? S[0] : t === 1 ? S[4] : oklabAt(S, t), alpha }));
+};
+/** Rampa mapy ciepła bieżącego motywu (wiązanie `let`: importy widzą nową wartość po zmianie motywu). */
+export let LIQ_RAMP: HeatRamp = rampaCiepla();
 
 /** Odległość dwóch kolorów #rrggbb w OKLab (×100, jak ΔE walidatora palet): poniżej ok. 10 trudno je odróżnić na wykresie. */
 export function colorDistance(a: string, b: string): number {

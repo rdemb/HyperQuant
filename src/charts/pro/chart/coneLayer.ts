@@ -1,6 +1,7 @@
 import type { AutoscaleInfo, IChartApiBase, IPrimitivePaneRenderer, IPrimitivePaneView, ISeriesApi, ISeriesPrimitive, Logical, SeriesAttachedParameter, SeriesType, Time } from 'lightweight-charts';
 import { type ConeForecast, coneQuantile } from '../../../utils/cone';
 import { MONO, PRO, rgba } from './theme';
+import { naZmianePalety } from '../../paleta';
 
 // Prognoza i kwantyl stożka bez modułów wykresu (utils/cone; też panel „Najbliższe poziomy”) — dawne miejsce eksportu
 export { type ConeForecast, coneQuantile };
@@ -34,7 +35,11 @@ const MIN = 60_000;
 /** Punkty krzywej na horyzont (gładka krzywa przy każdym zbliżeniu). */
 const STEPS = 96;
 /** Tło podpisu (świeca pod tekstem nie miesza się z literami). */
-const LABEL_BG = rgba(PRO.bg, 0.85);
+let LABEL_BG = rgba(PRO.bg, 0.85);
+// Przeliczenie przy zmianie motywu (paleta.ts)
+naZmianePalety(() => {
+  LABEL_BG = rgba(PRO.bg, 0.85);
+});
 const LABEL_H = 12;
 
 interface Drawn {

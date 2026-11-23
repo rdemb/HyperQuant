@@ -6,6 +6,7 @@ import { activeTab, loadTabs, tabStation } from '../chart/tabs';
 import type { ReplayLink } from './link';
 import { ReplaySession } from './session';
 import { tr } from '../../../i18n';
+import { usePaletaWykresu } from '../../paleta';
 
 const none = () => () => {};
 
@@ -15,6 +16,8 @@ const none = () => () => {};
  * z wzorca układu (dawne id stacji prowadzą do nowego układu).
  */
 export const ReplayView: React.FC<{ link: ReplayLink }> = ({ link }) => {
+  // Zmiana motywu montuje sam wykres od nowa (sesja nagrania zostaje)
+  const motyw = usePaletaWykresu();
   const [session, setSession] = useState<ReplaySession | null>(null);
   useEffect(() => {
     const s = new ReplaySession({ source: link.source, coin: link.coin, from: link.from, to: link.to, t: link.t });
@@ -34,6 +37,7 @@ export const ReplayView: React.FC<{ link: ReplayLink }> = ({ link }) => {
   if (!session || session.state !== 'ready' || !store) return <ReplayStatus session={session} onExit={exit} />;
   return (
     <ProChart
+      key={motyw}
       station={station}
       tabId={tab.id}
       coin={link.coin}
