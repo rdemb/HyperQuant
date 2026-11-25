@@ -1,9 +1,9 @@
 {
   "v": 1,
   "ok": true,
-  "at": 1795596636559,
-  "run": "https://github.com/rdemb/HyperQuant/actions/runs/45579734462",
-  "commit": "98e87cbc449e675a1938144ed2b9220302dc460a",
+  "at": 1795643441556,
+  "run": "https://github.com/rdemb/HyperQuant/actions/runs/45707896766",
+  "commit": "ed7c739207afb63540dd47e69427e50a957c6a0f",
   "lines": [
     "✓ 2026-10-22.jsonl: 398 linii",
     "✓ 2026-10-23.jsonl: 960 linii",
@@ -39,11 +39,11 @@
     "✓ 2026-11-22.jsonl: 1482 linie",
     "✓ 2026-11-23.jsonl: 1422 linie",
     "✓ 2026-11-24.jsonl: 1482 linie",
-    "✓ 2026-11-25.jsonl: 557 linii",
+    "✓ 2026-11-25.jsonl: 1363 linie",
     "✓ kolejność i spójność rekordów",
     "✓ wyniki zgodne z przeliczonymi z kwantyli",
-    "✓ ensemble: 3225 wydań — p_e i p_r zgodne z zapisanymi wagami; wagi ostatnich wydań (2872) odtworzone ponownym dopasowaniem na pytaniach rozstrzygniętych przed wydaniem",
-    "✓ A/B: wariant B = wersja A × skala ze wzoru, te same chwile (3217 prognoz)",
+    "✓ ensemble: 3277 wydań — p_e i p_r zgodne z zapisanymi wagami; wagi ostatnich wydań (2872) odtworzone ponownym dopasowaniem na pytaniach rozstrzygniętych przed wydaniem",
+    "✓ A/B: wariant B = wersja A × skala ze wzoru, te same chwile (3269 prognoz)",
     "✓ plan A/B ab-v1 prerejestrowany 2026-10-22T17:51Z, zgodny z kodem; wariant B wydawany po rejestracji"
   ]
 }
