@@ -251,3 +251,61 @@ describe('scalanie historii w strukturach wykresu', () => {
     ]);
   });
 });
+
+describe('ServerHistory — gorący ogon z przekaźnika na żywo', () => {
+  const LIVE = 'https://hyperquant-live.example.workers.dev';
+  let h: ServerHistory | null = null;
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval', 'setTimeout', 'clearTimeout'] });
+    vi.setSystemTime(NOW);
+  });
+
+  afterEach(() => {
+    h?.stop();
+    vi.useRealTimers();
+  });
+
+  /** Ogon ostatnich 15 min w częściach 5-minutowych (część otwarta do `asOf`), jak MarketRecorder.tail. */
+  function tailFile(asOf: number) {
+    const parts = [];
+    for (let p = Math.floor((asOf - 15 * 60_000) / HIST_PART_MS) * HIST_PART_MS; p < asOf; p += HIST_PART_MS) {
+      const a = Math.max(p, asOf - 15 * 60_000);
+      const z = Math.min(p + HIST_PART_MS, asOf);
+      parts.push({ start: p, trades: encodeTrades('BTC', a, z, [[a, z]], tradesIn(a, z, a / 1000), [], true, 'day'), book: encodeBook('BTC', a, z, [[a, z]], [frameAt(a + 1000)]) });
+    }
+    return { v: 1, coin: 'BTC', asOf, parts };
+  }
+
+  it('minuty, których repo danych jeszcze nie pokazuje, przychodzą z ogona; strumień jeszcze nie ruszył — ponowienie', async () => {
+    const store = new ProStore(new HlStream({ wsFactory: () => ({}) as WebSocket }));
+    // CDN pokazuje części tylko do 10 min przed chwilą otwarcia strony
+    const published = [...Array(6)].map((_, k) => NOW - 20 * 60_000 - (NOW % HIST_PART_MS) + k * HIST_PART_MS).filter((p) => p + HIST_PART_MS <= NOW - 10 * 60_000);
+    const f = fakeFetch(files(published.map((start) => ({ start, part: true })), 'day'), index(NOW - 10 * 60_000, [], published));
+    const tailCalls: string[] = [];
+    const fetcher = async (url: string) => {
+      if (!url.startsWith(LIVE)) return f.fetcher(url);
+      tailCalls.push(url);
+      return new Response(new Uint8Array(gzipSync(JSON.stringify(tailFile(Date.now() - 2_000)))));
+    };
+    h = new ServerHistory(store, BASE, fetcher, LIVE);
+    await h.ensure(NOW - 30 * 60_000);
+    expect(tailCalls).toEqual([`${LIVE}/v1/tail/BTC`]);
+    // Pokrycie aż do chwili ogona — bez luki od ostatniej opublikowanej części
+    expect(store.coverage.covers(NOW - 15 * 60_000, NOW - 2_000)).toBe(true);
+    // Strumień na żywo nie ruszył (liveSince = +∞): kolejne próby co 4 s, najwyżej cztery razem
+    for (let i = 0; i < 6; i++) await vi.advanceTimersByTimeAsync(4_000);
+    expect(tailCalls).toHaveLength(4);
+  });
+
+  it('bez przekaźnika albo przy błędzie — sama historia, bez wyjątku', async () => {
+    const store = new ProStore(new HlStream({ wsFactory: () => ({}) as WebSocket }));
+    const f = fakeFetch(new Map(), index(NOW, [], []));
+    h = new ServerHistory(store, BASE, f.fetcher, '');
+    await h.ensure(NOW - 10 * 60_000);
+    expect(f.calls.every((c) => !c.includes('/v1/tail/'))).toBe(true);
+    const broken = new ServerHistory(store, BASE, async (url) => (url.startsWith(LIVE) ? new Response('nie gzip', { status: 200 }) : f.fetcher(url)), LIVE);
+    await expect(broken.tail()).resolves.toBeUndefined();
+    broken.stop();
+  });
+});

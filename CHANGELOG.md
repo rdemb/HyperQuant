@@ -4,6 +4,11 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Gorący ogon: wykres bez minut luki po otwarciu (2026-11-27)
+<!-- co-nowego: ukryj -->
+- Skaner trzyma ostatnie 15 min nagrania taśmy i arkusza i co 3 s wysyła je do przekaźnika na żywo (`workers/live`, Cloudflare Worker + Durable Object). Strona pobiera ten ogon przy starcie wykresu, więc footprint, Delta, CVD, mapa ciepła i drabina Order Flow mają ostatnie minuty od razu, zamiast czekać do 11 min na publikację części historii w repo danych.
+- Włącza się po konfiguracji: sekrety `CLOUDFLARE_API_TOKEN` i `LIVE_PUSH_TOKEN` (wdrożenie `live-worker.yml`), zmienna repozytorium `LIVE_URL` (build strony) oraz `HQ_LIVE_URL` i `HQ_LIVE_TOKEN` w `scanner.env`. Bez niej wszystko działa jak dotąd.
+
 ### Świece na pełnej wysokości i spokojniejsza mapa ciepła (2026-11-27)
 <!-- co-nowego: grupa=wykres | pl=Świece na pełnej wysokości i spokojniejsza mapa ciepła | en=Full-height candles and a calmer heatmap -->
 - Daleki VWAP nie ściska już świec. Wchodzi do autoskali tylko wtedy, gdy świece zachowują co najmniej 2/3 wysokości panelu; inaczej jego etykieta stoi przy krawędzi osi ze strzałką w stronę ceny (dotyczy też VWAP sesji).

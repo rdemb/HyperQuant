@@ -166,6 +166,8 @@ jobs:
         env:
           # Publiczny adres danych skanera (repo rdemb/hyperquant-data) — zmienna repozytorium, pusta = panel mapy likwidacji czeka
           VITE_DATA_BASE_URL: ${{ vars.DATA_BASE_URL }}
+          # Przekaźnik na żywo (workers/live): gorący ogon nagrania; pusta zmienna = sama historia z repo danych
+          VITE_LIVE_URL: ${{ vars.LIVE_URL }}
 
       # Paczka MCPB dla Claude Desktop (instalacja dwuklikiem, zakładka Agenci AI) z bundla zbudowanego i sprawdzonego
       # wyżej → dist/agents/hyperquant.mcpb; po buildzie strony, bo vite czyści dist

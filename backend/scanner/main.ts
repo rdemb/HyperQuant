@@ -24,6 +24,7 @@ import { fetchLeaderboardAccounts } from './seed.ts';
 import { publishToGit } from './gitPublish.ts';
 import { HISTORY_README, MarketRecorder, historyIndex, pruneHistory } from './history.ts';
 import { prepareHistoryRepo, publishHistory, startWhenReady } from './historyGit.ts';
+import { TAIL_PUSH_MS, tailPusher } from './liveTail.ts';
 import { WHALE_MARKETS, WhaleWatcher } from './whales.ts';
 import { MAX_DEX_QUERIES, MarketRegistryRunner } from './marketRegistryRunner.ts';
 import { FlowFile, FlowMinutes, MarketShadow, ShadowGate, parseOpenInterest } from './marketShadow.ts';
@@ -581,6 +582,27 @@ function guarded(name: string, fn: () => unknown): () => Promise<void> {
   };
 }
 
+/**
+ * Gorący ogon do przekaźnika na żywo (HQ_LIVE_URL): co TAIL_PUSH_MS, gdy rejestratory nagrywają. Wynik wysyłek
+ * podsumowany raz na minutę (pierwsza porażka od razu), żeby dziennik nie rósł co 3 s.
+ */
+const liveStats = { ok: 0, failed: 0, at: Date.now(), quiet: false };
+const livePush = cfg.live
+  ? tailPusher(cfg.live, recorders.map(({ rec }) => ({ coin: rec.coin, tail: (now: number) => rec.tail(now) })), (coin, ok) => {
+      if (ok) liveStats.ok++;
+      else {
+        liveStats.failed++;
+        if (!liveStats.quiet) log(`ogon na żywo: wysyłka ${coin} nieudana (kolejne w podsumowaniu co minutę)`);
+        liveStats.quiet = true;
+      }
+      if (Date.now() - liveStats.at >= 60_000) {
+        if (liveStats.failed > 0) log(`ogon na żywo: wysłane ${liveStats.ok}, nieudane ${liveStats.failed} w ostatniej minucie`);
+        Object.assign(liveStats, { ok: 0, failed: 0, at: Date.now(), quiet: liveStats.failed > 0 });
+      }
+    })
+  : null;
+const liveTick = livePush ? () => (historyReady ? livePush(Date.now()) : undefined) : null;
+
 const timers = [
   setInterval(guarded('publikacja', async () => {
     if (Date.now() - lastWsMsg > MAX_GAP_MS) wsGap = true;
@@ -622,6 +644,7 @@ const timers = [
     60_000
   ),
   setInterval(guarded('zapis stanu', saveState), 5 * 60_000),
+  ...(liveTick ? [setInterval(guarded('ogon na żywo', liveTick), TAIL_PUSH_MS)] : []),
   setInterval(
     guarded('płynność', () => {
       const rows = liquidity.flush(Date.now());

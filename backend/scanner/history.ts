@@ -4,6 +4,7 @@ import { gunzipSync, gzipSync } from 'node:zlib';
 import {
   HIST_HOUR_MS,
   HIST_PART_MS,
+  HIST_TAIL_MS,
   HISTORY_VERSION,
   bookSigFigs,
   clipSpans,
@@ -18,6 +19,7 @@ import {
   type HistSpan,
   type HistTrade,
   type HistoryIndex,
+  type TailFile,
 } from '../../src/utils/tapeHistory.ts';
 import { DayProfileBuilder, PROFILE_DAY_MS, type DayProfile, dayProfilePath, decodeDayProfile, encodeDayProfile, profileTick } from '../../src/utils/dayProfile.ts';
 import type { HlCtx, HlTrade } from './hl.ts';
@@ -154,6 +156,11 @@ export class MarketRecorder {
   private lastPart = Number.NEGATIVE_INFINITY;
   /** Doby z ważnym profilem (sprawdzone albo zapisane w tym uruchomieniu) */
   private readonly profiled = new Set<number>();
+  /** Gorący ogon (`tail`): ostatnie HIST_TAIL_MS nagrania niezależnie od zapisu części na dysk */
+  private recentTrades: HistTrade[] = [];
+  private recentFrames: HistFrame[] = [];
+  private recentSpans: HistSpan[] = [];
+  private readonly recentCtx = new Map<number, HistCtx>();
 
   constructor(coin: string, dir: string) {
     this.coin = coin;
@@ -167,7 +174,10 @@ export class MarketRecorder {
       return;
     }
     this.waitingSnapshot = false;
-    if (this.openAt !== null && at > this.openAt) this.spans.push([this.openAt, at]);
+    if (this.openAt !== null && at > this.openAt) {
+      this.spans.push([this.openAt, at]);
+      this.recentSpans.push([this.openAt, at]);
+    }
     this.openAt = null;
   }
 
@@ -202,6 +212,7 @@ export class MarketRecorder {
       if (typeof x.hash === 'string' && ZERO_HASH.test(x.hash)) row.z = true;
       if (acc) acc.push(row);
       else this.trades.set(p, [row]);
+      this.recentTrades.push(row);
     }
     // Pierwsza wiadomość po subskrypcji to migawka ostatnich transakcji: od najnowszej z nich taśma jest kompletna
     if (this.waitingSnapshot && newest > 0) {
@@ -213,7 +224,11 @@ export class MarketRecorder {
   onCtx(c: HlCtx, at: number): void {
     if (!(c.markPx > 0) || !(c.oiBtc >= 0)) return;
     const minute = Math.floor(at / MIN) * MIN;
-    if (Number.isFinite(c.funding)) this.ctx.set(minute, { t: minute, oi: c.oiBtc, funding: c.funding as number, mark: c.markPx });
+    if (Number.isFinite(c.funding)) {
+      const row = { t: minute, oi: c.oiBtc, funding: c.funding as number, mark: c.markPx };
+      this.ctx.set(minute, row);
+      this.recentCtx.set(minute, row);
+    }
     const sf = bookSigFigs(c.markPx);
     if (this.sigFigs && sf.near === this.sigFigs.near && sf.far === this.sigFigs.far) return;
     const digits = Math.floor(Math.log10(c.markPx)) + 1;
@@ -252,6 +267,7 @@ export class MarketRecorder {
     const f: HistFrame = { t, step, bids: lv[0], asks: lv[1], ...(exact ? { exact: true as const } : {}) };
     if (acc) acc.push(f);
     else this.frames.set(p, [f]);
+    this.recentFrames.push(f);
   }
 
   /**
@@ -344,11 +360,50 @@ export class MarketRecorder {
     }
     for (const k of this.ctx.keys()) if (k < due) this.ctx.delete(k);
     this.spans = this.spans.filter(([, b]) => b > due);
+    this.pruneTail(now);
     // Doba, której ostatnia część jest już zapisana: numeracja i mapy kont zapomniane (numer ważny najwyżej dobę)
     const open = dayOf(now - SETTLE_MS);
     for (const d of this.ids.keys()) if (d < open) this.ids.delete(d);
     written += this.consolidate(now);
     return written;
+  }
+
+  /**
+   * Gorący ogon do chwili `now`: ostatnie HIST_TAIL_MS nagrania w częściach 5-minutowych, w formacie plików historii
+   * (ta sama numeracja kont i zleceń doby, pokrycie przycięte do okna i do `now`). Strona otwarta przed publikacją części
+   * (zapis, git, pamięć CDN) dostaje brakujące minuty od razu. Bez nagrania w oknie — null.
+   */
+  tail(now: number): TailFile | null {
+    this.pruneTail(now);
+    const from = now - HIST_TAIL_MS;
+    const all = clipSpans(this.openAt !== null && now > this.openAt ? [...this.recentSpans, [this.openAt, now]] : this.recentSpans, from, now);
+    if (all.length === 0 && this.recentTrades.length === 0) return null;
+    const parts: TailFile['parts'] = [];
+    for (let p = partOf(from); p <= partOf(now); p += HIST_PART_MS) {
+      const a = Math.max(p, from);
+      const z = Math.min(p + HIST_PART_MS, now);
+      const spans = clipSpans(all, a, z);
+      const trades = this.recentTrades.filter((x) => x.t >= a && x.t < z);
+      const frames = this.recentFrames.filter((f) => f.t >= a && f.t < z);
+      if (spans.length === 0 && trades.length === 0 && frames.length === 0) continue;
+      const ctx = [...this.recentCtx.values()].filter((c) => c.t >= a && c.t < z);
+      parts.push({ start: p, trades: encodeTrades(this.coin, a, z, spans, trades, ctx, true, 'day'), book: encodeBook(this.coin, a, z, spans, frames) });
+    }
+    return parts.length > 0 ? { v: 1, coin: this.coin, asOf: now, parts } : null;
+  }
+
+  /** Liczba elementów pamięci ogona (kontrola zwalniania). */
+  tailSize(): { trades: number; frames: number } {
+    return { trades: this.recentTrades.length, frames: this.recentFrames.length };
+  }
+
+  /** Pamięć ogona tylko z okna HIST_TAIL_MS (sprzątanie przy każdym zapisie części, także bez przekaźnika). */
+  private pruneTail(now: number): void {
+    const from = now - HIST_TAIL_MS;
+    if (this.recentTrades.length > 0 && this.recentTrades[0].t < from) this.recentTrades = this.recentTrades.filter((x) => x.t >= from);
+    if (this.recentFrames.length > 0 && this.recentFrames[0].t < from) this.recentFrames = this.recentFrames.filter((f) => f.t >= from);
+    this.recentSpans = this.recentSpans.filter(([, b]) => b > from);
+    for (const k of this.recentCtx.keys()) if (k < from - MIN) this.recentCtx.delete(k);
   }
 
   /** Godziny zamknięte z częściami na dysku → plik godzinowy (scalony z istniejącym), części usunięte. */

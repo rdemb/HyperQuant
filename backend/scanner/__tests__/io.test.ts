@@ -26,6 +26,19 @@ describe('loadConfig — wyłącznie zmienne środowiskowe', () => {
     expect(loadConfig({ HQ_STATE_DIR: '/s', HQ_OUT_DIR: '/o', HQ_SEED_TOP: '99999' }).ok).toBe(false);
   });
 
+  it('przekaźnik ogona: adres https i token (≥ 32 znaki) razem albo wcale; wymaga rejestratora historii', () => {
+    const base = { HQ_STATE_DIR: '/s', HQ_OUT_DIR: '/o', HQ_HISTORY_MARKETS: 'BTC' };
+    const token = 'x'.repeat(32);
+    const off = loadConfig(base);
+    expect(off.ok && off.config.live).toBeNull();
+    const on = loadConfig({ ...base, HQ_LIVE_URL: 'https://hq-live.example.workers.dev/', HQ_LIVE_TOKEN: token });
+    expect(on.ok && on.config.live).toEqual({ url: 'https://hq-live.example.workers.dev', token });
+    expect(loadConfig({ ...base, HQ_LIVE_URL: 'https://hq-live.example.workers.dev' }).ok).toBe(false);
+    expect(loadConfig({ ...base, HQ_LIVE_URL: 'http://hq-live.example.workers.dev', HQ_LIVE_TOKEN: token }).ok).toBe(false);
+    expect(loadConfig({ ...base, HQ_LIVE_URL: 'https://hq-live.example.workers.dev', HQ_LIVE_TOKEN: 'krótki' }).ok).toBe(false);
+    expect(loadConfig({ HQ_STATE_DIR: '/s', HQ_OUT_DIR: '/o', HQ_LIVE_URL: 'https://hq-live.example.workers.dev', HQ_LIVE_TOKEN: token }).ok).toBe(false);
+  });
+
   it('R2 tylko komplet czterech zmiennych; budżet i okres w bezpiecznym zakresie', () => {
     expect(loadConfig({ HQ_STATE_DIR: '/s', HQ_OUT_DIR: '/o', R2_BUCKET: 'b' }).ok).toBe(false);
     const ok = loadConfig({ HQ_STATE_DIR: '/s', HQ_OUT_DIR: '/o', ...R2 });
