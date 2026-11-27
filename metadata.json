@@ -1,5 +1,0 @@
-{
-  "name": "HyperQuant",
-  "description": "Open-source BTC day-trading desk for Hyperliquid: live order-flow heatmap, footprint and volume profile, a plan analyzer instead of signals, cross-market context from public Hyperliquid data, official US macro calendar. Real data only; models are labelled.",
-  "requestFramePermissions": []
-}

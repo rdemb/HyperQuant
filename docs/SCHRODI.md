@@ -225,7 +225,7 @@ the ledger records probabilities, not labels, so scores are unaffected.
 ## Live record
 
 The backtest above can be wrong in ways nobody notices. So every 15 minutes, together with the other desk forecasts,
-the scanner records the cat's forecast in the [verifiable desk ledger](../README.md#methods-summary-and-literature) before the hour starts:
+the scanner records the cat's forecast in the [verifiable desk ledger](METHODS.md#methods) before the hour starts:
 the same model file and the same TypeScript code as the page, with the 22 features at the close of the 5m candle that
 ends at the slot.
 
