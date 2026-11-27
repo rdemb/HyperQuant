@@ -53,7 +53,7 @@ async function startServer() {
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`HyperQuant Full-Stack Analytical Desk server running on port ${PORT}`);
+    console.log(`HyperQuant dev server running on port ${PORT}`);
   });
 }
 

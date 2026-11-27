@@ -1,18 +1,95 @@
 # HyperQuant — order-flow day-trading desk for BTC, gold and the S&P 500 on Hyperliquid
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+<div align="center">
+
 [![CI](https://github.com/rdemb/HyperQuant/actions/workflows/ci.yml/badge.svg)](https://github.com/rdemb/HyperQuant/actions/workflows/ci.yml)
 [![Desk ledger — independent verification every 6 h](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/rdemb/HyperQuant/weryfikacja-dziennika/badge/ledger.json)](https://github.com/rdemb/HyperQuant/actions/workflows/ledger-verify.yml)
-[![Live: GitHub Pages](https://img.shields.io/badge/Live-GitHub%20Pages-0b1019)](https://hyperquant.tech/)
-[![Stack](https://img.shields.io/badge/React%2019%20·%20Vite%208%20·%20Canvas-PWA-3fc6dd)](https://github.com/rdemb/HyperQuant)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![hyperquant-mcp on npm](https://img.shields.io/npm/v/hyperquant-mcp?label=MCP%20server&color=cfea5b)](https://www.npmjs.com/package/hyperquant-mcp)
+[![Live app](https://img.shields.io/badge/live-hyperquant.tech-0b1019)](https://hyperquant.tech/)
 
-Open-source, installable (PWA) day-trading desk for Hyperliquid. BTC (the BTC-PERP perpetual) is the core of the desk; the other markets come from a HIP-3 exchange (see **Markets** below). The list of markets lives in one file, `src/config/deskMarkets.ts`, and `node scripts/markets/sync.mjs` writes it into this README, `index.html` and the app manifest (CI fails when they differ). It combines live order-flow charts on TradingView Lightweight Charts™ (footprint, delta and CVD, order-book heatmap, aggressor bubbles, TPO, drawing tools), a day laid out in three phases (before the session, in session, after the session) with a chart layout for each question, a trade journal with per-setup statistics instead of buy/sell signals, cross-market context from Hyperliquid's public API, an official US macro calendar, a verifiable forecast ledger, a blog with BTC analyses written before the fact, and a data-lineage page that tells you where every number comes from. Real data only; anything modelled is labelled.
+</div>
 
-The interface opens in English by default. Select **PL** or **EN** in the app to save your preference. Links from the Polish and English information pages open the app in the language of that page. The blog is written in Polish. For readers of the Polish version, the Polish UI label is given in *italics* next to the English name.
+<p align="center">
+  <b>Open-source order-flow analytics for Hyperliquid perpetuals.</b><br>
+  Footprint charts from the real trade tape, order-book heatmap, delta and CVD, liquidation maps from on-chain positions<br>
+  and a forecast ledger that anyone can verify. A free, installable web app: no sign-up, no API keys, no buy/sell signals.
+</p>
 
-**Live:** https://hyperquant.tech/ ([Charts](https://hyperquant.tech/en/charts/), [Lessons](https://hyperquant.tech/en/lessons/), [Blog](https://hyperquant.tech/blog/)) · install on a phone: Share → Add to Home Screen (iOS) or Install app (Android/Chrome).
+<p align="center">
+  <a href="https://hyperquant.tech/"><b>Open the app</b></a> ·
+  <a href="https://hyperquant.tech/en/charts/">Charts</a> ·
+  <a href="https://hyperquant.tech/en/lessons/">Lessons</a> ·
+  <a href="https://hyperquant.tech/en/results/">Forecast results</a> ·
+  <a href="https://hyperquant.tech/blog/">Blog</a> ·
+  <a href="mcp/README.md">MCP server</a> ·
+  <a href="docs/FEATURES.md">Feature reference</a>
+</p>
 
-**Markets**
+![HyperQuant In session screen: 15-minute BTC chart with the order-book heatmap, aggressor bubbles, maker walls, VWAP and session CVD, next to the live DOM ladder and the trade tape with TWAP slices](docs/media/chart.webp)
+
+<p align="center"><sub>In session: BTC-PERP on Hyperliquid with the order-book heatmap, aggressor bubbles, maker walls, VWAP and CVD, next to the live DOM ladder and the tape. Real data, captured from the live app.</sub></p>
+
+## Why HyperQuant
+
+Hyperliquid is an on-chain exchange: every trade on its public tape carries the aggressor side and the addresses of both counterparties, and every position is readable on chain. HyperQuant turns that into the tools a futures day trader expects from a professional platform, and goes further where a centralised exchange cannot:
+
+- **Order flow measured, not approximated.** Footprint, delta, CVD and "who is trading" are computed from the real tape, not inferred from candles.
+- **Liquidations from positions, not guesses.** The liquidation map is built from the on-chain positions of wallets seen on the BTC tape, with coverage shown explicitly.
+- **Forecasts you can check.** Every 15 minutes the desk records its forecasts before the fact in a SHA-256 hash chain with OpenTimestamps receipts, and an independent verifier re-checks the whole ledger every 6 hours.
+- **Free and private.** A static site with no accounts. Your journal, drawings, alerts and settings stay in your browser.
+
+## Principles
+
+1. **Honest data.** Every value carries a tag: `LIVE` (real data), `MODEL` (model output from real data, method documented) or `SIM`. Missing data is shown as "—", never as a placeholder number.
+2. **The desk describes the market; it does not suggest entries.** No automatic LONG/SHORT signals. Panels show measured facts, history with uncertainty, and models labelled as such.
+3. **Public, legal data.** The core is Hyperliquid's public API. Centralised exchanges (Binance, Bybit, OKX, Coinbase) are strictly opt-in: your own browser makes the connection, for personal use, and it is off by default.
+4. **Your data stays with you.** The trade journal, drawings, tabs and settings live only in your browser (localStorage and IndexedDB).
+5. **One palette, „Głębia”.** Buy is azure `#3280DD` and sell is ember `#CA3829`, a pair that stays distinguishable for colour-blind readers ([style guide](docs/STYLEGUIDE.md)).
+
+## Features
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/media/today.webp" alt="Today screen: session clock with Asia, London and New York, and live instrument cards for Bitcoin, the S&P 500 and gold"></td>
+    <td width="50%"><img src="docs/media/pre-session.webp" alt="Pre-session screen: the Four numbers (yesterday's clarity, liquidation fuel within 1%, expected range width, distance from VWAP) above the 4-hour day map"></td>
+  </tr>
+  <tr>
+    <td><b>Today.</b> The trading day at a glance: a 24-hour session clock and live cards for every desk market (price, funding, open interest, 24 h volume).</td>
+    <td><b>Pre-session.</b> Four numbers before the session, the day map, liquidation map with cascade simulation, US macro calendar and funding across venues.</td>
+  </tr>
+  <tr>
+    <td><img src="docs/media/day-review.webp" alt="Post-session Day review layout: 30-minute BTC chart with daily volume profiles coloured by aggressor side, initial balance, PDH and PDL, VWAP and session boundaries"></td>
+    <td><img src="docs/media/order-flow.webp" alt="Order Flow screen: price ladder with bid and ask depth per level next to the live trade tape"></td>
+  </tr>
+  <tr>
+    <td><b>Post-session.</b> Day review with Market Profile, initial balance and day type, the session review, and a trade journal with per-setup statistics.</td>
+    <td><b>Order Flow.</b> Price ladder with depth and executed volume, the live tape, delta-flip replay, level tests and the 08:00 UTC recording.</td>
+  </tr>
+</table>
+
+### Charts (In session)
+
+- **Footprint from the real tape**: Bid × Ask, Delta and Volume styles, POC, 70% value area, diagonal imbalances and stacked zones.
+- **Order-book heatmap**, aggressor bubbles, bursts, maker walls, icebergs and large resting orders; whale positions under a pseudonym valid for one UTC day, never an address.
+- **Delta and CVD** reset per Asia, London and New York session, UTC day or week; optional Binance and Bybit comparison.
+- **Indicators**: daily and session VWAP with σ bands, visible-range and fixed-range volume profile, TPO day profile, initial balance with extensions, PDH/PDL, liquidation clusters.
+- **Replay** of the last 24 hours of recorded tape and book at 1×, 5×, 15× or 60×, with links to a chosen moment.
+- **Layouts by phase of the day**, 1/2/4-chart grids, TradingView-style drawing tools, and price alerts delivered by Web Push even with the page closed.
+- **DOM & tape column**: who is in the queue, walls eaten or pulled, tape with memory (TWAP slices glued into one row), TWAPs en route, who absorbs the hits.
+
+### Analytics and learning
+
+- **Verifiable forecast ledger**: BTC 1 h and 4 h return quantiles from a seasonal log-HAR + FHS model, touch probabilities for key levels, CRPSS against a benchmark, and Brier/BSS against the distance baseline (a reflection formula) as well as the base rate. [Results](https://hyperquant.tech/en/results/).
+- **Lessons**: six "What would you do?" exercises on real BTC days, an atlas of the chart indicators, and the Folklore lab, which tests popular day-trading rules with a pre-registered forward test.
+- **Research**: Hyperliquid HIP-4 outcome markets against the desk model, order-book mechanics from the literature (OFI, Hawkes, microprice), VPIN, Kyle's λ, Hurst and regime detection.
+- **AI agents**: [`hyperquant-mcp`](mcp/README.md), a read-only MCP server that gives Claude Desktop and other MCP clients the same BTC market context (`npx -y hyperquant-mcp@0.1.5`).
+
+<p align="center"><img src="docs/media/lessons.webp" width="49%" alt="Lessons screen: six exercises on real BTC days from 20 to 24 October 2026, from basics to the footprint"> <img src="docs/media/phone-chart.webp" width="22%" alt="HyperQuant on a phone: 15-minute BTC chart with heatmap and bubbles, Chart, Tape, DOM and Numbers cards and the bottom navigation"></p>
+
+The app installs like a native app (PWA) on desktop and mobile, and is available in English and Polish. Every screen and panel is described in the **[feature reference](docs/FEATURES.md)**.
+
+## Markets
 
 <!-- rynki:start -->
 | Market | Hyperliquid | Exchange | Oracle / underlying | Underlying hours | Data on the desk |
@@ -22,54 +99,105 @@ The interface opens in English by default. Select **PL** or **EN** in the app to
 | S&P 500 | `xyz:SP500` | HIP-3 (trade.xyz) | the S&P 500 index during NYSE hours, futures outside them | NYSE 09:30–16:00 ET (index), CME futures outside it | candles, tape, book and the indicators built on them; outside the underlying hours the price is set by the platform |
 <!-- rynki:end -->
 
----
+The list of markets lives in one file, `src/config/deskMarkets.ts`; `node scripts/markets/sync.mjs` writes it into this README, `index.html` and the app manifest, and CI fails when they differ.
 
-## Principles
+## Quick start
 
-1. **Honest data.** Every value carries a tag: `LIVE` (real data), `MODEL` (model output from real data, method documented) or `SIM`. Missing data is shown as "—", never as a placeholder number. The desk starts only after the first successful sync with the API.
-2. **The desk describes the market; it does not suggest entries.** No automatic LONG/SHORT signals. Panels show measured facts, history with uncertainty and models labelled as such.
-3. **Public, legal data.** The core is Hyperliquid's public API. Centralised exchanges (Binance, Bybit, OKX, Coinbase) are strictly *opt-in*: the connection is made by the user's own browser, for personal use, and is off by default in the public build (the terms of some exchanges forbid public display of their data).
-4. **Your data stays with you.** The trade journal, drawings, tabs and settings live only in your browser (localStorage and IndexedDB).
-5. **One palette, „Głębia”.** Buy is azure `#3280DD` and sell is ember `#CA3829`, a blue/red pair chosen because it stays distinguishable for colour-blind readers; the liquidity heatmap runs from grey to white, so yellow is reserved for the POC alone. Details in [docs/STYLEGUIDE.md](docs/STYLEGUIDE.md).
+Requires **Node.js 24** (the version CI and the scanner use). No API keys are needed.
 
-## What's inside
+```bash
+git clone https://github.com/rdemb/HyperQuant.git
+cd HyperQuant
+npm ci --legacy-peer-deps
+npm run dev            # Express + Vite at http://localhost:3000
+```
 
-| View | Contents |
-|---|---|
-| **Start** (`#start`; a first visit opens here) | The three phases of the day with a 24 h session dial, **instrument cards** for the desk markets (table above) with the LIVE price and reading time, funding and open interest (a click opens In session with that market's chart), then the BTC Four numbers and short chapters leading to the phase screens. |
-| **Pre-session** (*Przed sesją*, `#before`) | The chart with the preparation layouts (Day map: 30m with the TPO day profile, VWAP, PDH/PDL and the range cone; Fuel and hours), then **Four numbers** (*Czwórka*: yesterday's legibility, the liquidation fuel within ±1% of price, the typical width of the session's next hour, distance from VWAP; a description, not a signal, with a **Frame** button), a context strip (2 h range from Monte Carlo, book depth, VPIN/λ, OU, distance from the session VWAP in σ, Initial Balance state, funding, the next macro release), the Fed/BLS/BEA calendar with countdown, funding on Hyperliquid vs Binance vs Bybit (normalised to APR) with a crowding z-score, **auction context** for the current London or New York session (VWAP ±1σ/±2σ, Initial Balance of the session's first hour with extensions, the previous day's profile, weak highs and lows, next to historical frequencies from ~200 BTC sessions with Wilson intervals), the liquidation map with cascade, **book liquidity by UTC hour** with the execution cost of your size, macro tiles (UST yields, TGA, RRP, CFTC COT, Fear & Greed, mempool) and RSS headlines. The context strip shows a connecting state until the first API sync. |
-| **In session** (*W sesji*, `#charts`) | The desk markets (table above) on the TradingView Lightweight Charts™ engine with live Hyperliquid data (each market with its own tape, price tick and book aggregation); pick the market in the chart bar, switch between them with `M`, or open either chart from the ⌘K / Ctrl+K command palette. **Layouts** (*Układy*), picked from the **Layout ▾** list that opens the single chart bar (layout, market, timeframe, chart type, **Layers ▾** with each layer's source badge and data age, Indicators, then the layout's numbers, *State*, the DOM column and a **⋯** menu with drawing, tape, alerts, settings, 1/2/4 charts, scale, replay, link, screenshot, Frame, shortcuts and full screen), grouped by phase of the day: Day map and Fuel and hours (Pre-session), Cockpit, Auction and open, and Big hands and the rest of the market (In session), Day review (Post-session). Each sets the chart layout, timeframes, layers and panels for one trader question in a single click, the layout's question is the tooltip of its name, and three numbers in the bar with a LIVE or MODEL badge (e.g. distance from VWAP in σ, **range budget**, **RVOL**; no data is "—" with a reason; a tap shows the source); Alt+1…6 switches between them (and moves to the matching phase screen), your changes are kept as your own version of the layout, **blog map** levels (the author's map, BTC only, with the post's time) can be drawn on the chart, the **Frame** (*Klatka*) button saves a 1200×675 or 1080×1080 PNG with a title, time, source and an always-present data-quality strip (tape and map coverage), and on the first visit a short *How to read this screen* card with a replay of the last 15 minutes for 7 days, and a reset button returns to the template. Your own **tabs** are kept: old workstation links and tabs map onto the new layouts, and the *Restore my previous settings* bar brings back the former Start tab (the old tab list is backed up). On phones the header is one row (logo, price, change; the other market numbers, language and stream pause are under the price and in *More*), and one horizontally scrolling row holds the layout, market, timeframe and chart-type lists and the **Chart, Tape, DOM and Numbers** cards (shown one at a time; the five flow numbers Book, Tape, Who, Walls, TWAP are in Numbers), with Layers and a ⋯ menu pinned at its end; the price chart takes at least 60% of the screen (one panel under it, volume at the bottom of the price chart, a one-line legend with the layout's three numbers, whale labels on tap). A tap on an empty part of the chart switches **focus mode** (only the chart and the bottom menu, the price chart ≥ 80% of the screen), and a phone turned sideways shows the chart full screen. The Cockpit starts on a phone with candles, VWAP and the heatmap; bubbles, walls and large orders are one tap away in Layers. Timeframes 1m–1D with history from the API (loaded further as you scroll left), local time. |
-| In session: **tape, footprint and replay** | The **last 24 hours of tape and order book** come from the scanner's recorder in the public data repository, and the tape is also cached in the browser, so footprint, Delta, CVD, bubbles and the heatmap are there from the first second. **Footprint** from the trade tape: zoomed out a plain candle, closer a volume profile inside the candle, closer still cells with numbers on every price row. Styles Bid × Ask (aggressor sells × buys; on wide candles also row delta and volume columns), Delta and Volume; automatic or fixed row height, framed POC, 70% value area, diagonal imbalances (adjustable ratio and minimum USD value) and stacked zones. **Delta** panel (delta candles: max and min delta during the bar) and **CVD** panel (reset per Asia/London/New York session with DST, UTC day, week, or continuous), volume from the API, and optional CVD and ΔOI panels comparing Hyperliquid with Binance and Bybit; every panel under the chart, including the Numbers table, is picked in the Indicators menu (sections Favourites, On the chart, Order flow, Classic as one list, Below the chart and HyperQuant only, with search; OBV, CMF, MFI and Net Volume were removed) and can be hidden with the cross in its corner. **Market state** (*Stan rynku*): one sentence (folded to the *State* button, one line under the bar when opened) built from fixed rules on the last 10 candles (price vs daily VWAP in σ, CVD direction and how long it has lasted, whether Binance and Bybit agree, open-interest change, the side of large players and the rest, book imbalance), with a "why?" panel showing the numbers behind each part; a description, not a signal. **Replay** (*Powtórka*) of the recorded tape and order book: up to the last 24 hours played back on the same chart at 1×, 5×, 15× or 60× with a time slider, as if it were live (footprint, heatmap, bubbles, CVD, Who is trading, Market state); a link opens the replay at a given moment, optionally with a layout, layers and a highlighted price zone. |
-| In session: **indicators, drawing, whales and profiles** | **Indicators** (*Wskaźniki*) from candle history, visible immediately: daily VWAP with ±1σ/±2σ bands and session VWAP, visible-range volume profile with POC/VAH/VAL, PDH/PDL and daily open, session opens, initial balance with 1.5× and 2× extensions, liquidation clusters from the scanner, each toggled in the Indicators menu. **Drawing tools** like TradingView (left toolbar): lines, channel, Fibonacci, shapes, measure with tape volume and delta, long/short position with R:R, text and notes, fixed-range volume profile, anchored VWAP; magnet, undo, keyboard shortcuts (list under "?"), saved in the browser. **Address-level clashes**: aggressor order bubbles above a market-adjusted threshold, battles with one large maker, bursts of small orders from many addresses, maker walls and icebergs (a maker absorbed more than the level ever showed in the book), and **large resting orders in the book** (average order size of a level above a threshold, drawn as a line for as long as it rests); a click shows details and the taker's account pseudonym (never the address) with a summary of its orders, and the **order tape** (Time & Sales) has a value filter and a sound for large orders. **Whales**: positions and large resting orders (including stops and take-profits) of the largest Hyperliquid accounts, under a pseudonym valid for one UTC day. **Day profile** (Market Profile, timeframes up to 30m): a volume profile of every UTC day coloured by the aggressive side from the tape (the last 7 days from day profiles the recorder publishes after each UTC day closes), with a thin TPO time outline (how many 30-minute periods touched each price), POC and value area from volume, first-hour range, single prints, tails, naked POCs, the day delta and row numbers under the crosshair; optionally coloured by **positions** instead: the minute open-interest change assigned to prices by volume, a solid bar where OI rose (new longs or new shorts by the side leading the minute) and an outline where it fell (shorts or longs closing). **Numbers table** (*Tablica liczb*) under the chart, in groups: Hyperliquid (volume, delta, ΔOI, 8 h funding), tape (delta %, delta extremes, trades, pace), **Who is trading** (*Kto handluje*: delta of large players and of the rest of the market from taker accounts over the 60 minutes up to the candle close, and the large players' share of entry value; sums only, never accounts) and optionally Binance (perp and spot delta, ΔOI, funding) and Bybit (delta, ΔOI); also **imbalance zones** and **unfinished auctions** extended to the right until price closes them. A one-line legend with OHLC and (with the VWAP layer) VWAP and the distance from it in σ, the row under the cursor; delta, its extremes, trade count and tape share of bar volume in the Delta or CVD pane caption; value labels for at most the 5 largest bubbles, walls and large orders in view (3 on a phone, the rest on hover; *Label density* 0, 3, 5 or all in Chart settings), never over each other, level tags or the last 10 candles; the live DOM ladder in its own margin next to the price axis; grid labels on the price axis give way to the last price, its countdown and VWAP; PNG screenshot with caption, full screen. |
-| In session: **alerts and multi-chart layouts** | **Price alerts** from the bell panel, the right-click menu or a horizontal line: touch, candle close (1 to 3 in a row) or reclaim of a level on 1m to 4h candles, with an optional delta filter, active hours, OCO pairs and chains, plus a **squeeze** alert with no level (a move of a set % within 10 minutes while open interest falls at least 0.3%, i.e. positions being closed rather than opened); alert lines can be hidden on all charts with one switch while the alerts keep running; each alert reports the candle's delta, volume, OI change and largest orders (sound, browser notification and history while the page is open in any tab; with **24/7 notifications** on, the HyperQuant server watches up to 30 alerts per device and sends a Web Push even with the page closed and the phone locked, no account needed; a ready set loads from a link after confirmation), a **view link** with market, timeframe and chart type, a chart menu with horizontal line, copy price and screenshot. On wide screens, **layouts of 1, 2 or 4 charts** (each with its own market, timeframe and settings; shared drawings per market, alerts and crosshair) and your own **setting templates**, saved from the current settings. The layouts of this phase are Cockpit (default), Auction and open, and Big hands and the rest of the market. |
-| In session: **DOM & tape column** | From 1440 px a **DOM & tape column** stands next to the chart (key `d` hides it); from 640 to 1439 px the same column is a drawer over the chart, closed at the start (the header button or `d` opens it, Esc closes it); on phones its five numbers are in the chart's Numbers card. The ladder and the tape follow the chart's market (BTC or gold); below the chart sit BTC cohort flow and the realised BTC liquidation tape. Scanner panels (Who absorbs the hits, TWAPs en route, cohorts, liquidations) cover BTC only: on gold they show "—, no scanner" with the reason; the blog map and HIP-4 layers show "—, BTC only". The column's panels: **Who is in the queue**: a ladder on a fixed price grid every 1, 10 or 100 USD with size, order count and average order per level (one large hand or a crowd), a 15-minute heat strip at each price, the value of trades that hit the level, and whale orders under a daily pseudonym, including stops and take-profits that are not in the book. **Walls: eaten or pulled**: when a large level disappears, a verdict from comparing ~5 s book snapshots (eaten by trades at its price, moved to nearby levels, or pulled), with counts for the last hour, how far from the price walls vanish (at the price, 1, 2–4, 5+ levels) and verdict icons where a wall's trace ends on the heat strip; a net comparison, not spoofing detection. **Tape with memory**: aggressor orders with one account's TWAP slices glued into one growing row, battles with one maker, repeat accounts (session pseudonym) and tape pace against a normal minute. **TWAPs en route**: TWAPs executing right now, matched to the account's plan from the public Hyperliquid TWAP log, with progress, what is left, the next 15 minutes, buy/sell totals and the TWAP share of the tape. **Who absorbs the hits**: Hyperliquid names the maker of every trade, so the view shows how many accounts absorb selling (bids) and buying (asks) over 15 minutes and how much the top three take, next to the same for aggressors and the usual share of the last hour (pseudonyms only). **Head of the queue**: best bid and ask from the `bbo` channel several times a second, how long the price has stood, and how much of the head's depletion was eaten by trades versus cancelled. A strip of five live numbers sits on top (one per panel); a click on a number enlarges its panel within the column. The last hour comes from the scanner's recording. |
-| **Post-session** (*Po sesji*, `#after`) | The chart with the Day review layout, then the **forecast ledger** (the verifiable desk ledger: scores, calibration, one-click verification in the browser, the cat model's record, the A/B plan of model versions) and the **session review** (*Rozliczenie*, anchor `#rozliczenie`: cards for the last closed London and New York sessions and the one in progress with day type (Dalton), value-area migration, Initial Balance result, range against the expected one judged ex ante, hit and missed blog map levels and liquidations; below them the 30-day forecast cone and 24 h cohorts, with replay links) and the **trade journal and playbook**: setups in a context → location → trigger → execution → invalidation template, trades with an R result from the initial stop, MAE/MFE (in R) and the auction context at entry reconstructed from 1m Hyperliquid candles, per-setup statistics with uncertainty (hit rate with a Wilson interval, mean R with a bootstrap interval, profit factor, median MAE of winners and MFE of losers); data stays in the browser, JSON export/import. |
-| **Markets** (*Rynki*, `#markets`; in the top bar, on phones under *More*) | One instrument card per desk market (table above), each with the exchange and market class, the price with the market's tick and a LIVE badge with the reading time, 24 h volume, open interest in USD (contracts × mark price), hourly funding with the annualised rate (× 24 × 365) and a **Chart** button that opens the market in session. Your browser asks Hyperliquid directly, one `metaAndAssetCtxs` per exchange every 60 s and only while the tab is visible (weight 20 each, with this page's weight in the last minute shown against the per-IP limit); the HyperQuant server fetches nothing. A reading older than 3 minutes or a market missing from the exchange response is "—" with the reason. No price change and no judgement of price moves. |
-| **Lessons** (*Lekcje*, under *More* and in the footer) | Six "What would you do?" exercises on real BTC days (20–24 Oct 2026): the chart stops at a key moment showing only closed candles (the price axis too), you answer or mark the invalidation level on the chart, the reasoning is scored (2/1/0) with feedback for every answer, then the rest of the day is revealed candle by candle, followed by a debrief with an honest caveat, the related Folklore lab result and a button that opens the matching In session layout. Also an atlas of the In session indicators (what it is, how we compute it, how to read it, traps, what to combine it with), how to combine them, popular rules next to the Folklore lab data, and a risk lab (1000 simulated trade series with fixed-fractional risk and costs, labelled as a simulation). VWAP, profile, IB and footprint use the same functions as the In session chart; slices are built by `scripts/lessons/build.mjs` from the public data repository. In Polish and English (times in UTC in the English version). No signals, no promised results. **Folklore lab**: 10 BTC day-trading rules (round numbers, PDH/PDL sweeps, IB breakout, VWAP reversion, CME gap, extreme funding, the "10:00 New York dump", intraday momentum) with a positive control and a placebo: a historical test with FDR correction and a pre-registered forward test (catalogue recorded in the verifiable ledger, e-values valid at every peek, e-BH). |
-| **Research** (*Badania*, under *More*) | Tools outside the flow of the day. **Model vs market (HIP-4)**: Hyperliquid outcome markets on BTC ("price above K at expiry", "touch K before expiry", the daily market settling at 06:00 UTC), with the market price from the "Yes" side of the book next to the desk model's probability for the same question (Monte Carlo on seasonal log-HAR + FHS in a Web Worker, exact Brownian-bridge extremes), a liquidity filter and the difference in pp; a calibration comparison, not a signal. Macro proxies from HIP-3 markets (S&P 500, Nasdaq-100, gold, oil, EUR, JPY) and the macro share of BTC's move (β, R²); the Hyperliquid perp market map (treemap, OI/volume, 24 h change). Order-book mechanics from the literature (Cont–Kukanov–Stoikov OFI, Hawkes MLE, Stoikov microprice, orders added and cancelled near the price, absorption from regression); liquidity profile and attraction field U(p), regime, heuristic trajectory, OU, Hawkes intensity, Hurst, entropy, VPIN, Kyle's λ, a fixed-risk position-size calculator and the order-flow tape. |
-| **Blog** | BTC analyses written before the fact (in Polish): the day map, the map before the New York open and the daily summary, with short notes in between. Every post has a level map with distance from price, scenarios with probabilities, its own link-preview image and share buttons; full analyses also have a data panel, a liquidation map, flows, conditional scenarios and charts (session map with VWAP, profile, delta, CVD and OI; footprint of the key area), and short notes a 6-hour chart. Each post links to the replay of the recorded tape in session at the moment it was published (kept for 7 days). Static pages (SEO), RSS, monthly archive. Posts are Markdown files in `content/blog/`; format and safeguards in [docs/BLOG.md](docs/BLOG.md). |
-| **Sources** (*Źródła*, under *More* and in the footer) | Lineage of every number (source → method → LIVE/MODEL → refresh), attributions and licences, the opt-in CEX switch with connection status, tape sound, the Aggr template, and a download of the data of the former Plan Analyzer (plans and equity saved in this browser, exported as a JSON file; the card appears only when such data exists, or when the saved plans cannot be read, which can then be downloaded raw). |
+The browser talks to Hyperliquid directly. Features built on the scanner (liquidation map, 24 h tape and book history, cohorts, whales, the ledger) read the public data repository; point the app at it with:
 
-The Lab 3D view, the Plan Analyzer and the separate Desk, Market, Microstructure and DOM & tape tabs no longer exist as tabs; their content moved into the phase screens and Research. Old links (`#desk`, `#plan`, `#market`, `#lab`, `#micro`, `#flow`) redirect to the matching screen.
+```bash
+VITE_DATA_BASE_URL=https://raw.githubusercontent.com/rdemb/hyperquant-data/main npm run dev
+```
 
-## Methods (summary) and literature
+| Script | What it does |
+| --- | --- |
+| `npm run lint` | type check (`tsc --noEmit`) |
+| `npm test` | Vitest unit and integration tests |
+| `npm run build` | production build to `dist/`, including the blog and static pages |
+| `npm run data` | fetches public macro feeds into `public/data/feeds` |
+| `npm run ui:check` | layout acceptance tests in headless Chrome on fixed data and a frozen clock |
+| `npm run mcp:build` | bundles the MCP server |
+| `node scripts/readme/shots.mjs` | regenerates the screenshots in `docs/media` from a build with `VITE_DATA_BASE_URL` |
 
-- **Buy/sell split of candles:** the real aggressor side from Hyperliquid's WebSocket wherever the desk observed the trades; for older candles, Bulk Volume Classification `V_B = V·Φ(ΔP/σ)` (Easley, López de Prado & O'Hara 2012), labelled MODEL.
-- **VPIN:** 50 equal-volume buckets; a **contested** metric (Andersen & Bondarenko 2014), so read it against its own history.
-- **Kyle's λ:** OLS `ΔP = λ·Q + ε` only on candles with real order flow (on BVC the regression would be circular); Kyle 1985.
-- **Volatility:** seasonal log-HAR (Corsi 2009) on hourly Garman–Klass (1980) variances from ~5000 Hyperliquid 1h candles (≈ 208 days), UTC hour-of-day profile (Andersen & Bollerslev 1997), Duan (1983) smearing correction; the forecast is iterated in 5-min steps. Accuracy is shown live: out-of-sample QLIKE loss (Patton 2011) against a naive 24 h mean. Jump share from bipower variation (Barndorff-Nielsen & Shephard 2004), jumps from the Lee & Mykland (2008) test, both as diagnostics. Missing data → the Parkinson (1980) estimator as a labelled fallback.
-- **Barrier probabilities** (engine behind the 2 h range, the model in Research and the Folklore lab): Monte Carlo with innovations bootstrapped from standardised 5m returns (filtered historical simulation, Barone-Adesi et al. 1999: fat tails and jumps come from the data) and a discrete-monitoring correction with the local per-step σ (Broadie, Glasserman & Kou 1997). The formula for Brownian motion (no time limit) serves as a reference.
-- **2 h range (Pre-session context strip):** the same engine (2000 paths, common random numbers within a minute); without the volatility model, Merton with an assumed 20% jump share (labelled in the strip).
-- **Hurst:** R/S with the Anis–Lloyd correction; Lo (1991): the test can mistake short memory for long memory.
-- **OU:** discrete AR(1) around 0.65·D-EQ + 0.35·W-EQ; no mean reversion → t½ = ∞.
-- **Liquidation map (Pre-session):** measured from on-chain positions: liquidation-price buckets from `clearinghouseState`, with OI coverage shown explicitly; the cascade from the square-root law (Tóth et al. 2011; Bouchaud et al. 2018) as an upper bound, and **cascade 2.0**, a Monte Carlo on the measured book: liquidations in tranches, triggering on the mark price with a 150 s EMA lag, the book refilling at the measured resilience rate, uncertainty about positions outside the map (a common path and bucket factor, coverage of each side separately), bands and local amplification.
-- **Verifiable desk ledger:** every 15 min, forecasts are recorded before the fact: the distribution of BTC's 1 h and 4 h return (13 quantiles from the HAR + FHS model, with a normal benchmark recorded alongside) and the chances of touching PDH/PDL/D-EQ within 2 h, settled from 1m candles, and **Schrödi**'s chances of a big move and a rise within 1 h, the touch odds of the auction levels and the hour's reach cone, with the 22 features in the record so the verifier recomputes every probability from the public models ([docs/SCHRODI.md](docs/SCHRODI.md#live-record)). Scores: CRPSS vs the benchmark, PIT with a uniformity test, coverage with Kupiec's test (90% and 60% on a disjoint subsample), ACI (Gibbs & Candès 2021; 90% coverage by construction, with the share of infinite intervals), Brier/BSS (touches against the distance baseline, a reflection formula with a constant 30-day hourly σ, and against the level base rate; CRPSS and both BSS with intervals from a block bootstrap over UTC days, seed 20261111), the big move BSS of Schrödi against a seasonal base rate, reliability, Venn–Abers calibration. Integrity: a SHA-256 hash chain in daily files on the `ledger` branch of the data repository (append-only history), an OpenTimestamps receipt for the chain head after every slot (calendars immediately, a Bitcoin block after a few hours), day anchors, explicit records of skipped slots. **Model vs market**: every 15 min the model's p and the price of the rolling 15-minute HIP-4 BTC market are recorded before the fact, with the Brier score of both on the same questions; an **ensemble** (logarithmic pooling with weights fitted only on previously settled questions: Genest & Zidek 1986, Ranjan & Gneiting 2010; extremising: Satopää et al. 2014) and a calibrated market as a reference (the model's added value) are recorded alongside and scored the same way, with weights reproduced by the verifier. A static scorecard of the ledger, rebuilt at every deploy from the published summary, the latest independent verification and the lab report: [`wyniki/`](https://hyperquant.tech/wyniki/) (PL) and [`en/results/`](https://hyperquant.tech/en/results/) (EN), with `Dataset` structured data pointing to the `ledger` branch. One-click verification in the reader's browser (WebCrypto: the chain from the first line, the summary head, receipts of the latest slots, pre-registrations) and full independent verification with `node scripts/verify-ledger.mjs --dir <clone of the ledger branch> [--summary <summary.json>] [--market] [--bitcoin]` (chain, git history, ordering, receipts, scores from quantiles, ensemble weights reproduced by refitting, variant B from the scale formula, `--summary`: the summary's measures and interval bounds recomputed from the records up to its head, pre-registrations of the lab catalogue and the A/B plan matching the code; `--market`: settlement prices vs Hyperliquid 1m candles; `--bitcoin`: block time from the receipts). The Bitcoin block usually arrives after 1–6 h: for 1 h forecasts, the proof of recording before the fact is the OpenTimestamps calendars, and the block confirms them later.
-- **Folklore lab:** barrier rules are events with two barriers (the one folklore predicts and the opposite one); under the hypothesis that price is a martingale, the optional stopping theorem gives the exact p0 = |C − failure| / |success − failure| regardless of the shape of the move distribution. A time limit gives a fractional outcome (the value of the stopped martingale, still E = p0); a candle touching both barriers is discarded (neutral under symmetric moves and rare thanks to a minimum band width; calibration checked by martingale simulation). Calendar rules (10:00 NY, momentum, weekend): p0 = 0.5 from sign symmetry or exchangeability of days. History: p-values with variance under H0 and Benjamini–Hochberg (1995) q, as exploration. Forward: the catalogue (definitions, parameters, thresholds and a control vector, i.e. a hash of the whole engine's output on fixed test data, so any code change requires a new version; SHA-256) is recorded in the ledger chain with an OpenTimestamps receipt, and only events starting ≥ 24 h later are scored; a betting process (Waudby-Smith & Ramdas 2023) gives an e-value valid under arbitrarily frequent peeking (Ville), with e-BH (Wang & Ramdas 2022) separately for confirmations and refutations and a confidence sequence for the effect; a positive control (weekends are calmer) and a placebo (non-round levels). Data: an archive of 1m/1h/1d candles and funding on the `archive` branch of the data repository (the API returns only the latest ~5000 candles).
-- **Volatility regime and A/B of model versions:** BOCPD (Adams & MacKay 2007) with a Gamma prior on the precision of deseasonalised 5m returns, a Student-t predictive and a constant hazard (regime ~1 day); version B of the 1 h return forecast mixes the model's variance with the regime variance and is recorded next to version A in the same slots. The evaluation plan is pre-registered in the ledger, with 14-day periods fixed in advance, CRPS on the same slots and a Newey–West interval with the fixed-b critical value (Kiefer & Vogelsang 2005); conclusions are drawn only after a period ends. **Variant C** (plan `ab-v2`, pre-registered like `ab-v1`) is a deterministic transform of the A quantiles: a fresh level from the realised volatility of the 12 closed 5m candles before the slot (x = clip(½·ln(rv60/σA²), ±1.5), quantiles × exp(c + κ·x)) and a scale mixture for variance uncertainty (9-point Gauss–Hermite, τ = 0.5); the verifier rebuilds it from the record with its own implementation, and its periods are scored from the first period boundary after the plan was registered.
-- **Cohort flow:** every trade on Hyperliquid's public tape carries the addresses of both sides and the aggressor side. The scanner assigns them to cohorts (market makers, statistically informed, whales, everyone else) and publishes net flow (inventory change; the sum over cohorts = 0) and aggressive CVD per cohort. "Informed" = a significantly positive taker markout after 5 min (observation = a 5-min block per address, one-sided test, Benjamini–Hochberg FDR control at q = 10%, empirical Bayes); cohort markouts are computed out of sample (the cohort at the time of the trade). Privacy: closed buckets only, k-anonymity with a dominance rule and secondary suppression (the cohort sum is public), separately for the aggressor layer, amounts rounded to USD 10k.
-- **Realised liquidation tape and map precision:** liquidations of tracked positions confirmed by fills with the `liquidation` field (Hyperliquid does not publish a liquidation stream for all accounts); for each one, how many bp the mark price at liquidation differed from the liquidation price on the map (median, p90). Positions with a liquidation price close to the market are read every minute.
-- **Liquidation estimates, order blocks, U(p):** heuristics without statistical validation, labelled as estimates.
-- **Forecast scoring:** Brier, log score, reliability diagram (Gneiting & Raftery 2007) for the ledger and the model-vs-market comparison.
+**Your own copy on GitHub Pages:** fork → *Settings → Pages → Source: GitHub Actions*, and set the repository variable `DATA_BASE_URL` to the data repository URL above. The `static.yml` workflow tests, builds and publishes the site on every push to `main` and on a schedule.
+
+## Architecture
+
+```mermaid
+flowchart LR
+  HL["Hyperliquid API<br/>REST + WebSocket"]
+  CEX["Binance · Bybit · OKX · Coinbase<br/>(opt-in)"]
+  SC["Scanner<br/>Node 24 service"]
+  DATA[("rdemb/hyperquant-data<br/>public Git repository")]
+  APP["HyperQuant web app<br/>React 19 · Lightweight Charts · Canvas"]
+  GHA["GitHub Actions"]
+  PAGES["GitHub Pages<br/>hyperquant.tech"]
+  VER["Ledger verifier<br/>every 6 h"]
+  MCP["hyperquant-mcp<br/>MCP server"]
+
+  HL -->|candles, book, trades| APP
+  CEX -.->|from your browser| APP
+  HL --> SC
+  SC -->|liquidation map, cohorts,<br/>24 h tape & book, ledger| DATA
+  DATA --> APP
+  GHA -->|build + public feeds| PAGES
+  PAGES --> APP
+  DATA --> VER
+  DATA --> MCP
+  HL --> MCP
+```
+
+- **Web app** (`src/`): React 19, TypeScript, Vite 8, Tailwind CSS 4, TradingView Lightweight Charts™ 5 and custom Canvas renderers for footprint, heatmap and DOM; Monte Carlo models run in a Web Worker.
+- **Scanner** (`backend/`): a Node 24 service that tracks positions, liquidations, cohorts and the forecast ledger, records 24 h of tape and book, and publishes everything to a public Git repository. The browser never connects to the scanner. Details in [backend/README.md](backend/README.md) (Polish).
+- **MCP server** (`mcp/`): read-only market context for AI assistants, published on npm.
+- **Static site and blog** (`scripts/blog/`, `content/blog/`): pre-rendered landing pages, lessons, the indicator atlas, the results page, RSS and sitemap.
+
+```
+src/
+  charts/      Charts view: Hyperliquid client, tape and footprint store, chart controller, drawing tools, venues
+  views/       screens: Today, Pre-session, In session, Post-session, Order Flow, Markets, Lessons, Research, Sources
+  utils/       quant engines: volatility model, ledger, liquidation map, auction context, microstructure
+  state/       data feed (REST + WebSocket), contexts, routing
+  lessons/     exercises, market slices, lesson figures
+  shell/       app shell, PWA (install, updates, offline)
+backend/       scanner: positions, liquidations, cohorts, ledger, tape and book recorder
+mcp/           hyperquant-mcp server
+scripts/       data fetching, ledger verifier, blog and static pages, UI checks, screenshots
+docs/          feature reference, methods, style guide, blog format
+```
+
+## Methods
+
+The numbers follow published methods, each cited in the code and in the app's data-lineage table. A summary:
+
+- **Buy/sell split**: the real aggressor side from Hyperliquid's WebSocket; for older candles Bulk Volume Classification (Easley, López de Prado & O'Hara 2012), labelled `MODEL`.
+- **Volatility**: seasonal log-HAR (Corsi 2009) on hourly Garman–Klass variances with an intraday profile (Andersen & Bollerslev 1997), scored live out of sample with QLIKE (Patton 2011).
+- **Barrier probabilities**: Monte Carlo with filtered historical simulation (Barone-Adesi et al. 1999) and a discrete-monitoring correction (Broadie, Glasserman & Kou 1997).
+- **Liquidation cascade**: the square-root impact law (Tóth et al. 2011) as an upper bound, and a Monte Carlo on the measured order book.
+- **Forecast scoring**: CRPSS, PIT, Kupiec coverage, adaptive conformal inference (Gibbs & Candès 2021), Brier/BSS against the distance baseline and the base rate, Venn–Abers calibration.
+- **Folklore lab**: exact martingale baselines from the optional stopping theorem, Benjamini–Hochberg on history, and e-values (Waudby-Smith & Ramdas 2023; e-BH, Wang & Ramdas 2022) for a forward test that stays valid under continuous monitoring.
+
+The full description, with every estimator and reference, is in **[docs/METHODS.md](docs/METHODS.md)**.
+
+## Verify the forecast ledger
+
+Every forecast is written before the fact to a hash chain on the [`ledger`](https://github.com/rdemb/hyperquant-data/tree/ledger) branch of the data repository, with OpenTimestamps receipts anchored in Bitcoin. The app verifies the chain in your browser with one click; for a full independent check:
+
+```bash
+git clone --branch ledger https://github.com/rdemb/hyperquant-data.git ledger
+node scripts/verify-ledger.mjs --dir ledger --market --bitcoin
+```
+
+The verifier checks the chain, git history, ordering and receipts, recomputes the scores from the recorded quantiles, refits the ensemble weights and compares settlement prices with Hyperliquid candles. The same check runs in GitHub Actions every 6 hours (badge above). The ledger data is licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
 
 ## Data sources
 
@@ -85,66 +213,22 @@ The Lab 3D view, the Plan Analyzer and the separate Desk, Market, Microstructure
 | RSS (CoinDesk, Cointelegraph, Decrypt, The Block, Bitcoin Magazine, Fed, BLS, SEC) | headlines | title, time and link to the publisher only |
 | Binance, Bybit, OKX, Coinbase | trades and liquidations; on the Charts screens also delta, open interest and funding | **opt-in only**, in the user's browser |
 
-Public data from outside Hyperliquid is fetched every ~30 min by a GitHub Actions workflow (`scripts/fetch-public-data.mjs`, no API keys) and published together with the site as `data/feeds/*.json`.
-
-## Running locally
-
-Requires Node.js 24 (the version CI uses). No API keys or `.env` file are needed.
-
-```bash
-git clone https://github.com/rdemb/HyperQuant.git
-cd HyperQuant
-npm ci --legacy-peer-deps
-npm run data      # optional: fetches public data into public/data/feeds
-npm run dev       # development server (Express + Vite) at http://localhost:3000
-npm test          # Vitest tests
-npm run build     # production build to ./dist, including the blog (relative paths, ready for GitHub Pages)
-```
-
-**Your own copy on GitHub Pages:** fork → *Settings → Pages → Source: GitHub Actions*. The `.github/workflows/static.yml` workflow runs the tests, fetches public data, builds and publishes the site on every push to `main` and every ~30 min.
-
-## Architecture
-
-```
-src/
-  state/        useDeskFeed (Hyperliquid REST + WS, batching, data status), DeskContext, CEX opt-in
-  charts/       pro/ — the Charts view: Hyperliquid client (hl/), tape, footprint, coverage and sessions (core/),
-                store with last-day history and browser tape cache (store/), footprint series and Lightweight Charts
-                controller (chart/), drawing tools (draw/), Binance and Bybit feeds (venues/)
-                orderflow/ — the original Canvas order-flow store and renderer; footprint maths, heat colours
-                and formatting shared with the Charts view
-  views/        Pre-session, In session (Charts + the DOM & tape column in flow/), Post-session, Markets, Research, Lessons, Sources (lazy-loaded);
-                before/, after/, desk/, market/, micro/ hold the panels the phase screens reuse
-  lessons/      the Lessons tab: market slices, lesson figures (candles with indicators, footprint), exercises, content, risk simulation
-  components/   tape, microstructure and quant-signal panels
-  workers/      Web Worker for the HIP-4 model (Monte Carlo)
-  types/        market data and metric types
-  utils/        engines: marketDataFeed, quantMathEngine, shaakuniEngine, forecastLedger, hlMarkets, publicFeeds, cexAdapters
-  data/         official macro calendar
-  ui/           primitives (Panel, Stat, Badge, Segmented…) and motion tokens
-  shell/        app shell, PWA (install, updates, offline)
-backend/      HyperQuant scanner: liquidation map, ledger, cohorts, tape and book recorder (backend/README.md)
-content/blog/ blog posts (Markdown + YAML frontmatter)
-scripts/      public data fetching (GitHub Actions), ledger verifier, PWA icon generator, blog/ (blog and site page generator: posts, Charts and Lessons pages, indicator atlas pages, RSS, sitemap, OG images, post charts and their data), lessons/ (market slices for the Lessons tab)
-docs/BLOG.md  blog post format, safeguards, publishing
-docs/STYLEGUIDE.md  colour tokens (palette validated for colour blindness), typography, chart and motion rules
-```
+Public data from outside Hyperliquid is fetched by a GitHub Actions workflow (`scripts/fetch-public-data.mjs`, no API keys) and published with the site as `data/feeds/*.json`.
 
 ## Limitations
 
-- Hyperliquid's public API has no trade or order-book history. The Charts view therefore loads the last 24 hours of tape and book recorded by the scanner and keeps its own tape in the browser for a day; time covered by neither stays a visible gap. A candle whose recording is incomplete is dimmed and marked as partial, never filled with an estimate. Candles and volume have full API history (up to ~5000 candles per timeframe).
-- In Pre-session, Binance/Bybit funding comes from the forecast published by Hyperliquid; HIP-3 markets are proxy perps, not cash indices (they may stall outside trading hours).
-- Models (Monte Carlo, OU, VPIN, Hurst) are descriptive tools; their accuracy is measured live in the forecast ledger.
-- The volatility model sees ~208 days of history (the API returns at most ~5000 candles per timeframe); macro event multipliers are still assumptions, and adverse selection when limit orders fill is not modelled.
+- Hyperliquid's public API has no trade or order-book history. The Charts view loads the last 24 hours recorded by the scanner and keeps its own tape in the browser; time covered by neither stays a visible gap, never an estimate.
+- HIP-3 markets are proxy perpetuals, not cash indices; outside the underlying's hours the price is set by the platform.
+- Models (Monte Carlo, OU, VPIN, Hurst) are descriptive tools; their accuracy is measured live in the forecast ledger. More in [docs/METHODS.md](docs/METHODS.md#limitations).
+
+## Contributing
+
+Contributions are welcome. Read the [contributing guide](CONTRIBUTING.md) (content rules, conventions, PR checklist) and the [code of conduct](CODE_OF_CONDUCT.md). Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md). The changelog is kept in Polish in [CHANGELOG.md](CHANGELOG.md).
+
+## License
+
+Code: [MIT](LICENSE). Forecast ledger data: [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Charts are built on [TradingView Lightweight Charts™](https://www.tradingview.com/lightweight-charts/) (Apache 2.0, see [NOTICE](NOTICE)).
 
 ## Disclaimer
 
 HyperQuant is an educational and analytical tool. It is not investment, financial or legal advice and does not generate trading signals. Trading leveraged contracts carries a high risk of losing capital.
-
-## Contributing
-
-Guidelines, conventions and the PR checklist: [CONTRIBUTING.md](CONTRIBUTING.md) · changelog (in Polish): [CHANGELOG.md](CHANGELOG.md) · reporting vulnerabilities: [SECURITY.md](SECURITY.md).
-
-## License
-
-MIT, see [LICENSE](LICENSE). The forecast ledger data (the `ledger` branch of [hyperquant-data](https://github.com/rdemb/hyperquant-data/tree/ledger)) is licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Charts use TradingView Lightweight Charts™ by [TradingView](https://www.tradingview.com/) (Apache 2.0), see [NOTICE](NOTICE).

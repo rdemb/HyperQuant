@@ -4,6 +4,13 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Nowe README i porządki w repozytorium (2026-11-27)
+<!-- co-nowego: ukryj -->
+- README napisane od nowa: opis projektu, zrzuty ekranu z prawdziwych danych, przegląd funkcji, szybki start (z `VITE_DATA_BASE_URL` dla danych skanera), diagram architektury, skrót metod i weryfikacja dziennika. Pełny opis widoków w `docs/FEATURES.md`, metody, literatura i ograniczenia w `docs/METHODS.md`.
+- `scripts/readme/shots.mjs` odtwarza zrzuty do `docs/media` i obrazek podglądu repo (`social-preview.png`).
+- Dodany `CODE_OF_CONDUCT.md`. Usunięty nieużywany `metadata.json`, pakiet nazywa się `hyperquant`.
+- Bez automatycznych PR-ów z aktualizacjami zależności (usunięty `.github/dependabot.yml`); zależności i akcje aktualizujemy ręcznie.
+
 ### Przekrój w motywie Opal (2026-11-23)
 <!-- co-nowego: grupa=blog | pl=Przekrój w motywie Opal | en=Opal theme for the homepage -->
 - Strona główna używa tych samych nazw motywów co aplikacja. Opal zmienia tło strony, menu i karty na jasne oraz poprawia czytelność tekstu.

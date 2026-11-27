@@ -1,8 +1,8 @@
 {
-  "name": "hyperquant-3d-desk",
+  "name": "hyperquant",
   "private": true,
   "version": "2.4.0",
-  "description": "Open-source BTC day-trading desk for Hyperliquid: pre-session, in-session and post-session screens, live order-flow heatmap & footprint, verifiable forecast ledger, cross-market context, PWA.",
+  "description": "Open-source order-flow desk for Hyperliquid: footprint, order-book heatmap, delta and CVD, liquidation maps and a verifiable forecast ledger for BTC, gold and the S&P 500. Installable PWA.",
   "license": "MIT",
   "homepage": "https://hyperquant.tech/",
   "repository": {
