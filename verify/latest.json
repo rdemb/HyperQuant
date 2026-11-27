@@ -1,9 +1,9 @@
 {
   "v": 1,
   "ok": true,
-  "at": 1795729424514,
-  "run": "https://github.com/rdemb/HyperQuant/actions/runs/45900008900",
-  "commit": "83f550327de862b3107170db4d203494e449b234",
+  "at": 1795769266994,
+  "run": "https://github.com/rdemb/HyperQuant/actions/runs/45968360420",
+  "commit": "74737120e4bcd3553f46a185078f2dc8743c7af0",
   "lines": [
     "✓ 2026-10-22.jsonl: 398 linii",
     "✓ 2026-10-23.jsonl: 960 linii",
@@ -40,10 +40,10 @@
     "✓ 2026-11-23.jsonl: 1422 linie",
     "✓ 2026-11-24.jsonl: 1482 linie",
     "✓ 2026-11-25.jsonl: 1488 linii",
-    "✓ 2026-11-26.jsonl: 1350 linii",
+    "✓ 2026-11-26.jsonl: 1488 linii",
+    "✓ 2026-11-27.jsonl: 544 linie",
     "✓ kolejność i spójność rekordów",
     "✓ wyniki zgodne z przeliczonymi z kwantyli",
-    "✓ ensemble: 3373 wydania — p_e i p_r zgodne z zapisanymi wagami; wagi ostatnich wydań (2873) odtworzone ponownym dopasowaniem na pytaniach rozstrzygniętych przed wydaniem",
-    "✓ A/B: wariant B = wersja A × skala ze wzoru, te same chwile (3364 prognozy)"
+    "✓ ensemble: 3417 wydań — p_e i p_r zgodne z zapisanymi wagami; wagi ostatnich wydań (2873) odtworzone ponownym dopasowaniem na pytaniach rozstrzygniętych przed wydaniem"
   ]
 }
