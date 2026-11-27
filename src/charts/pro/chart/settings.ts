@@ -46,6 +46,8 @@ export interface ChartSettings {
   zonesHistory?: true;
   /** Gęstość etykiet liczbowych na wykresie (0, 3, 5, wszystkie); brak — 5 na komputerze, 3 na telefonie. */
   labelDensity?: LabelDensity;
+  /** Kontrast mapy ciepła arkusza (`liquidity.HEAT_CONTRAST`); brak — średni. Pole tylko dopisywane. */
+  heatContrast?: HeatContrast;
   /** Wskaźniki na wykresie ceny. */
   showVwap: boolean;
   showVwapBands: boolean;
@@ -211,6 +213,10 @@ export function keepPanelSetIids(s: ChartSettings): ChartSettings {
 }
 
 /** Odczyt z walidacją każdego pola (stary lub uszkodzony zapis → wartości domyślne `d`). */
+/** Kontrast mapy ciepła: miękki (tylko ściany), mocny (dawna skala, gęsta mapa); średni to brak pola. */
+export type HeatContrast = 'soft' | 'strong';
+const isHeatContrast = (v: unknown): v is HeatContrast => v === 'soft' || v === 'strong';
+
 export function parseSettings(raw: unknown, d: ChartSettings = DEFAULT_SETTINGS): ChartSettings {
   const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
   const panelSet = oneOf<string | undefined>(r.panelSet, PANEL_SET_IDS, d.panelSet);
@@ -272,6 +278,7 @@ export function parseSettings(raw: unknown, d: ChartSettings = DEFAULT_SETTINGS)
     ...(panelSetIids ? { panelSetIids } : {}),
     ...(blogMapId !== undefined ? { blogMapId } : {}),
     ...(parseDensity(r.labelDensity) !== undefined ? { labelDensity: parseDensity(r.labelDensity) } : d.labelDensity !== undefined ? { labelDensity: d.labelDensity } : {}),
+    ...(isHeatContrast(r.heatContrast) ? { heatContrast: r.heatContrast } : d.heatContrast !== undefined ? { heatContrast: d.heatContrast } : {}),
     ...(r.zonesHistory === true ? { zonesHistory: true as const } : {}),
     ...(typeof r.stateOpen === 'boolean' ? { stateOpen: r.stateOpen } : d.stateOpen !== undefined ? { stateOpen: d.stateOpen } : {}),
   };

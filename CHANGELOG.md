@@ -4,6 +4,11 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Świece na pełnej wysokości i spokojniejsza mapa ciepła (2026-11-27)
+<!-- co-nowego: grupa=wykres | pl=Świece na pełnej wysokości i spokojniejsza mapa ciepła | en=Full-height candles and a calmer heatmap -->
+- Daleki VWAP nie ściska już świec. Wchodzi do autoskali tylko wtedy, gdy świece zachowują co najmniej 2/3 wysokości panelu; inaczej jego etykieta stoi przy krawędzi osi ze strzałką w stronę ceny (dotyczy też VWAP sesji).
+- Mapa ciepła arkusza ma przełącznik kontrastu w ustawieniach wykresu: Miękki, Średni, Mocny. Domyślny Średni maluje tylko poziomy powyżej 75. percentyla wielkości i przygasza typową płynność, więc świece zostają czytelne, a ściany jasne. Mocny to dotychczasowa mapa.
+
 ### Nowe README i porządki w repozytorium (2026-11-27)
 <!-- co-nowego: ukryj -->
 - README napisane od nowa: opis projektu, zrzuty ekranu z prawdziwych danych, przegląd funkcji, szybki start (z `VITE_DATA_BASE_URL` dla danych skanera), diagram architektury, skrót metod i weryfikacja dziennika. Pełny opis widoków w `docs/FEATURES.md`, metody, literatura i ograniczenia w `docs/METHODS.md`.

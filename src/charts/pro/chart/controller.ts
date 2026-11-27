@@ -681,6 +681,7 @@ export class ProChartController {
     // Włączone bąble, serie albo ściany: historia także z okna porównania przed widokiem
     if (prev.showBubbles !== s.showBubbles || prev.showClashes !== s.showClashes) this.onRange(this.chart.timeScale().getVisibleLogicalRange());
     this.liquidity.setLabelLimit(densityLimit(s.labelDensity, this.phone));
+    this.liquidity.setContrast(s.heatContrast);
     this.zones.setToggles({ showZones: s.showZones, showAuctions: s.showAuctions, history: s.zonesHistory === true });
     this.zones.setParams(this.zoneParams(s));
     if (prev.bigTradeUsd !== s.bigTradeUsd) this.schedule();

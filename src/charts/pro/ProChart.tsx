@@ -1883,6 +1883,22 @@ const SettingsMenu: React.FC<{
           ]}
         />
       </div>
+      <div className="flex flex-col items-start gap-1.5">
+        <span className="text-ink-2" title={tr('Jak gęsto mapa ciepła arkusza zamalowuje tło: miękki zostawia tylko ściany, mocny pokazuje także zwykłą płynność', 'How densely the order-book heatmap fills the background: soft keeps only the walls, strong also shows ordinary liquidity')}>
+          {tr('Kontrast mapy ciepła', 'Heatmap contrast')}
+        </span>
+        <Segmented<string>
+          ariaLabel={tr('Kontrast mapy ciepła', 'Heatmap contrast')}
+          size="xs"
+          value={s.heatContrast ?? 'med'}
+          onChange={(v) => onChange({ heatContrast: v === 'soft' || v === 'strong' ? v : undefined })}
+          options={[
+            { value: 'soft', label: tr('Miękki', 'Soft') },
+            { value: 'med', label: tr('Średni', 'Medium') },
+            { value: 'strong', label: tr('Mocny', 'Strong') },
+          ]}
+        />
+      </div>
     </Group>
     <Templates settings={s} onApply={onChange} />
     <button
