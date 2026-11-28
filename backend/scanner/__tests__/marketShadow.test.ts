@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { buildLiqMap } from '../../../src/utils/liqMap.ts';
 import { parseCoinPosition } from '../positions.ts';
-import { FLOW_SETTLE_MS, FlowFile, FlowMinutes, K2_KEEP_DAYS, M0_WINDOW_MS, MarketShadow, OI_MAX_AGE_MS, ShadowGate, parseOpenInterest, readFlowDay } from '../marketShadow.ts';
+import { FLOW_SETTLE_MS, FlowFile, FlowMinutes, K2_KEEP_DAYS, M0_WINDOW_MS, M1_MAX_AGE_MIN, M1_METHOD, M1_MIN_POSITIONS, M1_MIN_SHARE, MarketShadow, OI_MAX_AGE_MS, PRICE_MAX_AGE_MS, ShadowGate, parseOpenInterest, publishableMap, readFlowDay } from '../marketShadow.ts';
 
 const MIN = 60_000;
 const HOUR = 3_600_000;
@@ -129,6 +129,77 @@ describe('MarketShadow — udział nieznanych kont i konta xyz (7 dni)', () => {
     expect(back.status(T0, { inBook })).toMatchObject({ markets: { ETH: { coverage: 0.1, ageP50Min: null } } });
     back.onScan('k1', state(pos('ETH', 4)), T0);
     expect(back.status(T0 + 5 * MIN, { inBook }).markets.ETH.ageP50Min).toBe(5);
+  });
+});
+
+describe('MarketShadow — mapy likwidacji innych rynków (M1)', () => {
+  const lp = (coin: string, szi: number, entryPx: number, liq: number | null) => ({ position: { coin, szi: String(szi), entryPx: String(entryPx), liquidationPx: liq === null ? null : String(liq) } });
+  /** `n` kont z pozycją w `coin` (naprzemiennie long i short wokół 3000), odczytanych `ageMs` przed T0 (co sekundę starsze). */
+  function scanMany(s: MarketShadow, coin: string, n: number, ageMs = 0, prefix = coin) {
+    const states = Array.from({ length: n }, (_, i) => ({ assetPositions: [lp(coin, i % 2 ? 2 : -3, 3000, i % 2 ? 2700 - i : 3300 + i)] }));
+    states.forEach((st, i) => s.onScan(`${prefix}${i}`, st, T0 - ageMs - i * 1000));
+    return states;
+  }
+  const all = { inBook: () => true, addresses: 1000 };
+
+  it('ta sama mapa co droga BTC (parseCoinPosition + buildLiqMap) z tych samych odczytów; cena z ostatniej transakcji taśmy', () => {
+    const s = new MarketShadow();
+    s.setCoins(['BTC', 'ETH']);
+    s.setOi({ ETH: 150 }, T0);
+    const states = scanMany(s, 'ETH', 60);
+    s.onTrade(trade('ETH', ['x', 'y'], 3005, 1, T0 - 9000), () => true);
+    s.onTrade(trade('ETH', ['x', 'y'], 3010, 1, T0 - 2000), () => true);
+    const ref = buildLiqMap(states.map((st, i) => parseCoinPosition(st, 'ETH', T0 - i * 1000)).filter((p) => p !== null), { coin: 'ETH', markPx: 3010, oiBtc: 150, asOf: T0, addresses: 1000, ctxAt: T0 - 2000 });
+    expect(s.liqMap('ETH', T0, all)).toEqual({ ...ref, method: M1_METHOD });
+  });
+
+  it('progi publikacji: pokrycie ≥ 30%, mediana wieku ≤ 30 min, ≥ 50 pozycji; bez rynku skanera i bez HIP-3', () => {
+    expect([M1_MIN_SHARE, M1_MAX_AGE_MIN, M1_MIN_POSITIONS]).toEqual([0.3, 30, 50]);
+    const s = new MarketShadow();
+    s.setCoins(['BTC', 'ETH', 'SOL', 'NEAR', 'ZEC', 'xyz:GOLD']);
+    scanMany(s, 'BTC', 60);
+    scanMany(s, 'ETH', 60); // pokrycie 150 / (2·150) = 50%, świeże
+    scanMany(s, 'SOL', 60); // OI 1000 → pokrycie 7,5%
+    scanMany(s, 'NEAR', 60, 40 * MIN); // odczyty sprzed 40 min
+    scanMany(s, 'ZEC', 49); // za mało pozycji
+    s.setOi({ BTC: 150, ETH: 150, SOL: 1000, NEAR: 150, ZEC: 100 }, T0);
+    for (const c of ['BTC', 'ETH', 'SOL', 'NEAR', 'ZEC', 'xyz:GOLD']) s.onTrade(trade(c, ['x', 'y'], 3000, 1, T0 - MIN), () => true);
+    expect(s.maps(T0, { ...all, exclude: 'BTC' }).map(([c]) => c)).toEqual(['ETH']);
+    expect(publishableMap(s.liqMap('ZEC', T0, all)!)).toBe(false);
+    expect(s.liqMap('ZEC', T0, all)!.coverage.positions).toBe(49);
+    expect(s.liqMap('NEAR', T0, all)!.ageMin.ntlP50).toBeGreaterThan(30);
+    expect(s.liqMap('xyz:GOLD', T0, all)).toBeNull();
+  });
+
+  it('bez świeżej ceny (> 5 min), bez OI albo z OI starszym niż 3 h — brak mapy; konto spoza księgi się nie liczy', () => {
+    const s = new MarketShadow();
+    s.setCoins(['ETH']);
+    scanMany(s, 'ETH', 60);
+    expect(s.liqMap('ETH', T0, all)).toBeNull(); // ani ceny, ani OI
+    s.setOi({ ETH: 150 }, T0);
+    s.onTrade(trade('ETH', ['x', 'y'], 3000, 1, T0 - PRICE_MAX_AGE_MS - 1), () => true);
+    expect(s.liqMap('ETH', T0, all)).toBeNull();
+    s.onTrade(trade('ETH', ['x', 'y'], 3000, 1, T0), () => true);
+    expect(s.liqMap('ETH', T0, all)?.coverage.positions).toBe(60);
+    expect(s.liqMap('ETH', T0 + OI_MAX_AGE_MS + 1, all)).toBeNull();
+    expect(s.liqMap('ETH', T0, { inBook: (a) => a !== 'ETH0', addresses: 1000 })?.coverage.positions).toBe(59);
+    // Starsza transakcja przychodząca później nie cofa ceny
+    s.onTrade(trade('ETH', ['x', 'y'], 1, 1, T0 - MIN), () => true);
+    expect(s.liqMap('ETH', T0, all)?.markPx).toBe(3000);
+  });
+
+  it('stan v2 (same rozmiary): pokrycie zostaje, mapa dopiero z pozycji po kolejnym odczycie konta; v3 w obie strony', () => {
+    const v2 = { v: 2, pos: [['k1', { t: T0, s: { ETH: 4 } }]], hours: [], xyz: [], oi: { at: T0, byCoin: { ETH: 20 } } };
+    const back = MarketShadow.fromJSON(v2, T0);
+    back.setCoins(['ETH']);
+    back.onTrade(trade('ETH', ['x', 'y'], 100, 1, T0), () => true);
+    expect(back.status(T0, { inBook: () => true }).markets.ETH.coverage).toBe(0.1);
+    expect(back.liqMap('ETH', T0, all)).toBeNull();
+    back.onScan('k1', state(pos('ETH', -4, 110)), T0);
+    expect(back.liqMap('ETH', T0, all)?.coverage.shortBtc).toBe(4);
+    const v3 = MarketShadow.fromJSON(JSON.parse(JSON.stringify(back.toJSON())), T0);
+    v3.setCoins(['ETH']);
+    expect(v3.toJSON().pos).toEqual(back.toJSON().pos);
   });
 });
 

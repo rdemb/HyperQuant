@@ -1,6 +1,6 @@
 import { chmodSync, mkdirSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { buildLiqMap } from '../../src/utils/liqMap.ts';
+import { type LiqMap, buildLiqMap } from '../../src/utils/liqMap.ts';
 import { buildEntryMap } from '../../src/utils/entryMap.ts';
 import { buildLiqTape } from '../../src/utils/liqTape.ts';
 import type { AddressBook } from './addressBook.ts';
@@ -10,6 +10,9 @@ import type { HlCtx, HlRest } from './hl.ts';
 import { LiqConfirmer, PriceRange, isLiqCandidate } from './liqDetect.ts';
 import { parseCoinPosition } from './positions.ts';
 import { putObject } from './r2.ts';
+
+/** Nazwa rynku w ścieżce pliku mapy (rynki giełdy głównej, np. ETH, kPEPE) — nic spoza liter i cyfr nie trafia do ścieżki */
+export const MARKET_KEY = /^[A-Za-z0-9]{1,16}$/;
 
 /**
  * Zapis atomowy: plik tymczasowy + rename (czytelnik nigdy nie widzi połowy JSON-a). Pliki publikacji (dane publiczne)
@@ -48,6 +51,8 @@ export interface ScannerDeps {
   onScan?: (addr: string, state: unknown, t: number) => void;
   /** Dodatkowe pola opcjonalne `status.json` (M0: `markets`, `xyz`); `coverage` = pokrycie mapy tego rynku */
   extraStatus?: (asOf: number, coverage: number) => object;
+  /** Mapy likwidacji innych rynków (etap M1, tylko spełniające progi publikacji); lista rynków trafia do `status.liqMaps` */
+  extraMaps?: (asOf: number) => [string, LiqMap][];
 }
 
 /**
@@ -190,6 +195,16 @@ export class Scanner {
         console.error(`[skaner] błąd pomiaru rynków: ${String(e)}`);
       }
     }
+    let extraMaps: [string, LiqMap][] = [];
+    if (this.d.extraMaps) {
+      // Błąd map innych rynków nie może wstrzymać mapy, taśmy i statusu rynku skanera
+      try {
+        extraMaps = this.d.extraMaps(asOf).filter(([c]) => c !== this.d.coin && MARKET_KEY.test(c));
+      } catch (e) {
+        console.error(`[skaner] błąd map likwidacji innych rynków: ${String(e)}`);
+      }
+      Object.assign(status, { liqMaps: extraMaps.map(([c]) => c) });
+    }
     let cohortsJson: string | null = null;
     if (this.d.cohorts) {
       // Błąd kohort nie może wstrzymać publikacji mapy i taśmy
@@ -207,6 +222,7 @@ export class Scanner {
       [`liq-tape/${this.d.coin}.json`, JSON.stringify(tape)],
       ...(cohortsJson ? ([[`cohorts/${this.d.coin}.json`, cohortsJson]] as [string, string][]) : []),
       ...(entryJson ? ([[`entry-map/${this.d.coin}.json`, entryJson]] as [string, string][]) : []),
+      ...extraMaps.map(([c, m]) => [`liq-map/${c}.json`, JSON.stringify(m)] as [string, string]),
       ['status.json', JSON.stringify(status)],
     ];
     for (const [key, body] of files) writeAtomic(join(this.d.outDir, key), body);
