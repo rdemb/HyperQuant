@@ -20,7 +20,7 @@ describe('MarketShadow — pokrycie rynków głównych', () => {
     const states = [state(pos('BTC', 2), pos('ETH', 30)), state(pos('BTC', -1.5), pos('ETH', -10)), state(pos('SOL', 400))];
     const s = new MarketShadow();
     s.setCoins(['BTC', 'ETH', 'SOL']);
-    states.forEach((st, i) => s.onScan(`a${i}`, st));
+    states.forEach((st, i) => s.onScan(`a${i}`, st, T0));
     s.setOi({ BTC: 10, ETH: 200, SOL: 100 }, T0);
     const btcMap = buildLiqMap(states.map((st) => parseCoinPosition(st, 'BTC', T0)).filter((p) => p !== null), { coin: 'BTC', markPx: 100, oiBtc: 10, asOf: T0, addresses: 3 });
     const ethMap = buildLiqMap(states.map((st) => parseCoinPosition(st, 'ETH', T0)).filter((p) => p !== null), { coin: 'ETH', markPx: 100, oiBtc: 200, asOf: T0, addresses: 3 });
@@ -33,14 +33,14 @@ describe('MarketShadow — pokrycie rynków głównych', () => {
   it('BTC bierze coverage statusu; konto spoza księgi nie liczy się; HIP-3 i stary OI → null', () => {
     const s = new MarketShadow();
     s.setCoins(['BTC', 'ETH', 'xyz:NVDA']);
-    s.onScan('a', state(pos('ETH', 10), pos('xyz:NVDA', 5)));
-    s.onScan('b', state(pos('ETH', 30)));
+    s.onScan('a', state(pos('ETH', 10), pos('xyz:NVDA', 5)), T0);
+    s.onScan('b', state(pos('ETH', 30)), T0);
     s.setOi({ ETH: 100, BTC: 5 }, T0);
     const st = s.status(T0 + MIN, { inBook: (a) => a === 'a', btc: { coin: 'BTC', coverage: 0.61234 } });
     expect(st.markets).toEqual({
-      BTC: { coverage: 0.6123, unseenShare: null },
-      ETH: { coverage: 0.05, unseenShare: null },
-      'xyz:NVDA': { coverage: null, unseenShare: null },
+      BTC: { coverage: 0.6123, unseenShare: null, ageP50Min: null },
+      ETH: { coverage: 0.05, unseenShare: null, ageP50Min: 1 },
+      'xyz:NVDA': { coverage: null, unseenShare: null, ageP50Min: null },
     });
     expect(s.status(T0 + OI_MAX_AGE_MS + 1, { inBook: () => true }).markets.ETH.coverage).toBeNull();
   });
@@ -52,7 +52,7 @@ describe('MarketShadow — pokrycie rynków głównych', () => {
     s.onTrade(trade('BTC', ['k', 'u'], 100, 1, T0), inBook);
     s.onTrade(trade('ETH', ['k', 'u'], 10, 1, T0), inBook);
     const st = s.status(T0 + MIN, { inBook, btc: { coin: 'BTC', coverage: 0.5 } });
-    expect(st.markets.BTC).toEqual({ coverage: 0.5, unseenShare: null });
+    expect(st.markets.BTC).toEqual({ coverage: 0.5, unseenShare: null, ageP50Min: null });
     expect(st.markets.ETH.unseenShare).toBe(0.5);
   });
 
@@ -60,10 +60,10 @@ describe('MarketShadow — pokrycie rynków głównych', () => {
     const s = new MarketShadow();
     s.setCoins(['ETH']);
     s.setOi({ ETH: 50 }, T0);
-    s.onScan('a', state(pos('ETH', 10)));
-    s.onScan('a', null);
+    s.onScan('a', state(pos('ETH', 10)), T0);
+    s.onScan('a', null, T0);
     expect(s.status(T0, { inBook: () => true }).markets.ETH.coverage).toBe(0.1);
-    s.onScan('a', state());
+    s.onScan('a', state(), T0);
     expect(s.status(T0, { inBook: () => true }).markets.ETH.coverage).toBe(0);
   });
 
@@ -83,7 +83,7 @@ describe('MarketShadow — udział nieznanych kont i konta xyz (7 dni)', () => {
     s.setCoins(['ETH', 'SOL']);
     s.onTrade(trade('ETH', ['k1', 'u1'], 100, 1, T0), inBook); // 100 nieznany z 200
     s.onTrade(trade('ETH', ['k1', 'k2'], 100, 3, T0 + MIN), inBook); // 0 z 600
-    expect(s.status(T0 + 2 * MIN, { inBook }).markets).toEqual({ ETH: { coverage: null, unseenShare: 0.125 }, SOL: { coverage: null, unseenShare: null } });
+    expect(s.status(T0 + 2 * MIN, { inBook }).markets).toEqual({ ETH: { coverage: null, unseenShare: 0.125, ageP50Min: null }, SOL: { coverage: null, unseenShare: null, ageP50Min: null } });
   });
 
   it('kubełki starsze niż 7 dni wypadają z okna i ze stanu', () => {
@@ -112,7 +112,7 @@ describe('MarketShadow — udział nieznanych kont i konta xyz (7 dni)', () => {
   it('restart: stan z JSON daje ten sam status', () => {
     const s = new MarketShadow();
     s.setCoins(['ETH', 'xyz:NVDA']);
-    s.onScan('k1', state(pos('ETH', 4)));
+    s.onScan('k1', state(pos('ETH', 4)), T0);
     s.setOi({ ETH: 20 }, T0);
     s.onTrade(trade('xyz:NVDA', ['k1', 'u1'], 10, 10, T0), inBook);
     s.onTrade(trade('ETH', ['u2', 'k1'], 5, 10, T0 + HOUR), inBook);
@@ -120,6 +120,30 @@ describe('MarketShadow — udział nieznanych kont i konta xyz (7 dni)', () => {
     back.setCoins(['ETH', 'xyz:NVDA']);
     expect(back.status(T0 + 2 * HOUR, { inBook })).toEqual(s.status(T0 + 2 * HOUR, { inBook }));
     expect(MarketShadow.fromJSON({ v: 9 }, T0).toJSON().pos).toEqual([]);
+  });
+
+  it('stan v1 (bez czasu odczytu): pokrycie zostaje, wiek nieznany do kolejnego odczytu konta', () => {
+    const v1 = { v: 1, pos: [['k1', { ETH: 4 }]], hours: [], xyz: [], oi: { at: T0, byCoin: { ETH: 20 } } };
+    const back = MarketShadow.fromJSON(v1, T0);
+    back.setCoins(['ETH']);
+    expect(back.status(T0, { inBook })).toMatchObject({ markets: { ETH: { coverage: 0.1, ageP50Min: null } } });
+    back.onScan('k1', state(pos('ETH', 4)), T0);
+    expect(back.status(T0 + 5 * MIN, { inBook }).markets.ETH.ageP50Min).toBe(5);
+  });
+});
+
+describe('MarketShadow — świeżość pozycji na rynek (ageP50Min)', () => {
+  it('mediana wieku odczytu ważona |rozmiarem|: duża stara pozycja przeważa wiele małych świeżych; konto spoza księgi nie liczy się', () => {
+    const s = new MarketShadow();
+    s.setCoins(['BTC', 'ETH', 'SOL']);
+    s.onScan('big', state(pos('ETH', -60), pos('BTC', 1)), T0); // 120 min przed odczytem statusu
+    s.onScan('s1', state(pos('ETH', 10)), T0 + 110 * MIN);
+    s.onScan('s2', state(pos('ETH', 10), pos('BTC', 3)), T0 + 115 * MIN);
+    s.onScan('out', state(pos('SOL', 99)), T0 + 119 * MIN);
+    const st = s.status(T0 + 120 * MIN, { inBook: (a) => a !== 'out' });
+    expect(st.markets.ETH.ageP50Min).toBe(120); // 60 z 80 jednostek ma 120 min
+    expect(st.markets.BTC.ageP50Min).toBe(5); // 3 z 4 jednostek ma 5 min
+    expect(st.markets.SOL.ageP50Min).toBeNull();
   });
 });
 

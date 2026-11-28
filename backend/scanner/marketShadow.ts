@@ -42,6 +42,11 @@ export interface MarketStat {
   coverage: number | null;
   /** Udział obrotu kont spoza księgi adresów (7 dni); null = brak transakcji */
   unseenShare: number | null;
+  /**
+   * Mediana wieku odczytu pozycji w tym rynku ważona |rozmiarem| (min) — czy mapa likwidacji tego rynku byłaby świeża
+   * przy harmonogramie skanera ustawionym pod BTC; null = brak pozycji ze znanym czasem odczytu
+   */
+  ageP50Min: number | null;
 }
 
 export interface XyzStat {
@@ -67,6 +72,19 @@ const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'obj
 const isMain = (coin: string) => !coin.includes(':');
 const round4 = (x: number) => Math.round(x * 10_000) / 10_000;
 const ratio = (a: number, b: number) => (b > 0 ? round4(a / b) : null);
+
+/** Mediana ważona par [wartość, waga] (pierwsza wartość, przy której skumulowana waga sięga połowy), 0,1 min; brak → null. */
+function weightedMedian(xs: readonly [number, number][] | undefined): number | null {
+  if (!xs || xs.length === 0) return null;
+  const sorted = [...xs].sort((p, q) => p[0] - q[0]);
+  const half = sorted.reduce((n, [, w]) => n + w, 0) / 2;
+  let cum = 0;
+  for (const [v, w] of sorted) {
+    cum += w;
+    if (cum >= half) return Math.round(v * 10) / 10;
+  }
+  return Math.round(sorted[sorted.length - 1][0] * 10) / 10;
+}
 const utcDay = (ms: number) => new Date(ms).toISOString().slice(0, 10);
 
 /** Ta sama miara co `coverage.share` mapy likwidacji: suma |rozmiar| odczytanych pozycji / (2 × OI), najwyżej 1. */
@@ -109,8 +127,8 @@ export function parseOpenInterest(raw: unknown): Record<string, number> | null {
 }
 
 interface ShadowJson {
-  v: 1;
-  pos: [string, Record<string, number>][];
+  v: 2;
+  pos: [string, { t: number | null; s: Record<string, number> }][];
   hours: [number, Record<string, [number, number]>][];
   xyz: [string, number][];
   oi: { at: number; byCoin: Record<string, number> } | null;
@@ -123,7 +141,8 @@ interface ShadowJson {
 export class MarketShadow {
   private coins: string[] = [];
   private mainSet = new Set<string>();
-  private readonly pos = new Map<string, Record<string, number>>();
+  /** Konto → czas odczytu i |rozmiar| pozycji w rynkach głównych rejestru (t = null: stan zapisany przed polem czasu) */
+  private readonly pos = new Map<string, { t: number | null; s: Record<string, number> }>();
   /** Początek godziny → rynek → [obrót kont spoza księgi, obrót razem] (obie strony transakcji) */
   private readonly hours = new Map<number, Record<string, [number, number]>>();
   private readonly xyz = new Map<string, number>();
@@ -138,11 +157,11 @@ export class MarketShadow {
     return this.coins;
   }
 
-  /** Odczyt `clearinghouseState` konta (ten sam, który skaner robi dla BTC): pozycje w rynkach głównych rejestru. */
-  onScan(addr: string, state: unknown): void {
+  /** Odczyt `clearinghouseState` konta (ten sam, który skaner robi dla BTC) w chwili `t`: pozycje w rynkach głównych rejestru. */
+  onScan(addr: string, state: unknown, t: number): void {
     const s = parseAbsSizes(state, this.mainSet);
     if (s === null) return;
-    if (Object.keys(s).length > 0) this.pos.set(addr, s);
+    if (Object.keys(s).length > 0) this.pos.set(addr, { t, s });
     else this.pos.delete(addr);
   }
 
@@ -182,9 +201,13 @@ export class MarketShadow {
   status(now: number, o: { inBook: (addr: string) => boolean; btc?: { coin: string; coverage: number } }): ShadowStatus {
     const cutoff = now - M0_WINDOW_MS;
     const sums = new Map<string, number>();
+    const ages = new Map<string, [number, number][]>(); // rynek → [wiek odczytu (min), |rozmiar|]
     for (const [a, rec] of this.pos) {
       if (!o.inBook(a)) continue;
-      for (const [c, sz] of Object.entries(rec)) sums.set(c, (sums.get(c) ?? 0) + sz);
+      for (const [c, sz] of Object.entries(rec.s)) {
+        sums.set(c, (sums.get(c) ?? 0) + sz);
+        if (rec.t !== null) (ages.get(c) ?? ages.set(c, []).get(c)!).push([(now - rec.t) / MIN_MS, sz]);
+      }
     }
     const flow = new Map<string, [number, number]>();
     let hoursN = 0;
@@ -206,7 +229,7 @@ export class MarketShadow {
       else if (isMain(c) && oiFresh && oiFresh[c] > 0) coverage = round4(coverageShare(sums.get(c) ?? 0, oiFresh[c]));
       // Rynek skanera: księga dopisuje konta z jego taśmy na innym połączeniu, więc wynik zależałby od kolejności obsługi — null
       const f = o.btc && c === o.btc.coin ? undefined : flow.get(c);
-      markets[c] = { coverage, unseenShare: f ? ratio(f[0], f[1]) : null };
+      markets[c] = { coverage, unseenShare: f ? ratio(f[0], f[1]) : null, ageP50Min: weightedMedian(ages.get(c)) };
     }
     let xu = 0;
     let xt = 0;
@@ -229,19 +252,23 @@ export class MarketShadow {
   }
 
   toJSON(): ShadowJson {
-    return { v: 1, pos: [...this.pos], hours: [...this.hours], xyz: [...this.xyz], oi: this.oi };
+    return { v: 2, pos: [...this.pos], hours: [...this.hours], xyz: [...this.xyz], oi: this.oi };
   }
 
   /** Odczyt stanu z dysku (nieczytelne wpisy pomijane); od razu przycięty do okna. */
   static fromJSON(x: unknown, now: number): MarketShadow {
     const s = new MarketShadow();
-    if (!isRecord(x) || x.v !== 1) return s;
+    if (!isRecord(x) || (x.v !== 1 && x.v !== 2)) return s;
     const pairs = (v: unknown): [unknown, unknown][] => (Array.isArray(v) ? v.filter((e): e is [unknown, unknown] => Array.isArray(e) && e.length === 2) : []);
-    for (const [a, rec] of pairs(x.pos)) {
-      if (typeof a !== 'string' || !isRecord(rec)) continue;
+    for (const [a, entry] of pairs(x.pos)) {
+      if (typeof a !== 'string' || !isRecord(entry)) continue;
+      // v1: same rozmiary bez czasu odczytu; v2: { t, s }
+      const rec = x.v === 1 ? entry : entry.s;
+      const t = x.v === 2 && typeof entry.t === 'number' && Number.isFinite(entry.t) ? entry.t : null;
+      if (!isRecord(rec)) continue;
       const clean: Record<string, number> = {};
       for (const [c, sz] of Object.entries(rec)) if (typeof sz === 'number' && sz > 0) clean[c] = sz;
-      if (Object.keys(clean).length) s.pos.set(a, clean);
+      if (Object.keys(clean).length) s.pos.set(a, { t, s: clean });
     }
     for (const [h, rec] of pairs(x.hours)) {
       if (typeof h !== 'number' || !isRecord(rec)) continue;

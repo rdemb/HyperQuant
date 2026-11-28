@@ -45,7 +45,7 @@ export interface ScannerDeps {
   /** Przepływ kohort (opcjonalny) — publikowany z tym samym okresem obserwacji co taśma */
   cohorts?: CohortEngine;
   /** Udany odczyt `clearinghouseState` konta (pomiar w cieniu M0: pozycje innych rynków z tego samego odczytu) */
-  onScan?: (addr: string, state: unknown) => void;
+  onScan?: (addr: string, state: unknown, t: number) => void;
   /** Dodatkowe pola opcjonalne `status.json` (M0: `markets`, `xyz`); `coverage` = pokrycie mapy tego rynku */
   extraStatus?: (asOf: number, coverage: number) => object;
 }
@@ -129,7 +129,7 @@ export class Scanner {
         continue;
       }
       const t = this.now();
-      this.d.onScan?.(addr, st);
+      this.d.onScan?.(addr, st, t);
       const prev = this.d.book.positionOf(addr);
       const next = parseCoinPosition(st, this.d.coin, t);
       if (prev && isLiqCandidate(prev, next, this.prices.range(prev.scannedAt, t))) {

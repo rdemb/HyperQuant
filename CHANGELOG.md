@@ -4,6 +4,10 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Świeżość pozycji na rynek w pomiarze M0 (2026-11-28)
+<!-- co-nowego: ukryj -->
+- `status.json` podaje dla każdego rynku pomiaru `ageP50Min`: medianę wieku odczytu pozycji ważoną rozmiarem. Harmonogram odczytów skanera jest ustawiony pod BTC, więc ta liczba rozstrzygnie na danych z serwera, czy mapy likwidacji dla ETH, SOL, HYPE i pozostałych rynków głównej giełdy mogą działać na obecnym harmonogramie, czy wymagają jego zmiany. Dla BTC wynik powinien być bliski `ageNtlP50Min`, co sprawdza sam pomiar.
+
 ### Nadzór przekaźnika na żywo (2026-11-28)
 <!-- co-nowego: ukryj -->
 - Nadzór danych (`data-health.yml`, co 30 min) sprawdza też gorący ogon BTC w przekaźniku (`LIVE_URL`): alarm, gdy ogon jest starszy niż 2 min albo go brak. Tak widać awarię wysyłki, odrzucony token i wyczerpany darmowy dobowy limit Cloudflare, których inne alarmy nie wykrywają. Treść ogona przechodzi przez strażnika prywatności jak pozostałe publikacje.

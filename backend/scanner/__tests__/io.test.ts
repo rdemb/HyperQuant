@@ -174,7 +174,7 @@ describe('Scanner — cykl skanu i publikacji', () => {
     shadow.setCoins(['BTC', 'ETH', 'xyz:NVDA']);
     shadow.setOi({ ETH: 100 }, 120_000);
     const { scanner, out, states, book, calls } = setup(false, () => 120_000, false, {
-      onScan: (a, st) => shadow.onScan(a, st),
+      onScan: (a, st, t) => shadow.onScan(a, st, t),
       extraStatus: (asOf, coverage) => shadow.status(asOf, { inBook: (a) => book.has(a), btc: { coin: 'BTC', coverage } }),
     });
     states['0xaaa'] = {
@@ -194,9 +194,10 @@ describe('Scanner — cykl skanu i publikacji', () => {
     expect(status).toMatchObject({ coin: 'BTC', addresses: 2, positions: 2 });
     expect(status.coverage).toBeCloseTo(14 / 40, 12);
     expect(status.markets).toEqual({
-      BTC: { coverage: 0.35, unseenShare: null },
-      ETH: { coverage: 0.1, unseenShare: null },
-      'xyz:NVDA': { coverage: null, unseenShare: 0.5 },
+      // Odczyt i publikacja w tej samej chwili zegara testu: wiek 0 min; HIP-3 bez odczytu pozycji — null
+      BTC: { coverage: 0.35, unseenShare: null, ageP50Min: 0 },
+      ETH: { coverage: 0.1, unseenShare: null, ageP50Min: 0 },
+      'xyz:NVDA': { coverage: null, unseenShare: 0.5, ageP50Min: null },
     });
     expect(status.xyz).toEqual({ accounts: 2, inBook: 1, unseenShare: 0.5, share: 1 });
   });

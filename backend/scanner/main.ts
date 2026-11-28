@@ -137,7 +137,7 @@ const scanner = new Scanner({
   cohorts,
   ...(shadow
     ? {
-        onScan: (addr: string, st: unknown) => shadow.onScan(addr, st),
+        onScan: (addr: string, st: unknown, t: number) => shadow.onScan(addr, st, t),
         extraStatus: (asOf: number, coverage: number) => shadow.status(asOf, { inBook: (a) => book.has(a), btc: { coin: cfg.coin, coverage } }),
       }
     : {}),
