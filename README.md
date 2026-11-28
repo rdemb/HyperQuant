@@ -37,7 +37,7 @@ Hyperliquid is an on-chain exchange: every trade on its public tape carries the 
 - **Order flow measured, not approximated.** Footprint, delta, CVD and "who is trading" are computed from the real tape, not inferred from candles.
 - **Liquidations from positions, not guesses.** The liquidation map is built from the on-chain positions of wallets seen on the BTC tape, with coverage shown explicitly.
 - **Forecasts you can check.** Every 15 minutes the desk records its forecasts before the fact in a SHA-256 hash chain with OpenTimestamps receipts, and an independent verifier re-checks the whole ledger every 6 hours.
-- **Free and private.** A static site with no accounts. Your journal, drawings, alerts and settings stay in your browser.
+- **Free, no subscription, private.** A static site with no accounts and no paid tier. The architecture keeps the cost of one more user at zero: your browser reads Hyperliquid directly, shared data comes from public CDNs, and the scanner and live relay run once for everyone (the relay within Cloudflare's free plan). Your journal, drawings, alerts and settings stay in your browser.
 
 ## Principles
 
@@ -145,12 +145,15 @@ flowchart LR
   PAGES["GitHub Pages<br/>hyperquant.tech"]
   VER["Ledger verifier<br/>every 6 h"]
   MCP["hyperquant-mcp<br/>MCP server"]
+  LIVE["Live relay<br/>Cloudflare Worker"]
 
   HL -->|candles, book, trades| APP
   CEX -.->|from your browser| APP
   HL --> SC
   SC -->|liquidation map, cohorts,<br/>24 h tape & book, ledger| DATA
+  SC -->|last 15 min of tape & book,<br/>every 5 s| LIVE
   DATA --> APP
+  LIVE --> APP
   GHA -->|build + public feeds| PAGES
   PAGES --> APP
   DATA --> VER
@@ -160,7 +163,7 @@ flowchart LR
 
 - **Web app** (`src/`): React 19, TypeScript, Vite 8, Tailwind CSS 4, TradingView Lightweight Charts™ 5 and custom Canvas renderers for footprint, heatmap and DOM; Monte Carlo models run in a Web Worker.
 - **Scanner** (`backend/`): a Node 24 service that tracks positions, liquidations, cohorts and the forecast ledger, records 24 h of tape and book, and publishes everything to a public Git repository. The browser never connects to the scanner. Details in [backend/README.md](backend/README.md) (Polish).
-- **Live relay** (`workers/live/`): a Cloudflare Worker with a Durable Object that serves the last 15 minutes of the scanner's recording, so a freshly opened chart has no gap before its own live stream.
+- **Live relay** (`workers/live/`): a Cloudflare Worker with a Durable Object that serves the last 15 minutes of the scanner's recording, so a freshly opened chart has no gap before its own live stream. The scanner sends every recorded market in one request every 5 s (about 17,000 requests a day, inside Cloudflare's free plan), and the data-health check raises an alert when the relay goes stale.
 - **Hyperliquid node** (`backend/deploy/node/`, in preparation): an installer for a non-validator node (fills with both counterparties, liquidations of all accounts, an order-level book) and the record parsers the scanner will read from.
 - **MCP server** (`mcp/`): read-only market context for AI assistants, published on npm.
 - **Static site and blog** (`scripts/blog/`, `content/blog/`): pre-rendered landing pages, lessons, the indicator atlas, the results page, RSS and sitemap.
@@ -208,7 +211,7 @@ The verifier checks the chain, git history, ordering and receipts, recomputes th
 | Source | What | Notes |
 |---|---|---|
 | Hyperliquid API (`/info`, WebSocket) | candles, L2 book, trades, OI, funding (also Binance/Bybit via `predictedFundings`), HIP-3, market map | public, limit of 1200 weight/min per user IP |
-| HyperQuant scanner ([backend/](backend/README.md)) | liquidation map from on-chain positions (`clearinghouseState` of wallets seen on the BTC tape), realised liquidation tape (confirmed by fills with the `liquidation` field), cohort flow from the tape (`users` field + aggressor side), the last 24 h of tape and order book for the Charts view, closed-day price profiles (buy, sell and open-interest change per price, 7 days) and the whale layer (pseudonyms only); no addresses | published to the public repository [rdemb/hyperquant-data](https://github.com/rdemb/hyperquant-data) (main files every 2 min, tape history in 5-minute parts); the browser never connects to the scanner's server |
+| HyperQuant scanner ([backend/](backend/README.md)) | liquidation map from on-chain positions (`clearinghouseState` of wallets seen on the BTC tape), realised liquidation tape (confirmed by fills with the `liquidation` field), cohort flow from the tape (`users` field + aggressor side), the last 24 h of tape and order book for the Charts view, closed-day price profiles (buy, sell and open-interest change per price, 7 days) and the whale layer (pseudonyms only); no addresses | published to the public repository [rdemb/hyperquant-data](https://github.com/rdemb/hyperquant-data) (main files every 2 min, tape history in 5-minute parts, the last 15 minutes through the live relay every 5 s); the browser never connects to the scanner's server |
 | Federal Reserve, BLS, BEA | FOMC, CPI, NFP, PPI, GDP/PCE schedule | US public data |
 | U.S. Treasury, FiscalData, NY Fed, CFTC | yields, TGA, RRP, COT | US public data |
 | alternative.me | Fear & Greed | attribution next to the data |
@@ -227,7 +230,7 @@ Public data from outside Hyperliquid is fetched by a GitHub Actions workflow (`s
 
 ## Contributing
 
-Contributions are welcome. Read the [contributing guide](CONTRIBUTING.md) (content rules, conventions, PR checklist) and the [code of conduct](CODE_OF_CONDUCT.md). Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md). The changelog is kept in Polish in [CHANGELOG.md](CHANGELOG.md).
+Contributions are welcome. The simplest way to support the project is to star the repository and share it with other traders: it helps people find free tools. Read the [contributing guide](CONTRIBUTING.md) (content rules, conventions, PR checklist) and the [code of conduct](CODE_OF_CONDUCT.md). Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md). The changelog is kept in Polish in [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 
