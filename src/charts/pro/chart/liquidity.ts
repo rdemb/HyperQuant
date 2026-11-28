@@ -758,7 +758,7 @@ function sameInputs(a: readonly unknown[], b: readonly unknown[]): boolean {
 }
 
 /** Wielkości (jednostki rynku) przy percentylach `loQ` i HEAT_Q z próbki poziomów widocznych migawek. */
-function heatNorm(frames: readonly BookFrame[], loQ: number): HeatScale {
+export function heatNorm(frames: readonly BookFrame[], loQ: number): HeatScale {
   let total = 0;
   for (const f of frames) total += f.sz.length;
   const stride = Math.max(1, Math.ceil(total / HEAT_SAMPLE));

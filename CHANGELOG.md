@@ -4,6 +4,10 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Heatmapa płynności w Order Flow (2026-11-28)
+<!-- co-nowego: grupa=wykres | pl=Heatmapa płynności w Order Flow | en=Liquidity heatmap in Order Flow -->
+- Widok Order Flow zaczyna się od heatmapy płynności w czasie: arkusz zleceń z ostatnich 5 min, 15 min albo godziny jako tło, linie najlepszego bidu i asku, bąble zleceń agresora (pole proporcjonalne do wartości, górne 40% okna) i linia ceny. Kółko myszy zmienia skalę ceny, kontrast ma trzy stopnie. Okno wypełnia historia z serwera, luka w nagraniu zostaje ciemna. Pod heatmapą jak dotąd drabina cen i taśma.
+
 ### Wszystkie rynki Hyperliquid (2026-11-28)
 <!-- co-nowego: grupa=rynki | pl=Wszystkie rynki Hyperliquid | en=All Hyperliquid markets -->
 - Wybór rynku wykresu, paleta ⌘K i strona Rynki obejmują teraz każdy aktywny kontrakt perp Hyperliquid: giełdę główną i wszystkie giełdy HIP-3 (dziś 357 rynków). Główne rynki (BTC, złoto, S&P 500) są na górze listy.

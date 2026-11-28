@@ -14,6 +14,7 @@ import { conflictRepairHash, linkConflictText, questionLinkConflict, type Questi
 import { CHRONOGRAPH_REPLAY_MARKET } from './chronographModel';
 import { DeltaMomentCard } from './DeltaMomentCard';
 import { LevelReading } from './LevelReading';
+import { LiquidityHeatmap } from './LiquidityHeatmap';
 import { savedLadderSettings, WorkspaceSave } from './WorkspaceSave';
 import type { DomMode } from './DomWorkspace';
 import { MomentLens } from './MomentLens';
@@ -213,6 +214,7 @@ function FlowMarket({ coin, pro, momentOpen, closeMoment, mode, setMode }: {
       </div>
       <div hidden={workspace !== 'live'}>
         {status}
+        {workspace === 'live' && <LiquidityHeatmap store={store} />}
         <WorkspaceSave coin={coin} settings={ladder} apply={setLadder} />
         <Chronograph ladderSettings={ladder}
           onMinimumChange={value => setLadder(prev => ({ ...prev, tapeMinimumUsd: value }))}
