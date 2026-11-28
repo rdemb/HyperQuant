@@ -11,6 +11,7 @@ const m = (coin: string, oiUsd: number, volume24hUsd: number, funding: number | 
   oiUsd,
   volume24hUsd,
   funding,
+  oraclePx: null,
 });
 const LIST = [m('BTC', 2e9, 3e9, 0.0000125, 60_000), m('xyz:TSLA', 5e7, 9e7, -0.00005, 400), m('DOGE', 8e7, 1e7, 0.0001, 0.2), m('io:ANTH', 1e6, 5e5, null)];
 

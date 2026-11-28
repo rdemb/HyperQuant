@@ -259,9 +259,11 @@ async function main(argv) {
   const { fetchResults } = await import('./results.mjs');
   const results = process.env.RESULTS_OFFLINE === '1' ? {} : await fetchResults({ base: process.env.VITE_DATA_BASE_URL || undefined });
   // Strona „Co nowego”: CHANGELOG.md i tagi wersji z lokalnego gita (bez tagów kamienie milowe z nagłówków wersji CHANGELOG)
-  const { gitTags } = await import('./whatsnew.mjs');
+  const { gitTags, whatsNewFeed } = await import('./whatsnew.mjs');
   const news = { changelog: await readFile(path.join(ROOT, 'CHANGELOG.md'), 'utf8'), tags: gitTags(ROOT) };
   const n = await buildBlog({ outDir: path.join(ROOT, 'dist'), site: await siteFromPackage(), drafts: argv.includes('--drafts'), intake, main: mainHead(), results, news, productBlog: true });
+  // Okno „Co nowego” w aplikacji (src/shell/Efekty.tsx): najnowsze zmiany z tego samego CHANGELOG
+  await writeFile(path.join(ROOT, 'dist', 'whats-new.json'), JSON.stringify(whatsNewFeed(news.changelog)));
   const got = ['summary', 'verify', 'lab'].filter((k) => results[k]);
   console.log(`Blog: ${n} wpisów → dist/blog; wyniki prognoz z plików: ${got.join(', ') || 'brak (strona z „—”)'}; co nowego: ${news.tags.length} tagów wersji`);
 }

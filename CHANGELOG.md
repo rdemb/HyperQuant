@@ -4,9 +4,20 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Okno „Co nowego” po każdej aktualizacji (2026-11-28)
+<!-- co-nowego: grupa=blog | pl=Okno „Co nowego” po każdej aktualizacji | en=A What’s new window after every update -->
+- Po kliknięciu „Odśwież” w komunikacie o nowej wersji aplikacja pokazuje okno z najnowszymi zmianami, których jeszcze nie widziałeś: tytuł, grupę, jedno zdanie opisu i przycisk „Pokaż”, który przenosi do właściwego widoku. Okno nie wraca, gdy wszystko jest przeczytane, a nowy użytkownik go nie dostaje.
+- Lista powstaje przy każdej budowie strony z tego samego dziennika zmian co strona „Co nowego” (`whats-new.json`). Każda zmiana opisana w CHANGELOG trafia więc do okna sama, bez ręcznego wpisywania.
+
+### Ten sam instrument u kilku wystawców (2026-11-28)
+<!-- co-nowego: grupa=rynki | pl=Ten sam instrument u kilku wystawców | en=Same instrument, several venues -->
+- Strona Rynki ma zakładkę „Ten sam instrument u kilku wystawców”. Zestawia akcje, indeksy i surowce notowane na Hyperliquid przez więcej niż jedną giełdę HIP-3 (dziś m.in. NVDA, GOOGL, AAPL, MU i ok. 20 kolejnych). Dla każdego wystawcy pokazuje cenę mark wobec średniej, finansowanie roczne i otwarte pozycje, a dla instrumentu rozjazd ceny mark, rozjazd cen oracle i różnicę finansowania. Wystawca otwiera wykres swojego rynku.
+- Ta sama nazwa nie przesądza, że to ten sam instrument. Rynek z ceną ponad 5% od rynku z największymi otwartymi pozycjami nie trafia do grupy: STX na giełdzie głównej to Stacks, a u wystawcy HIP-3 akcje Seagate.
+- Liczby pobiera Twoja przeglądarka prosto z Hyperliquid co 60 s, z tego samego odczytu co zakładka „Wszystkie rynki”. Opis rynku, nie rekomendacja: różnice nie uwzględniają opłat, poślizgu ani ryzyka wystawcy.
+
 ### Klastry likwidacji na kolejnych rynkach (2026-11-28)
 <!-- co-nowego: grupa=wykres | pl=Klastry likwidacji na kolejnych rynkach | en=Liquidation clusters on more markets -->
-- Warstwa „Klastry likwidacji” na wykresie, liczba „Klaster likw.” w układzie Paliwo i jakość mapy w klatce działają na każdym rynku giełdy głównej, dla którego skaner publikuje mapę likwidacji z prawdziwych pozycji on-chain, a nie tylko na BTC. Kandydaci to ETH, SOL, HYPE, XMR, NEAR, ZEC i kolejne rynki z rejestru.
+- Mapa likwidacji z prawdziwych pozycji on-chain działa nie tylko na BTC, ale na każdym rynku, dla którego skaner ją publikuje. Dotyczy to warstwy „Klastry likwidacji” na wykresie, liczby „Klaster likw.” w układzie Paliwo i jakości mapy w klatce. Kandydaci to ETH, SOL, HYPE, XMR, NEAR, ZEC i kolejne rynki giełdy głównej z rejestru.
 - Mapa rynku pojawia się sama, gdy skaner widzi co najmniej 30% otwartych pozycji rynku z odczytów nie starszych niż 30 min. Opis warstwy podaje pokrycie mapy, a na rynku bez mapy wyjaśnia, czego brakuje, i wymienia rynki, które mapę mają.
 
 ### Mapy likwidacji innych rynków w skanerze, etap M1 (2026-11-28)

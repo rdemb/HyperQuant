@@ -19,6 +19,8 @@ export interface UniverseMarket {
   volume24hUsd: number;
   /** Stawka finansowania na godzinę (ułamek); null, gdy giełda jej nie podała */
   funding: number | null;
+  /** Cena oracle (źródło ceny wystawcy rynku HIP-3, na giełdzie głównej mediana giełd spot); null, gdy jej nie podano */
+  oraclePx: number | null;
 }
 
 const isRecord = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null;
@@ -52,6 +54,7 @@ export function universeOf(dex: string, metaCtxs: unknown): UniverseMarket[] {
     const oi = num(c.openInterest);
     const vol = num(c.dayNtlVlm);
     const funding = num(c.funding);
+    const oraclePx = num(c.oraclePx);
     out.push({
       coin: u.name,
       dex,
@@ -61,6 +64,7 @@ export function universeOf(dex: string, metaCtxs: unknown): UniverseMarket[] {
       oiUsd: oi >= 0 ? oi * markPx : 0,
       volume24hUsd: vol >= 0 ? vol : 0,
       funding: Number.isFinite(funding) ? funding : null,
+      oraclePx: oraclePx > 0 ? oraclePx : null,
     });
   }
   return out;

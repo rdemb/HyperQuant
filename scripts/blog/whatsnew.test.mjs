@@ -275,3 +275,61 @@ describe('„Co nowego”: daty przybliżone z historii repozytorium', () => {
     expect(noApprox).not.toContain('przybliżone');
   });
 });
+
+describe('whats-new.json dla okna „Co nowego” w aplikacji', () => {
+  const MD = [
+    '# Changelog',
+    '',
+    '## [Unreleased]',
+    '',
+    '### Ukryta zmiana (2026-11-28)',
+    '<!-- co-nowego: ukryj -->',
+    '- Tylko serwer.',
+    '',
+    '### Nowa zakładka (2026-11-28)',
+    '<!-- co-nowego: grupa=rynki | pl=Nowa zakładka | en=New tab -->',
+    '- Strona [Rynki](#markets) ma zakładkę `HIP-3` i **nowe** liczby. Drugie zdanie nie trafia do okna.',
+    '- Drugi punkt.',
+    '',
+    '### Starsza zmiana (2026-11-27)',
+    '<!-- co-nowego: grupa=wykres | pl=Starsza | en=Older -->',
+    '- Jedno zdanie bez kropki na końcu',
+    '',
+    '### Najnowsza z innego dnia (2026-11-29)',
+    '<!-- co-nowego: grupa=wykres | pl=Najnowsza | en=Newest -->',
+    '- Opis.',
+  ].join('\n');
+
+  it('najnowsze pierwsze (data, w obrębie dnia kolejność pliku), bez ukrytych; opis = pierwsze zdanie bez znaczników; grupy z nazwami', async () => {
+    const { NEWS_GROUPS, whatsNewFeed } = await import('./whatsnew.mjs');
+    const f = whatsNewFeed(MD);
+    expect(f.v).toBe(1);
+    expect(f.groups).toEqual(NEWS_GROUPS);
+    expect(f.items.map((i) => [i.id, i.group, i.en])).toEqual([
+      ['2026-11-29|Najnowsza', 'wykres', 'Newest'],
+      ['2026-11-28|Nowa zakładka', 'rynki', 'New tab'],
+      ['2026-11-27|Starsza', 'wykres', 'Older'],
+    ]);
+    expect(f.items[1].body).toBe('Strona Rynki ma zakładkę HIP-3 i nowe liczby.');
+    // Pierwsze zdanie powtarza tytuł: opis z kolejnego; za długie — skrócone na granicy słowa
+    const echo = whatsNewFeed(MD.replace('- Strona [Rynki](#markets) ma zakładkę `HIP-3` i **nowe** liczby.', '- Jest nowa zakładka. Pokazuje więcej.'));
+    expect(echo.items[1].body).toBe('Pokazuje więcej.');
+    // Skrót przed wielką literą („m.in. NVDA”) nie kończy zdania
+    const abbr = whatsNewFeed(MD.replace('- Opis.', '- Dziś m.in. NVDA i ok. 20 innych. Drugie.')).items[0].body;
+    expect(abbr).toBe('Dziś m.in. NVDA i ok. 20 innych.');
+    const long = whatsNewFeed(MD.replace('- Opis.', `- ${'Słowo '.repeat(60)}koniec.`)).items[0].body;
+    expect(long.length).toBeLessThanOrEqual(160);
+    expect(long.endsWith('…')).toBe(true);
+    expect(f.items[2].body).toBe('Jedno zdanie bez kropki na końcu');
+    expect(whatsNewFeed(MD, 1).items).toHaveLength(1);
+  });
+
+  it('prawdziwy CHANGELOG: do 8 pozycji, każda z tytułem pl i en i z opisem, mały plik', async () => {
+    const { whatsNewFeed } = await import('./whatsnew.mjs');
+    const f = whatsNewFeed(readFileSync(new URL('../../CHANGELOG.md', import.meta.url), 'utf8'));
+    expect(f.items.length).toBeGreaterThan(0);
+    expect(f.items.length).toBeLessThanOrEqual(8);
+    for (const i of f.items) expect(i.pl && i.en && i.body, i.id).toBeTruthy();
+    expect(JSON.stringify(f).length).toBeLessThan(8000);
+  });
+});

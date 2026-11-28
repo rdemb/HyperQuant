@@ -336,3 +336,52 @@ ${approxUntil ? `<p>${esc(t.approx(day(lang, approxUntil)))}</p>
     }),
   };
 }
+
+/**
+ * Plik `whats-new.json` dla okna „Co nowego” w aplikacji (src/shell/Efekty.tsx): `limit` najnowszych widocznych pozycji
+ * CHANGELOG (data malejąco, w obrębie dnia kolejność pliku) z tytułami pl i en, grupą i opisem — zdaniem z pierwszego
+ * punktu sekcji (po polsku, bez znaczników Markdown, najwyżej 160 znaków): pierwszym, chyba że tylko powtarza tytuł. `id` =
+ * data i tytuł, stały między buildami (aplikacja pamięta, które pozycje widział użytkownik).
+ */
+export function whatsNewFeed(md, limit = 8) {
+  const lines = String(md).split(/\r?\n/);
+  const { items } = parseChangelog(md);
+  const plain = (s) =>
+    s
+      .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+      .replace(/`([^`]*)`/g, '$1')
+      .replace(/\*\*([^*]+)\*\*/g, '$1')
+      .replace(/\s+/g, ' ')
+      .trim();
+  const MAX = 160;
+  // Skróty (m.in., np., ok.…) nie kończą zdania: kropki zamienione na czas dzielenia
+  const ABBR = /(^|[\s(])(m\.in|np|ok|tzw|itd|itp|tj|wg|godz|maks|tys)\.(?=\s)/giu;
+  const sentences = (s) =>
+    s
+      .replace(ABBR, (m) => m.replace(/\./g, '\u2024'))
+      .split(/(?<=[.!?])\s+(?=[A-ZĄĆĘŁŃÓŚŹŻ„])/u)
+      .map((x) => x.replace(/\u2024/g, '.').trim())
+      .filter(Boolean);
+  const cut = (s) => (s.length <= MAX ? s : `${s.slice(0, MAX - 1).replace(/\s+\S*$/, '')}…`);
+  const bodyAt = (line, title) => {
+    for (let i = line; i < lines.length; i++) {
+      const l = lines[i];
+      if (l.startsWith('#')) break;
+      if (!l.startsWith('- ')) continue;
+      const all = sentences(plain(l.slice(2)));
+      // Zdanie, które tylko powtarza tytuł („Strona Rynki ma zakładkę «<tytuł>»”), ustępuje następnemu
+      const pick = all.find((x) => !x.toLowerCase().includes(title.toLowerCase())) ?? all[0] ?? '';
+      return cut(pick);
+    }
+    return '';
+  };
+  return {
+    v: 1,
+    groups: NEWS_GROUPS,
+    items: items
+      .map((it, order) => ({ it, order }))
+      .sort((a, b) => b.it.date.localeCompare(a.it.date) || a.order - b.order)
+      .slice(0, limit)
+      .map(({ it }) => ({ id: `${it.date}|${it.pl}`, date: it.date, group: it.group, pl: it.pl, en: it.en, body: bodyAt(it.line, it.pl) })),
+  };
+}
