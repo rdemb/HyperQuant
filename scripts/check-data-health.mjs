@@ -9,6 +9,7 @@
  */
 import { appendFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { gunzipSync } from 'node:zlib';
 import { pathToFileURL } from 'node:url';
 import { verifyProblem } from './verify-status.mjs';
 import { VERIFY_BRANCH, VERIFY_LATEST_URL } from '../src/utils/verifyFreshness.ts';
@@ -29,6 +30,12 @@ export const LEDGER_MAX_AGE_MIN = 60;
 export const WHALES_MAX_AGE_MIN = 30;
 /** Rejestr rynków (przeliczany co godzinę) */
 export const MARKETS_MAX_AGE_MIN = 180;
+/**
+ * Gorący ogon w przekaźniku na żywo (workers/live, adres w LIVE_URL): skaner wysyła go co kilka sekund, więc 2 min ciszy
+ * to awaria wysyłki, odrzucony token albo wyczerpany darmowy dobowy limit Cloudflare (inne alarmy tego nie widzą).
+ */
+export const LIVE_MAX_AGE_S = 120;
+export const LIVE_FILE = 'ogon na żywo (przekaźnik, BTC)';
 export const LIMITS = {
   /** Publikacja co 2 min (+ do 5 min pamięci podręcznej CDN) — 30 min to jednoznaczna awaria */
   maxAgeMin: 30,
@@ -155,6 +162,17 @@ export function assessHealth(input, nowMs, limits = LIMITS, ntlLagOn) {
     }
   }
 
+  const live = input.live;
+  if (live && typeof live === 'object') {
+    if (live.missing) problems.push(`${LIVE_FILE}: brak ogona — skaner nie wysyła albo przekaźnik odrzuca zapis (token, darmowy limit Cloudflare)`);
+    else if (typeof live.asOf !== 'number' || !Number.isFinite(live.asOf)) problems.push(`${LIVE_FILE}: brak poprawnego pola asOf`);
+    else {
+      const ageS = Math.round((nowMs - live.asOf) / 1000);
+      facts.push({ label: 'Wiek ogona na żywo', value: `${ageS} s` });
+      if (ageS > LIVE_MAX_AGE_S) problems.push(`${LIVE_FILE}: dane sprzed ${ageS} s (próg ${LIVE_MAX_AGE_S} s) — skaner nie wysyła ogona`);
+    }
+  }
+
   if (input.verify && typeof input.verify === 'object') {
     // Weryfikacja stoi (limit czasu, brak przebiegów) albo wykryła niezgodność — znaczek wtedy też jest czerwony
     if (typeof input.verify.at === 'number') facts.push({ label: 'Wiek niezależnej weryfikacji dziennika', value: `${Math.round((nowMs - input.verify.at) / (60 * MIN))} h` });
@@ -219,13 +237,35 @@ async function fetchText(url, timeoutMs = 20_000) {
   return res.text();
 }
 
-/** Pobiera publiczne pliki skanera i składa wejście dla `assessHealth` (także strażnik na serwerze — scripts/watchdog.mjs). */
-export async function fetchInput(base = DATA_BASE) {
+/** Ogon BTC z przekaźnika (gzip JSON); 404 = brak świeżego ogona (przekaźnik nie wydaje starszego niż 5 min). */
+async function fetchLive(live, raw) {
+  const res = await fetch(`${live.replace(/\/+$/, '')}/v1/tail/BTC`, { signal: AbortSignal.timeout(20_000), headers: { 'cache-control': 'no-cache' } });
+  if (res.status === 404) return { missing: true };
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const text = gunzipSync(Buffer.from(await res.arrayBuffer())).toString('utf8');
+  raw[LIVE_FILE] = text;
+  return JSON.parse(text);
+}
+
+/**
+ * Pobiera publiczne pliki skanera i składa wejście dla `assessHealth` (także strażnik na serwerze — scripts/watchdog.mjs).
+ * `live` — adres przekaźnika na żywo (zmienna LIVE_URL); pusty = bez sprawdzania ogona.
+ */
+export async function fetchInput(base = DATA_BASE, live = process.env.LIVE_URL ?? '') {
   const raw = {};
   const errors = {};
   const json = {};
-  await Promise.all(
-    [...FILES.map((f) => [f, `${base}/${f}`]), [VERIFY_FILE, VERIFY_LATEST_URL]].map(async ([file, url]) => {
+  let liveTail = null;
+  await Promise.all([
+    ...(live
+      ? [
+          fetchLive(live, raw).then(
+            (v) => (liveTail = v),
+            (e) => (errors[LIVE_FILE] = e instanceof Error ? e.message : String(e))
+          ),
+        ]
+      : []),
+    ...[...FILES.map((f) => [f, `${base}/${f}`]), [VERIFY_FILE, VERIFY_LATEST_URL]].map(async ([file, url]) => {
       try {
         const text = await fetchText(url);
         // Wynik weryfikacji to nie publikacja skanera — poza strażnikiem prywatności (linie raportu weryfikatora)
@@ -234,8 +274,8 @@ export async function fetchInput(base = DATA_BASE) {
       } catch (e) {
         errors[file] = e instanceof Error ? e.message : String(e);
       }
-    })
-  );
+    }),
+  ]);
   return {
     status: json['status.json'] ?? null,
     liqMap: json['liq-map/BTC.json'] ?? null,
@@ -245,6 +285,7 @@ export async function fetchInput(base = DATA_BASE) {
     whales: json['whales.json'] ?? null,
     markets: json['markets.json'] ?? null,
     verify: json[VERIFY_FILE] ?? null,
+    live: liveTail,
     raw,
     errors,
   };

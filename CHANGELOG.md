@@ -4,6 +4,11 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Nadzór przekaźnika na żywo (2026-11-28)
+<!-- co-nowego: ukryj -->
+- Nadzór danych (`data-health.yml`, co 30 min) sprawdza też gorący ogon BTC w przekaźniku (`LIVE_URL`): alarm, gdy ogon jest starszy niż 2 min albo go brak. Tak widać awarię wysyłki, odrzucony token i wyczerpany darmowy dobowy limit Cloudflare, których inne alarmy nie wykrywają. Treść ogona przechodzi przez strażnika prywatności jak pozostałe publikacje.
+- Strażnik na serwerze robi to samo, gdy `/etc/hyperquant/watchdog.env` zawiera `LIVE_URL` (po ponownym `install.sh`).
+
 ### Serwer: pamięć skanera w dzienniku i restart tematów publicznych (2026-11-28)
 <!-- co-nowego: ukryj -->
 - Minutowy wpis skanera w dzienniku podaje zużycie pamięci: cały proces, sterta JS i bufory poza stertą (MB). Wzrost pamięci na serwerze widać bez dodatkowych narzędzi.
