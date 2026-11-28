@@ -75,6 +75,13 @@ git clone -q --branch main origin.git app`);
       expect(calls()).toEqual(['restart hyperquant-scanner', 'try-restart hyperquant-alerts']);
     }, 60_000);
 
+    it('zmiana tematów publicznych: restart skanera i tematów (bez serwera powiadomień)', () => {
+      sh('commit backend/topics/x.ts c3b');
+      sh('update none');
+      expect(appHead()).toBe(devRev('main'));
+      expect(calls()).toEqual(['restart hyperquant-scanner', 'try-restart hyperquant-tematy']);
+    }, 60_000);
+
     it('sam wpis bloga: pliki zaktualizowane, bez restartu', () => {
       sh('commit content/blog/p.md c4');
       sh('update none');

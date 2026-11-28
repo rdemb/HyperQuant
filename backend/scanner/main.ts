@@ -610,9 +610,12 @@ const timers = [
     const ok = await scanner.publish();
     if (whales) writeJsonAtomic(join(cfg.outDir, 'whales.json'), whales.build(Date.now()));
     const s = book.positions().length;
+    // Pamięć w MB: cały proces, sterta JS (limit --max-old-space-size) i bufory poza stertą — trend widać w dzienniku
+    const mem = process.memoryUsage();
+    const mb = (n: number) => Math.round(n / 1048576);
     log(
       `adresy=${book.size} pozycje=${s} zapytania=${rest.requests}/${liqRest.requests}/${forecastRest.requests} błędy=${rest.errors + liqRest.errors + forecastRest.errors} ws=${stream.connected ? 'ok' : 'brak'} ` +
-        `publikacja=${ok ? 'ok' : 'brak/niepełna'}${cfg.r2 ? ' (R2)' : ' (lokalnie)'}`
+        `publikacja=${ok ? 'ok' : 'brak/niepełna'}${cfg.r2 ? ' (R2)' : ' (lokalnie)'} pamięć=${mb(mem.rss)}/${mb(mem.heapUsed)}/${mb(mem.external)} MB (proces/sterta/bufory)`
     );
   }), cfg.publishEveryS * 1000),
   setInterval(guarded('czyszczenie', () => book.prune(Date.now())), 10 * 60_000),
