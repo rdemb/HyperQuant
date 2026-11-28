@@ -1,11 +1,12 @@
 import { gunzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
+import { decodeTailFrames } from '../../../src/utils/tailFrames.ts';
 import type { TailFile } from '../../../src/utils/tapeHistory.ts';
-import { TAIL_MAX_BYTES, pushTail, tailPusher } from '../liveTail.ts';
+import { TAIL_MAX_BYTES, pushTails, tailPusher } from '../liveTail.ts';
 
 const T = Date.UTC(2026, 10, 27, 22, 0, 0);
 const tail = (coin: string): TailFile => ({ v: 1, coin, asOf: T, parts: [] });
-const cfg = { url: 'https://live.example.workers.dev', token: 'sekret' };
+const cfg = { url: 'https://live.example.workers.dev', token: 'sekret', everyS: 5 };
 
 /** fetch zapisujący żądania; `status` — odpowiedź, `fail` — błąd sieci. */
 function recorder(status = 200, fail = false) {
@@ -18,39 +19,53 @@ function recorder(status = 200, fail = false) {
   return { calls, fn };
 }
 
-describe('pushTail — ogon do przekaźnika', () => {
-  it('PUT na adres rynku (zakodowany), token w nagłówku, treść to JSON w gzip', async () => {
+/** Treść paczki → [rynek, ogon] (rozpakowane). */
+const unpack = (body: unknown) => decodeTailFrames(body as Uint8Array)!.map(([coin, gz]) => [coin, JSON.parse(gunzipSync(gz).toString('utf8'))]);
+
+describe('pushTails — paczka ogonów do przekaźnika', () => {
+  it('jeden PUT na /v1/tails z ogonami wszystkich rynków (każdy JSON w gzip), token w nagłówku', async () => {
     const r = recorder();
-    expect(await pushTail(cfg, tail('xyz:GOLD'), r.fn)).toBe(true);
+    expect(await pushTails(cfg, [tail('BTC'), tail('xyz:GOLD')], r.fn)).toBe(true);
+    expect(r.calls).toHaveLength(1);
     const { url, init } = r.calls[0];
-    expect(url).toBe('https://live.example.workers.dev/v1/tail/xyz%3AGOLD');
+    expect(url).toBe('https://live.example.workers.dev/v1/tails');
     expect(init.method).toBe('PUT');
     expect((init.headers as Record<string, string>).authorization).toBe('Bearer sekret');
-    expect(JSON.parse(gunzipSync(init.body as Buffer).toString('utf8'))).toEqual(tail('xyz:GOLD'));
+    expect(unpack(init.body)).toEqual([['BTC', tail('BTC')], ['xyz:GOLD', tail('xyz:GOLD')]]);
   });
 
-  it('odmowa albo błąd sieci — false, bez wyjątku; za duży ogon nie jest wysyłany', async () => {
-    expect(await pushTail(cfg, tail('BTC'), recorder(401).fn)).toBe(false);
-    expect(await pushTail(cfg, tail('BTC'), recorder(200, true).fn)).toBe(false);
-    const big = recorder();
+  it('odmowa albo błąd sieci — false, bez wyjątku; za duży ogon pominięty, reszta idzie', async () => {
+    expect(await pushTails(cfg, [tail('BTC')], recorder(401).fn)).toBe(false);
+    expect(await pushTails(cfg, [tail('BTC')], recorder(200, true).fn)).toBe(false);
     // Losowe bajty (szesnastkowo) nie kompresują się: ponad limit także po gzip
-    const noise = Array.from({ length: TAIL_MAX_BYTES / 4 }, () => Math.random().toString(16).slice(2)).join('');
-    expect(await pushTail(cfg, { ...tail('BTC'), coin: noise }, big.fn)).toBe(false);
-    expect(big.calls).toHaveLength(0);
+    const noise = { ...tail('ETH'), parts: [{ start: T, trades: Array.from({ length: TAIL_MAX_BYTES / 4 }, () => Math.random().toString(16).slice(2)).join(''), book: null }] } as unknown as TailFile;
+    const mixed = recorder();
+    expect(await pushTails(cfg, [noise, tail('BTC')], mixed.fn)).toBe(true);
+    expect(unpack(mixed.calls[0].init.body).map(([c]) => c)).toEqual(['BTC']);
+    const only = recorder();
+    expect(await pushTails(cfg, [noise], only.fn)).toBe(false);
+    expect(only.calls).toHaveLength(0);
   });
 });
 
 describe('tailPusher — takt wysyłki', () => {
-  it('ogon każdego rynku; brak ogona — bez wysyłki; wynik w onResult', async () => {
+  it('jedna paczka na takt; rynek bez ogona pominięty; nic do wysłania — bez żądania; wynik w onResult', async () => {
     const r = recorder();
-    const results: [string, boolean][] = [];
-    const tick = tailPusher(cfg, [{ coin: 'BTC', tail: () => tail('BTC') }, { coin: 'xyz:SP500', tail: () => null }], (c, ok) => results.push([c, ok]), r.fn);
+    const results: boolean[] = [];
+    let eth: TailFile | null = null;
+    const tick = tailPusher(cfg, [{ tail: () => tail('BTC') }, { tail: () => eth }], (ok) => results.push(ok), r.fn);
     await tick(T);
-    expect(r.calls.map((c) => c.url)).toEqual(['https://live.example.workers.dev/v1/tail/BTC']);
-    expect(results).toEqual([['BTC', true]]);
+    eth = tail('ETH');
+    await tick(T + 5000);
+    expect(r.calls.map((c) => unpack(c.init.body).map(([coin]) => coin))).toEqual([['BTC'], ['BTC', 'ETH']]);
+    expect(results).toEqual([true, true]);
+    const idle = recorder();
+    await tailPusher(cfg, [{ tail: () => null }], () => results.push(false), idle.fn)(T);
+    expect(idle.calls).toHaveLength(0);
+    expect(results).toHaveLength(2);
   });
 
-  it('wolny przekaźnik: kolejny takt nie wysyła drugi raz tego samego rynku, zanim pierwszy się skończy', async () => {
+  it('wolny przekaźnik: kolejny takt nie wysyła drugiej paczki, zanim pierwsza się skończy', async () => {
     let release = () => {};
     const gate = new Promise<void>((r) => (release = r));
     let calls = 0;
@@ -59,13 +74,13 @@ describe('tailPusher — takt wysyłki', () => {
       if (calls++ === 0) await gate;
       return new Response(null, { status: 200 });
     }) as unknown as typeof fetch;
-    const tick = tailPusher(cfg, [{ coin: 'BTC', tail: () => tail('BTC') }], () => {}, slow);
+    const tick = tailPusher(cfg, [{ tail: () => tail('BTC') }, { tail: () => tail('ETH') }], () => {}, slow);
     const first = tick(T);
-    await tick(T + 3000);
+    await tick(T + 5000);
     expect(calls).toBe(1);
     release();
     await first;
-    await tick(T + 6000);
+    await tick(T + 10_000);
     expect(calls).toBe(2);
   });
 });

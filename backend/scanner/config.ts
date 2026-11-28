@@ -3,7 +3,7 @@
  * W repo jest jedynie szablon z miejscami do uzupełnienia — żadnych adresów, ścieżek właściciela ani kluczy.
  */
 
-import type { LiveConfig } from './liveTail.ts';
+import { type LiveConfig, TAIL_PUSH_S } from './liveTail.ts';
 
 export interface R2Config {
   accountId: string;
@@ -114,11 +114,14 @@ export function loadConfig(env: Env): { ok: true; config: ScannerConfig } | { ok
   // Przekaźnik ogona: adres i token razem albo wcale; ogon pochodzi z rejestratorów historii
   const liveUrl = (env.HQ_LIVE_URL ?? '').trim().replace(/\/+$/, '');
   const liveToken = (env.HQ_LIVE_TOKEN ?? '').trim();
+  // Najczęściej co 3 s: 28 800 żądań na dobę; z synchronizacją serwera powiadomień (co 3 s, też 28 800) zostaje zapas na
+  // odczyty przeglądarek w darmowym limicie Cloudflare (100 000 na dobę na konto)
+  const liveEveryS = intIn(env, 'HQ_LIVE_EVERY_S', TAIL_PUSH_S, 3, 60, errors);
   let live: LiveConfig | null = null;
   if (liveUrl || liveToken) {
     if (!/^https:\/\/[^\s/]+(\/\S*)?$/.test(liveUrl) || liveToken.length < 32) errors.push('HQ_LIVE_URL (https) i HQ_LIVE_TOKEN (co najmniej 32 znaki): podaj oba albo żadne');
     else if (!history) errors.push('HQ_LIVE_URL wymaga HQ_HISTORY_MARKETS (ogon pochodzi z rejestratora historii)');
-    else live = { url: liveUrl, token: liveToken };
+    else live = { url: liveUrl, token: liveToken, everyS: liveEveryS };
   }
 
   if (errors.length > 0) return { ok: false, errors };

@@ -9,7 +9,9 @@ on:
       - main
     paths:
       - 'workers/live/**'
+      - 'src/utils/tailFrames.ts'
       - '.github/workflows/live-worker.yml'
+      - '.github/actions/cloudflare-auth/**'
   workflow_dispatch:
 
 permissions:
@@ -24,9 +26,11 @@ jobs:
     name: Deploy Worker
     runs-on: ubuntu-latest
     env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
+      TOKEN_SET: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      # Identyfikator konta z sekretu albo zmiennej; bez nich odczytywany z tokenu (token z dostępem do jednego konta)
+      ACCOUNT_ID_SET: ${{ secrets.CLOUDFLARE_ACCOUNT_ID || vars.CLOUDFLARE_ACCOUNT_ID }}
       LIVE_PUSH_TOKEN: ${{ secrets.LIVE_PUSH_TOKEN }}
+      LIVE_URL_SET: ${{ vars.LIVE_URL }}
       WRANGLER: npx --yes wrangler@4.150.0
     steps:
       - name: Checkout Repository
@@ -40,7 +44,7 @@ jobs:
       - name: Check Configuration
         id: ready
         run: |
-          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$LIVE_PUSH_TOKEN" ]; then
+          if [ -z "$TOKEN_SET" ] || [ -z "$LIVE_PUSH_TOKEN" ]; then
             echo "::notice::Brak sekretu CLOUDFLARE_API_TOKEN albo LIVE_PUSH_TOKEN: przekaźnik nie jest wdrażany."
             echo "ok=false" >> "$GITHUB_OUTPUT"
             exit 0
@@ -51,6 +55,13 @@ jobs:
           fi
           echo "ok=true" >> "$GITHUB_OUTPUT"
 
+      - name: Cloudflare Auth
+        if: steps.ready.outputs.ok == 'true'
+        uses: ./.github/actions/cloudflare-auth
+        with:
+          token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          account: ${{ env.ACCOUNT_ID_SET }}
+
       - name: Deploy
         if: steps.ready.outputs.ok == 'true'
         working-directory: workers/live
@@ -58,3 +69,28 @@ jobs:
           $WRANGLER deploy
           # Sekret Workera z sekretu repozytorium (stdin — nie trafia do dziennika ani linii polecenia)
           printf '%s' "$LIVE_PUSH_TOKEN" | $WRANGLER secret put LIVE_PUSH_TOKEN
+
+      # Adres przekaźnika w podsumowaniu przebiegu: do zmiennej LIVE_URL i HQ_LIVE_URL skanera. Nowy adres potrzebuje
+      # chwili na certyfikat, stąd do 3 minut prób
+      - name: Check Worker
+        if: steps.ready.outputs.ok == 'true'
+        run: |
+          sub="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain" | node -e 'const r=JSON.parse(require("fs").readFileSync(0,"utf8"));process.stdout.write(r.result?.subdomain??"")')" || sub=""
+          if [ -z "$sub" ]; then
+            echo "::error::Konto nie ma adresu *.workers.dev: uruchom najpierw „Deploy alerts mailbox (Cloudflare)”, które go zakłada."
+            exit 1
+          fi
+          url="https://hyperquant-live.$sub.workers.dev"
+          curl -fsS -o /dev/null -X OPTIONS --retry 30 --retry-delay 6 --retry-all-errors "$url/v1/tail/BTC"
+          echo "Przekaźnik: $url"
+          {
+            echo "### Przekaźnik na żywo działa"
+            echo
+            echo "Adres: \`$url\`"
+            echo
+            echo "- zmienna repozytorium **LIVE_URL** (Settings → Secrets and variables → Actions → Variables) — build strony"
+            echo "- \`HQ_LIVE_URL\` w \`/etc/hyperquant/scanner.env\` na serwerze skanera"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "${LIVE_URL_SET%/}" != "$url" ]; then
+            echo "::warning::Zmienna repozytorium LIVE_URL (\"$LIVE_URL_SET\") różni się od adresu przekaźnika $url — ustaw ją, żeby strona pobierała ogon."
+          fi

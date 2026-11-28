@@ -17,8 +17,10 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ### Gorący ogon: wykres bez minut luki po otwarciu (2026-11-27)
 <!-- co-nowego: ukryj -->
-- Skaner trzyma ostatnie 15 min nagrania taśmy i arkusza i co 3 s wysyła je do przekaźnika na żywo (`workers/live`, Cloudflare Worker + Durable Object). Strona pobiera ten ogon przy starcie wykresu, więc footprint, Delta, CVD, mapa ciepła i drabina Order Flow mają ostatnie minuty od razu, zamiast czekać do 11 min na publikację części historii w repo danych.
-- Włącza się po konfiguracji: sekrety `CLOUDFLARE_API_TOKEN` i `LIVE_PUSH_TOKEN` (wdrożenie `live-worker.yml`), zmienna repozytorium `LIVE_URL` (build strony) oraz `HQ_LIVE_URL` i `HQ_LIVE_TOKEN` w `scanner.env`. Bez niej wszystko działa jak dotąd.
+- Skaner trzyma ostatnie 15 min nagrania taśmy i arkusza i co 5 s wysyła ogony wszystkich nagrywanych rynków jedną paczką do przekaźnika na żywo (`workers/live`, Cloudflare Worker + jeden Durable Object). Strona pobiera ogon przy starcie wykresu, więc footprint, Delta, CVD, mapa ciepła i drabina Order Flow mają ostatnie minuty od razu, zamiast czekać do 11 min na publikację części historii w repo danych.
+- Mieści się w darmowym planie Cloudflare: jedno żądanie na takt niezależnie od liczby rynków (17 280 na dobę przy 5 s; limit konta 100 000, wspólny ze skrzynką alarmów, która zużywa około 28 800). Takt zmienia `HQ_LIVE_EVERY_S` (3–60 s).
+- Włącza się po konfiguracji: sekrety `CLOUDFLARE_API_TOKEN` i `LIVE_PUSH_TOKEN` (wdrożenie `live-worker.yml`, adres przekaźnika w podsumowaniu przebiegu), zmienna repozytorium `LIVE_URL` (build strony) oraz `HQ_LIVE_URL` i `HQ_LIVE_TOKEN` w `scanner.env`. Bez niej wszystko działa jak dotąd.
+- Wdrożenia obu Workerów (alarmy i przekaźnik) sprawdzają token Cloudflare tym samym krokiem (`.github/actions/cloudflare-auth`) i ponawiają sprawdzenie, gdy Cloudflare chwilowo ogranicza zapytania (błąd 971), zamiast kończyć się komunikatem o złym tokenie.
 
 ### Świece na pełnej wysokości i spokojniejsza mapa ciepła (2026-11-27)
 <!-- co-nowego: grupa=wykres | pl=Świece na pełnej wysokości i spokojniejsza mapa ciepła | en=Full-height candles and a calmer heatmap -->

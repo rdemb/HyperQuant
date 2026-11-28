@@ -32,7 +32,11 @@ describe('loadConfig — wyłącznie zmienne środowiskowe', () => {
     const off = loadConfig(base);
     expect(off.ok && off.config.live).toBeNull();
     const on = loadConfig({ ...base, HQ_LIVE_URL: 'https://hq-live.example.workers.dev/', HQ_LIVE_TOKEN: token });
-    expect(on.ok && on.config.live).toEqual({ url: 'https://hq-live.example.workers.dev', token });
+    expect(on.ok && on.config.live).toEqual({ url: 'https://hq-live.example.workers.dev', token, everyS: 5 });
+    const every = loadConfig({ ...base, HQ_LIVE_URL: 'https://hq-live.example.workers.dev', HQ_LIVE_TOKEN: token, HQ_LIVE_EVERY_S: '10' });
+    expect(every.ok && every.config.live?.everyS).toBe(10);
+    // Częściej niż co 3 s — bez zapasu w darmowym dobowym limicie żądań Cloudflare (wspólnym z serwerem powiadomień)
+    expect(loadConfig({ ...base, HQ_LIVE_URL: 'https://hq-live.example.workers.dev', HQ_LIVE_TOKEN: token, HQ_LIVE_EVERY_S: '2' }).ok).toBe(false);
     expect(loadConfig({ ...base, HQ_LIVE_URL: 'https://hq-live.example.workers.dev' }).ok).toBe(false);
     expect(loadConfig({ ...base, HQ_LIVE_URL: 'http://hq-live.example.workers.dev', HQ_LIVE_TOKEN: token }).ok).toBe(false);
     expect(loadConfig({ ...base, HQ_LIVE_URL: 'https://hq-live.example.workers.dev', HQ_LIVE_TOKEN: 'krótki' }).ok).toBe(false);
