@@ -70,6 +70,7 @@ Hyperliquid is an on-chain exchange: every trade on its public tape carries the 
 
 ### Charts (In session)
 
+- **Same instrument, several venues**: stocks, indices and commodities listed by more than one HIP-3 deployer (NVDA, GOOGL, AAPL, MU and about 20 more today) side by side: mark price against the average, annual funding and open interest per venue, plus the price, oracle and funding gaps between them. Markets with the same name but a different price are kept apart.
 - **Every Hyperliquid market**: all active perpetuals of the main exchange and every HIP-3 exchange (357 today) are searchable in the market picker and ⌘K and listed on the Markets page with open interest, volume and funding. BTC, gold and the S&P 500 stay the core markets with the full scanner; the rest get live candles, tape, book and footprint.
 - **Footprint from the real tape**: Bid × Ask, Delta and Volume styles, POC, 70% value area, diagonal imbalances and stacked zones.
 - **Order-book heatmap**, aggressor bubbles, bursts, maker walls, icebergs and large resting orders; whale positions under a pseudonym valid for one UTC day, never an address.

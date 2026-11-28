@@ -17,6 +17,7 @@ import {
 import { NYSE_CALENDAR, wallStreetAt, wallStreetCell } from '../utils/wallStreet';
 import { UNIVERSE_REFRESH_MS, type UniverseStatus, ensureUniverse, universeMarkets, universeReadTime, useMarkets } from './markets';
 import { type AllMarketRow, type AllSort, allMarketRows } from '../utils/allMarkets';
+import { type CrossVenueRow, type VenueSort, crossVenueRows } from '../utils/crossVenue';
 import { appMarkets } from '../utils/marketRegistry';
 
 /**
@@ -167,13 +168,27 @@ export interface MarketsPage {
   now: number;
   /** Kalendarz NYSE etykiety Wall Street: źródło, dzień odczytu i lata w pliku (null = brak pliku) */
   calendar: { source: string; readAt: string; years: string[] } | null;
-  /** Zakładka strony: główne rynki (karty) albo wszystkie rynki Hyperliquid (tabela) */
+  /** Zakładka strony: główne rynki (karty), wszystkie rynki Hyperliquid (tabela) albo ten sam instrument u kilku wystawców */
   tab: MarketsTab;
   setTab: (t: MarketsTab) => void;
   all: AllMarketsModel;
+  venues: CrossVenueModel;
 }
 
-export type MarketsTab = 'core' | 'all';
+export type MarketsTab = 'core' | 'all' | 'venues';
+
+/** Ten sam instrument u kilku wystawców (`utils/crossVenue`): gotowe wiersze z tego samego odczytu co wszystkie rynki. */
+export interface CrossVenueModel {
+  rows: CrossVenueRow[];
+  status: UniverseStatus;
+  /** Liczba rynków w odczycie (0 = jeszcze nic nie wczytano) */
+  total: number;
+  readAt: string;
+  sort: VenueSort;
+  setSort: (s: VenueSort) => void;
+  query: string;
+  setQuery: (q: string) => void;
+}
 
 /** Tabela wszystkich rynków Hyperliquid (`utils/allMarkets`): gotowe wiersze, stan odczytu i sterowanie. */
 export interface AllMarketsModel {
@@ -199,9 +214,11 @@ export function useMarketsPage(): MarketsPage {
   const [tab, setTab] = useState<MarketsTab>('core');
   const [allSort, setAllSort] = useState<AllSort>('oi');
   const [query, setQuery] = useState('');
-  // Wszystkie rynki: odczyt dopiero po wyborze zakładki, potem co UNIVERSE_REFRESH_MS przy widocznej karcie
+  const [venueSort, setVenueSort] = useState<VenueSort>('oi');
+  // Wszystkie rynki i ten sam instrument u kilku wystawców (jeden odczyt): dopiero po wyborze zakładki, potem co
+  // UNIVERSE_REFRESH_MS przy widocznej karcie
   useEffect(() => {
-    if (tab !== 'all') return;
+    if (tab !== 'all' && tab !== 'venues') return;
     void ensureUniverse();
     const id = window.setInterval(() => {
       if (document.visibilityState !== 'hidden') void ensureUniverse(undefined, true);
@@ -210,6 +227,7 @@ export function useMarketsPage(): MarketsPage {
   }, [tab]);
   const uni = universeMarkets();
   const allRows = useMemo(() => allMarketRows(uni, allSort, query), [uni, allSort, query]);
+  const venueRows = useMemo(() => crossVenueRows(uni, venueSort, query), [uni, venueSort, query]);
   const uniReadAt = universeReadTime();
   // Strona Rynki: rynki aplikacji (konfiguracja rynków desku), parametry z rejestru
   const markets = useMemo(() => appMarkets(all), [all]);
@@ -258,6 +276,16 @@ export function useMarketsPage(): MarketsPage {
       readAt: uniReadAt === null ? '—' : fmtHms(uniReadAt),
       sort: allSort,
       setSort: setAllSort,
+      query,
+      setQuery,
+    },
+    venues: {
+      rows: venueRows,
+      status: universe,
+      total: uni.length,
+      readAt: uniReadAt === null ? '—' : fmtHms(uniReadAt),
+      sort: venueSort,
+      setSort: setVenueSort,
       query,
       setQuery,
     },

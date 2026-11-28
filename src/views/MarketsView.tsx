@@ -3,6 +3,7 @@ import { tr } from '../i18n';
 import { useMarketsPage } from '../state/useMarketsTable';
 import { Badge, SectionHeading, Segmented } from '../ui';
 import { AllMarkets } from './markets/AllMarkets';
+import { CrossVenue } from './markets/CrossVenue';
 import { MarketList } from './markets/MarketList';
 import { deskLabels, deskPhrase } from '../config/deskMarkets';
 
@@ -34,19 +35,23 @@ const MarketsView: React.FC = () => {
         }
       />
 
-      <Segmented<'core' | 'all'>
+      <Segmented<'core' | 'all' | 'venues'>
         ariaLabel={tr('Zakres rynków', 'Market scope')}
         size="xs"
+        wrap
         value={page.tab}
         onChange={page.setTab}
         options={[
           { value: 'core', label: tr('Główne rynki', 'Core markets') },
           { value: 'all', label: tr('Wszystkie rynki Hyperliquid', 'All Hyperliquid markets') },
+          { value: 'venues', label: tr('Ten sam instrument u kilku wystawców', 'Same instrument, several venues') },
         ]}
       />
 
       {page.tab === 'all' ? (
         <AllMarkets all={page.all} />
+      ) : page.tab === 'venues' ? (
+        <CrossVenue venues={page.venues} />
       ) : (
         <section aria-labelledby="rynki-tytul" className="flex flex-col gap-4">
           <MarketList rows={page.rows} />
