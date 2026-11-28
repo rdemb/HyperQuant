@@ -75,6 +75,11 @@ main() {
     systemctl try-restart hyperquant-alerts
     echo "serwer powiadomień zaktualizowany do $label"
   fi
+  # Tematy publiczne (backend/topics, instaluje je ntfy/instaluj-ntfy.sh): restart tylko działającej usługi
+  if ! git diff --quiet "$head" "$target" -- backend/topics package.json package-lock.json; then
+    systemctl try-restart hyperquant-tematy
+    echo "tematy publiczne zaktualizowane do $label"
+  fi
 }
 
 main "$@"
