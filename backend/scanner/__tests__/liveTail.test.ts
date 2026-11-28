@@ -1,8 +1,8 @@
-import { gunzipSync } from 'node:zlib';
+import { gunzipSync, gzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { decodeTailFrames } from '../../../src/utils/tailFrames.ts';
 import type { TailFile } from '../../../src/utils/tapeHistory.ts';
-import { TAIL_MAX_BYTES, pushTails, tailPusher } from '../liveTail.ts';
+import { FILES_FULL_EVERY, TAIL_MAX_BYTES, pushTails, tailPusher } from '../liveTail.ts';
 
 const T = Date.UTC(2026, 10, 27, 22, 0, 0);
 const tail = (coin: string): TailFile => ({ v: 1, coin, asOf: T, parts: [] });
@@ -45,6 +45,11 @@ describe('pushTails — paczka ogonów do przekaźnika', () => {
     const only = recorder();
     expect(await pushTails(cfg, [noise], only.fn)).toBe(false);
     expect(only.calls).toHaveLength(0);
+    // Plik o nazwie spoza wzorca przekaźnika pominięty — inaczej przekaźnik odrzuciłby całą paczkę z ogonami
+    const named = recorder();
+    const gzText = (t: string) => new Uint8Array(gzipSync(t));
+    expect(await pushTails(cfg, [tail('BTC')], named.fn, [['liq-map/xyz:GOLD.json', gzText('{}')], ['status.json', gzText('{}')]])).toBe(true);
+    expect(decodeTailFrames(named.calls[0].init.body as Uint8Array)!.map(([n]) => n)).toEqual(['BTC', 'f:status.json']);
   });
 });
 
@@ -82,5 +87,42 @@ describe('tailPusher — takt wysyłki', () => {
     await first;
     await tick(T + 10_000);
     expect(calls).toBe(2);
+  });
+});
+
+describe('pliki skanera w paczce (kanał na żywo)', () => {
+  /** Nazwy ramek z każdej wysłanej paczki. */
+  const names = (r: ReturnType<typeof recorder>) => r.calls.map((c) => decodeTailFrames(c.init.body as Uint8Array)!.map(([n]) => n));
+
+  it('ramki f:<ścieżka> obok ogonów; niezmieniony plik nie idzie drugi raz; zmieniony — tak; same pliki bez ogonów też wysyłane', async () => {
+    const r = recorder();
+    let tape = '{"asOf":1}';
+    const files = () => [['liq-tape/BTC.json', tape], ['status.json', '{"asOf":1}']] as [string, string][];
+    const tick = tailPusher(cfg, [{ tail: () => tail('BTC') }], () => {}, r.fn, files);
+    await tick(T);
+    await tick(T + 5000);
+    tape = '{"asOf":2}';
+    const noTails = tailPusher(cfg, [], () => {}, r.fn, () => [['whales.json', '{"asOf":1}']]);
+    await tick(T + 10_000);
+    await noTails(T);
+    expect(names(r)).toEqual([['BTC', 'f:liq-tape/BTC.json', 'f:status.json'], ['BTC'], ['BTC', 'f:liq-tape/BTC.json'], ['f:whales.json']]);
+    const body = decodeTailFrames(r.calls[2].init.body as Uint8Array)!.find(([n]) => n === 'f:liq-tape/BTC.json')![1];
+    expect(gunzipSync(body).toString('utf8')).toBe('{"asOf":2}');
+  });
+
+  it(`nieudana wysyłka: pliki idą ponownie w następnym takcie; co ${FILES_FULL_EVERY} taktów wszystkie (przekaźnik po restarcie)`, async () => {
+    let fail = true;
+    const calls: string[][] = [];
+    const fn = (async (_url: string, init: RequestInit) => {
+      calls.push(decodeTailFrames(init.body as Uint8Array)!.map(([n]) => n));
+      return new Response(null, { status: fail ? 503 : 204 });
+    }) as unknown as typeof fetch;
+    const tick = tailPusher(cfg, [], () => {}, fn, () => [['status.json', '{"asOf":1}']]);
+    await tick(T);
+    fail = false;
+    await tick(T + 5000);
+    for (let i = 2; i < FILES_FULL_EVERY + 1; i++) await tick(T + i * 5000);
+    // takt 0 (nieudany), takt 1 (ponowienie), potem cisza do taktu 12 (pełny zestaw)
+    expect(calls).toEqual([['f:status.json'], ['f:status.json'], ['f:status.json']]);
   });
 });

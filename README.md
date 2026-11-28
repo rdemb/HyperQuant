@@ -152,9 +152,9 @@ flowchart LR
   CEX -.->|from your browser| APP
   HL --> SC
   SC -->|liquidation map, cohorts,<br/>24 h tape & book, ledger| DATA
-  SC -->|last 15 min of tape & book,<br/>every 5 s| LIVE
+  SC -->|last 15 min of tape & book,<br/>changed scanner files, every 5 s| LIVE
   DATA --> APP
-  LIVE --> APP
+  LIVE -->|WebSocket push| APP
   GHA -->|build + public feeds| PAGES
   PAGES --> APP
   DATA --> VER
@@ -164,7 +164,7 @@ flowchart LR
 
 - **Web app** (`src/`): React 19, TypeScript, Vite 8, Tailwind CSS 4, TradingView Lightweight Charts™ 5 and custom Canvas renderers for footprint, heatmap and DOM; Monte Carlo models run in a Web Worker.
 - **Scanner** (`backend/`): a Node 24 service that tracks positions, liquidations, cohorts and the forecast ledger, records 24 h of tape and book, and publishes everything to a public Git repository. The browser never connects to the scanner. Details in [backend/README.md](backend/README.md) (Polish).
-- **Live relay** (`workers/live/`): a Cloudflare Worker with a Durable Object that serves the last 15 minutes of the scanner's recording, so a freshly opened chart has no gap before its own live stream. The scanner sends every recorded market in one request every 5 s (about 17,000 requests a day, inside Cloudflare's free plan), and the data-health check raises an alert when the relay goes stale.
+- **Live relay** (`workers/live/`): a Cloudflare Worker with a Durable Object that serves the last 15 minutes of the scanner's recording, so a freshly opened chart has no gap before its own live stream. The scanner sends every recorded market in one request every 5 s (about 17,000 requests a day, inside Cloudflare's free plan), and the data-health check raises an alert when the relay goes stale. The same request carries the scanner files that changed (liquidation tape, whales, cohorts, maps, status), and the relay pushes them to every open tab over a hibernating WebSocket, so they reach the page seconds after the scanner writes them instead of minutes later through the data repository and its CDN cache.
 - **Hyperliquid node** (`backend/deploy/node/`, in preparation): an installer for a non-validator node (fills with both counterparties, liquidations of all accounts, an order-level book) and the record parsers the scanner will read from.
 - **MCP server** (`mcp/`): read-only market context for AI assistants, published on npm.
 - **Static site and blog** (`scripts/blog/`, `content/blog/`): pre-rendered landing pages, lessons, the indicator atlas, the results page, RSS and sitemap.

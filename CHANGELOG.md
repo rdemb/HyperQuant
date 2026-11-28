@@ -4,6 +4,12 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Dane skanera na żywo w przeglądarce (2026-11-28)
+<!-- co-nowego: grupa=skaner | pl=Dane skanera na żywo, bez czekania na publikację | en=Scanner data live, without the publishing wait -->
+- Taśma likwidacji, wieloryby, kohorty, mapy i status skanera trafiają do otwartej strony kilka sekund po zapisie na serwerze, a nie po kilku minutach. Dotąd każdy plik szedł przez repo danych (wysyłka co 2 min) i pamięć CDN (do 5 min), a strona sprawdzała go co minutę: razem nawet ok. 9 min. Teraz opóźnienie wyznacza takt zapisu skanera (domyślnie 60 s).
+- Skaner dokłada zmienione pliki do paczki, którą i tak co 5 s wysyła do przekaźnika na żywo, więc nie ma dodatkowych żądań. Przekaźnik oddaje nowej karcie bieżące pliki od razu po połączeniu, a każdą zmianę wypycha jedną wiadomością do wszystkich otwartych kart przez WebSocket. Karta ma jedno połączenie; zerwane wraca samo po 5 s, potem coraz rzadziej, najwyżej co 60 s.
+- Bez kosztów: gniazda działają w trybie hibernacji Cloudflare, w którym wiadomości do przeglądarek są bezpłatne, a połączenie to jedno żądanie z darmowego limitu. Bez przekaźnika strona działa jak dotąd, z repo danych, a starsza wersja pliku nie zastępuje nowszej.
+
 ### Okno „Co nowego” po każdej aktualizacji (2026-11-28)
 <!-- co-nowego: grupa=blog | pl=Okno „Co nowego” po każdej aktualizacji | en=A What’s new window after every update -->
 - Po kliknięciu „Odśwież” w komunikacie o nowej wersji aplikacja pokazuje okno z najnowszymi zmianami, których jeszcze nie widziałeś: tytuł, grupę, jedno zdanie opisu i przycisk „Pokaż”, który przenosi do właściwego widoku. Okno nie wraca, gdy wszystko jest przeczytane, a nowy użytkownik go nie dostaje.

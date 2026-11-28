@@ -4,7 +4,8 @@ main = "src/index.ts"
 compatibility_date = "2026-09-01"
 workers_dev = true
 
-# Jeden obiekt na rynek: ostatni ogon w pamięci (bez zapisu — skaner wysyła nowy co kilka sekund)
+# Jeden obiekt (`tails`): ostatni ogon każdego rynku i pliki skanera w pamięci (bez zapisu — skaner wysyła nowe co kilka
+# sekund) oraz gniazda przeglądarek kanału na żywo w trybie hibernacji
 [[durable_objects.bindings]]
 name = "TAIL"
 class_name = "LiveTail"

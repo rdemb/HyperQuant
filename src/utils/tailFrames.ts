@@ -7,6 +7,11 @@
 
 const MAX_NAME = 64;
 
+/** Przedrostek ramki z plikiem skanera (np. `f:liq-tape/BTC.json`) obok ramek z ogonami rynków (nazwa rynku). */
+export const LIVE_FILE_PREFIX = 'f:';
+/** Dopuszczalna nazwa ramki z plikiem: `f:` + ścieżka z repo danych (katalog i nazwa z liter, cyfr i myślników, `.json`). */
+export const LIVE_FILE_NAME = /^f:[a-z0-9-]{1,24}(\/[A-Za-z0-9-]{1,24})?\.json$/;
+
 /** Ramki z par [rynek, bajty]. */
 export function encodeTailFrames(entries: readonly (readonly [string, Uint8Array])[]): Uint8Array<ArrayBuffer> {
   const enc = new TextEncoder();

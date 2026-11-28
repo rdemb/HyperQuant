@@ -1,7 +1,8 @@
-import { gzipSync } from 'node:zlib';
+import { gunzipSync, gzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { encodeTailFrames } from '../../../src/utils/tailFrames.ts';
-import { type Env, LiveTail, MAX_BUNDLE, MAX_BYTES, STALE_MS, handle } from '../src/tail.ts';
+import { type Env, type LiveRuntime, type LiveSocket, type LiveState, LiveTail, MAX_BUNDLE, MAX_BYTES, MAX_SOCKETS, STALE_MS, handle } from '../src/tail.ts';
+import { decodeTailFrames } from '../../../src/utils/tailFrames.ts';
 
 const TOKEN = 'a'.repeat(64);
 const URL_ = 'https://hyperquant-live.example.workers.dev';
@@ -87,5 +88,72 @@ describe('przekaźnik ogona — paczka z tokenem, odczyt publiczny', () => {
     const res = await handle(new Request(`${URL_}/v1/tail/BTC`, { method: 'OPTIONS' }), e);
     expect(res.status).toBe(204);
     expect(res.headers.get('access-control-allow-methods')).toBe('GET');
+  });
+});
+
+describe('kanał na żywo: pliki skanera do przeglądarek przez WebSocket', () => {
+  /** Gniazdo-atrapa: zapisane wiadomości jako listy [nazwa, JSON]. */
+  function socket() {
+    const got: [string, unknown][][] = [];
+    const ws: LiveSocket & { got: typeof got } = {
+      got,
+      send: (d) => got.push(decodeTailFrames(new Uint8Array(d as Uint8Array))!.map(([n, b]) => [n, JSON.parse(gunzipSync(b).toString('utf8'))])),
+      close: () => {},
+    };
+    return ws;
+  }
+  function liveObject(clock = { t: Date.UTC(2026, 10, 28, 14, 0, 0) }) {
+    const sockets: LiveSocket[] = [];
+    const state: LiveState = { acceptWebSocket: (ws) => sockets.push(ws), getWebSockets: () => sockets };
+    const made: ReturnType<typeof socket>[] = [];
+    const runtime: LiveRuntime = {
+      pair: () => {
+        const server = socket();
+        made.push(server);
+        return [socket(), server];
+      },
+      upgraded: () => new Response(null, { status: 200, headers: { 'x-upgraded': '1' } }),
+    };
+    return { obj: new LiveTail(state, undefined, () => clock.t, runtime), sockets, made, clock };
+  }
+  const putTo = (obj: LiveTail, entries: [string, Uint8Array][]) => obj.fetch(new Request('https://tail/', { method: 'PUT', body: new Uint8Array(encodeTailFrames(entries)) }));
+  const connect = (obj: LiveTail) => obj.fetch(new Request('https://x/v1/live'));
+
+  it('nowa przeglądarka dostaje od razu bieżące pliki; zmiana pliku — jedna wiadomość do każdego gniazda, tylko ze zmienionym plikiem', async () => {
+    const { obj, made } = liveObject();
+    expect((await putTo(obj, [['BTC', gz({ v: 1 })], ['f:liq-tape/BTC.json', gz({ asOf: 1, n: 1 })], ['f:whales.json', gz({ asOf: 1 })]])).status).toBe(204);
+    const res = await connect(obj);
+    expect(res.headers.get('x-upgraded')).toBe('1');
+    await connect(obj);
+    expect(made[0].got).toEqual([[['f:liq-tape/BTC.json', { asOf: 1, n: 1 }], ['f:whales.json', { asOf: 1 }]]]);
+    // Ten sam plik ponownie — bez wiadomości; zmieniony — jedna wiadomość z nim samym do obu gniazd
+    await putTo(obj, [['f:whales.json', gz({ asOf: 1 })], ['f:liq-tape/BTC.json', gz({ asOf: 2, n: 3 })]]);
+    for (const s of made) expect(s.got.at(-1)).toEqual([['f:liq-tape/BTC.json', { asOf: 2, n: 3 }]]);
+    expect(made[0].got).toHaveLength(2);
+    // Ogon rynku dalej przez GET, pliki nie mieszają się z ogonami
+    expect((await obj.fetch(new Request('https://tail/BTC'))).status).toBe(200);
+    expect((await obj.fetch(new Request('https://tail/f%3Awhales.json'))).status).toBe(404);
+  });
+
+  it('zła nazwa pliku odrzuca całą paczkę; plik starszy niż STALE_MS nie trafia do nowej przeglądarki; limit gniazd — 503', async () => {
+    const { obj, made, clock, sockets } = liveObject();
+    for (const bad of ['f:../x.json', 'f:a/b/c.json', 'f:status.txt', 'f:Status.json']) expect((await putTo(obj, [[bad, gz({})]])).status, bad).toBe(400);
+    await putTo(obj, [['f:status.json', gz({ asOf: 1 })]]);
+    clock.t += STALE_MS + 1;
+    await connect(obj);
+    expect(made[0].got).toEqual([]);
+    while (sockets.length < MAX_SOCKETS) sockets.push(socket());
+    expect((await connect(obj)).status).toBe(503);
+    expect((await new LiveTail(undefined, undefined, () => clock.t).fetch(new Request('https://x/v1/live'))).status).toBe(503);
+  });
+
+  it('Worker: /v1/live tylko GET z nagłówkiem Upgrade: websocket (przekazany do obiektu), inaczej 426 albo 405', async () => {
+    const { env: e } = env();
+    expect((await handle(new Request(`${URL_}/v1/live`), e)).status).toBe(426);
+    expect((await handle(new Request(`${URL_}/v1/live`, { method: 'POST' }), e)).status).toBe(405);
+    const seen: string[] = [];
+    const fwd: Env = { ...e, TAIL: { idFromName: (n) => n, get: () => ({ fetch: async (r) => (seen.push(new URL(r.url).pathname), new Response(null, { status: 204 })) }) } };
+    expect((await handle(new Request(`${URL_}/v1/live`, { headers: { upgrade: 'websocket' } }), fwd)).status).toBe(204);
+    expect(seen).toEqual(['/v1/live']);
   });
 });

@@ -406,6 +406,38 @@ const DATA_README = [
   '',
 ].join('\n');
 
+/** Mapy M1 z listy `liqMaps` statusu (tekst JSON) jako pary [ścieżka, treść] z HQ_OUT_DIR; bez listy albo pliku — nic. */
+function listedMapFiles(statusText: string): [string, string][] {
+  const out: [string, string][] = [];
+  try {
+    const listed = (JSON.parse(statusText) as { liqMaps?: unknown }).liqMaps;
+    for (const c of Array.isArray(listed) ? listed : []) {
+      if (typeof c !== 'string' || !MARKET_KEY.test(c) || c === cfg.coin) continue;
+      try {
+        out.push([`liq-map/${c}.json`, readFileSync(join(cfg.outDir, `liq-map/${c}.json`), 'utf8')]);
+      } catch {
+        // brak pliku — pomijam
+      }
+    }
+  } catch {
+    // status bez listy map — sama mapa rynku skanera
+  }
+  return out;
+}
+
+/** Publiczne pliki skanera do kanału na żywo (te same, które trafiają do repo danych), czytane z HQ_OUT_DIR w każdym takcie. */
+function liveFiles(): [string, string][] {
+  const out: [string, string][] = [];
+  for (const key of ['status.json', `liq-map/${cfg.coin}.json`, `liq-tape/${cfg.coin}.json`, `cohorts/${cfg.coin}.json`, 'whales.json']) {
+    try {
+      out.push([key, readFileSync(join(cfg.outDir, key), 'utf8')]);
+    } catch {
+      // jeszcze nie opublikowany albo warstwa wyłączona
+    }
+  }
+  return [...out, ...listedMapFiles(out.find(([k]) => k === 'status.json')?.[1] ?? '{}')];
+}
+
 /** Publikacja do publicznego repo danych (darmowa): bieżące pliki z HQ_OUT_DIR + README, jeden commit. */
 async function gitPublishTick(): Promise<void> {
   if (!cfg.git) return;
@@ -426,19 +458,7 @@ async function gitPublishTick(): Promise<void> {
     }
   }
   // Mapy M1 innych rynków: lista z bieżącego statusu (rynek, który wypadł z progów, przestaje być publikowany)
-  try {
-    const listed = JSON.parse(files.find(([k]) => k === 'status.json')?.[1] ?? '{}').liqMaps;
-    for (const c of Array.isArray(listed) ? listed : []) {
-      if (typeof c !== 'string' || !MARKET_KEY.test(c) || c === cfg.coin) continue;
-      try {
-        files.push([`liq-map/${c}.json`, readFileSync(join(cfg.outDir, `liq-map/${c}.json`), 'utf8')]);
-      } catch {
-        // brak pliku — pomijam
-      }
-    }
-  } catch {
-    // status bez listy map — sama mapa rynku skanera
-  }
+  files.push(...listedMapFiles(files.find(([k]) => k === 'status.json')?.[1] ?? '{}'));
   files.push(['README.md', DATA_README]);
   const ok = await publishToGit({ remote: cfg.git.remote, workDir: join(cfg.stateDir, 'git', 'repo'), sshKey: cfg.git.sshKey }, files, Date.now());
   if (!ok) console.error('[skaner] publikacja do repo danych nieudana (spróbuję w następnym cyklu)');
@@ -616,7 +636,8 @@ const livePush = cfg.live
         if (liveStats.failed > 0) log(`ogon na żywo: wysłane ${liveStats.ok}, nieudane ${liveStats.failed} w ostatniej minucie`);
         Object.assign(liveStats, { ok: 0, failed: 0, at: Date.now(), quiet: liveStats.failed > 0 });
       }
-    })
+      // Pliki skanera w tej samej paczce: przekaźnik rozsyła zmiany przeglądarkom (kanał na żywo, WebSocket)
+    }, fetch, liveFiles)
   : null;
 const liveTick = livePush ? () => (historyReady ? livePush(Date.now()) : undefined) : null;
 
