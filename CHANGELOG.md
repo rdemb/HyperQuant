@@ -11,7 +11,8 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 ### Nadzór przekaźnika na żywo (2026-11-28)
 <!-- co-nowego: ukryj -->
 - Nadzór danych (`data-health.yml`, co 30 min) sprawdza też gorący ogon BTC w przekaźniku (`LIVE_URL`): alarm, gdy ogon jest starszy niż 2 min albo go brak. Tak widać awarię wysyłki, odrzucony token i wyczerpany darmowy dobowy limit Cloudflare, których inne alarmy nie wykrywają. Treść ogona przechodzi przez strażnika prywatności jak pozostałe publikacje.
-- Strażnik na serwerze robi to samo, gdy `/etc/hyperquant/watchdog.env` zawiera `LIVE_URL` (po ponownym `install.sh`).
+- Strażnik na serwerze sprawdza ogon co 15 min pod adresem `HQ_LIVE_URL` ze `scanner.env`. `install.sh` przepisuje ten adres do `watchdog.env`, więc zmiana działa po ponownym `install.sh`.
+- `HQ_BLOG_PUBLISHER=0` w `scanner.env` trwale wyłącza wydawcę bloga: ponowne `install.sh` nie włącza już jego timera z powrotem.
 
 ### Serwer: pamięć skanera w dzienniku i restart tematów publicznych (2026-11-28)
 <!-- co-nowego: ukryj -->

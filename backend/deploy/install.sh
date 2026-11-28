@@ -187,7 +187,7 @@ main() {
   local var val
   {
     echo "# Tworzony przez install.sh z /etc/hyperquant/scanner.env — zmiany tam i ponowny install.sh"
-    for var in HQ_GIT_REMOTE HQ_OUT_DIR HQ_STATE_DIR; do
+    for var in HQ_GIT_REMOTE HQ_LIVE_URL HQ_OUT_DIR HQ_STATE_DIR; do
       val="$(env_value "$var" /etc/hyperquant/scanner.env)"
       if [ -n "$val" ]; then printf '%s=%s\n' "$var" "$val"; fi
     done
@@ -243,7 +243,12 @@ main() {
   systemctl restart hyperquant-alerts
   systemctl enable --now --quiet hyperquant-watchdog.timer
   systemctl enable --now --quiet hyperquant-update.timer
-  systemctl enable --now --quiet hyperquant-blog-publisher.timer
+  # Wydawca bloga: HQ_BLOG_PUBLISHER=0 w scanner.env wyłącza go trwale (ponowna instalacja nie włącza go z powrotem)
+  if [ "$(env_value HQ_BLOG_PUBLISHER /etc/hyperquant/scanner.env)" = "0" ]; then
+    systemctl disable --now --quiet hyperquant-blog-publisher.timer
+  else
+    systemctl enable --now --quiet hyperquant-blog-publisher.timer
+  fi
   systemctl --no-pager --lines=5 status hyperquant-scanner || true
   systemctl --no-pager --lines=5 status hyperquant-alerts || true
 }

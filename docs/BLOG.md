@@ -169,7 +169,7 @@ The deploy workflow (`.github/workflows/static.yml`) also reads posts from the `
 
 ### Publishing queue on the server (the author has no key)
 
-The automated author on the server does not push anywhere. It drops a finished post into a queue; a separate service, the publisher (`scripts/blog/publisher.mjs`, `backend/deploy/hyperquant-blog-publisher.service` and `.timer`, every minute), checks it with the same filter and validator as the site build and only then commits it to the `blog` branch of the data repository with the data repository key. Whoever takes over the author can at most put a file into the queue, and that file is checked twice (by the publisher and by the site build).
+The automated author on the server does not push anywhere. It drops a finished post into a queue; a separate service, the publisher (`scripts/blog/publisher.mjs`, `backend/deploy/hyperquant-blog-publisher.service` and `.timer`, every minute), checks it with the same filter and validator as the site build and only then commits it to the `blog` branch of the data repository with the data repository key. Whoever takes over the author can at most put a file into the queue, and that file is checked twice (by the publisher and by the site build). To keep the publisher off on a server, set `HQ_BLOG_PUBLISHER=0` in `/etc/hyperquant/scanner.env`; `install.sh` then disables its timer instead of enabling it again.
 
 **Directories** (created by `install.sh`; group `hqblog` = the author and the publisher):
 
