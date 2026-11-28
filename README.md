@@ -90,7 +90,7 @@ Hyperliquid is an on-chain exchange: every trade on its public tape carries the 
 
 <p align="center"><img src="docs/media/lessons.webp" width="49%" alt="Lessons screen: six exercises on real BTC days from 20 to 24 October 2026, from basics to the footprint"> <img src="docs/media/phone-chart.webp" width="22%" alt="HyperQuant on a phone: 15-minute BTC chart with heatmap and bubbles, Chart, Tape, DOM and Numbers cards and the bottom navigation"></p>
 
-The app installs like a native app (PWA) on desktop and mobile, and is available in English and Polish. Every screen and panel is described in the **[feature reference](docs/FEATURES.md)**.
+The app installs like a native app (PWA) on desktop and mobile, and is available in English and Polish. After an update it opens a short *What's new* window with the changes you have not seen yet, built from the changelog. Every screen and panel is described in the **[feature reference](docs/FEATURES.md)**.
 
 ## Markets
 

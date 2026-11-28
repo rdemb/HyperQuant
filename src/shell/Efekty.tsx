@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { CandlestickChart, Clock3, PanelLeftClose, Rows3, Sparkles } from 'lucide-react';
+import { CandlestickChart, LayoutGrid, Newspaper, Radar, Sparkles, Target } from 'lucide-react';
 import { lang, tr } from '../i18n';
 import type { ViewId } from '../state/types';
 import './efekty.css';
+import { type GrupaNowosci, type ListaNowosci, type Nowosc, czyLista, nowosciDoPokazania } from './nowosci';
 
 /**
  * Efekty powłoki (23.11.2026): kurtyna przy pierwszym otwarciu aplikacji w sesji, ładowanie widoku i okno „Co nowego”
@@ -92,41 +93,40 @@ export const LadowanieWidoku: React.FC = () => (
 
 /* ------------------------------------------------ Co nowego ------------------------------------------------ */
 
-/** Wersja okna „Co nowego”: nowa wartość pokazuje okno raz każdemu stałemu użytkownikowi. */
-export const NOWOSCI_WERSJA = '2026-11-23-stol';
-const NOWOSCI_KLUCZ = 'hq.nowosci';
+/**
+ * Okno „Co nowego” z `whats-new.json` (zapisuje go build strony z CHANGELOG, `scripts/blog/whatsnew.mjs`): po aktualizacji
+ * („Odśwież” w banerze nowej wersji) i przy każdym wejściu stały użytkownik widzi pozycje, których jeszcze nie widział.
+ * Widziane pozycje (identyfikator: data i tytuł) zostają w przeglądarce.
+ */
+const WIDZIANE_KLUCZ = 'hq.nowosci.v2';
+const GRUPY: Record<GrupaNowosci, { ikona: React.ReactNode; widok?: ViewId }> = {
+  wykres: { ikona: <CandlestickChart className="h-5 w-5" aria-hidden="true" />, widok: 'charts' },
+  rynki: { ikona: <LayoutGrid className="h-5 w-5" aria-hidden="true" />, widok: 'markets' },
+  prognozy: { ikona: <Target className="h-5 w-5" aria-hidden="true" />, widok: 'after' },
+  skaner: { ikona: <Radar className="h-5 w-5" aria-hidden="true" /> },
+  blog: { ikona: <Newspaper className="h-5 w-5" aria-hidden="true" /> },
+};
 
-type Nowosc = { ikona: React.ReactNode; tytul: string; opis: string; widok?: ViewId };
-const NOWOSCI: Nowosc[] = [
-  {
-    ikona: <CandlestickChart className="h-5 w-5" aria-hidden="true" />,
-    tytul: tr('Stanowisko z wykresami', 'Workbench with charts'),
-    opis: tr(
-      'Świece dowolnego rynku i interwału na żywo, gotowe układy: jedna, dwie, trzy kolumny i siatka 2 × 2. Stanowisko ma teraz tę samą nawigację co reszta.',
-      'Live candles of any market and timeframe, ready layouts: one, two or three columns and a 2 × 2 grid. The workbench now has the same navigation as the rest.'
-    ),
-    widok: 'stanowisko',
-  },
-  {
-    ikona: <Clock3 className="h-5 w-5" aria-hidden="true" />,
-    tytul: tr('Żywy zegar doby', 'Live day clock'),
-    opis: tr('W Dziś: płynna wskazówka, sekundy, postęp sesji i odliczanie do następnej. Nowa cena BTC wysyła falę po tarczy.', 'In Today: a smooth hand, seconds, session progress and a countdown to the next one. Each new BTC price sends a ripple.'),
-    widok: 'dzis',
-  },
-  {
-    ikona: <Rows3 className="h-5 w-5" aria-hidden="true" />,
-    tytul: tr('Księga i taśma w nowej oprawie', 'Book and tape, redesigned'),
-    opis: tr('Kolumna DOM obok wykresu w tym samym stylu co pasek wykresu, w Zorzy i w Opalu.', 'The DOM column next to the chart matches the chart bar, in Zorza and Opal.'),
-    widok: 'charts',
-  },
-  {
-    ikona: <PanelLeftClose className="h-5 w-5" aria-hidden="true" />,
-    tytul: tr('Menu boczne pod ręką', 'Side menu at hand'),
-    opis: tr('Przycisk w lewym górnym rogu albo klawisz \\ chowa i pokazuje menu, także na niskim ekranie laptopa.', 'The button in the top left corner or the \\ key hides and shows the menu, also on a short laptop screen.'),
-  },
-];
+function czytajWidziane(): string[] | null {
+  try {
+    const raw = localStorage.getItem(WIDZIANE_KLUCZ);
+    const v: unknown = raw === null ? null : JSON.parse(raw);
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : null;
+  } catch {
+    return null;
+  }
+}
 
-const DATA_WYDANIA = new Intl.DateTimeFormat(lang === 'pl' ? 'pl-PL' : 'en-GB', { day: 'numeric', month: 'long' }).format(Date.UTC(2026, 10, 23, 12));
+function zapiszWidziane(ids: readonly string[]): void {
+  try {
+    // Lista ograniczona: plik ma kilka ostatnich pozycji, starsze identyfikatory nie są już potrzebne
+    localStorage.setItem(WIDZIANE_KLUCZ, JSON.stringify([...new Set(ids)].slice(-60)));
+  } catch {
+    /* pamięć zablokowana: okno wróci przy następnym wejściu */
+  }
+}
+
+const dataWydania = (day: string) => new Intl.DateTimeFormat(lang === 'pl' ? 'pl-PL' : 'en-GB', { day: 'numeric', month: 'long' }).format(Date.parse(`${day}T12:00:00Z`));
 
 /** Stały użytkownik (był już w aplikacji przed tym wejściem): tylko jemu pokazujemy „Co nowego”. Odczyt przy imporcie modułu. */
 const BYL_WCZESNIEJ = (() => {
@@ -169,39 +169,47 @@ export function falaStrony(x: number, y: number) {
 
 export const CoNowego: React.FC<{ go: (v: ViewId) => void }> = ({ go }) => {
   const [otwarte, setOtwarte] = useState(false);
+  const [lista, setLista] = useState<ListaNowosci | null>(null);
+  const [pozycje, setPozycje] = useState<Nowosc[]>([]);
   const okno = useRef<HTMLDivElement>(null);
   const rozumiem = useRef<HTMLButtonElement>(null);
   const poprzedniFokus = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
-    let widziane: string | null = null;
-    try {
-      widziane = localStorage.getItem(NOWOSCI_KLUCZ);
-      // Nowy użytkownik nie potrzebuje listy zmian: zapis bez okna
-      if (!BYL_WCZESNIEJ && widziane !== NOWOSCI_WERSJA) localStorage.setItem(NOWOSCI_KLUCZ, NOWOSCI_WERSJA);
-    } catch {
-      return;
-    }
-    if (!BYL_WCZESNIEJ || widziane === NOWOSCI_WERSJA) return;
-    // Po kurtynie i pierwszym malowaniu widoku
-    const t = window.setTimeout(() => {
-      poprzedniFokus.current = document.activeElement as HTMLElement | null;
-      setOtwarte(true);
-    }, 1700);
-    return () => window.clearTimeout(t);
+    let zywy = true;
+    let t = 0;
+    // Plik z buildu (no-cache: po aktualizacji lista nowej wersji, nie z pamięci przeglądarki); brak pliku — bez okna
+    fetch('./whats-new.json', { cache: 'no-cache' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j: unknown) => {
+        if (!zywy || !czyLista(j)) return;
+        const widziane = czytajWidziane();
+        const nowe = nowosciDoPokazania(j, widziane, BYL_WCZESNIEJ);
+        // Nowy użytkownik nie potrzebuje listy zmian: zapis bez okna
+        if (widziane === null && !BYL_WCZESNIEJ) zapiszWidziane(j.items.map((i) => i.id));
+        if (nowe.length === 0) return;
+        setLista(j);
+        setPozycje(nowe);
+        // Po kurtynie i pierwszym malowaniu widoku
+        t = window.setTimeout(() => {
+          poprzedniFokus.current = document.activeElement as HTMLElement | null;
+          setOtwarte(true);
+        }, 1700);
+      })
+      .catch(() => {});
+    return () => {
+      zywy = false;
+      window.clearTimeout(t);
+    };
   }, []);
 
   const zamknij = useCallback((fala: boolean) => {
-    try {
-      localStorage.setItem(NOWOSCI_KLUCZ, NOWOSCI_WERSJA);
-    } catch {
-      /* pamięć zablokowana: okno wróci przy następnym wejściu */
-    }
+    if (lista) zapiszWidziane([...(czytajWidziane() ?? []), ...lista.items.map((i) => i.id)]);
     const r = rozumiem.current?.getBoundingClientRect();
     setOtwarte(false);
     poprzedniFokus.current?.focus?.({ preventScroll: true });
     if (fala && r) window.setTimeout(() => falaStrony(r.left + r.width / 2, r.top + r.height / 2), 0);
-  }, []);
+  }, [lista]);
 
   useEffect(() => {
     if (!otwarte) return;
@@ -248,7 +256,7 @@ export const CoNowego: React.FC<{ go: (v: ViewId) => void }> = ({ go }) => {
           </span>
           <div className="min-w-0">
             <p className="font-mono text-[10.5px] font-semibold uppercase tracking-[0.16em] text-ink-3">
-              {tr('Aktualizacja', 'Update')} · {DATA_WYDANIA}
+              {tr('Aktualizacja', 'Update')} · {pozycje.length > 0 ? dataWydania(pozycje[0].date) : ''}
             </p>
             <h2 id="hq-nowosci-tytul" className="mt-1 font-display text-[clamp(24px,3vw,32px)] font-extrabold leading-none tracking-tight [font-stretch:86%] text-ink-1">
               {tr('Co nowego w HyperQuant', 'What’s new in HyperQuant')}
@@ -256,28 +264,34 @@ export const CoNowego: React.FC<{ go: (v: ViewId) => void }> = ({ go }) => {
           </div>
         </div>
         <ol className="hq-nowosci-lista">
-          {NOWOSCI.map((n, i) => (
-            <li key={n.tytul} style={{ animationDelay: `${0.12 + i * 0.07}s` }}>
-              <span className="hq-nowosci-ikona">{n.ikona}</span>
-              <span className="min-w-0 flex-1">
-                <span className="block font-semibold text-ink-1">{n.tytul}</span>
-                <span className="mt-0.5 block text-[13px] leading-snug text-ink-2 text-pretty">{n.opis}</span>
-              </span>
-              {n.widok && (
-                <a
-                  href={`#${n.widok}`}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    zamknij(true);
-                    go(n.widok!);
-                  }}
-                  className="shrink-0 self-center inline-flex h-9 items-center rounded-full border border-line-strong px-3 text-xs font-semibold text-ink-1 hover:bg-surface-2"
-                >
-                  {tr('Pokaż', 'Show')}
-                </a>
-              )}
-            </li>
-          ))}
+          {pozycje.map((n, i) => {
+            const g = GRUPY[n.group];
+            const etykieta = lista?.groups[n.group];
+            return (
+              <li key={n.id} style={{ animationDelay: `${0.12 + i * 0.07}s` }}>
+                <span className="hq-nowosci-ikona">{g.ikona}</span>
+                <span className="min-w-0 flex-1">
+                  {etykieta && <span className="block font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-ink-3">{tr(etykieta.pl, etykieta.en)}</span>}
+                  <span className="block font-semibold text-ink-1">{tr(n.pl, n.en)}</span>
+                  {/* Opis z CHANGELOG jest po polsku; po angielsku sam tytuł */}
+                  {lang === 'pl' && n.body && <span className="mt-0.5 block text-[13px] leading-snug text-ink-2 text-pretty">{n.body}</span>}
+                </span>
+                {g.widok && (
+                  <a
+                    href={`#${g.widok}`}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      zamknij(true);
+                      go(g.widok!);
+                    }}
+                    className="shrink-0 self-center inline-flex h-9 items-center rounded-full border border-line-strong px-3 text-xs font-semibold text-ink-1 hover:bg-surface-2"
+                  >
+                    {tr('Pokaż', 'Show')}
+                  </a>
+                )}
+              </li>
+            );
+          })}
         </ol>
         <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
           <a href={tr('./co-nowego/', './en/whats-new/')} className="text-xs text-ink-3 underline decoration-line-strong hover:text-ink-1">
