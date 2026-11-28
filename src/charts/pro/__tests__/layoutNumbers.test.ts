@@ -171,9 +171,9 @@ describe('nagłówek układu: trzy liczby', () => {
     expect(pepe).toMatchObject({ label: 'Koszt 1k', value: '3,0 / 4,0 pb' });
     expect(pepe.hint).toContain('Zlecenie rynkowe 1 000 USD');
     expect(layoutNumbers('fuel', { coin: 'ETH', now: NOW, price: 3_000 })[2].label).toBe('Koszt 50k');
-    // Rynek bez skanera (zdolność z rejestru; dziś pełny skaner ma tylko BTC)
+    // Rynek bez mapy likwidacji (pełny skaner ma dziś tylko BTC, lista `liqMaps` pusta)
     const eth = layoutNumbers('fuel', { coin: 'ETH', now: NOW, price: 3_000, liq: { px: 99_200, ntlUsd: 1e7, side: 'long', asOf: NOW } })[1];
-    expect(eth).toMatchObject({ value: '—', note: 'bez skanera' });
+    expect(eth).toMatchObject({ value: '—', note: 'bez mapy' });
     expect(eth.hint).toContain('ETH');
   });
 

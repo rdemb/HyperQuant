@@ -32,9 +32,9 @@ describe('nagłówek układu: „—” bez plakietki źródła', () => {
     }
   });
 
-  it('powód zamiast plakietki zostaje („bez skanera” na rynku bez skanera)', () => {
+  it('powód zamiast plakietki zostaje („bez mapy” na rynku bez mapy likwidacji)', () => {
     const html = header('fuel', 'ETH', false);
-    expect(html).toContain('>bez skanera<');
+    expect(html).toContain('>bez mapy<');
     expect(html).not.toMatch(/>(LIVE|MODEL)</);
   });
 });

@@ -86,6 +86,13 @@ function toBuckets(map: Map<number, LiqBucket>): LiqBucket[] {
 export const LIQ_MAP_RANGE = 0.15;
 
 /**
+ * Progi publikacji mapy rynku innego niż rynek skanera (etap M1, `backend/scanner/marketShadow.ts`): pokrycie OI co
+ * najmniej 30%, mediana wieku odczytów ważona nominałem najwyżej 30 min (próg alarmu mapy BTC), co najmniej 50 pozycji.
+ * Wspólne dla skanera i strony (opis, dlaczego rynek nie ma mapy).
+ */
+export const LIQ_MAP_PUBLISH = { minShare: 0.3, maxAgeMin: 30, minPositions: 50 } as const;
+
+/**
  * Kubełki stałego kroku USD (~0.1% ceny), osobno longi i shorty, w zakresie ±rangePct od ceny mark; kubełek z mniej
  * niż `LIQ_MIN_N` pozycjami ma zaokrąglony nominał. Pokrycie: Σ|szi| / (2·OI) — OI z Hyperliquid liczy jedną stronę
  * rynku, a skan widzi obie.

@@ -36,8 +36,8 @@ import {
 } from '../../../utils/sessionText';
 import { DASH, fmtFixed, fmtPct, fmtSigned, plForm } from '../../../ui/format';
 import { tr } from '../../../i18n';
-import { BTC_ONLY_NOTE, BLOG_ONLY_WHY, NO_SCANNER_NOTE } from '../../../utils/marketCaps';
-import { capsOf, marketOf, noScannerWhyOf, usdScaleOf } from '../../../state/markets';
+import { BTC_ONLY_NOTE, BLOG_ONLY_WHY, NO_LIQMAP_NOTE } from '../../../utils/marketCaps';
+import { capsOf, marketOf, noLiqMapWhyOf, usdScaleOf } from '../../../state/markets';
 
 /**
  * Nagłówek układu (spec §7.3): trzy liczby właściwe dla pytania układu, każda z plakietką LIVE albo MODEL (MODEL z nazwą
@@ -254,7 +254,7 @@ function liqNum(x: LayoutInputs): LayoutNumber {
   const px = pxOf(x.coin);
   const label = tr('Klaster likw.', 'Liq. cluster');
   const short = tr('Klaster', 'Cluster');
-  if (!capsOf(x.coin).scanner) return { ...dash(label, 'LIVE', noScannerWhyOf(x.coin), NO_SCANNER_NOTE), short };
+  if (!capsOf(x.coin).liqMap) return { ...dash(label, 'LIVE', noLiqMapWhyOf(x.coin), NO_LIQMAP_NOTE), short };
   const l = val(x.liq);
   const p = val(x.price);
   if (!l || p === null) return { ...dash(label, 'LIVE', whyOf(x.liq, x.price)), short };

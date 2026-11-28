@@ -4,6 +4,11 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Klastry likwidacji na kolejnych rynkach (2026-11-28)
+<!-- co-nowego: grupa=wykres | pl=Klastry likwidacji na kolejnych rynkach | en=Liquidation clusters on more markets -->
+- Warstwa „Klastry likwidacji” na wykresie, liczba „Klaster likw.” w układzie Paliwo i jakość mapy w klatce działają na każdym rynku giełdy głównej, dla którego skaner publikuje mapę likwidacji z prawdziwych pozycji on-chain, a nie tylko na BTC. Kandydaci to ETH, SOL, HYPE, XMR, NEAR, ZEC i kolejne rynki z rejestru.
+- Mapa rynku pojawia się sama, gdy skaner widzi co najmniej 30% otwartych pozycji rynku z odczytów nie starszych niż 30 min. Opis warstwy podaje pokrycie mapy, a na rynku bez mapy wyjaśnia, czego brakuje, i wymienia rynki, które mapę mają.
+
 ### Mapy likwidacji innych rynków w skanerze, etap M1 (2026-11-28)
 <!-- co-nowego: ukryj -->
 - Skaner buduje mapy likwidacji dla rynków giełdy głównej z rejestru (ETH, SOL, HYPE, XMR, NEAR, ZEC i kolejnych) z tych samych odczytów pozycji co mapa BTC, bez nowych zapytań do Hyperliquid. Cena odniesienia to ostatnia transakcja z taśmy, a OI pochodzi z rejestru rynków.
