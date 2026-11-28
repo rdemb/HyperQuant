@@ -1,6 +1,7 @@
 // Testy nadzoru publicznych danych skanera (świeżość, pokrycie, strażnik prywatności).
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { FILES, LIMITS, MARKETS_MAX_AGE_MIN, OPTIONAL, VERIFY_FILE, assessHealth, fetchInput, findLeaks, ntlLag, renderReport } from './check-data-health.mjs';
+import { gzipSync } from 'node:zlib';
+import { FILES, LIMITS, LIVE_FILE, LIVE_MAX_AGE_S, MARKETS_MAX_AGE_MIN, OPTIONAL, VERIFY_FILE, assessHealth, fetchInput, findLeaks, ntlLag, renderReport } from './check-data-health.mjs';
 import { VERIFY_LATEST_URL } from '../src/utils/verifyFreshness.ts';
 
 const NOW = Date.UTC(2026, 9, 22, 12, 0, 0);
@@ -320,5 +321,59 @@ describe('niezależna weryfikacja dziennika (gałąź wyników w repo HyperQuant
     expect(urls).toContain(VERIFY_LATEST_URL);
     expect(urls.filter((u) => /\/health\//.test(u))).toEqual([]);
     expect(inp.verify).toEqual(verify());
+  });
+});
+
+describe('ogon na żywo w przekaźniku (LIVE_URL)', () => {
+  const tail = (asOf) => ({ v: 1, coin: 'BTC', asOf, parts: [] });
+
+  it('świeży ogon — fakt w sekundach; starszy niż 2 min, brak (404) albo bez asOf — problem; bez LIVE_URL — bez oceny', () => {
+    expect(LIVE_MAX_AGE_S).toBe(120);
+    const fresh = assessHealth(input({ live: tail(NOW - 5000) }), NOW);
+    expect(fresh.ok).toBe(true);
+    expect(fresh.facts).toContainEqual({ label: 'Wiek ogona na żywo', value: '5 s' });
+    expect(assessHealth(input({ live: tail(NOW - LIVE_MAX_AGE_S * 1000) }), NOW).ok).toBe(true);
+    const stale = assessHealth(input({ live: tail(NOW - 121_000) }), NOW);
+    expect(stale.problems).toContain(`${LIVE_FILE}: dane sprzed 121 s (próg 120 s) — skaner nie wysyła ogona`);
+    expect(assessHealth(input({ live: { missing: true } }), NOW).problems.join(' ')).toMatch(/brak ogona.*darmowy limit Cloudflare/);
+    expect(assessHealth(input({ live: { v: 1 } }), NOW).problems.join(' ')).toMatch(/ogon na żywo.*asOf/);
+    const none = assessHealth(input(), NOW);
+    expect(none.ok).toBe(true);
+    expect(none.facts.map((f) => f.label)).not.toContain('Wiek ogona na żywo');
+  });
+
+  it('błąd przekaźnika (np. 429 po wyczerpaniu limitu) — problem z kodem; adres portfela w ogonie — alarm prywatności', () => {
+    const inp = input({ live: null });
+    inp.errors[LIVE_FILE] = 'HTTP 429';
+    expect(assessHealth(inp, NOW).problems).toContain(`${LIVE_FILE}: nie udało się pobrać (HTTP 429)`);
+    const leak = input({ live: tail(NOW) });
+    leak.raw[LIVE_FILE] = JSON.stringify({ trades: '0x' + 'ab'.repeat(20) });
+    expect(assessHealth(leak, NOW).problems.join(' ')).toMatch(/PRYWATNOŚĆ: ogon na żywo/);
+  });
+
+  it('fetchInput: ogon z przekaźnika rozpakowany z gzip; 404 → brak; bez adresu przekaźnika — bez zapytania', async () => {
+    const urls = [];
+    const stub = (tailStatus) =>
+      vi.stubGlobal('fetch', async (url) => {
+        urls.push(String(url));
+        if (String(url).endsWith('/v1/tail/BTC')) return tailStatus === 200 ? new Response(gzipSync(JSON.stringify(tail(NOW)))) : new Response(null, { status: tailStatus });
+        return new Response('{}');
+      });
+    try {
+      stub(200);
+      const inp = await fetchInput('https://example.test/main', 'https://live.example.test/');
+      expect(urls).toContain('https://live.example.test/v1/tail/BTC');
+      expect(inp.live).toEqual(tail(NOW));
+      expect(inp.raw[LIVE_FILE]).toBe(JSON.stringify(tail(NOW)));
+      stub(404);
+      expect((await fetchInput('https://example.test/main', 'https://live.example.test')).live).toEqual({ missing: true });
+      urls.length = 0;
+      stub(200);
+      const off = await fetchInput('https://example.test/main', '');
+      expect(off.live).toBeNull();
+      expect(urls.some((u) => u.includes('/v1/tail/'))).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

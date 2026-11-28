@@ -75,7 +75,7 @@ describe('usługi systemd: kod z katalogu aktualizowanego nie działa jako root'
     const m = /for var in ([A-Z_ ]+); do\n[^\n]*env_value/.exec(read('install.sh'));
     expect(m, 'pętla zmiennych watchdog.env w install.sh').not.toBeNull();
     expect(m![1].trim().split(/\s+/).sort()).toEqual(needed);
-    expect(needed).toEqual(['HQ_GIT_REMOTE', 'HQ_OUT_DIR', 'HQ_STATE_DIR']);
+    expect(needed).toEqual(['HQ_GIT_REMOTE', 'HQ_LIVE_URL', 'HQ_OUT_DIR', 'HQ_STATE_DIR']);
   });
 
   it('strażnik: izolacja jak usługa skanera (bez uprawnień, zapis tylko do własnego katalogu stanu)', () => {

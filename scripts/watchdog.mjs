@@ -303,7 +303,8 @@ async function main() {
   }
   const remote = (env.HQ_GIT_REMOTE ?? '').trim();
   const base = dataBaseFromRemote(remote);
-  const run = assessRun(base ? await fetchInput(base) : null, st.ntl, now);
+  // Ogon w przekaźniku na żywo: ten sam adres co w skanerze (HQ_LIVE_URL); pusty — bez sprawdzania
+  const run = assessRun(base ? await fetchInput(base, (env.HQ_LIVE_URL ?? '').trim()) : null, st.ntl, now);
   const health = run.health;
   st.ntl = run.ntl;
   const state = serviceState();

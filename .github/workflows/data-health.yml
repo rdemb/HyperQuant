@@ -34,6 +34,8 @@ jobs:
         id: health
         env:
           HEALTH_REPORT_FILE: ${{ runner.temp }}/health.md
+          # Przekaźnik na żywo (workers/live); bez zmiennej ogon nie jest sprawdzany
+          LIVE_URL: ${{ vars.LIVE_URL }}
         run: node scripts/check-data-health.mjs
 
       - name: Zgłoszenie
