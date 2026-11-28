@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, existsSync, statSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -9,6 +9,7 @@ import { WeightLimiter } from '../rateLimiter.ts';
 import { AddressBook } from '../addressBook.ts';
 import { Scanner, type ScannerDeps } from '../scanner.ts';
 import { MarketShadow } from '../marketShadow.ts';
+import { buildLiqMap } from '../../../src/utils/liqMap.ts';
 import { LiqConfirmer } from '../liqDetect.ts';
 import { isLiqMap } from '../../../src/utils/liqMap.ts';
 import { isLiqTape } from '../../../src/utils/liqTape.ts';
@@ -200,6 +201,38 @@ describe('Scanner — cykl skanu i publikacji', () => {
       'xyz:NVDA': { coverage: null, unseenShare: 0.5, ageP50Min: null },
     });
     expect(status.xyz).toEqual({ accounts: 2, inBook: 1, unseenShare: 0.5, share: 1 });
+  });
+
+  it('mapy innych rynków (M1): pliki liq-map/<rynek>.json i lista w status.liqMaps; bez rynku skanera i nazw spoza liter i cyfr', async () => {
+    const eth = buildLiqMap([{ szi: 2, entryPx: 3000, liqPx: 2700, scannedAt: 100_000 }], { coin: 'ETH', markPx: 3000, oiBtc: 10, asOf: 120_000, addresses: 2 });
+    const { scanner, out } = setup(false, () => 120_000, false, {
+      extraMaps: () => [
+        ['ETH', eth],
+        ['BTC', eth],
+        ['../x', eth],
+      ],
+    });
+    await scanner.scanDue(10);
+    expect(await scanner.publish()).toBe(true);
+    expect(JSON.parse(readFileSync(join(out, 'liq-map/ETH.json'), 'utf8'))).toEqual(eth);
+    expect(JSON.parse(readFileSync(join(out, 'liq-map/BTC.json'), 'utf8')).coin).toBe('BTC'); // mapa skanera nienadpisana
+    expect(readdirSync(out)).not.toContain('x.json');
+    expect(JSON.parse(readFileSync(join(out, 'status.json'), 'utf8')).liqMaps).toEqual(['ETH']);
+  });
+
+  it('błąd map innych rynków nie wstrzymuje publikacji; bez haka status bez pola liqMaps', async () => {
+    const broken = setup(false, () => 120_000, false, {
+      extraMaps: () => {
+        throw new Error('awaria');
+      },
+    });
+    await broken.scanner.scanDue(10);
+    expect(await broken.scanner.publish()).toBe(true);
+    expect(JSON.parse(readFileSync(join(broken.out, 'status.json'), 'utf8')).liqMaps).toEqual([]);
+    const plain = setup();
+    await plain.scanner.scanDue(10);
+    await plain.scanner.publish();
+    expect(JSON.parse(readFileSync(join(plain.out, 'status.json'), 'utf8'))).not.toHaveProperty('liqMaps');
   });
 
   it('status.json: kolejka kont po transakcji bez odczytu (`dirty`: liczba, czekanie p50 i p90 w min)', async () => {

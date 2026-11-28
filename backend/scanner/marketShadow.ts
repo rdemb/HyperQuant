@@ -8,6 +8,7 @@
  */
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
+import { type LiqMap, type ScannedPosition, buildLiqMap } from '../../src/utils/liqMap.ts';
 
 const MIN_MS = 60_000;
 const HOUR_MS = 3_600_000;
@@ -26,6 +27,18 @@ export const FLOW_SETTLE_MS = 30_000;
 export const OI_MAX_AGE_MS = 3 * HOUR_MS;
 /** Giełda HIP-3 mierzona osobno (konta widziane na jej taśmach) */
 export const XYZ_PREFIX = 'xyz:';
+/** Cena z taśmy rynku starsza niż to nie buduje mapy (jak kontekst mapy BTC: stara cena nie może udawać aktualnej) */
+export const PRICE_MAX_AGE_MS = 5 * MIN_MS;
+/**
+ * Progi publikacji mapy likwidacji rynku innego niż HQ_COIN (etap M1): pokrycie OI co najmniej 30%, mediana wieku
+ * odczytów ważona nominałem najwyżej 30 min (próg alarmu mapy BTC) i co najmniej 50 pozycji. Rynek, który ich nie
+ * spełnia, nie dostaje mapy — dane decydują same, który rynek ją ma.
+ */
+export const M1_MIN_SHARE = 0.3;
+export const M1_MAX_AGE_MIN = 30;
+export const M1_MIN_POSITIONS = 50;
+/** Metoda mapy M1: te same odczyty `clearinghouseState` co mapa BTC, cena odniesienia z ostatniej transakcji taśmy */
+export const M1_METHOD = 'hl-clearinghouse-v1+last-trade';
 
 export interface ShadowTrade {
   coin: string;
@@ -92,20 +105,31 @@ export function coverageShare(absSz: number, oi: number): number {
   return oi > 0 ? Math.min(1, absSz / (2 * oi)) : 0;
 }
 
+/** Czy mapę M1 można opublikować (progi `M1_*`: pokrycie, świeżość ważona nominałem, liczba pozycji). */
+export function publishableMap(m: LiqMap): boolean {
+  return m.coverage.share >= M1_MIN_SHARE && m.ageMin.ntlP50 <= M1_MAX_AGE_MIN && m.coverage.positions >= M1_MIN_POSITIONS;
+}
+
+/** Pozycja konta w rynku: [szi ze znakiem, cena wejścia, cena likwidacji albo null]; cena wejścia 0 = stan sprzed tego pola */
+export type PosTuple = [number, number, number | null];
+
 /**
- * Rozmiary pozycji (|szi|) w podanych rynkach z odpowiedzi `clearinghouseState`; pozycje bez ceny wejścia pomijane
- * jak w `parseCoinPosition`. Zły kształt → null (nieudany odczyt nie kasuje poprzedniego).
+ * Pozycje w podanych rynkach z odpowiedzi `clearinghouseState`, z tymi samymi regułami co `parseCoinPosition` (mapa BTC):
+ * bez zerowego rozmiaru i bez ceny wejścia; cena likwidacji ≤ 0 albo brak → null. Zły kształt → null (nieudany odczyt
+ * nie kasuje poprzedniego).
  */
-export function parseAbsSizes(state: unknown, coins: ReadonlySet<string>): Record<string, number> | null {
+export function parsePositions(state: unknown, coins: ReadonlySet<string>): Record<string, PosTuple> | null {
   const list = (state as { assetPositions?: unknown } | null)?.assetPositions;
   if (!Array.isArray(list)) return null;
-  const out: Record<string, number> = {};
+  const out: Record<string, PosTuple> = {};
   for (const ap of list) {
     const p = (ap as { position?: Record<string, unknown> } | null)?.position;
     if (!p || typeof p.coin !== 'string' || !coins.has(p.coin)) continue;
     const szi = num(p.szi);
-    if (!Number.isFinite(szi) || szi === 0 || !(num(p.entryPx) > 0)) continue;
-    out[p.coin] = Math.abs(szi);
+    const entryPx = num(p.entryPx);
+    if (!Number.isFinite(szi) || szi === 0 || !(entryPx > 0)) continue;
+    const liq = p.liquidationPx === null || p.liquidationPx === undefined ? Number.NaN : num(p.liquidationPx);
+    out[p.coin] = [szi, entryPx, liq > 0 ? liq : null];
   }
   return out;
 }
@@ -127,8 +151,8 @@ export function parseOpenInterest(raw: unknown): Record<string, number> | null {
 }
 
 interface ShadowJson {
-  v: 2;
-  pos: [string, { t: number | null; s: Record<string, number> }][];
+  v: 3;
+  pos: [string, { t: number | null; p: Record<string, PosTuple> }][];
   hours: [number, Record<string, [number, number]>][];
   xyz: [string, number][];
   oi: { at: number; byCoin: Record<string, number> } | null;
@@ -141,8 +165,10 @@ interface ShadowJson {
 export class MarketShadow {
   private coins: string[] = [];
   private mainSet = new Set<string>();
-  /** Konto → czas odczytu i |rozmiar| pozycji w rynkach głównych rejestru (t = null: stan zapisany przed polem czasu) */
-  private readonly pos = new Map<string, { t: number | null; s: Record<string, number> }>();
+  /** Konto → czas odczytu i pozycje w rynkach głównych rejestru (t = null: stan zapisany przed polem czasu) */
+  private readonly pos = new Map<string, { t: number | null; p: Record<string, PosTuple> }>();
+  /** Rynek → ostatnia cena z taśmy i jej czas (cena odniesienia map M1) */
+  private readonly lastPx = new Map<string, { px: number; t: number }>();
   /** Początek godziny → rynek → [obrót kont spoza księgi, obrót razem] (obie strony transakcji) */
   private readonly hours = new Map<number, Record<string, [number, number]>>();
   private readonly xyz = new Map<string, number>();
@@ -159,9 +185,9 @@ export class MarketShadow {
 
   /** Odczyt `clearinghouseState` konta (ten sam, który skaner robi dla BTC) w chwili `t`: pozycje w rynkach głównych rejestru. */
   onScan(addr: string, state: unknown, t: number): void {
-    const s = parseAbsSizes(state, this.mainSet);
-    if (s === null) return;
-    if (Object.keys(s).length > 0) this.pos.set(addr, { t, s });
+    const p = parsePositions(state, this.mainSet);
+    if (p === null) return;
+    if (Object.keys(p).length > 0) this.pos.set(addr, { t, p });
     else this.pos.delete(addr);
   }
 
@@ -171,7 +197,9 @@ export class MarketShadow {
 
   /** Transakcja z taśmy: obrót kupującego i sprzedającego do kubełka godziny; `inBook` — stan księgi w chwili transakcji. */
   onTrade(t: ShadowTrade, inBook: (addr: string) => boolean): void {
-    const ntl = num(t.px) * num(t.sz);
+    const px = num(t.px);
+    const ntl = px * num(t.sz);
+    if (px > 0 && Number.isFinite(t.time) && t.time >= (this.lastPx.get(t.coin)?.t ?? 0)) this.lastPx.set(t.coin, { px, t: t.time });
     const users = t.users;
     if (!(ntl > 0) || !Array.isArray(users) || typeof users[0] !== 'string' || typeof users[1] !== 'string' || !Number.isFinite(t.time)) return;
     const h = Math.floor(t.time / HOUR_MS) * HOUR_MS;
@@ -204,7 +232,8 @@ export class MarketShadow {
     const ages = new Map<string, [number, number][]>(); // rynek → [wiek odczytu (min), |rozmiar|]
     for (const [a, rec] of this.pos) {
       if (!o.inBook(a)) continue;
-      for (const [c, sz] of Object.entries(rec.s)) {
+      for (const [c, [szi]] of Object.entries(rec.p)) {
+        const sz = Math.abs(szi);
         sums.set(c, (sums.get(c) ?? 0) + sz);
         if (rec.t !== null) (ages.get(c) ?? ages.set(c, []).get(c)!).push([(now - rec.t) / MIN_MS, sz]);
       }
@@ -251,24 +280,60 @@ export class MarketShadow {
     return { markets, xyz: { accounts, inBook, unseenShare: ratio(xu, xt), share: ratio(xt, all) }, marketsHours: hoursN };
   }
 
+  /**
+   * Mapa likwidacji rynku głównego (etap M1) z pozycji kont księgi ze znanym czasem odczytu — te same odczyty i ta sama
+   * budowa co mapa BTC (`buildLiqMap`). Cena odniesienia: ostatnia transakcja z taśmy (najwyżej 5 min, jej czas to
+   * `ctxAt`), OI z rejestru (najwyżej 3 h). Brak ceny, OI albo pozycji → null.
+   */
+  liqMap(coin: string, now: number, o: { inBook: (addr: string) => boolean; addresses: number }): LiqMap | null {
+    if (!this.mainSet.has(coin)) return null;
+    const last = this.lastPx.get(coin);
+    const oi = this.oi && now - this.oi.at <= OI_MAX_AGE_MS ? this.oi.byCoin[coin] : undefined;
+    if (!last || now - last.t > PRICE_MAX_AGE_MS || !(oi !== undefined && oi > 0)) return null;
+    const positions: ScannedPosition[] = [];
+    for (const [a, rec] of this.pos) {
+      if (rec.t === null || !o.inBook(a)) continue;
+      const q = rec.p[coin];
+      if (q && q[1] > 0) positions.push({ szi: q[0], entryPx: q[1], liqPx: q[2], scannedAt: rec.t });
+    }
+    if (positions.length === 0) return null;
+    return { ...buildLiqMap(positions, { coin, markPx: last.px, oiBtc: oi, asOf: now, addresses: o.addresses, ctxAt: last.t }), method: M1_METHOD };
+  }
+
+  /** Mapy M1 rynków głównych spełniających progi publikacji (bez `exclude` — rynek skanera ma własną mapę), w kolejności rynków. */
+  maps(now: number, o: { inBook: (addr: string) => boolean; addresses: number; exclude: string }): [string, LiqMap][] {
+    const out: [string, LiqMap][] = [];
+    for (const c of this.coins) {
+      if (c === o.exclude) continue;
+      const m = this.liqMap(c, now, o);
+      if (m && publishableMap(m)) out.push([c, m]);
+    }
+    return out;
+  }
+
   toJSON(): ShadowJson {
-    return { v: 2, pos: [...this.pos], hours: [...this.hours], xyz: [...this.xyz], oi: this.oi };
+    return { v: 3, pos: [...this.pos], hours: [...this.hours], xyz: [...this.xyz], oi: this.oi };
   }
 
   /** Odczyt stanu z dysku (nieczytelne wpisy pomijane); od razu przycięty do okna. */
   static fromJSON(x: unknown, now: number): MarketShadow {
     const s = new MarketShadow();
-    if (!isRecord(x) || (x.v !== 1 && x.v !== 2)) return s;
+    if (!isRecord(x) || (x.v !== 1 && x.v !== 2 && x.v !== 3)) return s;
     const pairs = (v: unknown): [unknown, unknown][] => (Array.isArray(v) ? v.filter((e): e is [unknown, unknown] => Array.isArray(e) && e.length === 2) : []);
     for (const [a, entry] of pairs(x.pos)) {
       if (typeof a !== 'string' || !isRecord(entry)) continue;
-      // v1: same rozmiary bez czasu odczytu; v2: { t, s }
-      const rec = x.v === 1 ? entry : entry.s;
-      const t = x.v === 2 && typeof entry.t === 'number' && Number.isFinite(entry.t) ? entry.t : null;
+      // v1: same rozmiary bez czasu odczytu; v2: { t, s } z rozmiarami; v3: { t, p } z pozycjami. Sam rozmiar (v1, v2)
+      // daje pokrycie, ale nie mapę: cena wejścia 0 do kolejnego odczytu konta
+      const rec = x.v === 1 ? entry : x.v === 2 ? entry.s : entry.p;
+      const t = x.v !== 1 && typeof entry.t === 'number' && Number.isFinite(entry.t) ? entry.t : null;
       if (!isRecord(rec)) continue;
-      const clean: Record<string, number> = {};
-      for (const [c, sz] of Object.entries(rec)) if (typeof sz === 'number' && sz > 0) clean[c] = sz;
-      if (Object.keys(clean).length) s.pos.set(a, { t, s: clean });
+      const clean: Record<string, PosTuple> = {};
+      for (const [c, v] of Object.entries(rec)) {
+        if (typeof v === 'number' && v > 0) clean[c] = [v, 0, null];
+        else if (Array.isArray(v) && v.length === 3 && typeof v[0] === 'number' && Number.isFinite(v[0]) && v[0] !== 0 && typeof v[1] === 'number' && v[1] >= 0 && (v[2] === null || (typeof v[2] === 'number' && v[2] > 0)))
+          clean[c] = [v[0], v[1], v[2]];
+      }
+      if (Object.keys(clean).length) s.pos.set(a, { t, p: clean });
     }
     for (const [h, rec] of pairs(x.hours)) {
       if (typeof h !== 'number' || !isRecord(rec)) continue;

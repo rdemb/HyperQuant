@@ -19,7 +19,7 @@ import { stampDigest } from './ots.ts';
 import { marketSnapshot } from './marketQuotes.ts';
 import { LiquidityRecorder, chooseAgg, type BookAgg, type MinuteRow } from './liquidity.ts';
 import { WeightLimiter } from './rateLimiter.ts';
-import { Scanner } from './scanner.ts';
+import { MARKET_KEY, Scanner } from './scanner.ts';
 import { fetchLeaderboardAccounts } from './seed.ts';
 import { publishToGit } from './gitPublish.ts';
 import { HISTORY_README, MarketRecorder, historyIndex, pruneHistory } from './history.ts';
@@ -139,6 +139,8 @@ const scanner = new Scanner({
     ? {
         onScan: (addr: string, st: unknown, t: number) => shadow.onScan(addr, st, t),
         extraStatus: (asOf: number, coverage: number) => shadow.status(asOf, { inBook: (a) => book.has(a), btc: { coin: cfg.coin, coverage } }),
+        // Etap M1: mapy likwidacji rynków głównych z tych samych odczytów, tylko po progach pokrycia i świeżości
+        extraMaps: (asOf: number) => shadow.maps(asOf, { inBook: (a) => book.has(a), addresses: book.size, exclude: cfg.coin }),
       }
     : {}),
 });
@@ -380,6 +382,7 @@ const DATA_README = [
   'Repozytorium zawiera zawsze jeden commit z bieżącym stanem.',
   '',
   '- `liq-map/BTC.json` — mapa likwidacji BTC z pozycji on-chain Hyperliquid: kubełki cen likwidacji, pokrycie open interest, wiek odczytów.',
+  '- `liq-map/<RYNEK>.json` — mapy likwidacji innych rynków giełdy głównej z tych samych odczytów (cena odniesienia z ostatniej transakcji, `method` z sufiksem `+last-trade`), tylko przy pokryciu OI ≥ 30%, medianie wieku odczytów ≤ 30 min i ≥ 50 pozycjach; bieżąca lista w `status.json` (`liqMaps`). Rynek spoza listy: plik może być stary — sprawdzaj `asOf`.',
   '- `entry-map/BTC.json` — mapa uwięzionych pozycji BTC z tych samych odczytów: rozkład cen wejścia (~0,25% ceny, longi i shorty, ważony wartością wejścia), udział „pod wodą” przy cenie mark, kwartyle odległości do likwidacji, pokrycie open interest; opis pozycji, bez kierunku.',
   '- `liq-tape/BTC.json` — likwidacje śledzonych pozycji z 24 h, potwierdzone fillami z polem `liquidation`: czas, strona, rozmiar, cena, błąd mapy.',
   '- `cohorts/BTC.json` — przepływ kohort (market makerzy, statystycznie poinformowani, wieloryby, reszta): kubełki 15 min z 24 h, markouty poza próbą; k-anonimowość (komórki z < 5 uczestnikami lub z dominującym uczestnikiem ukryte); wolumen taśmy i ukryte komórki razem w oknach 1 h i 24 h.',
@@ -421,6 +424,20 @@ async function gitPublishTick(): Promise<void> {
     } catch {
       // brak pliku — pomijam
     }
+  }
+  // Mapy M1 innych rynków: lista z bieżącego statusu (rynek, który wypadł z progów, przestaje być publikowany)
+  try {
+    const listed = JSON.parse(files.find(([k]) => k === 'status.json')?.[1] ?? '{}').liqMaps;
+    for (const c of Array.isArray(listed) ? listed : []) {
+      if (typeof c !== 'string' || !MARKET_KEY.test(c) || c === cfg.coin) continue;
+      try {
+        files.push([`liq-map/${c}.json`, readFileSync(join(cfg.outDir, `liq-map/${c}.json`), 'utf8')]);
+      } catch {
+        // brak pliku — pomijam
+      }
+    }
+  } catch {
+    // status bez listy map — sama mapa rynku skanera
   }
   files.push(['README.md', DATA_README]);
   const ok = await publishToGit({ remote: cfg.git.remote, workDir: join(cfg.stateDir, 'git', 'repo'), sshKey: cfg.git.sshKey }, files, Date.now());

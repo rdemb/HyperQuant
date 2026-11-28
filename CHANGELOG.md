@@ -4,6 +4,11 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Mapy likwidacji innych rynków w skanerze, etap M1 (2026-11-28)
+<!-- co-nowego: ukryj -->
+- Skaner buduje mapy likwidacji dla rynków giełdy głównej z rejestru (ETH, SOL, HYPE, XMR, NEAR, ZEC i kolejnych) z tych samych odczytów pozycji co mapa BTC, bez nowych zapytań do Hyperliquid. Cena odniesienia to ostatnia transakcja z taśmy, a OI pochodzi z rejestru rynków.
+- Mapa rynku trafia do repo danych (`liq-map/<RYNEK>.json`, lista w `status.json` jako `liqMaps`) tylko wtedy, gdy pokrycie open interest wynosi co najmniej 30%, mediana wieku odczytów najwyżej 30 min, a pozycji jest co najmniej 50. Rynek ze zbyt starymi albo zbyt rzadkimi odczytami mapy nie dostaje. Strona pokaże te mapy w kolejnym etapie.
+
 ### Świeżość pozycji na rynek w pomiarze M0 (2026-11-28)
 <!-- co-nowego: ukryj -->
 - `status.json` podaje dla każdego rynku pomiaru `ageP50Min`: medianę wieku odczytu pozycji ważoną rozmiarem. Harmonogram odczytów skanera jest ustawiony pod BTC, więc ta liczba rozstrzygnie na danych z serwera, czy mapy likwidacji dla ETH, SOL, HYPE i pozostałych rynków głównej giełdy mogą działać na obecnym harmonogramie, czy wymagają jego zmiany. Dla BTC wynik powinien być bliski `ageNtlP50Min`, co sprawdza sam pomiar.
