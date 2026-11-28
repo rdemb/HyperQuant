@@ -1,0 +1,74 @@
+name: Cloudflare Auth
+description: >-
+  Sprawdza token API Cloudflare (bez spacji i nowych wierszy z kopiowania, rodzaj, stan w Cloudflare) i ustala konto.
+  Ustawia CLOUDFLARE_API_TOKEN i CLOUDFLARE_ACCOUNT_ID w środowisku kolejnych kroków (zamaskowane). Wspólne dla
+  wdrożeń workers/alerts i workers/live.
+
+inputs:
+  token:
+    description: Sekret CLOUDFLARE_API_TOKEN
+    required: true
+  account:
+    description: Identyfikator konta (sekret albo zmienna CLOUDFLARE_ACCOUNT_ID); puste — odczyt z tokenu jednego konta
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Check Cloudflare Token
+      shell: bash
+      env:
+        TOKEN_SET: ${{ inputs.token }}
+        ACCOUNT_ID_SET: ${{ inputs.account }}
+        HQ_CF_RETRY_S: '15'
+      run: |
+        # Token bez spacji i nowych wierszy z kopiowania; inna treść sekretu to błąd (w dzienniku tylko długości wierszy)
+        token="$(printf '%s' "$TOKEN_SET" | tr -d '[:space:]')"
+        if [ "$(printf '%s' "$TOKEN_SET" | wc -w)" -ne 1 ]; then
+          echo "::error::Sekret CLOUDFLARE_API_TOKEN to nie sam token (wiersze: $(printf '%s\n' "$TOKEN_SET" | awk '{ printf "%d znaków, %d słów; ", length($0), NF }')). Wklej sam token."
+          exit 1
+        fi
+        echo "::add-mask::$token"
+        echo "CLOUDFLARE_API_TOKEN=$token" >> "$GITHUB_ENV"
+        account="$(printf '%s' "$ACCOUNT_ID_SET" | tr -d '[:space:]')"
+        case "$token" in
+          cfk_*) echo "::error::Sekret CLOUDFLARE_API_TOKEN to Global API Key, a potrzebny jest token API (Create Token)."; exit 1 ;;
+          cfat_*) kind="token konta" ;;
+          cfut_*) kind="token użytkownika" ;;
+          *) kind="token użytkownika (stary format)" ;;
+        esac
+        if [ "$kind" = "token konta" ] && [ -z "$account" ]; then
+          echo "::error::Token konta (cfat_) wymaga sekretu CLOUDFLARE_ACCOUNT_ID."
+          exit 1
+        fi
+        if [ "$kind" = "token konta" ]; then verify="accounts/$account/tokens/verify"; else verify="user/tokens/verify"; fi
+        # Stan tokenu w Cloudflare zamiast samego „403” przy pierwszym zapytaniu. Błąd 971 (za dużo zapytań do API)
+        # i brak odpowiedzi to chwilowe kłopoty Cloudflare, nie tokenu: do 4 prób z rosnącą przerwą
+        status=""
+        for try in 1 2 3 4; do
+          out="$(curl -sS -H "Authorization: Bearer $token" "https://api.cloudflare.com/client/v4/$verify" | node -e 'const r=JSON.parse(require("fs").readFileSync(0,"utf8")||"{}");const e=r.errors??[];console.error(`${process.argv[1]}: ${r.result?.status??"nieznany"}${e.map((x)=>`, błąd ${x.code}: ${x.message}`).join("")}`);process.stdout.write(`${r.result?.status??""} ${e.map((x)=>x.code).join(",")}`)' "$kind")" || out=" "
+          status="${out%% *}"
+          codes="${out#* }"
+          if [ -n "$status" ]; then break; fi
+          if [ -n "$codes" ] && ! printf ',%s,' "$codes" | grep -q ',971,'; then break; fi
+          if [ "$try" -lt 4 ]; then sleep $((try * HQ_CF_RETRY_S)); fi
+        done
+        if [ -z "$status" ] && printf ',%s,' "$codes" | grep -q ',971,'; then
+          echo "::error::Cloudflare chwilowo ogranicza zapytania (błąd 971), token może być w porządku. Uruchom wdrożenie ponownie za kilka minut."
+          exit 1
+        fi
+        if [ "$status" != "active" ]; then
+          echo "::error::Cloudflare nie przyjmuje tego tokenu. Skopiuj go jeszcze raz w całości (po „Roll” stary przestaje działać)."
+          exit 1
+        fi
+        # Token użytkownika z dostępem do jednego konta wystarcza, by odczytać identyfikator konta
+        if [ -z "$account" ]; then
+          account="$(curl -fsS -H "Authorization: Bearer $token" 'https://api.cloudflare.com/client/v4/accounts?per_page=5' | node -e 'const r=JSON.parse(require("fs").readFileSync(0,"utf8")).result??[];process.stdout.write(r.length===1?r[0].id:"")')" || account=""
+        fi
+        if [ -z "$account" ]; then
+          echo "::error::Nie znam konta Cloudflare: ustaw sekret CLOUDFLARE_ACCOUNT_ID."
+          exit 1
+        fi
+        echo "::add-mask::$account"
+        echo "CLOUDFLARE_ACCOUNT_ID=$account" >> "$GITHUB_ENV"

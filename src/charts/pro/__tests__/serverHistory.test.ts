@@ -297,7 +297,7 @@ describe('ServerHistory — gorący ogon z przekaźnika na żywo', () => {
     // Strumień na żywo nie ruszył (liveSince = +∞): kolejne próby co 4 s, najwyżej cztery razem (po każdym kroku zegara
     // obrót prawdziwej pętli zdarzeń — odczyt treści odpowiedzi; setImmediate nie jest udawany)
     const step = async () => {
-      await vi.advanceTimersByTimeAsync(4_000);
+      await vi.advanceTimersByTimeAsync(6_000);
       for (let k = 0; k < 5; k++) await new Promise((r) => setImmediate(r));
     };
     for (let i = 0; i < 40 && tailCalls.length < 4; i++) await step();

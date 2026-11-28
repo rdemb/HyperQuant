@@ -25,9 +25,9 @@ const ROUND_MS = 120_000;
 /** Arkusz (najcięższe pliki) tylko z ostatnich godzin; taśma z całej doby. */
 const BOOK_MS = 12 * HIST_HOUR_MS;
 const CONCURRENCY = 4;
-/** Ogon: najwięcej prób i odstęp między nimi (dłuższy niż takt wysyłki skanera, TAIL_PUSH_MS = 3 s). */
+/** Ogon: najwięcej prób i odstęp między nimi (dłuższy niż domyślny takt wysyłki skanera, TAIL_PUSH_S = 5 s). */
 const TAIL_TRIES = 4;
-const TAIL_RETRY_MS = 4_000;
+const TAIL_RETRY_MS = 6_000;
 
 const hourOf = (t: number) => Math.floor(t / HIST_HOUR_MS) * HIST_HOUR_MS;
 
