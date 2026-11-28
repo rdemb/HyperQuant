@@ -1,17 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_MARKETS, type ChartMarket } from '../marketRegistry';
-import { NO_CEX_NOTE, marketCaps, maxLeverageOf, noCexWhy, noScannerWhy, NO_SCANNER_NOTE, usdScale } from '../marketCaps';
+import { NO_CEX_NOTE, NO_LIQMAP_NOTE, marketCaps, maxLeverageOf, noCexWhy, noLiqMapWhy, noScannerWhy, NO_SCANNER_NOTE, usdScale } from '../marketCaps';
 
 const nvda: ChartMarket = { coin: 'xyz:NVDA', dex: 'xyz', szDecimals: 3, maxLeverage: 20, scanner: 'none' };
 const ethFull: ChartMarket = { coin: 'ETH', dex: '', szDecimals: 4, maxLeverage: 25, scanner: 'full' };
 
 describe('marketCaps — zdolności rynku', () => {
   it('BTC z 4 rynków domyślnych: skaner, prognozy, mapy z bloga i rynki HIP-4', () => {
-    expect(marketCaps('BTC', DEFAULT_MARKETS)).toEqual({ scanner: true, forecasts: true, blog: true, outcomes: true, cex: true });
+    expect(marketCaps('BTC', DEFAULT_MARKETS)).toEqual({ scanner: true, liqMap: true, forecasts: true, blog: true, outcomes: true, cex: true });
   });
 
   it('rynek bez skanera (ETH, HYPE, xyz:NVDA): tylko wykres ze strumienia', () => {
-    for (const coin of ['ETH', 'HYPE']) expect(marketCaps(coin, DEFAULT_MARKETS)).toEqual({ scanner: false, forecasts: false, blog: false, outcomes: false, cex: true });
+    for (const coin of ['ETH', 'HYPE']) expect(marketCaps(coin, DEFAULT_MARKETS)).toEqual({ scanner: false, liqMap: false, forecasts: false, blog: false, outcomes: false, cex: true });
     expect(marketCaps('xyz:NVDA', [...DEFAULT_MARKETS, nvda]).scanner).toBe(false);
   });
 
@@ -22,7 +22,27 @@ describe('marketCaps — zdolności rynku', () => {
   });
 
   it('rynek spoza listy nie ma żadnej warstwy skanera', () => {
-    expect(marketCaps('kPEPE', DEFAULT_MARKETS)).toEqual({ scanner: false, forecasts: false, blog: false, outcomes: false, cex: false });
+    expect(marketCaps('kPEPE', DEFAULT_MARKETS)).toEqual({ scanner: false, liqMap: false, forecasts: false, blog: false, outcomes: false, cex: false });
+  });
+
+  it('mapa likwidacji: pełny skaner albo rynek z listy `liqMaps` skanera (M1) — bez prognoz i reszty warstw skanera', () => {
+    const maps = new Set(['ETH', 'xyz:NVDA']);
+    expect(marketCaps('ETH', DEFAULT_MARKETS, new Set(), maps)).toEqual({ scanner: false, liqMap: true, forecasts: false, blog: false, outcomes: false, cex: true });
+    expect(marketCaps('SOL', DEFAULT_MARKETS, new Set(), maps).liqMap).toBe(false);
+    expect(marketCaps('BTC', DEFAULT_MARKETS, new Set(), new Set()).liqMap).toBe(true);
+  });
+
+  it('powód braku mapy: progi publikacji z liczbami (rynek główny) albo HIP-3 bez odczytu pozycji; lista rynków z mapą', () => {
+    expect(NO_LIQMAP_NOTE).toBe('bez mapy');
+    const main = noLiqMapWhy('SOL', DEFAULT_MARKETS, new Set(['ETH']));
+    expect(main).toContain('SOL');
+    expect(main).toContain('30%');
+    expect(main).toContain('30 min');
+    expect(main).toContain('50 pozycji');
+    expect(main).toContain('BTC, ETH');
+    const hip3 = noLiqMapWhy('xyz:NVDA', DEFAULT_MARKETS);
+    expect(hip3).toContain('HIP-3');
+    expect(hip3).toContain('dziś mapy mają: BTC');
   });
 
   it('powód „—” przy rynku bez skanera wymienia rynki z pełnym skanerem', () => {

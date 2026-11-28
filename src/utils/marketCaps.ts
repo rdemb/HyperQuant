@@ -1,4 +1,5 @@
 import { tr } from '../i18n';
+import { LIQ_MAP_PUBLISH } from './liqMap';
 import { type ChartMarket, DEFAULT_MARKETS } from './marketRegistry';
 
 /**
@@ -18,6 +19,11 @@ export interface MarketCaps {
    * i nagranie taśmy na serwerze (szybka powtórka).
    */
   scanner: boolean;
+  /**
+   * Mapa likwidacji z pozycji on-chain: rynek z pełnym skanerem albo rynek z bieżącej listy `liqMaps` w `status.json`
+   * (etap M1: mapa z tych samych odczytów, publikowana tylko po progach pokrycia i świeżości).
+   */
+  liqMap: boolean;
   /** Prognozy z dziennika desku (stożek): rekord rejestru `full` obejmuje prognozy (`ScannerLevel`). */
   forecasts: boolean;
   /** Mapy z bloga: blog opisuje BTC (decyzja projektu, jak Przed sesją, Po sesji i MCP). */
@@ -34,12 +40,15 @@ export interface MarketCaps {
 /** Rynek z symbolem `${coin}USDT` na Binance i Bybit: nie HIP-3 (dwukropek) i bez przedrostka `k` przed wielką literą. */
 export const hasCexPair = (coin: string): boolean => !coin.includes(':') && !/^k[A-Z]/.test(coin);
 
-/** `noCex` — rynki, dla których Binance i Bybit odpowiedziały w tej sesji, że kontraktu nie ma (`markNoCex` w `state/markets`). */
-export function marketCaps(coin: string, markets: readonly ChartMarket[], noCex: ReadonlySet<string> = new Set()): MarketCaps {
+/**
+ * `noCex` — rynki, dla których Binance i Bybit odpowiedziały w tej sesji, że kontraktu nie ma (`markNoCex` w `state/markets`);
+ * `liqMaps` — rynki z mapą likwidacji z bieżącego `status.json` skanera (`setLiqMapCoins` w `state/markets`).
+ */
+export function marketCaps(coin: string, markets: readonly ChartMarket[], noCex: ReadonlySet<string> = new Set(), liqMaps: ReadonlySet<string> = new Set()): MarketCaps {
   const full = markets.some((m) => m.coin === coin && m.scanner === 'full');
   // Blog i rynki HIP-4 opisują BTC niezależnie od rejestru
   const home = coin === 'BTC';
-  return { scanner: full, forecasts: full, blog: home, outcomes: home, cex: hasCexPair(coin) && !noCex.has(coin) };
+  return { scanner: full, liqMap: full || liqMaps.has(coin), forecasts: full, blog: home, outcomes: home, cex: hasCexPair(coin) && !noCex.has(coin) };
 }
 
 /**
@@ -85,6 +94,29 @@ export function noScannerWhy(coin: string, markets: readonly ChartMarket[]): str
   return tr(
     `Skaner HyperQuant nie śledzi kont na rynku ${coin}: mapa i taśma likwidacji, kohorty, konta makerów, TWAP-y i prognozy są dla rynków z pełnym skanerem (dziś ${list}). Wykres, taśma i arkusz działają na każdym rynku.`,
     `The HyperQuant scanner does not track accounts on ${coin}: the liquidation map and tape, cohorts, maker accounts, TWAPs and forecasts exist for markets with the full scanner (today ${list}). The chart, tape and book work on every market.`
+  );
+}
+
+/** Dopisek „—” przy mapie likwidacji na rynku bez mapy (powód: `noLiqMapWhy`). */
+export const NO_LIQMAP_NOTE = tr('bez mapy', 'no map');
+export const NO_LIQMAP_BADGE = tr('—, bez mapy', '—, no map');
+
+/**
+ * Powód braku mapy likwidacji na rynku `coin`: rynki HIP-3 (pozycji się nie odczytuje) albo rynek giełdy głównej, który dziś
+ * nie spełnia progów publikacji (`LIQ_MAP_PUBLISH`); z listą rynków, które mapę mają.
+ */
+export function noLiqMapWhy(coin: string, markets: readonly ChartMarket[], liqMaps: ReadonlySet<string> = new Set()): string {
+  const withMap = [...new Set([...markets.filter((m) => m.scanner === 'full').map((m) => m.coin), ...liqMaps])];
+  const list = withMap.length > 0 ? withMap.join(', ') : '—';
+  if (coin.includes(':'))
+    return tr(
+      `Mapa likwidacji z pozycji on-chain jest dla rynków giełdy głównej Hyperliquid: pozycji na rynkach HIP-3, takich jak ${coin}, skaner nie odczytuje (dziś mapy mają: ${list}).`,
+      `The on-chain liquidation map covers Hyperliquid's main exchange: the scanner does not read positions on HIP-3 markets such as ${coin} (maps today: ${list}).`
+    );
+  const pct = Math.round(LIQ_MAP_PUBLISH.minShare * 100);
+  return tr(
+    `Mapa likwidacji ${coin} pojawia się, gdy skaner widzi co najmniej ${pct}% otwartych pozycji rynku z odczytów nie starszych niż ${LIQ_MAP_PUBLISH.maxAgeMin} min (mediana) i co najmniej ${LIQ_MAP_PUBLISH.minPositions} pozycji. Dziś mapy mają: ${list}.`,
+    `The ${coin} liquidation map appears when the scanner sees at least ${pct}% of the market's open interest, from readings no older than ${LIQ_MAP_PUBLISH.maxAgeMin} min (median), and at least ${LIQ_MAP_PUBLISH.minPositions} positions. Maps today: ${list}.`
   );
 }
 

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { APP_MARKETS, DEFAULT_MARKETS, type MarketRegistry, appMarkets } from '../../utils/marketRegistry';
-import { capsOf, chartMarkets, ensureUniverse, marketOf, marketsState, publishMarkets, resetMarketsForTest, universeMarkets, universeReadTime } from '../markets';
+import { capsOf, chartMarkets, ensureUniverse, marketOf, marketsState, noLiqMapWhyOf, publishMarkets, resetMarketsForTest, setLiqMapCoins, subscribeMarkets, universeMarkets, universeReadTime } from '../markets';
 
 const entry = (coin: string, rank: number, extra: Partial<MarketRegistry['markets'][number]> = {}) => ({
   coin,
@@ -61,6 +61,29 @@ describe('lista rynków strony', () => {
     const a = marketsState();
     publishMarkets(structuredClone(REG));
     expect(marketsState()).toBe(a);
+  });
+});
+
+describe('rynki z mapą likwidacji (lista `liqMaps` skanera, M1)', () => {
+  it('nowa lista włącza zdolność liqMap i budzi subskrybentów; ta sama lista nie; reset czyści', () => {
+    let calls = 0;
+    const off = subscribeMarkets(() => calls++);
+    try {
+      expect(capsOf('ETH').liqMap).toBe(false);
+      setLiqMapCoins(['ETH', 'SOL']);
+      expect([capsOf('ETH').liqMap, capsOf('SOL').liqMap, capsOf('HYPE').liqMap]).toEqual([true, true, false]);
+      expect(calls).toBe(1);
+      setLiqMapCoins(['SOL', 'ETH']);
+      expect(calls).toBe(1);
+      expect(noLiqMapWhyOf('HYPE')).toContain('BTC, ETH, SOL');
+      setLiqMapCoins([]);
+      expect(capsOf('ETH').liqMap).toBe(false);
+      expect(calls).toBe(2);
+    } finally {
+      off();
+      resetMarketsForTest();
+    }
+    expect(capsOf('SOL').liqMap).toBe(false);
   });
 });
 

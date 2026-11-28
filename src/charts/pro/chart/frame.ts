@@ -271,13 +271,13 @@ export function titleProblems(title: string): string[] {
   );
 }
 
-/** Pokrycie open interest przez mapę likwidacji skanera (rynek ze skanerem, aktualna mapa, poza powtórką); inaczej null z powodem. */
+/** Pokrycie open interest przez mapę likwidacji skanera (rynek z mapą, aktualna mapa, poza powtórką); inaczej null z powodem. */
 export function mapQuality(
   liq: { status: string; map: { asOf: number; coverage: { share: number; oiBtc: number } } | null },
   coin: string,
   replay: boolean
 ): Pick<FrameQuality, 'mapPct' | 'mapWhy'> {
-  if (!capsOf(coin).scanner) return { mapPct: null, mapWhy: tr('bez skanera: skaner nie śledzi kont na tym rynku', 'no scanner: the scanner does not track accounts on this market') };
+  if (!capsOf(coin).liqMap) return { mapPct: null, mapWhy: tr('bez mapy likwidacji na tym rynku', 'no liquidation map for this market') };
   if (replay) return { mapPct: null, mapWhy: tr('w powtórce bez mapy: mapa skanera to stan na teraz', 'none in a replay: the scanner map is the current state') };
   const s = liqScan(liq);
   if ('why' in s) return { mapPct: null, mapWhy: s.why };

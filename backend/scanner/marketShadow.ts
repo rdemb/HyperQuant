@@ -8,7 +8,7 @@
  */
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
-import { type LiqMap, type ScannedPosition, buildLiqMap } from '../../src/utils/liqMap.ts';
+import { LIQ_MAP_PUBLISH, type LiqMap, type ScannedPosition, buildLiqMap } from '../../src/utils/liqMap.ts';
 
 const MIN_MS = 60_000;
 const HOUR_MS = 3_600_000;
@@ -34,9 +34,9 @@ export const PRICE_MAX_AGE_MS = 5 * MIN_MS;
  * odczytów ważona nominałem najwyżej 30 min (próg alarmu mapy BTC) i co najmniej 50 pozycji. Rynek, który ich nie
  * spełnia, nie dostaje mapy — dane decydują same, który rynek ją ma.
  */
-export const M1_MIN_SHARE = 0.3;
-export const M1_MAX_AGE_MIN = 30;
-export const M1_MIN_POSITIONS = 50;
+export const M1_MIN_SHARE = LIQ_MAP_PUBLISH.minShare;
+export const M1_MAX_AGE_MIN = LIQ_MAP_PUBLISH.maxAgeMin;
+export const M1_MIN_POSITIONS = LIQ_MAP_PUBLISH.minPositions;
 /** Metoda mapy M1: te same odczyty `clearinghouseState` co mapa BTC, cena odniesienia z ostatniej transakcji taśmy */
 export const M1_METHOD = 'hl-clearinghouse-v1+last-trade';
 

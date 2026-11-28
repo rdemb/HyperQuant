@@ -13,8 +13,8 @@ import { tr } from '../../../i18n';
 import { PERIOD_LVN } from './lvnText';
 import { SCANNER_FRESH_MS, type ScanState, liqScan, scannerAge, whalesScan } from '../../../utils/scanState';
 import { WAIT_TEXT } from '../../../utils/sessionText';
-import { BLOG_ONLY_WHY, BTC_ONLY_BADGE, NO_CEX_BADGE, NO_FORECASTS_BADGE, NO_SCANNER_BADGE, OUTCOMES_ONLY_WHY, noCexWhy } from '../../../utils/marketCaps';
-import { capsOf, noScannerWhyOf } from '../../../state/markets';
+import { BLOG_ONLY_WHY, BTC_ONLY_BADGE, NO_CEX_BADGE, NO_FORECASTS_BADGE, NO_LIQMAP_BADGE, NO_SCANNER_BADGE, OUTCOMES_ONLY_WHY, noCexWhy } from '../../../utils/marketCaps';
+import { capsOf, noLiqMapWhyOf, noScannerWhyOf } from '../../../state/markets';
 
 /**
  * Plakietki danych przy warstwach legendy (spec §7.4): skąd pochodzi warstwa — LIVE (dane Hyperliquid i skanera),
@@ -192,7 +192,7 @@ const SCANNER = new Set(['showLiq', 'showWhales']);
 /** Plakietka „—” warstwy, której danych rynek nie ma (`marketCaps`); null — rynek ma te dane. */
 function missingOn(key: string, coin: string): LayerBadge | null {
   const caps = capsOf(coin);
-  if (key === 'showLiq' && !caps.scanner) return { tone: 'neutral', text: NO_SCANNER_BADGE, hint: noScannerWhyOf(coin) };
+  if (key === 'showLiq' && !caps.liqMap) return { tone: 'neutral', text: NO_LIQMAP_BADGE, hint: noLiqMapWhyOf(coin) };
   if (key === 'cone' && !caps.forecasts) return { tone: 'neutral', text: NO_FORECASTS_BADGE, hint: noScannerWhyOf(coin) };
   if (key === 'showBlogMap' && !caps.blog) return { tone: 'neutral', text: BTC_ONLY_BADGE, hint: BLOG_ONLY_WHY };
   if (key === 'outcomes' && !caps.outcomes) return { tone: 'neutral', text: BTC_ONLY_BADGE, hint: OUTCOMES_ONLY_WHY };
@@ -385,7 +385,7 @@ export function legendChips(
   return foldMissing(out, x.coin);
 }
 
-const MISSING = new Set([NO_SCANNER_BADGE, NO_FORECASTS_BADGE, BTC_ONLY_BADGE, NO_CEX_BADGE]);
+const MISSING = new Set([NO_SCANNER_BADGE, NO_LIQMAP_BADGE, NO_FORECASTS_BADGE, BTC_ONLY_BADGE, NO_CEX_BADGE]);
 
 /**
  * Warstwy bez danych na tym rynku (bez skanera, prognoz, map z bloga, HIP-4 albo giełd) — od dwóch zwinięte do jednej

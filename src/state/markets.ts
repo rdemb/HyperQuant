@@ -1,5 +1,5 @@
 import { useEffect, useSyncExternalStore } from 'react';
-import { type MarketCaps, marketCaps, noScannerWhy, usdScale } from '../utils/marketCaps';
+import { type MarketCaps, marketCaps, noLiqMapWhy, noScannerWhy, usdScale } from '../utils/marketCaps';
 import { type ChartMarket, DEFAULT_MARKETS, isMarketRegistry, marketsOrDefault, withAppMarkets } from '../utils/marketRegistry';
 import { type UniverseMarket, chartMarketsOf, parsePerpDexs, universeOf, withUniverse } from '../utils/hlUniverse';
 import { usePublished } from './usePublished';
@@ -134,12 +134,44 @@ export function markNoCex(coin: string): void {
   listeners.forEach((fn) => fn());
 }
 
+/** Rynki z mapą likwidacji według bieżącego `status.json` skanera (pole `liqMaps`, etap M1); ustawia `useLiqMapCoins`. */
+const liqMapCoins = new Set<string>();
+
+/** Nowa lista rynków z mapą likwidacji (zdolność `liqMap`); ta sama lista nie budzi subskrybentów. */
+export function setLiqMapCoins(coins: readonly string[]): void {
+  if (coins.length === liqMapCoins.size && coins.every((c) => liqMapCoins.has(c))) return;
+  liqMapCoins.clear();
+  for (const c of coins) liqMapCoins.add(c);
+  state = { ...state };
+  listeners.forEach((fn) => fn());
+}
+
+/** Status skanera z listą rynków z mapą likwidacji (pozostałe pola statusu tu niepotrzebne). */
+const isLiqMapsStatus = (x: unknown): x is { asOf: number; liqMaps?: unknown } =>
+  typeof x === 'object' && x !== null && typeof (x as { asOf?: unknown }).asOf === 'number';
+
+/** Lista rynków z mapą likwidacji z `status.json` (odświeżana co minutę) → zdolność `liqMap` w `capsOf`. */
+export function useLiqMapCoins(): void {
+  const pub = usePublished('status.json', isLiqMapsStatus);
+  const listed = pub.value?.liqMaps;
+  const coins = Array.isArray(listed) ? listed.filter((c): c is string => typeof c === 'string' && /^[A-Za-z0-9]{1,16}$/.test(c)) : null;
+  const key = coins?.join(',');
+  useEffect(() => {
+    if (coins) setLiqMapCoins(coins);
+    // Klucz listy zamiast tablicy: nowy obiekt z tą samą listą nie powtarza efektu
+  }, [key]);
+}
+
 /** Zdolności rynku według bieżącej listy (`utils/marketCaps`). */
-export const capsOf = (coin: string): MarketCaps => marketCaps(coin, state.markets, noCex);
+export const capsOf = (coin: string): MarketCaps => marketCaps(coin, state.markets, noCex, liqMapCoins);
 /** Skala progów w USD rynku wobec BTC (`utils/marketCaps.usdScale`; BTC = 1). */
 export const usdScaleOf = (coin: string): number => usdScale(coin, state.markets);
 /** Powód „—” warstwy skanera albo prognoz na rynku `coin` (rynki z pełnym skanerem z bieżącej listy). */
 export const noScannerWhyOf = (coin: string): string => noScannerWhy(coin, state.markets);
+/** Bieżąca lista rynków z mapą likwidacji (dla `marketCaps` liczonego w widoku). */
+export const liqMapCoinSet = (): ReadonlySet<string> => liqMapCoins;
+/** Powód braku mapy likwidacji na rynku `coin` (rynki HIP-3 albo progi publikacji; lista rynków z mapą). */
+export const noLiqMapWhyOf = (coin: string): string => noLiqMapWhy(coin, state.markets, liqMapCoins);
 
 export function subscribeMarkets(fn: () => void): () => void {
   listeners.add(fn);
@@ -158,6 +190,7 @@ export function resetMarketsForTest(): void {
   universeReadAt = Number.NEGATIVE_INFINITY;
   universeAt = Number.NEGATIVE_INFINITY;
   noCex.clear();
+  liqMapCoins.clear();
 }
 
 /** Rynki strony: pobiera rejestr (wspólny mechanizm danych publicznych) i zwraca bieżącą listę. */

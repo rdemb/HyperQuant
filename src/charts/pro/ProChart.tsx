@@ -75,7 +75,7 @@ import { type DrawingTools, isTyping } from './draw/tools';
 import { chartKeyAction } from './chart/shortcuts';
 import { FocusExit, type PhoneTab, focusExitKey, focusOn } from './chart/focusMode';
 import { COIN, CandleSeries, Market, ProStore, dropStore, storeFor } from './store/proStore';
-import { capsOf, chartMarkets, ensureUniverse, marketOf, noScannerWhyOf, useMarkets } from '../../state/markets';
+import { capsOf, chartMarkets, ensureUniverse, liqMapCoinSet, marketOf, noLiqMapWhyOf, useLiqMapCoins, useMarkets } from '../../state/markets';
 import { BLOG_ONLY_WHY, marketCaps, supportsSmcContactDelta } from '../../utils/marketCaps';
 import { MarketPicker, PhoneMarketSelect } from './chart/MarketPicker';
 import { expiredNotice, isListed, nextMarket } from './chart/marketMenu';
@@ -376,11 +376,13 @@ export const ProChart: React.FC<{
   const [scale, setScale] = useState<ScaleState>({ auto: true, width: 0, height: 0 });
   const legendBottom = useRef(0);
   const signal = useMemo(() => new HoverSignal(), []);
-  const liq = useLiqMap();
+  // Mapa likwidacji rynku wykresu: pełny skaner albo rynek z listy `liqMaps` skanera (etap M1)
+  useLiqMapCoins();
+  const liq = useLiqMap(store.coin);
   const { summary: ledger } = useDeskLedger();
   // Rynki z rejestru i zdolności rynku wykresu (warstwy skanera, prognozy, mapy z bloga, rynki HIP-4)
   const markets = useMarkets();
-  const caps = marketCaps(store.coin, markets.markets);
+  const caps = marketCaps(store.coin, markets.markets, undefined, liqMapCoinSet());
   // Rynki HIP-4 (zapytania do Hyperliquid) i model zmienności Desku (w tym widoku liczony tylko dla nich) tylko z widocznym
   // wskaźnikiem, na rynku z rynkami HIP-4 (BTC) i na żywo
   const { feed } = useDesk();
@@ -674,11 +676,11 @@ export const ProChart: React.FC<{
   }, [whales, store, whalesOld]);
 
   // Klastry likwidacji tylko z aktualnej mapy skanera (jak w Przed sesją: nieaktualna mapa nie jest pokazywana) i tylko na
-  // rynku ze skanerem (mapa `liq-map` opisuje jeden rynek skanera)
+  // rynku z mapą (pełny skaner albo rynek z listy `liqMaps`; plik `liq-map` opisuje jeden rynek)
   useEffect(() => {
-    const fresh = liq.map && (liq.status === 'ready' || liq.status === 'delayed') && caps.scanner && liq.map.coin === store.coin && !store.replay;
+    const fresh = liq.map && (liq.status === 'ready' || liq.status === 'delayed') && caps.liqMap && liq.map.coin === store.coin && !store.replay;
     ctrlRef.current?.setLiqLevels(fresh ? liqLevels(liq.map!) : []);
-  }, [liq.map, liq.status, store, caps.scanner]);
+  }, [liq.map, liq.status, store, caps.liqMap]);
 
   // Stożek prognozy z dziennika Desku tylko na żywo: prognoza „teraz” nie pasuje do odtwarzanej chwili
   useEffect(() => {
@@ -1925,8 +1927,8 @@ function liqHint(liq: LiqMapState): string {
     case 'ready':
     case 'delayed':
       return tr(
-        `3 największe po każdej stronie ceny · stan z ${fmtHm(liq.map!.asOf)}${liq.status === 'delayed' ? ' (część odczytów starsza niż 15 min)' : ''}`,
-        `3 largest on each side of the price · as of ${fmtHm(liq.map!.asOf)}${liq.status === 'delayed' ? ' (some readings older than 15 min)' : ''}`
+        `3 największe po każdej stronie ceny · pokrycie ${Math.round(liq.map!.coverage.share * 100)}% otwartych pozycji · stan z ${fmtHm(liq.map!.asOf)}${liq.status === 'delayed' ? ' (część odczytów starsza niż 15 min)' : ''}`,
+        `3 largest on each side of the price · covers ${Math.round(liq.map!.coverage.share * 100)}% of open interest · as of ${fmtHm(liq.map!.asOf)}${liq.status === 'delayed' ? ' (some readings older than 15 min)' : ''}`
       );
     case 'loading':
       return tr('Wczytywanie mapy likwidacji…', 'Loading the liquidation map…');
@@ -2125,7 +2127,7 @@ function flowLayers(s: ChartSettings, intervalMs: number, liq: LiqMapState, whal
       label: tr('Klastry likwidacji', 'Liquidation clusters'),
       hint: liqHint(liq),
       swatch: 'bg-gradient-to-r from-of-sell to-of-buy',
-      off: capsOf(s.coin).scanner ? undefined : noScannerWhyOf(s.coin),
+      off: capsOf(s.coin).liqMap ? undefined : noLiqMapWhyOf(s.coin),
     },
     {
       key: 'showWhales',
