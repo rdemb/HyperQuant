@@ -1,21 +1,32 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { Dropdown, MenuItem, MenuSection } from '../../../ui/Dropdown';
 import type { ChartMarket } from '../../../utils/marketRegistry';
 import { tr } from '../../../i18n';
 import { deskMarketOf } from '../../../config/deskMarkets';
+import { type UniverseStatus, ensureUniverse } from '../../../state/markets';
 import { marketGroups, marketTitle } from './marketMenu';
 
 /**
- * Wybór rynku wykresu (komputer): lista rozwijana z polem wyszukiwania i dwiema grupami (krypto; akcje, indeksy, surowce)
- * w kolejności rejestru. Enter w polu wybiera pierwszy pasujący rynek, strzałka w dół przechodzi do listy, Escape zamyka.
+ * Wybór rynku wykresu (komputer): lista rozwijana z polem wyszukiwania, grupą „Główne rynki” (rynki desku) i wszystkimi
+ * pozostałymi rynkami Hyperliquid w dwóch grupach (krypto; akcje, indeksy, surowce i waluty HIP-3). Pierwsze otwarcie
+ * wczytuje uniwersum giełdy (`ensureUniverse`). Enter w polu wybiera pierwszy pasujący rynek, strzałka w dół przechodzi
+ * do listy, Escape zamyka.
  */
-export const MarketPicker: React.FC<{ value: string; markets: readonly ChartMarket[]; onChange: (coin: string) => void }> = ({ value, markets, onChange }) => (
+export const MarketPicker: React.FC<{
+  value: string;
+  markets: readonly ChartMarket[];
+  desk?: ReadonlySet<string>;
+  universe?: UniverseStatus;
+  onChange: (coin: string) => void;
+}> = ({ value, markets, desk, universe = 'ready', onChange }) => (
   <Dropdown label={deskMarketOf(value)?.label ?? value} ariaLabel={tr(`Rynek: ${value}`, `Market: ${value}`)} title={tr('Rynek (M — następny)', 'Market (M — next)')} menuLabel={tr('Rynki', 'Markets')} width="w-60">
     {(close) => (
       <MarketMenu
         value={value}
         markets={markets}
+        desk={desk}
+        universe={universe}
         onClose={close}
         onPick={(coin) => {
           close();
@@ -26,9 +37,19 @@ export const MarketPicker: React.FC<{ value: string; markets: readonly ChartMark
   </Dropdown>
 );
 
-const MarketMenu: React.FC<{ value: string; markets: readonly ChartMarket[]; onPick: (coin: string) => void; onClose: () => void }> = ({ value, markets, onPick, onClose }) => {
+const MarketMenu: React.FC<{
+  value: string;
+  markets: readonly ChartMarket[];
+  desk?: ReadonlySet<string>;
+  universe: UniverseStatus;
+  onPick: (coin: string) => void;
+  onClose: () => void;
+}> = ({ value, markets, desk, universe, onPick, onClose }) => {
   const [q, setQ] = useState('');
-  const groups = marketGroups(markets, q);
+  useEffect(() => {
+    void ensureUniverse();
+  }, []);
+  const groups = marketGroups(markets, q, desk);
   const first = groups[0]?.markets[0];
   const onKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && first) {
@@ -69,23 +90,38 @@ const MarketMenu: React.FC<{ value: string; markets: readonly ChartMarket[]; onP
         </React.Fragment>
       ))}
       {groups.length === 0 && <p className="px-2.5 py-2 text-ink-3">{tr(`Brak rynku „${q.trim()}” na liście`, `No market “${q.trim()}” on the list`)}</p>}
+      <p data-market-universe={universe} className="px-2.5 pt-1.5 pb-1 text-[11px] text-ink-3">
+        {universe === 'loading'
+          ? tr('Wczytuję wszystkie rynki Hyperliquid…', 'Loading all Hyperliquid markets…')
+          : universe === 'error'
+            ? tr('Lista wszystkich rynków niedostępna (brak odpowiedzi Hyperliquid)', 'Full market list unavailable (no answer from Hyperliquid)')
+            : tr(`${markets.length} rynków · poza głównymi: wykres, taśma i arkusz na żywo`, `${markets.length} markets · outside the core ones: live chart, tape and book`)}
+      </p>
     </>
   );
 };
 
 /** Wybór rynku na telefonie: systemowa lista (wygodna palcem, nie ucina jej przewijany pasek) z tymi samymi grupami. */
-export const PhoneMarketSelect: React.FC<{ value: string; markets: readonly ChartMarket[]; onChange: (coin: string) => void }> = ({ value, markets, onChange }) => (
+export const PhoneMarketSelect: React.FC<{ value: string; markets: readonly ChartMarket[]; desk?: ReadonlySet<string>; onChange: (coin: string) => void }> = ({
+  value,
+  markets,
+  desk,
+  onChange,
+}) => (
   <span className="relative inline-flex shrink-0">
     <select
       data-chart-market-select
       aria-label={tr('Rynek', 'Market')}
       value={value}
       onChange={(e) => onChange(e.target.value)}
+      // Dotknięcie listy wczytuje wszystkie rynki Hyperliquid (raz na sesję)
+      onFocus={() => void ensureUniverse()}
+      onPointerDown={() => void ensureUniverse()}
       className="appearance-none h-11 pl-2.5 pr-6 rounded-lg border border-line bg-surface-2 text-xs font-medium text-ink-1 max-w-[7.5rem] truncate"
     >
       {/* Rynek spoza listy (przed odpowiedzią rejestru) też widać w polu */}
       {!markets.some((m) => m.coin === value) && <option value={value}>{deskMarketOf(value)?.label ?? value}</option>}
-      {marketGroups(markets, '').map((g) => (
+      {marketGroups(markets, '', desk).map((g) => (
         <optgroup key={g.id} label={g.title}>
           {g.markets.map((m) => (
             <option key={m.coin} value={m.coin}>

@@ -15,7 +15,8 @@ import {
   registryDexes,
 } from '../utils/marketsTable';
 import { NYSE_CALENDAR, wallStreetAt, wallStreetCell } from '../utils/wallStreet';
-import { useMarkets } from './markets';
+import { UNIVERSE_REFRESH_MS, type UniverseStatus, ensureUniverse, universeMarkets, universeReadTime, useMarkets } from './markets';
+import { type AllMarketRow, type AllSort, allMarketRows } from '../utils/allMarkets';
 import { appMarkets } from '../utils/marketRegistry';
 
 /**
@@ -166,6 +167,26 @@ export interface MarketsPage {
   now: number;
   /** Kalendarz NYSE etykiety Wall Street: źródło, dzień odczytu i lata w pliku (null = brak pliku) */
   calendar: { source: string; readAt: string; years: string[] } | null;
+  /** Zakładka strony: główne rynki (karty) albo wszystkie rynki Hyperliquid (tabela) */
+  tab: MarketsTab;
+  setTab: (t: MarketsTab) => void;
+  all: AllMarketsModel;
+}
+
+export type MarketsTab = 'core' | 'all';
+
+/** Tabela wszystkich rynków Hyperliquid (`utils/allMarkets`): gotowe wiersze, stan odczytu i sterowanie. */
+export interface AllMarketsModel {
+  rows: AllMarketRow[];
+  /** Liczba wszystkich rynków (przed filtrem) */
+  total: number;
+  status: UniverseStatus;
+  /** Godzina ostatniego udanego odczytu albo „—” */
+  readAt: string;
+  sort: AllSort;
+  setSort: (s: AllSort) => void;
+  query: string;
+  setQuery: (q: string) => void;
 }
 
 /**
@@ -174,7 +195,22 @@ export interface MarketsPage {
  * funkcji (`utils/marketsTable`). Komponenty widoku dostają gotowe teksty.
  */
 export function useMarketsPage(): MarketsPage {
-  const { markets: all, ready } = useMarkets();
+  const { markets: all, ready, universe } = useMarkets();
+  const [tab, setTab] = useState<MarketsTab>('core');
+  const [allSort, setAllSort] = useState<AllSort>('oi');
+  const [query, setQuery] = useState('');
+  // Wszystkie rynki: odczyt dopiero po wyborze zakładki, potem co UNIVERSE_REFRESH_MS przy widocznej karcie
+  useEffect(() => {
+    if (tab !== 'all') return;
+    void ensureUniverse();
+    const id = window.setInterval(() => {
+      if (document.visibilityState !== 'hidden') void ensureUniverse(undefined, true);
+    }, UNIVERSE_REFRESH_MS);
+    return () => window.clearInterval(id);
+  }, [tab]);
+  const uni = universeMarkets();
+  const allRows = useMemo(() => allMarketRows(uni, allSort, query), [uni, allSort, query]);
+  const uniReadAt = universeReadTime();
   // Strona Rynki: rynki aplikacji (konfiguracja rynków desku), parametry z rejestru
   const markets = useMemo(() => appMarkets(all), [all]);
   const poller = useMemo(() => new MarketsPoller(browserDeps()), []);
@@ -213,5 +249,17 @@ export function useMarketsPage(): MarketsPage {
     marketCount: markets.length,
     now,
     calendar: NYSE_CALENDAR ? { source: NYSE_CALENDAR.source, readAt: NYSE_CALENDAR.readAt, years: Object.keys(NYSE_CALENDAR.years) } : null,
+    tab,
+    setTab,
+    all: {
+      rows: allRows,
+      total: uni.length,
+      status: universe,
+      readAt: uniReadAt === null ? '—' : fmtHms(uniReadAt),
+      sort: allSort,
+      setSort: setAllSort,
+      query,
+      setQuery,
+    },
   };
 }

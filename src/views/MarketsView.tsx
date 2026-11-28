@@ -1,7 +1,8 @@
 import React from 'react';
 import { tr } from '../i18n';
 import { useMarketsPage } from '../state/useMarketsTable';
-import { Badge, SectionHeading } from '../ui';
+import { Badge, SectionHeading, Segmented } from '../ui';
+import { AllMarkets } from './markets/AllMarkets';
 import { MarketList } from './markets/MarketList';
 import { deskLabels, deskPhrase } from '../config/deskMarkets';
 
@@ -13,6 +14,7 @@ import { deskLabels, deskPhrase } from '../config/deskMarkets';
  */
 
 const MarketsView: React.FC = () => {
+  // Główne rynki (karty) albo wszystkie rynki Hyperliquid (tabela, wczytywana dopiero po wyborze zakładki)
   const page = useMarketsPage();
   return (
     <div className="flex flex-col gap-4" data-markets-view>
@@ -32,13 +34,27 @@ const MarketsView: React.FC = () => {
         }
       />
 
-      <section aria-labelledby="rynki-tytul" className="flex flex-col gap-4">
-        <MarketList rows={page.rows} />
-        <div className="flex flex-col gap-1 border-t border-line pt-3 text-[11px] leading-relaxed text-ink-3">
-          <p>
-            {tr(
-              `Źródło: Hyperliquid (metaAndAssetCtxs), jedno zapytanie na giełdę co ${page.refreshSec} s z Twojej przeglądarki; serwer HyperQuant nic nie pobiera. Otwarte pozycje = liczba kontraktów × cena mark. Funding roczny przeliczony ze stawki godzinowej (× 24 × 365). Odczyt starszy niż 3 min albo rynek bez odpowiedzi giełdy: „—” z powodem.`,
-              `Source: Hyperliquid (metaAndAssetCtxs), one request per exchange every ${page.refreshSec} s from your browser; the HyperQuant server fetches nothing. Open interest = contracts × mark price. Annual funding is annualised from the hourly rate (× 24 × 365). A reading older than 3 min or a market missing from the exchange response: “—” with the reason.`
+      <Segmented<'core' | 'all'>
+        ariaLabel={tr('Zakres rynków', 'Market scope')}
+        size="xs"
+        value={page.tab}
+        onChange={page.setTab}
+        options={[
+          { value: 'core', label: tr('Główne rynki', 'Core markets') },
+          { value: 'all', label: tr('Wszystkie rynki Hyperliquid', 'All Hyperliquid markets') },
+        ]}
+      />
+
+      {page.tab === 'all' ? (
+        <AllMarkets all={page.all} />
+      ) : (
+        <section aria-labelledby="rynki-tytul" className="flex flex-col gap-4">
+          <MarketList rows={page.rows} />
+          <div className="flex flex-col gap-1 border-t border-line pt-3 text-[11px] leading-relaxed text-ink-3">
+            <p>
+              {tr(
+                `Źródło: Hyperliquid (metaAndAssetCtxs), jedno zapytanie na giełdę co ${page.refreshSec} s z Twojej przeglądarki; serwer HyperQuant nic nie pobiera. Otwarte pozycje = liczba kontraktów × cena mark. Funding roczny przeliczony ze stawki godzinowej (× 24 × 365). Odczyt starszy niż 3 min albo rynek bez odpowiedzi giełdy: „—” z powodem.`,
+                `Source: Hyperliquid (metaAndAssetCtxs), one request per exchange every ${page.refreshSec} s from your browser; the HyperQuant server fetches nothing. Open interest = contracts × mark price. Annual funding is annualised from the hourly rate (× 24 × 365). A reading older than 3 min or a market missing from the exchange response: “—” with the reason.`
             )}
           </p>
           <p data-markets-weight={page.weight}>
@@ -49,6 +65,7 @@ const MarketsView: React.FC = () => {
           </p>
         </div>
       </section>
+      )}
     </div>
   );
 };

@@ -75,11 +75,11 @@ import { type DrawingTools, isTyping } from './draw/tools';
 import { chartKeyAction } from './chart/shortcuts';
 import { FocusExit, type PhoneTab, focusExitKey, focusOn } from './chart/focusMode';
 import { COIN, CandleSeries, Market, ProStore, dropStore, storeFor } from './store/proStore';
-import { capsOf, chartMarkets, marketOf, noScannerWhyOf, useMarkets } from '../../state/markets';
+import { capsOf, chartMarkets, ensureUniverse, marketOf, noScannerWhyOf, useMarkets } from '../../state/markets';
 import { BLOG_ONLY_WHY, marketCaps, supportsSmcContactDelta } from '../../utils/marketCaps';
 import { MarketPicker, PhoneMarketSelect } from './chart/MarketPicker';
 import { expiredNotice, isListed, nextMarket } from './chart/marketMenu';
-import { appMarkets } from '../../utils/marketRegistry';
+import { APP_MARKETS, appMarkets } from '../../utils/marketRegistry';
 import { discardRecording, startRecording } from './store/recording';
 import { useStoreVersion } from './store/useStoreVersion';
 import { ReplayBar } from './replay/ReplayBar';
@@ -87,6 +87,9 @@ import { type ReplayLink, linkPatch, parseReplayLink, replayHash } from './repla
 import { type ReplaySession, replayBase } from './replay/session';
 import { lang, tr } from '../../i18n';
 import { motywWykresu } from '../paleta';
+
+/** Główne rynki (rynki desku): grupa na górze wyboru rynku, pozostałe rynki Hyperliquid pod nią. */
+const DESK_COINS: ReadonlySet<string> = new Set(APP_MARKETS.map((m) => m.coin));
 
 // Okna otwierane dopiero na prośbę (klatka, alarmy, wskaźniki) ładują się leniwie: na starcie W sesji to ok. 50 KB
 // niewykonanego kodu. Po pierwszym malowaniu wykresu pobieramy je w wolnej chwili, żeby pierwsze otwarcie nie czekało.
@@ -396,6 +399,11 @@ export const ProChart: React.FC<{
   // taśmy otwarte dla tej nazwy przed odpowiedzią rejestru znikają (chyba że rynek ma alarm — ten nagrywa dalej)
   useEffect(() => {
     if (inReplay || !markets.ready || isListed(settings.coin, markets.markets)) return;
+    // Rynek spoza rejestru może być w uniwersum Hyperliquid (wszystkie giełdy): wygasły dopiero po jego wczytaniu
+    if (markets.universe === 'idle' || markets.universe === 'loading') {
+      void ensureUniverse();
+      return;
+    }
     const gone = settings.coin;
     setToast(expiredNotice(gone));
     setSettings((s) => withPatch(s, { coin: COIN }));
@@ -1043,7 +1051,7 @@ export const ProChart: React.FC<{
       {!narrow && (
         <div data-chart-bar="desk" aria-label={tr('Narzędzia wykresu', 'Chart tools')} role="group" className="@container flex flex-wrap min-[900px]:flex-nowrap items-center gap-1.5 px-2 py-1 border-b border-line min-h-11">
           {barLead}
-          <MarketPicker value={settings.coin} markets={appMarkets(markets.markets)} onChange={setCoin} />
+          <MarketPicker value={settings.coin} markets={markets.markets} desk={DESK_COINS} universe={markets.universe} onChange={setCoin} />
           {/* Ulubione interwały jako przyciski tylko w bardzo szerokim pasku (szerokość karty wykresu, nie okna: dwa wykresy
               obok siebie mają węższe paski) */}
           <div className="hidden @min-[1040px]:inline-flex">
@@ -1130,7 +1138,7 @@ export const ProChart: React.FC<{
               {phoneTabs && (
                 <PhoneSelect<string> ariaLabel={tr('Karta układu', 'Layout tab')} value={phoneTabs.value} options={phoneTabs.options} onChange={phoneTabs.onChange} className="hq-chart-layout-select max-w-[7.5rem] truncate" />
               )}
-              <PhoneMarketSelect value={settings.coin} markets={appMarkets(markets.markets)} onChange={setCoin} />
+              <PhoneMarketSelect value={settings.coin} markets={markets.markets} desk={DESK_COINS} onChange={setCoin} />
               <PhoneSelect<string>
                 ariaLabel={tr('Rodzaj wykresu', 'Chart type')}
                 value={kindOf(settings.view, settings.fpStyle)}

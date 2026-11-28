@@ -7,7 +7,7 @@ import type { ChartMarket } from '../../../utils/marketRegistry';
  * (giełdy HIP-3, nazwa `dex:COIN`) — w kolejności rejestru, czyli według średnich otwartych pozycji z 7 dni.
  */
 
-export type MarketGroupId = 'crypto' | 'hip3';
+export type MarketGroupId = 'desk' | 'crypto' | 'hip3';
 
 export interface MarketGroup {
   id: MarketGroupId;
@@ -16,17 +16,25 @@ export interface MarketGroup {
 }
 
 const GROUP_TITLE: Record<MarketGroupId, string> = {
+  // Główne rynki (konfiguracja rynków desku): pełny skaner albo dedykowane panele, zawsze na górze
+  desk: tr('Główne rynki', 'Core markets'),
   crypto: tr('Krypto', 'Crypto'),
   // Giełdy HIP-3: akcje, indeksy, surowce i waluty (xyz:JPY, xyz:EUR)
   hip3: tr('Rynki tradycyjne (HIP-3)', 'Traditional markets (HIP-3)'),
 };
 
-/** Grupy z rynkami pasującymi do `query` (fragment nazwy albo giełdy, bez wielkości liter); puste grupy pominięte. */
-export function marketGroups(markets: readonly ChartMarket[], query: string): MarketGroup[] {
+/**
+ * Grupy z rynkami pasującymi do `query` (fragment nazwy albo giełdy, bez wielkości liter); puste grupy pominięte.
+ * `desk` — główne rynki (rynki desku): osobna grupa na górze, poza grupami giełd.
+ */
+export function marketGroups(markets: readonly ChartMarket[], query: string, desk: ReadonlySet<string> = new Set()): MarketGroup[] {
   const q = query.trim().toLowerCase();
+  const hit = (m: ChartMarket) => q === '' || m.coin.toLowerCase().includes(q);
   const out: MarketGroup[] = [];
+  const top = markets.filter((m) => desk.has(m.coin) && hit(m));
+  if (top.length > 0) out.push({ id: 'desk', title: GROUP_TITLE.desk, markets: top });
   for (const id of ['crypto', 'hip3'] as const) {
-    const list = markets.filter((m) => (m.dex === '') === (id === 'crypto') && (q === '' || m.coin.toLowerCase().includes(q)));
+    const list = markets.filter((m) => !desk.has(m.coin) && (m.dex === '') === (id === 'crypto') && hit(m));
     if (list.length > 0) out.push({ id, title: GROUP_TITLE[id], markets: list });
   }
   return out;

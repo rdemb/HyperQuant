@@ -1,12 +1,12 @@
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { CornerDownLeft, Search } from 'lucide-react';
-import { useMarkets } from '../state/markets';
+import { ensureUniverse, useMarkets } from '../state/markets';
 import { bareName } from '../utils/marketsTable';
 import { appMarkets } from '../utils/marketRegistry';
 import { lang, tr } from '../i18n';
 import type { NavItem } from './AppShell';
-import { filtruj, type Akcja, type Polecenie } from './polecenia';
+import { filtruj, type Akcja, type Polecenie, zInnymiRynkami } from './polecenia';
 
 /**
  * Paleta poleceń (⌘K / Ctrl+K, przycisk „Szukaj”): widoki, wykres rynku z rejestru, strony statyczne, język.
@@ -20,8 +20,19 @@ export const PaletaPolecen: React.FC<{
   zewnetrzne: { href: string; label: string }[];
   przelaczniki: { co: 'strumien' | 'synchronizuj' | 'dzwiek'; etykieta: string }[];
 }> = ({ open, onClose, onAkcja, widoki, zewnetrzne, przelaczniki }) => {
-  const markets = appMarkets(useMarkets().markets);
+  const all = useMarkets().markets;
+  const markets = useMemo(() => appMarkets(all), [all]);
   const [q, setQ] = useState('');
+  // Otwarta paleta wczytuje wszystkie rynki Hyperliquid (raz na sesję): rynki spoza głównych w wynikach wyszukiwania
+  useEffect(() => {
+    if (open) void ensureUniverse();
+  }, [open]);
+  const inne = useMemo<Polecenie[]>(() => {
+    const desk = new Set(markets.map((m) => m.coin));
+    return all
+      .filter((m) => !desk.has(m.coin))
+      .map((m) => ({ id: `m-${m.coin}`, grupa: tr('Wykres rynku', 'Market chart'), etykieta: bareName(m), slowa: `${m.coin} ${m.dex || 'Hyperliquid'}`, akcja: { typ: 'rynek', coin: m.coin } as Akcja }));
+  }, [all, markets]);
   const [aktywny, setAktywny] = useState(0);
   const listaId = useId();
   const poprzedni = useRef<HTMLElement | null>(null);
@@ -44,7 +55,7 @@ export const PaletaPolecen: React.FC<{
     ],
     [widoki, markets, zewnetrzne, przelaczniki]
   );
-  const wyniki = useMemo(() => filtruj(lista, q), [lista, q]);
+  const wyniki = useMemo(() => zInnymiRynkami(filtruj(lista, q), inne, q), [lista, inne, q]);
 
   useEffect(() => setAktywny(0), [q, open]);
   useEffect(() => {

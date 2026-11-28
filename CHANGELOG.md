@@ -4,6 +4,12 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Wszystkie rynki Hyperliquid (2026-11-28)
+<!-- co-nowego: grupa=rynki | pl=Wszystkie rynki Hyperliquid | en=All Hyperliquid markets -->
+- Wybór rynku wykresu, paleta ⌘K i strona Rynki obejmują teraz każdy aktywny kontrakt perp Hyperliquid: giełdę główną i wszystkie giełdy HIP-3 (dziś 357 rynków). Główne rynki (BTC, złoto, S&P 500) są na górze listy.
+- Strona Rynki ma zakładkę „Wszystkie rynki Hyperliquid”: tabela z ceną mark, otwartymi pozycjami, wolumenem 24 h, finansowaniem rocznym i dźwignią, z wyszukiwarką i sortowaniem; nazwa rynku otwiera wykres. Odczyt co 60 s z Twojej przeglądarki, tylko gdy karta jest widoczna.
+- Link do dowolnego rynku (np. `#charts?m=xyz:TSLA`) otwiera jego wykres zamiast BTC. Rynki spoza głównych mają dane na żywo (świece, taśma, arkusz, footprint); warstwy skanera pokazują „—” z powodem.
+
 ### Gorący ogon: wykres bez minut luki po otwarciu (2026-11-27)
 <!-- co-nowego: ukryj -->
 - Skaner trzyma ostatnie 15 min nagrania taśmy i arkusza i co 3 s wysyła je do przekaźnika na żywo (`workers/live`, Cloudflare Worker + Durable Object). Strona pobiera ten ogon przy starcie wykresu, więc footprint, Delta, CVD, mapa ciepła i drabina Order Flow mają ostatnie minuty od razu, zamiast czekać do 11 min na publikację części historii w repo danych.

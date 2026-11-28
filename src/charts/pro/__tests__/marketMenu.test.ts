@@ -37,6 +37,14 @@ describe('wybór rynku', () => {
     expect(marketGroups(LIST, 'zzz')).toEqual([]);
   });
 
+  it('główne rynki (desku) w grupie na górze, bez powtórzeń w grupach giełd; wyszukiwanie obejmuje też je', () => {
+    const desk = new Set(['BTC', 'xyz:NVDA']);
+    const g = marketGroups(LIST, '', desk);
+    expect(g[0]).toMatchObject({ id: 'desk', markets: [expect.objectContaining({ coin: 'BTC' }), expect.objectContaining({ coin: 'xyz:NVDA' })] });
+    expect(g.slice(1).flatMap((x) => x.markets.map((y) => y.coin))).not.toContain('BTC');
+    expect(marketGroups(LIST, 'nvda', desk).map((x) => x.id)).toEqual(['desk']);
+  });
+
   it('4 rynki domyślne bez rejestru: sama grupa krypto', () => {
     expect(marketGroups(DEFAULT_MARKETS, '').map((x) => [x.id, x.markets.length])).toEqual([['crypto', 4]]);
   });
