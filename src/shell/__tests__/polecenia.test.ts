@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { doSzukania, filtruj, type Polecenie } from '../polecenia';
+import { INNE_RYNKI_MAX, doSzukania, filtruj, type Polecenie, zInnymiRynkami } from '../polecenia';
 
 const L: Polecenie[] = [
   { id: 'v-before', grupa: 'Widoki', etykieta: 'Przed sesją', akcja: { typ: 'widok', id: 'before' } },
@@ -30,5 +30,23 @@ describe('paleta poleceń: wyszukiwanie', () => {
     expect(ids('charts')).toEqual(['v-charts']);
     expect(ids('jezyk')).toEqual(['l-en']);
     expect(ids('btc')).toEqual([]);
+  });
+});
+
+describe('paleta: rynki spoza głównych tylko przy wyszukiwaniu', () => {
+  const p = (id: string, etykieta: string): Polecenie => ({ id, grupa: 'g', etykieta, akcja: { typ: 'widok', id: 'charts' } });
+  const base = [p('v-charts', 'Wykresy'), p('m-BTC', 'BTC'), p('l-x', 'Blog')];
+  const inne = Array.from({ length: 20 }, (_, i) => p(`m-COIN${i}`, `COIN${i}`));
+
+  it('puste zapytanie — bez rynków spoza głównych', () => {
+    expect(zInnymiRynkami(base, inne, '  ').map((x) => x.id)).toEqual(['v-charts', 'm-BTC', 'l-x']);
+  });
+
+  it('trafienia zaraz za głównymi rynkami, najwyżej INNE_RYNKI_MAX', () => {
+    const out = zInnymiRynkami(base, inne, 'coin');
+    expect(out.slice(0, 2).map((x) => x.id)).toEqual(['v-charts', 'm-BTC']);
+    expect(out.filter((x) => x.id.startsWith('m-COIN'))).toHaveLength(INNE_RYNKI_MAX);
+    expect(out.at(-1)!.id).toBe('l-x');
+    expect(zInnymiRynkami([p('v-charts', 'Wykresy')], inne, 'COIN1').map((x) => x.id)).toEqual(['v-charts', 'm-COIN1', 'm-COIN10', 'm-COIN11', 'm-COIN12', 'm-COIN13', 'm-COIN14', 'm-COIN15', 'm-COIN16']);
   });
 });

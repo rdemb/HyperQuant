@@ -20,6 +20,7 @@ import { BUBBLES_BARS, selectBubbles } from './bubbleSelect';
 import type { AggressorOrder } from '../core/orders';
 import type { ProBar } from '../store/proStore';
 import { logicalOfTime } from './overlay';
+import type { HeatContrast } from './settings';
 import { DOM_W_PX, LIQ_RAMP, MONO, PRO, rgba } from './theme';
 import { type Box, LAST_CANDLES, type LabelCandidate, lastCandleBoxes, placeLabels } from './labelPlacement';
 
@@ -124,11 +125,16 @@ const DOM_LABEL_ROW_PX = 9;
 /** Najmniejszy odstęp między liczbami drabiny (px). */
 const DOM_LABEL_GAP_PX = 11;
 /**
- * Skala mapy ciepła, osobno dla każdej agregacji arkusza: od percentylu HEAT_LO_Q (próg dolny — większość poziomów
- * jest przezroczysta, świece zostają widoczne) do percentylu HEAT_Q wielkości w widocznych migawkach (pełne
- * nasycenie). Liniowa — jasne kolory dostają tylko skupiska i ściany z górnych kilku procent.
+ * Skala mapy ciepła, osobno dla każdej agregacji arkusza: od percentylu `loQ` kontrastu (próg dolny — poziomy poniżej
+ * są przezroczyste, świece zostają widoczne) do percentylu HEAT_Q wielkości w widocznych migawkach (pełne nasycenie),
+ * potem krzywa jasności t^gamma (gamma > 1 przygasza typowe poziomy, ściany z górnych kilku procent zostają jasne).
+ * „Mocny” to dawna skala liniowa od 60. percentylu — gęsta mapa, która przy średnich interwałach zasłaniała świece.
  */
-const HEAT_LO_Q = 0.6;
+export const HEAT_CONTRAST: Record<'soft' | 'med' | 'strong', { loQ: number; gamma: number }> = {
+  soft: { loQ: 0.85, gamma: 2.2 },
+  med: { loQ: 0.75, gamma: 1.6 },
+  strong: { loQ: 0.6, gamma: 1 },
+};
 const HEAT_Q = 0.995;
 const HEAT_SAMPLE = 12_000;
 /** Migawka arkusza obowiązuje do następnej, najwyżej tyle ms (luka w nagraniu nie jest zamalowana starą migawką). */
@@ -263,6 +269,7 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
   private domOn = true;
   /** Najwięcej podpisów liczbowych w widoku (gęstość etykiet), obiekt pod kursorem i zajęte miejsca innych warstw. */
   private labelLimit = 5;
+  private contrast: keyof typeof HEAT_CONTRAST = 'med';
   private hover: LiquidityPick | null = null;
   private blocked: () => readonly Box[] = () => [];
   /** 10 ostatnich świec (px CSS panelu): podpisy na nie nie wchodzą. */
@@ -352,6 +359,14 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
 
   setToggles(t: LiquidityToggles): void {
     this.toggles = t;
+    this.requestUpdate?.();
+  }
+
+  /** Kontrast mapy ciepła (ustawienie wykresu; brak — średni): nowa skala przy następnym malowaniu. */
+  setContrast(c: HeatContrast | undefined): void {
+    const next = c ?? 'med';
+    if (next === this.contrast) return;
+    this.contrast = next;
     this.requestUpdate?.();
   }
 
@@ -539,7 +554,7 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
     // gdzie jej poziomy są przezroczyste — inaczej przez słabe poziomy prześwitywałyby grube pasy dalekiej
     const layers = [far, near].map((h) => (h ? h.range(g.tFrom, g.tTo) : []));
     // Ostatnia migawka w zakresie w kluczu: migawka z czasem giełdy chwilę przed zegarem strony wchodzi, gdy czas ją dogoni
-    const key = `${W}|${H}|${g.xa.toFixed(2)}|${g.sp.toFixed(4)}|${g.a.toFixed(3)}|${g.b.toFixed(6)}|${near?.version}|${far?.version}|${layers.map((l) => l.at(-1)?.t).join('|')}`;
+    const key = `${this.contrast}|${W}|${H}|${g.xa.toFixed(2)}|${g.sp.toFixed(4)}|${g.a.toFixed(3)}|${g.b.toFixed(6)}|${near?.version}|${far?.version}|${layers.map((l) => l.at(-1)?.t).join('|')}`;
     if (key === this.texKey && this.texImg && this.texSrc[0] === near && this.texSrc[1] === far) {
       this.paintTail(ctx, this.texImg, W, H, g);
       return true;
@@ -558,7 +573,7 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
       const frames = layers[li];
       if (frames.length === 0) continue;
       const isNear = li === 1;
-      const norm = heatNorm(frames);
+      const norm = heatNorm(frames, HEAT_CONTRAST[this.contrast].loQ);
       const lut = isNear ? this.lut : this.lutFar;
       for (let i = 0; i < frames.length; i++) {
         const f = frames[i];
@@ -567,7 +582,7 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
         if (i === frames.length - 1) this.tail.push({ f, x0, x1, norm, lut, clear: isNear });
         if (x1 <= 0 || x0 >= W) continue;
         if (isNear) clearSpan(px, W, H, f, x0, x1, g);
-        paintFrame(px, W, H, f, x0, x1, g, norm, lut);
+        paintFrame(px, W, H, f, x0, x1, g, norm, lut, HEAT_CONTRAST[this.contrast].gamma);
       }
     }
     ctx.putImageData(img, 0, 0);
@@ -585,7 +600,7 @@ export class LiquidityLayer implements ISeriesPrimitive<Time> {
       s.x1 = Math.max(s.x1, x1);
       if (x1 <= x0) continue;
       if (s.clear) clearSpan(px, W, H, s.f, x0, x1, g);
-      paintFrame(px, W, H, s.f, x0, x1, g, s.norm, s.lut);
+      paintFrame(px, W, H, s.f, x0, x1, g, s.norm, s.lut, HEAT_CONTRAST[this.contrast].gamma);
       lo = Math.min(lo, x0);
       hi = Math.max(hi, x1);
     }
@@ -742,8 +757,8 @@ function sameInputs(a: readonly unknown[], b: readonly unknown[]): boolean {
   return true;
 }
 
-/** Wielkości (jednostki rynku) przy percentylach HEAT_LO_Q i HEAT_Q z próbki poziomów widocznych migawek. */
-function heatNorm(frames: readonly BookFrame[]): HeatScale {
+/** Wielkości (jednostki rynku) przy percentylach `loQ` i HEAT_Q z próbki poziomów widocznych migawek. */
+export function heatNorm(frames: readonly BookFrame[], loQ: number): HeatScale {
   let total = 0;
   for (const f of frames) total += f.sz.length;
   const stride = Math.max(1, Math.ceil(total / HEAT_SAMPLE));
@@ -755,11 +770,18 @@ function heatNorm(frames: readonly BookFrame[]): HeatScale {
   if (sample.length === 0) return { lo: 0, span: 0 };
   sample.sort((p, q) => p - q);
   const at = (q: number) => sample[Math.min(sample.length - 1, Math.floor(sample.length * q))];
-  const lo = at(HEAT_LO_Q);
+  const lo = at(loQ);
   return { lo, span: at(HEAT_Q) - lo };
 }
 
-interface HeatScale {
+/** Pozycja poziomu wielkości `sz` na rampie 0..1: liniowo między progami skali, potem krzywa kontrastu t^gamma. */
+export function heatT(sz: number, norm: HeatScale, gamma: number): number {
+  if (!(norm.span > 0)) return 0;
+  const t = Math.min(1, Math.max(0, (sz - norm.lo) / norm.span));
+  return gamma === 1 ? t : t ** gamma;
+}
+
+export interface HeatScale {
   lo: number;
   span: number;
 }
@@ -793,10 +815,10 @@ function clearSpan(px: Uint32Array, W: number, H: number, f: BookFrame, x0: numb
   for (let y = ya; y < yb; y++) px.fill(0, y * W + x0, y * W + x1);
 }
 
-function paintFrame(px: Uint32Array, W: number, H: number, f: BookFrame, x0: number, x1: number, g: Geometry, norm: HeatScale, lut: Uint32Array): void {
+function paintFrame(px: Uint32Array, W: number, H: number, f: BookFrame, x0: number, x1: number, g: Geometry, norm: HeatScale, lut: Uint32Array, gamma: number): void {
   const half = f.step / 2;
   for (let i = 0; i < f.px.length; i++) {
-    const t = norm.span > 0 ? Math.min(1, (f.sz[i] - norm.lo) / norm.span) : 0;
+    const t = heatT(f.sz[i], norm, gamma);
     if (t <= 0.02) continue;
     const c = lut[Math.min(255, Math.round(t * 255))];
     let ya = Math.round(g.a + g.b * (f.px[i] + half));

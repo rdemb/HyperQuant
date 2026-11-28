@@ -1,0 +1,10 @@
+[Unit]
+Description=Hyperliquid — rotacja danych noda (pliki starsze niż HL_KEEP_HOURS)
+
+[Service]
+Type=oneshot
+User=hlnode
+Group=hlnode
+ExecStart=/opt/hyperquant/node-tools/hyperliquid-prune.sh
+Nice=10
+IOSchedulingClass=idle

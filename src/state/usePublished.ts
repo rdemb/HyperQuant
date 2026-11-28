@@ -5,6 +5,8 @@ import { useEffect, useState } from 'react';
  * Serwer skanera nigdy nie jest widoczny dla przeglądarki.
  */
 export const DATA_BASE = String(import.meta.env.VITE_DATA_BASE_URL ?? '').replace(/\/+$/, '');
+/** Przekaźnik na żywo (workers/live): gorący ogon nagrania skanera; pusty — strona korzysta z samej historii w repo danych. */
+export const LIVE_BASE = String(import.meta.env.VITE_LIVE_URL ?? '').replace(/\/+$/, '');
 /**
  * Gałąź `ledger` tego samego repo (dziennik prognoz z przyrostową historią): …/hyperquant-data/main → …/hyperquant-data/ledger.
  * Lokalny podgląd bez „/main” serwuje oba zestawy plików z jednego katalogu.

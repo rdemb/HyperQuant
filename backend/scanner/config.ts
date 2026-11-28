@@ -3,6 +3,8 @@
  * W repo jest jedynie szablon z miejscami do uzupełnienia — żadnych adresów, ścieżek właściciela ani kluczy.
  */
 
+import type { LiveConfig } from './liveTail.ts';
+
 export interface R2Config {
   accountId: string;
   bucket: string;
@@ -43,6 +45,8 @@ export interface ScannerConfig {
   whales: { top: number; weightPerMin: number } | null;
   /** Pomiar w cieniu M0 i przepływ minutowy K2 (jedno połączenie `trades` dla rynków rejestru); HQ_MARKETS_SHADOW=0 wyłącza */
   marketsShadow: boolean;
+  /** Przekaźnik na żywo (workers/live): gorący ogon rejestratorów co kilka sekund; null = wyłączony */
+  live: LiveConfig | null;
 }
 
 type Env = Record<string, string | undefined>;
@@ -107,6 +111,16 @@ export function loadConfig(env: Env): { ok: true; config: ScannerConfig } | { ok
 
   const marketsShadow = intIn(env, 'HQ_MARKETS_SHADOW', 1, 0, 1, errors) === 1;
 
+  // Przekaźnik ogona: adres i token razem albo wcale; ogon pochodzi z rejestratorów historii
+  const liveUrl = (env.HQ_LIVE_URL ?? '').trim().replace(/\/+$/, '');
+  const liveToken = (env.HQ_LIVE_TOKEN ?? '').trim();
+  let live: LiveConfig | null = null;
+  if (liveUrl || liveToken) {
+    if (!/^https:\/\/[^\s/]+(\/\S*)?$/.test(liveUrl) || liveToken.length < 32) errors.push('HQ_LIVE_URL (https) i HQ_LIVE_TOKEN (co najmniej 32 znaki): podaj oba albo żadne');
+    else if (!history) errors.push('HQ_LIVE_URL wymaga HQ_HISTORY_MARKETS (ogon pochodzi z rejestratora historii)');
+    else live = { url: liveUrl, token: liveToken };
+  }
+
   if (errors.length > 0) return { ok: false, errors };
-  return { ok: true, config: { coin, weightPerMin, liqWeightPerMin, forecastWeightPerMin, stateDir, outDir, publishEveryS, maxAddresses, seedTop, seedMinUsd, r2, git, history, whales, marketsShadow } };
+  return { ok: true, config: { coin, weightPerMin, liqWeightPerMin, forecastWeightPerMin, stateDir, outDir, publishEveryS, maxAddresses, seedTop, seedMinUsd, r2, git, history, whales, marketsShadow, live } };
 }

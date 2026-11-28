@@ -1,0 +1,24 @@
+[Unit]
+Description=Hyperliquid — node bez walidacji (dane L1 dla skanera HyperQuant)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=hlnode
+Group=hlnode
+WorkingDirectory=/home/hlnode
+# Flagi danych (dokumentacja: github.com/hyperliquid-dex/node, sekcja Flags):
+#  --write-fills                 wypełnienia z adresami obu stron (zastępuje --write-trades), też statusy TWAP
+#  --write-misc-events           likwidacje WSZYSTKICH kont, finansowanie, wpłaty i wypłaty
+#  --write-raw-book-diffs        arkusz na poziomie zleceń (adres, oid, cena, wielkość) — pełna głębokość
+#  --serve-info                  lokalne /info na localhost:3001 (clearinghouseState bez publicznych limitów)
+#  --disable-output-file-buffering  każda linia od razu na dysku (mniejsze opóźnienie kosztem IO)
+#  --replica-cmds-style recent-actions  tylko dwa ostatnie pliki replica_cmds (oszczędność dysku)
+ExecStart=/home/hlnode/hl-visor run-non-validator --write-fills --write-misc-events --write-raw-book-diffs --serve-info --disable-output-file-buffering --replica-cmds-style recent-actions
+Restart=always
+RestartSec=10
+LimitNOFILE=1048576
+
+[Install]
+WantedBy=multi-user.target

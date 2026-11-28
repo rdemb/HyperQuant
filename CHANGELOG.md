@@ -4,6 +4,27 @@ Wszystkie istotne zmiany w projekcie. Format: [Keep a Changelog](https://keepach
 
 ## [Unreleased]
 
+### Heatmapa płynności w Order Flow (2026-11-28)
+<!-- co-nowego: grupa=wykres | pl=Heatmapa płynności w Order Flow | en=Liquidity heatmap in Order Flow -->
+- Widok Order Flow zaczyna się od heatmapy płynności w czasie: arkusz zleceń z ostatnich 5 min, 15 min albo godziny jako tło, linie najlepszego bidu i asku, bąble zleceń agresora (pole proporcjonalne do wartości, górne 40% okna) i linia ceny. Kółko myszy zmienia skalę ceny, kontrast ma trzy stopnie. Okno wypełnia historia z serwera, luka w nagraniu zostaje ciemna. Pod heatmapą jak dotąd drabina cen i taśma.
+- Pod drabiną i taśmą przepływ kohort z W sesji: wieloryby, market makerzy, konta statystycznie poinformowane i reszta rynku (rynki ze skanerem; na pozostałych panel się nie pokazuje).
+
+### Wszystkie rynki Hyperliquid (2026-11-28)
+<!-- co-nowego: grupa=rynki | pl=Wszystkie rynki Hyperliquid | en=All Hyperliquid markets -->
+- Wybór rynku wykresu, paleta ⌘K i strona Rynki obejmują teraz każdy aktywny kontrakt perp Hyperliquid: giełdę główną i wszystkie giełdy HIP-3 (dziś 357 rynków). Główne rynki (BTC, złoto, S&P 500) są na górze listy.
+- Strona Rynki ma zakładkę „Wszystkie rynki Hyperliquid”: tabela z ceną mark, otwartymi pozycjami, wolumenem 24 h, finansowaniem rocznym i dźwignią, z wyszukiwarką i sortowaniem; nazwa rynku otwiera wykres. Odczyt co 60 s z Twojej przeglądarki, tylko gdy karta jest widoczna.
+- Link do dowolnego rynku (np. `#charts?m=xyz:TSLA`) otwiera jego wykres zamiast BTC. Rynki spoza głównych mają dane na żywo (świece, taśma, arkusz, footprint); warstwy skanera pokazują „—” z powodem.
+
+### Gorący ogon: wykres bez minut luki po otwarciu (2026-11-27)
+<!-- co-nowego: ukryj -->
+- Skaner trzyma ostatnie 15 min nagrania taśmy i arkusza i co 3 s wysyła je do przekaźnika na żywo (`workers/live`, Cloudflare Worker + Durable Object). Strona pobiera ten ogon przy starcie wykresu, więc footprint, Delta, CVD, mapa ciepła i drabina Order Flow mają ostatnie minuty od razu, zamiast czekać do 11 min na publikację części historii w repo danych.
+- Włącza się po konfiguracji: sekrety `CLOUDFLARE_API_TOKEN` i `LIVE_PUSH_TOKEN` (wdrożenie `live-worker.yml`), zmienna repozytorium `LIVE_URL` (build strony) oraz `HQ_LIVE_URL` i `HQ_LIVE_TOKEN` w `scanner.env`. Bez niej wszystko działa jak dotąd.
+
+### Świece na pełnej wysokości i spokojniejsza mapa ciepła (2026-11-27)
+<!-- co-nowego: grupa=wykres | pl=Świece na pełnej wysokości i spokojniejsza mapa ciepła | en=Full-height candles and a calmer heatmap -->
+- Daleki VWAP nie ściska już świec. Wchodzi do autoskali tylko wtedy, gdy świece zachowują co najmniej 2/3 wysokości panelu; inaczej jego etykieta stoi przy krawędzi osi ze strzałką w stronę ceny (dotyczy też VWAP sesji).
+- Mapa ciepła arkusza ma przełącznik kontrastu w ustawieniach wykresu: Miękki, Średni, Mocny. Domyślny Średni maluje tylko poziomy powyżej 75. percentyla wielkości i przygasza typową płynność, więc świece zostają czytelne, a ściany jasne. Mocny to dotychczasowa mapa.
+
 ### Nowe README i porządki w repozytorium (2026-11-27)
 <!-- co-nowego: ukryj -->
 - README napisane od nowa: opis projektu, zrzuty ekranu z prawdziwych danych, przegląd funkcji, szybki start (z `VITE_DATA_BASE_URL` dla danych skanera), diagram architektury, skrót metod i weryfikacja dziennika. Pełny opis widoków w `docs/FEATURES.md`, metody, literatura i ograniczenia w `docs/METHODS.md`.

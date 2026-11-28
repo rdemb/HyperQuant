@@ -14,6 +14,9 @@ import { conflictRepairHash, linkConflictText, questionLinkConflict, type Questi
 import { CHRONOGRAPH_REPLAY_MARKET } from './chronographModel';
 import { DeltaMomentCard } from './DeltaMomentCard';
 import { LevelReading } from './LevelReading';
+import { LiquidityHeatmap } from './LiquidityHeatmap';
+import { capsOf } from '../../state/markets';
+import { LocalBoundary } from '../../ui/LocalBoundary';
 import { savedLadderSettings, WorkspaceSave } from './WorkspaceSave';
 import type { DomMode } from './DomWorkspace';
 import { MomentLens } from './MomentLens';
@@ -32,6 +35,8 @@ const ChronographReplay = lazy(() => import('./ChronographReplay'));
 const ArchiveHourView = lazy(() => import('./ArchiveHourView'));
 const VenueBasket = lazy(() => import('./VenueBasket'));
 const DeltaBoundsExample = lazy(() => import('./DeltaBoundsExample'));
+// Przepływ kohort skanera (wieloryby, market makerzy, statystycznie poinformowani, reszta) — ten sam panel co W sesji
+const CohortFlowPanel = lazy(() => import('../desk/CohortFlowPanel').then((m) => ({ default: m.CohortFlowPanel })));
 const readHash = () => deskMarketFromHash(window.location.hash);
 
 function workspaceFromHash(hash: string, coin: string): Workspace {
@@ -213,6 +218,7 @@ function FlowMarket({ coin, pro, momentOpen, closeMoment, mode, setMode }: {
       </div>
       <div hidden={workspace !== 'live'}>
         {status}
+        {workspace === 'live' && <LiquidityHeatmap store={store} />}
         <WorkspaceSave coin={coin} settings={ladder} apply={setLadder} />
         <Chronograph ladderSettings={ladder}
           onMinimumChange={value => setLadder(prev => ({ ...prev, tapeMinimumUsd: value }))}
@@ -238,6 +244,11 @@ function FlowMarket({ coin, pro, momentOpen, closeMoment, mode, setMode }: {
               onClick={() => setShowPinnedTrades(value => !value)}>{tr('Zobacz przypięte wykonania', 'View pinned trades')}</button>} />} />
         {pinned && <DeltaMomentCard to={pinned.to} readout={capture?.pin === pinned ? capture.result : null} store={store}
           refresh={refreshDelta} close={closeDelta} />}
+        {workspace === 'live' && capsOf(coin).scanner && <Suspense fallback={null}>
+          <LocalBoundary what={tr('Przepływ kohort', 'Cohort flow')}>
+            <CohortFlowPanel coin={coin} />
+          </LocalBoundary>
+        </Suspense>}
       </div>
       {mountedMemory && <div hidden={workspace !== 'memory'}>
         <MomentLens store={store} close={closeMoment} expanded={false} status={status} mode={mode} setMode={setMode} />

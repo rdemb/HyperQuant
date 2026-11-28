@@ -1,6 +1,7 @@
 import { useEffect, useSyncExternalStore } from 'react';
 import { type MarketCaps, marketCaps, noScannerWhy, usdScale } from '../utils/marketCaps';
 import { type ChartMarket, DEFAULT_MARKETS, isMarketRegistry, marketsOrDefault, withAppMarkets } from '../utils/marketRegistry';
+import { type UniverseMarket, chartMarketsOf, parsePerpDexs, universeOf, withUniverse } from '../utils/hlUniverse';
 import { usePublished } from './usePublished';
 
 /**
@@ -13,10 +14,25 @@ import { usePublished } from './usePublished';
 export interface MarketsState {
   markets: readonly ChartMarket[];
   ready: boolean;
+  /**
+   * Uniwersum wszystkich rynków Hyperliquid (`utils/hlUniverse`), ładowane leniwie (`ensureUniverse`): wyszukiwarka rynków
+   * albo link do rynku spoza rejestru. `idle` — jeszcze nie pytane; rynek spoza listy jest wygasły dopiero po `ready`/`error`.
+   */
+  universe: UniverseStatus;
 }
 
-const INITIAL: MarketsState = { markets: DEFAULT_MARKETS, ready: false };
+export type UniverseStatus = 'idle' | 'loading' | 'ready' | 'error';
+
+const INITIAL: MarketsState = { markets: DEFAULT_MARKETS, ready: false, universe: 'idle' };
 let state: MarketsState = INITIAL;
+/** Lista z rejestru (z rynkami aplikacji) i rynki uniwersum — `state.markets` to ich złączenie (`withUniverse`). */
+let registryList: readonly ChartMarket[] = DEFAULT_MARKETS;
+let universeList: readonly ChartMarket[] = [];
+let universeRows: readonly UniverseMarket[] = [];
+/** Giełdy z rynkami w ostatnim odczycie (odświeżanie pyta tylko je) i chwila tego odczytu. */
+let universeDexes: string[] = [];
+let universeReadAt = Number.NEGATIVE_INFINITY;
+let universeAt = Number.NEGATIVE_INFINITY;
 const listeners = new Set<() => void>();
 
 const sameList = (a: readonly ChartMarket[], b: readonly ChartMarket[]) =>
@@ -25,11 +41,84 @@ const sameList = (a: readonly ChartMarket[], b: readonly ChartMarket[]) =>
 
 /** Odpowiedź rejestru (null = brak pliku albo nieudane pobranie): lista z pliku albo 4 rynki domyślne. */
 export function publishMarkets(raw: unknown): void {
-  const markets = withAppMarkets(marketsOrDefault(raw));
+  registryList = withAppMarkets(marketsOrDefault(raw));
+  const markets = withUniverse(registryList, universeList);
   if (state.ready && sameList(state.markets, markets)) return;
-  state = { markets: sameList(state.markets, markets) ? state.markets : markets, ready: true };
+  state = { ...state, markets: sameList(state.markets, markets) ? state.markets : markets, ready: true };
   listeners.forEach((fn) => fn());
 }
+
+/** Po błędzie uniwersum kolejna próba najwcześniej po tylu ms (każda kosztuje wagi API giełdy). */
+const UNIVERSE_RETRY_MS = 60_000;
+/** Zapytania `metaAndAssetCtxs` uniwersum naraz (giełd jest kilkanaście, wagi 20 każda). */
+const UNIVERSE_CONCURRENCY = 4;
+/** Odświeżenie odczytu (przegląd wszystkich rynków) najwcześniej po tylu ms — jak strona Rynki. */
+export const UNIVERSE_REFRESH_MS = 60_000;
+
+export interface UniverseDeps {
+  perpDexs: () => Promise<unknown>;
+  metaCtxs: (dex: string) => Promise<unknown>;
+  now: () => number;
+}
+
+/** Transport przeglądarki ładowany dopiero przy pierwszym użyciu (moduł listy rynków jest w pakiecie wejściowym). */
+const browserUniverse: UniverseDeps = {
+  perpDexs: async () => (await import('../utils/marketDataFeed')).postInfo({ type: 'perpDexs' }),
+  metaCtxs: async (dex) => (await import('../charts/pro/hl/rest')).fetchMetaAndCtxs(dex),
+  now: () => Date.now(),
+};
+
+const setUniverse = (universe: UniverseStatus) => {
+  state = { ...state, universe, markets: withUniverse(registryList, universeList) };
+  listeners.forEach((fn) => fn());
+};
+
+/**
+ * Uniwersum wszystkich rynków (raz na sesję; po błędzie — ponowienie najwcześniej po UNIVERSE_RETRY_MS): `perpDexs`,
+ * potem `metaAndAssetCtxs` każdej giełdy. Giełda bez odpowiedzi nie zatrzymuje pozostałych; bez żadnej — `error`.
+ * `refresh` (przegląd wszystkich rynków, co UNIVERSE_REFRESH_MS): nowy odczyt tylko giełd z rynkami; nieudany albo
+ * niepełny — zostaje poprzedni odczyt z jego godziną (bez mieszania chwil odczytu).
+ */
+export async function ensureUniverse(deps: UniverseDeps = browserUniverse, refresh = false): Promise<void> {
+  if (state.universe === 'loading') return;
+  const had = state.universe === 'ready';
+  if (had && !(refresh && deps.now() - universeReadAt >= UNIVERSE_REFRESH_MS)) return;
+  if (state.universe === 'error' && deps.now() - universeAt < UNIVERSE_RETRY_MS) return;
+  universeAt = deps.now();
+  if (!had) setUniverse('loading');
+  let dexes: string[] = had ? universeDexes : [''];
+  if (!had) {
+    try {
+      dexes = parsePerpDexs(await deps.perpDexs());
+    } catch {
+      // Sama giełda główna
+    }
+  }
+  const rows: UniverseMarket[] = [];
+  let answered = 0;
+  for (let i = 0; i < dexes.length; i += UNIVERSE_CONCURRENCY) {
+    const chunk = dexes.slice(i, i + UNIVERSE_CONCURRENCY);
+    // Błąd transportu (wyjątek albo null zamiast odpowiedzi) to giełda bez odpowiedzi
+    const got = await Promise.all(chunk.map((dex) => deps.metaCtxs(dex).then((raw) => (raw === null ? null : universeOf(dex, raw)), () => null)));
+    for (const list of got) if (list) {
+      answered++;
+      rows.push(...list);
+    }
+  }
+  const complete = had ? answered === dexes.length : answered > 0;
+  if (complete && rows.length > 0) {
+    universeRows = rows;
+    universeList = chartMarketsOf(rows);
+    universeDexes = [...new Set(rows.map((r) => r.dex))];
+    universeReadAt = deps.now();
+    setUniverse('ready');
+  } else setUniverse(had ? 'ready' : 'error');
+}
+
+/** Wiersze uniwersum (cena, OI, wolumen, finansowanie z chwili odczytu) — przegląd wszystkich rynków. */
+export const universeMarkets = (): readonly UniverseMarket[] => universeRows;
+/** Chwila ostatniego udanego odczytu uniwersum; null przed nim. */
+export const universeReadTime = (): number | null => (universeRows.length > 0 ? universeReadAt : null);
 
 export const marketsState = (): MarketsState => state;
 export const chartMarkets = (): readonly ChartMarket[] => state.markets;
@@ -62,6 +151,12 @@ export function subscribeMarkets(fn: () => void): () => void {
 /** Tylko dla testów: lista jak przed pierwszą odpowiedzią. */
 export function resetMarketsForTest(): void {
   state = INITIAL;
+  registryList = DEFAULT_MARKETS;
+  universeList = [];
+  universeRows = [];
+  universeDexes = [];
+  universeReadAt = Number.NEGATIVE_INFINITY;
+  universeAt = Number.NEGATIVE_INFINITY;
   noCex.clear();
 }
 

@@ -1,7 +1,7 @@
-import { DATA_BASE } from '../../../state/usePublished';
+import { DATA_BASE, LIVE_BASE } from '../../../state/usePublished';
 import { acceptHistoryIndex, publishedHistoryRange } from '../../../state/historyAvailability';
 import { isHip3DeskMarket } from '../../../config/deskMarkets';
-import { HIST_HOUR_MS, HIST_PART_MS, HIST_PUBLISH_LAG_MS, type HistFrame, type HistoryIndex, type IdScope, decodeBook, decodeTrades, historyBaseOf, historyPath, isHistoryIndex } from '../../../utils/tapeHistory';
+import { HIST_HOUR_MS, HIST_PART_MS, HIST_PUBLISH_LAG_MS, type HistFrame, type HistoryIndex, type IdScope, decodeBook, decodeTrades, historyBaseOf, historyPath, isHistoryIndex, isTailFile } from '../../../utils/tapeHistory';
 import type { BookFrame } from '../core/book';
 import { DAY } from '../core/time';
 import type { Fill } from '../hl/parse';
@@ -13,6 +13,8 @@ import { type HistoryBatch, type ProStore, RETENTION_MS } from './proStore';
  * z plików godzinowych, bieżąca z części 5-minutowych; plik jeszcze nieobecny w spisie (CDN trzyma spis do kilku minut)
  * zgadujemy po czasie. Co ROUND_MS dociągamy brakujące: najnowsze części sprzed otwarcia strony (pojawiają się
  * z opóźnieniem) i przerwy połączenia. Plik w całości pokryty strumieniem na żywo nie jest pobierany.
+ * Z przekaźnikiem na żywo (VITE_LIVE_URL) przy starcie także gorący ogon: ostatnie minuty nagrania, których repo danych
+ * jeszcze nie pokazuje (zapis części, push, pamięć CDN) — taśma i arkusz bez luki do początku strumienia na żywo.
  */
 
 export const HISTORY_BASE = DATA_BASE ? historyBaseOf(DATA_BASE) : '';
@@ -23,6 +25,9 @@ const ROUND_MS = 120_000;
 /** Arkusz (najcięższe pliki) tylko z ostatnich godzin; taśma z całej doby. */
 const BOOK_MS = 12 * HIST_HOUR_MS;
 const CONCURRENCY = 4;
+/** Ogon: najwięcej prób i odstęp między nimi (dłuższy niż takt wysyłki skanera, TAIL_PUSH_MS = 3 s). */
+const TAIL_TRIES = 4;
+const TAIL_RETRY_MS = 4_000;
 
 const hourOf = (t: number) => Math.floor(t / HIST_HOUR_MS) * HIST_HOUR_MS;
 
@@ -77,11 +82,14 @@ export class ServerHistory {
   private again = false;
   private off = false;
   private timer: ReturnType<typeof setInterval> | null = null;
+  private tailTries = 0;
+  private tailTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     private readonly store: ProStore,
     private readonly base: string,
-    private readonly fetcher: Fetcher = defaultFetch
+    private readonly fetcher: Fetcher = defaultFetch,
+    private readonly live: string = LIVE_BASE
   ) {}
 
   /** Historia od chwili `from` (najwyżej dobę wstecz); wcześniejsza niż dotąd — pobranie od razu. */
@@ -89,12 +97,38 @@ export class ServerHistory {
     if (this.off || !(from < this.from)) return Promise.resolve();
     this.from = from;
     this.timer ??= setInterval(() => void this.round(), ROUND_MS);
-    return this.round();
+    return Promise.all([this.round(), this.tailTries === 0 ? this.tail() : undefined]).then(() => undefined);
   }
 
   stop(): void {
     if (this.timer) clearInterval(this.timer);
+    if (this.tailTimer) clearTimeout(this.tailTimer);
     this.timer = null;
+    this.tailTimer = null;
+  }
+
+  /**
+   * Gorący ogon z przekaźnika: części ostatnich minut w formacie plików, odtworzone jak historia. Szew ze strumieniem
+   * na żywo: ogon starszy niż początek strumienia (albo strumień jeszcze nie ruszył) — ponowienie po kolejnej wysyłce
+   * skanera, najwyżej TAIL_TRIES razy. Bez przekaźnika albo przy błędzie zostaje sama historia (jak dotąd).
+   */
+  async tail(): Promise<void> {
+    if (!this.live || this.off || this.tailTries >= TAIL_TRIES) return;
+    this.tailTries++;
+    let asOf = Number.NEGATIVE_INFINITY;
+    try {
+      const res = await this.fetcher(`${this.live}/v1/tail/${encodeURIComponent(this.store.coin)}`);
+      const j = res.ok ? await gzJson(res) : null;
+      if (isTailFile(j) && j.coin === this.store.coin) {
+        asOf = j.asOf;
+        for (const p of j.parts) this.restore(p.start, p.trades, p.book, true);
+      }
+    } catch {
+      // Następna próba albo sama historia
+    }
+    if (asOf < this.store.liveSince && this.tailTries < TAIL_TRIES && !this.off) {
+      this.tailTimer = setTimeout(() => void this.tail(), TAIL_RETRY_MS);
+    }
   }
 
   publishedRange(): ReturnType<typeof publishedHistoryRange> {
@@ -194,18 +228,25 @@ export class ServerHistory {
       this.fetchGz(historyPath(coin, u.start, 'trades', u.part)),
       withBook ? this.fetchGz(historyPath(coin, u.start, 'book', u.part)) : Promise.resolve(null),
     ]);
+    const { tOk, bOk } = this.restore(u.start, rawT, rawB, withBook);
+    if (tOk && (bOk || !withBook)) this.done.add(unitKey(u));
+  }
+
+  /** Taśma i arkusz pliku (albo części ogona) zaczynającego się w `start` do magazynu; które z nich były poprawne. */
+  private restore(start: number, rawT: unknown, rawB: unknown, withBook: boolean): { tOk: boolean; bOk: boolean } {
+    const coin = this.store.coin;
     const t = decodeTrades(rawT);
     const b = withBook ? decodeBook(rawB) : null;
     const tOk = t !== null && t.coin === coin;
     const bOk = b !== null && b.coin === coin;
-    if (!tOk && !bOk) return;
+    if (!tOk && !bOk) return { tOk, bOk };
     const batch: HistoryBatch = {
-      trades: tOk ? { from: t.from, to: t.to, spans: t.spans, zeroSpans: t.zeroKnown ? t.spans : [], fills: toFills(t.trades, u.start, t.idScope), oi: t.ctx.map((c) => [c.t, c.oi]) } : null,
+      trades: tOk ? { from: t.from, to: t.to, spans: t.spans, zeroSpans: t.zeroKnown ? t.spans : [], fills: toFills(t.trades, start, t.idScope), oi: t.ctx.map((c) => [c.t, c.oi]) } : null,
       frames: bOk ? b.frames.map(toBookFrame) : [],
       bookSpans: bOk ? b.spans : [],
     };
     this.store.restoreHistory(batch);
-    if (tOk && (bOk || !withBook)) this.done.add(unitKey(u));
+    return { tOk, bOk };
   }
 
   /** Plik JSON w gzip; brak pliku albo błąd → null (ponowienie w następnym przebiegu). */

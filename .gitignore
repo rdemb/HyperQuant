@@ -9,6 +9,8 @@ build/
 out/
 # Bundle paczki MCP (npm run mcp:build)
 mcp/dist/
+# Pamięć podręczna `wrangler dev` (workers/*)
+.wrangler/
 
 # Environment variables & secrets
 .env*

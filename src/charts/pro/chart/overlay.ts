@@ -157,8 +157,56 @@ const PERIOD_PROFILE_WIDTH = 0.25;
 const PERIOD_PROFILE_MAX_PX = 120;
 /** Od tylu widocznych świec VWAP wchodzi do autoskali. */
 const AUTOSCALE_MIN_BARS = 40;
+/** VWAP wchodzi do autoskali, gdy rozciąga zakres świec najwyżej tyle razy (świece zachowują ≥ 2/3 wysokości panelu). */
+const AUTOSCALE_MAX_STRETCH = 1.5;
 /** Wysokość etykiety przy prawej krawędzi (px); etykiety rozsuwane co TAG_H + 1 w granicach [TAG_H / 2, H − TAG_H / 2]. */
 export const TAG_H = 15;
+
+/**
+ * Zakres VWAP do autoskali widocznych świec [start, end] (pozycje logiczne). Przy zbliżeniu (mniej niż AUTOSCALE_MIN_BARS
+ * świec) skala należy do ceny, żeby komórki footprintu nie malały. VWAP odległy od ceny (rozciągałby zakres świec ponad
+ * AUTOSCALE_MAX_STRETCH razy) też zostaje poza skalą — świece zachowują wysokość, a etykieta VWAP stoi przy krawędzi osi.
+ */
+export function vwapAutoscale(
+  bars: readonly ProBar[],
+  lines: readonly (readonly (VwapPoint | null)[] | null)[],
+  start: number,
+  end: number
+): { minValue: number; maxValue: number } | null {
+  if (end - start < AUTOSCALE_MIN_BARS) return null;
+  const a = Math.max(0, Math.ceil(start));
+  let vMin = Number.POSITIVE_INFINITY;
+  let vMax = Number.NEGATIVE_INFINITY;
+  for (const line of lines) {
+    if (!line) continue;
+    for (let i = a, b = Math.min(line.length - 1, Math.floor(end)); i <= b; i++) {
+      const p = line[i];
+      if (!p) continue;
+      if (p.vwap < vMin) vMin = p.vwap;
+      if (p.vwap > vMax) vMax = p.vwap;
+    }
+  }
+  if (!(vMin <= vMax)) return null;
+  let lo = Number.POSITIVE_INFINITY;
+  let hi = Number.NEGATIVE_INFINITY;
+  for (let i = a, b = Math.min(bars.length - 1, Math.floor(end)); i <= b; i++) {
+    const c = bars[i].candle;
+    if (c.l < lo) lo = c.l;
+    if (c.h > hi) hi = c.h;
+  }
+  if (lo <= hi && Math.max(hi, vMax) - Math.min(lo, vMin) > AUTOSCALE_MAX_STRETCH * (hi - lo)) return null;
+  return { minValue: vMin, maxValue: vMax };
+}
+
+/**
+ * Współrzędna ceny poza panelem wysokości `H` (VWAP poza autoskalą): przypięta do krawędzi z odstępem `pad`
+ * i strzałką w stronę ceny, żeby linia odniesienia nie znikała z oczu. W panelu bez zmian.
+ */
+export function pinnedEdge(y: number, H: number, pad: number): { y: number; arrow: '' | '↑' | '↓' } {
+  if (y < 0) return { y: pad, arrow: '↑' };
+  if (y > H) return { y: H - pad, arrow: '↓' };
+  return { y, arrow: '' };
+}
 
 /** Pozycja logiczna chwili `t` na osi świec co `ms`: indeks świecy plus ułamek jej trwania (także przed i za danymi). */
 export function logicalOfTime(bars: readonly { t: number }[], t: number, ms: number): number {
@@ -539,28 +587,11 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
     };
   }
 
-  /**
-   * VWAP mieści się w autoskali przy widoku przeglądowym; pasma nie — świece zachowują wysokość.
-   * Przy zbliżeniu do footprintu (mało świec) skala należy do ceny, żeby komórki nie malały przez odległy VWAP.
-   */
+  /** VWAP blisko ceny mieści się w autoskali (`vwapAutoscale`); pasma nie — świece zachowują wysokość. */
   autoscaleInfo(start: Logical, end: Logical): AutoscaleInfo | null {
-    if (end - start < AUTOSCALE_MIN_BARS) return null;
     const t = this.toggles;
-    const lines = [t.showVwap ? this.vwap : null, t.showSessionVwap ? this.svwap : null];
-    let min = Number.POSITIVE_INFINITY;
-    let max = Number.NEGATIVE_INFINITY;
-    const a = Math.max(0, Math.ceil(start));
-    for (const line of lines) {
-      if (!line) continue;
-      const b = Math.min(line.length - 1, Math.floor(end));
-      for (let i = a; i <= b; i++) {
-        const p = line[i];
-        if (!p) continue;
-        if (p.vwap < min) min = p.vwap;
-        if (p.vwap > max) max = p.vwap;
-      }
-    }
-    return min <= max ? { priceRange: { minValue: min, maxValue: max } } : null;
+    const range = vwapAutoscale(this.bars, [t.showVwap ? this.vwap : null, t.showSessionVwap ? this.svwap : null], start, end);
+    return range ? { priceRange: range } : null;
   }
 
   updateAllViews(): void {
@@ -637,19 +668,24 @@ export class IndicatorOverlay implements ISeriesPrimitive<Time> {
     if (t.showSessionVwap && sc.sessionVwap) {
       const last = this.sceneVwap(s, this.svwap, from, to, X, Y, K.svwap, 1.2, false);
       if (last) {
+        // Poza autoskalą (daleko od ceny) etykiety stoją przy krawędzi ze strzałką (`pinnedEdge`)
+        const pin = pinnedEdge(Y(last.vwap), H, TAG_H / 2);
+        const arrow = pin.arrow ? `${pin.arrow} ` : '';
         this.axisSvwap.on = true;
-        this.axisSvwap.y = Y(last.vwap);
-        this.axisSvwap.label = this.fmtPx(last.vwap);
-        s.tags.push({ y: Y(last.vwap), text: 'VWAP S', color: K.svwap });
+        this.axisSvwap.y = pin.y;
+        this.axisSvwap.label = `${arrow}${this.fmtPx(last.vwap)}`;
+        s.tags.push({ y: pin.y, text: `${arrow}VWAP S`, color: K.svwap });
       }
     }
     if (t.showVwap) {
       const last = this.sceneVwap(s, this.vwap, from, to, X, Y, K.vwap, 1.6, t.showVwapBands);
       if (last) {
+        const pin = pinnedEdge(Y(last.vwap), H, TAG_H / 2);
+        const arrow = pin.arrow ? `${pin.arrow} ` : '';
         this.axisVwap.on = true;
-        this.axisVwap.y = Y(last.vwap);
-        this.axisVwap.label = this.fmtPx(last.vwap);
-        s.tags.push({ y: Y(last.vwap), text: sc.vwapAnchor === 'week' ? tr('VWAP T', 'VWAP W') : 'VWAP', color: K.vwap });
+        this.axisVwap.y = pin.y;
+        this.axisVwap.label = `${arrow}${this.fmtPx(last.vwap)}`;
+        s.tags.push({ y: pin.y, text: `${arrow}${sc.vwapAnchor === 'week' ? tr('VWAP T', 'VWAP W') : 'VWAP'}`, color: K.vwap });
       }
     }
 

@@ -1,0 +1,14 @@
+# Przekaźnik na żywo HyperQuant (gorący ogon nagrania skanera). Wdrażany przez .github/workflows/live-worker.yml.
+name = "hyperquant-live"
+main = "src/index.ts"
+compatibility_date = "2026-09-01"
+workers_dev = true
+
+# Jeden obiekt na rynek: ostatni ogon w pamięci (bez zapisu — skaner wysyła nowy co kilka sekund)
+[[durable_objects.bindings]]
+name = "TAIL"
+class_name = "LiveTail"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["LiveTail"]

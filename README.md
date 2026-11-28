@@ -70,12 +70,14 @@ Hyperliquid is an on-chain exchange: every trade on its public tape carries the 
 
 ### Charts (In session)
 
+- **Every Hyperliquid market**: all active perpetuals of the main exchange and every HIP-3 exchange (357 today) are searchable in the market picker and ⌘K and listed on the Markets page with open interest, volume and funding. BTC, gold and the S&P 500 stay the core markets with the full scanner; the rest get live candles, tape, book and footprint.
 - **Footprint from the real tape**: Bid × Ask, Delta and Volume styles, POC, 70% value area, diagonal imbalances and stacked zones.
 - **Order-book heatmap**, aggressor bubbles, bursts, maker walls, icebergs and large resting orders; whale positions under a pseudonym valid for one UTC day, never an address.
 - **Delta and CVD** reset per Asia, London and New York session, UTC day or week; optional Binance and Bybit comparison.
 - **Indicators**: daily and session VWAP with σ bands, visible-range and fixed-range volume profile, TPO day profile, initial balance with extensions, PDH/PDL, liquidation clusters.
 - **Replay** of the last 24 hours of recorded tape and book at 1×, 5×, 15× or 60×, with links to a chosen moment.
 - **Layouts by phase of the day**, 1/2/4-chart grids, TradingView-style drawing tools, and price alerts delivered by Web Push even with the page closed.
+- **Order Flow liquidity heatmap**: the order book over the last 5, 15 or 60 minutes with best bid and ask lines and aggressor bubbles, filled from the server recording, above the price ladder and tape.
 - **DOM & tape column**: who is in the queue, walls eaten or pulled, tape with memory (TWAP slices glued into one row), TWAPs en route, who absorbs the hits.
 
 ### Analytics and learning
@@ -158,6 +160,8 @@ flowchart LR
 
 - **Web app** (`src/`): React 19, TypeScript, Vite 8, Tailwind CSS 4, TradingView Lightweight Charts™ 5 and custom Canvas renderers for footprint, heatmap and DOM; Monte Carlo models run in a Web Worker.
 - **Scanner** (`backend/`): a Node 24 service that tracks positions, liquidations, cohorts and the forecast ledger, records 24 h of tape and book, and publishes everything to a public Git repository. The browser never connects to the scanner. Details in [backend/README.md](backend/README.md) (Polish).
+- **Live relay** (`workers/live/`): a Cloudflare Worker with a Durable Object that serves the last 15 minutes of the scanner's recording, so a freshly opened chart has no gap before its own live stream.
+- **Hyperliquid node** (`backend/deploy/node/`, in preparation): an installer for a non-validator node (fills with both counterparties, liquidations of all accounts, an order-level book) and the record parsers the scanner will read from.
 - **MCP server** (`mcp/`): read-only market context for AI assistants, published on npm.
 - **Static site and blog** (`scripts/blog/`, `content/blog/`): pre-rendered landing pages, lessons, the indicator atlas, the results page, RSS and sitemap.
 

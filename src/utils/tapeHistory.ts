@@ -17,6 +17,32 @@ export const HIST_PART_MS = 5 * 60_000;
 export const HIST_HOUR_MS = 60 * 60_000;
 /** Część trafia do repo ok. 25 s po swoim końcu (zapis po 10 s, takt 15 s), do tego push: po tym czasie plik jest gotowy. */
 export const HIST_PUBLISH_LAG_MS = 90_000;
+/**
+ * Gorący ogon: tyle ostatnich ms nagrania skaner wysyła do przekaźnika na żywo — część otwarta i części już zapisane,
+ * których CDN repo danych jeszcze nie pokazuje (do 5 min części + publikacja + 5 min pamięci podręcznej CDN).
+ */
+export const HIST_TAIL_MS = 15 * 60_000;
+
+/** Ogon nagrania: części 5-minutowe w formacie plików historii (taśma z kontekstem i arkusz), pokrycie do `asOf`. */
+export interface TailFile {
+  v: 1;
+  coin: string;
+  asOf: number;
+  parts: { start: number; trades: TradesFile; book: BookFile }[];
+}
+
+/** Kształt ogona (treść części sprawdzają decodeTrades / decodeBook). */
+export function isTailFile(x: unknown): x is TailFile {
+  if (typeof x !== 'object' || x === null) return false;
+  const t = x as Partial<TailFile>;
+  return (
+    t.v === 1 &&
+    typeof t.coin === 'string' &&
+    Number.isFinite(t.asOf) &&
+    Array.isArray(t.parts) &&
+    t.parts.every((p) => typeof p === 'object' && p !== null && Number.isFinite(p.start) && p.start % HIST_PART_MS === 0)
+  );
+}
 
 /** Odcinek ciągłego nagrania [początek, koniec) w zegarze giełdy (ms). */
 export type HistSpan = [number, number];
