@@ -286,15 +286,23 @@ describe('ServerHistory — gorący ogon z przekaźnika na żywo', () => {
     const fetcher = async (url: string) => {
       if (!url.startsWith(LIVE)) return f.fetcher(url);
       tailCalls.push(url);
-      return new Response(new Uint8Array(gzipSync(JSON.stringify(tailFile(Date.now() - 2_000)))));
+      // Zwykły JSON (gzJson rozpoznaje brak nagłówka gzip): bez puli wątków zlib pod udawanym zegarem
+      return new Response(JSON.stringify(tailFile(Date.now() - 2_000)));
     };
     h = new ServerHistory(store, BASE, fetcher, LIVE);
     await h.ensure(NOW - 30 * 60_000);
     expect(tailCalls).toEqual([`${LIVE}/v1/tail/BTC`]);
     // Pokrycie aż do chwili ogona — bez luki od ostatniej opublikowanej części
     expect(store.coverage.covers(NOW - 15 * 60_000, NOW - 2_000)).toBe(true);
-    // Strumień na żywo nie ruszył (liveSince = +∞): kolejne próby co 4 s, najwyżej cztery razem
-    for (let i = 0; i < 6; i++) await vi.advanceTimersByTimeAsync(4_000);
+    // Strumień na żywo nie ruszył (liveSince = +∞): kolejne próby co 4 s, najwyżej cztery razem (po każdym kroku zegara
+    // obrót prawdziwej pętli zdarzeń — odczyt treści odpowiedzi; setImmediate nie jest udawany)
+    const step = async () => {
+      await vi.advanceTimersByTimeAsync(4_000);
+      for (let k = 0; k < 5; k++) await new Promise((r) => setImmediate(r));
+    };
+    for (let i = 0; i < 40 && tailCalls.length < 4; i++) await step();
+    expect(tailCalls).toHaveLength(4);
+    for (let i = 0; i < 5; i++) await step();
     expect(tailCalls).toHaveLength(4);
   });
 
